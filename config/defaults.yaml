@@ -1,0 +1,12 @@
+# @package _global_
+
+defaults:
+  - model: us_base
+  - data: us_data
+  - dfm: default
+  - _self_
+
+# Experiment metadata
+experiment_name: ${hydra:job.name}
+output_dir: ${hydra:runtime.output_dir}
+

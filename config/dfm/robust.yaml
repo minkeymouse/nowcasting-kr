@@ -1,0 +1,8 @@
+# @package dfm
+
+defaults:
+  - default
+
+# Robust estimation with lower threshold
+threshold: 1e-4  # More lenient convergence threshold
+

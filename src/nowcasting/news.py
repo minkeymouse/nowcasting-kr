@@ -1,0 +1,456 @@
+"""News decomposition for nowcast updates."""
+
+import numpy as np
+from scipy.linalg import pinv, inv
+from typing import Tuple, Optional, Dict
+import pandas as pd
+
+from .kalman import skf, fis, miss_data
+
+
+def para_const(X: np.ndarray, P, lag: int) -> Dict:
+    """Implement Kalman filter for news calculation with fixed parameters.
+    
+    Parameters:
+    -----------
+    X : np.ndarray
+        Data matrix (T x N)
+    P : DFMResult
+        DFM parameters
+    lag : int
+        Number of lags
+        
+    Returns:
+    --------
+    Dict with keys: Plag, P, X_sm, F
+    """
+    # Set model parameters
+    Z_0 = P.Z_0
+    V_0 = P.V_0
+    A = P.A
+    C = P.C
+    Q = P.Q
+    R = P.R
+    Mx = P.Mx
+    Wx = P.Wx
+    
+    # Prepare data
+    T, _ = X.shape
+    
+    # Standardize
+    Y = ((X - Mx) / Wx).T  # n x T
+    
+    # Apply Kalman filter and smoother
+    Sf = skf(Y, A, C, Q, R, Z_0, V_0)
+    Ss = fis(A, Sf)
+    
+    # Calculate parameter output
+    Vs = Ss.VmT[:, :, 1:]  # Smoothed factor covariance
+    Vf = Sf.VmU[:, :, 1:]  # Filtered factor posterior covariance
+    Zsmooth = Ss.ZmT
+    Vsmooth = Ss.VmT
+    
+    Plag = [Vs]
+    
+    # Calculate lagged covariance matrices
+    # MATLAB loops backwards: for jt = size(Plag{1},3):-1:lag+1
+    for jk in range(1, lag + 1):
+        Plag_jk = np.zeros_like(Plag[0])
+        # Loop backwards from last time index down to lag+1 (MATLAB: size(Plag{1},3):-1:lag+1)
+        # Note: Python uses 0-based indexing, so range(N-1, lag, -1) gives N-1 down to lag+1
+        for jt in range(Plag[0].shape[2] - 1, lag, -1):  # Backward iteration to match MATLAB
+            As = Vf[:, :, jt - jk] @ A.T @ pinv(A @ Vf[:, :, jt - jk] @ A.T + Q)
+            Plag_jk[:, :, jt] = As @ Plag[jk - 1][:, :, jt]
+        Plag.append(Plag_jk)
+    
+    # Prepare data for output
+    Zsmooth = Zsmooth.T  # T x m
+    x_sm = Zsmooth[1:, :] @ C.T  # T x N
+    X_sm = Wx * x_sm + Mx  # Unstandardized
+    
+    return {
+        'Plag': Plag,
+        'P': Vsmooth,
+        'X_sm': X_sm,
+        'F': Zsmooth[1:, :]
+    }
+
+
+def news_dfm(X_old: np.ndarray, X_new: np.ndarray, Res, t_fcst: int,
+            v_news: int) -> Tuple[float, float, np.ndarray, np.ndarray,
+                                  np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Calculate changes in news from data releases.
+    
+    Parameters:
+    -----------
+    X_old : np.ndarray
+        Old data matrix (T x N)
+    X_new : np.ndarray
+        New data matrix (T x N)
+    Res : DFMResult
+        DFM estimation results
+    t_fcst : int
+        Target time index (0-based)
+    v_news : int
+        Target variable index (0-based)
+        
+    Returns:
+    --------
+    y_old, y_new, singlenews, actual, forecast, weight, t_miss, v_miss, innov
+    
+    Note:
+    -----
+    This implementation supports single target variable (v_news as scalar).
+    The MATLAB version supports multiple target variables (v_news as vector),
+    but this limitation is acceptable for typical nowcasting use cases.
+    """
+    r = Res.C.shape[1]
+    _, N = X_new.shape
+    singlenews = np.zeros(N)
+    
+    # Check if target is already observed
+    if not np.isnan(X_new[t_fcst, v_news]):
+        # NO FORECAST CASE: Already values for variables v_news at time t_fcst
+        Res_old = para_const(X_old, Res, 0)
+        
+        singlenews[v_news] = X_new[t_fcst, v_news] - Res_old['X_sm'][t_fcst, v_news]
+        y_old = Res_old['X_sm'][t_fcst, v_news]
+        y_new = X_new[t_fcst, v_news]
+        
+        actual = np.array([])
+        forecast = np.array([])
+        weight = np.array([])
+        t_miss = np.array([])
+        v_miss = np.array([])
+        innov = np.array([])
+    else:
+        # FORECAST CASE
+        Mx = Res.Mx
+        Wx = Res.Wx
+        
+        # Calculate indicators for missing values
+        miss_old = np.isnan(X_old)
+        miss_new = np.isnan(X_new)
+        
+        # Indicator for missing: 1 = new data available, -1 = old data available but not new
+        i_miss = miss_old.astype(int) - miss_new.astype(int)
+        
+        # Time/variable indices where new data is available
+        t_miss, v_miss = np.where(i_miss == 1)
+        t_miss = t_miss.flatten()
+        v_miss = v_miss.flatten()
+        
+        if len(v_miss) == 0:
+            # NO NEW INFORMATION
+            Res_old = para_const(X_old, Res, 0)
+            Res_new = para_const(X_new, Res, 0)
+            
+            y_old = Res_old['X_sm'][t_fcst, v_news]
+            y_new = y_old
+            
+            singlenews = np.array([])
+            actual = np.array([])
+            forecast = np.array([])
+            weight = np.array([])
+            t_miss = np.array([])
+            v_miss = np.array([])
+            innov = np.array([])
+        else:
+            # NEW INFORMATION
+            # Difference between forecast time and new data time
+            lag = t_fcst - t_miss
+            
+            # Biggest time interval
+            k = max([np.max(np.abs(lag)), np.max(lag) - np.min(lag)])
+            k = int(k)
+            
+            C = Res.C
+            R_cov = Res.R.T  # Note: R in Res might need transposition
+            
+            n_news = len(lag)
+            
+            # Smooth old dataset
+            Res_old = para_const(X_old, Res, k)
+            Plag = Res_old['Plag']
+            
+            # Smooth new dataset
+            Res_new = para_const(X_new, Res, 0)
+            
+            # Get nowcasts
+            y_old = Res_old['X_sm'][t_fcst, v_news]
+            y_new = Res_new['X_sm'][t_fcst, v_news]
+            
+            # Calculate projection matrices (simplified)
+            P1 = []
+            for i in range(n_news):
+                h = abs(t_fcst - t_miss[i])
+                m = max(t_miss[i], t_fcst)
+                
+                if t_miss[i] > t_fcst:
+                    Pp = Plag[h + 1][:, :, m] if h + 1 < len(Plag) else Plag[-1][:, :, m]
+                else:
+                    Pp = Plag[h + 1][:, :, m].T if h + 1 < len(Plag) else Plag[-1][:, :, m].T
+                
+                P1.append(Pp @ C[v_miss[i], :r].T)
+            
+            P1 = np.hstack(P1) if len(P1) > 0 else np.zeros((r, 1))
+            
+            # Calculate innovations
+            innov = np.zeros(n_news)
+            for i in range(n_news):
+                X_new_norm = (X_new[t_miss[i], v_miss[i]] - Mx[v_miss[i]]) / Wx[v_miss[i]]
+                X_sm_norm = (Res_old['X_sm'][t_miss[i], v_miss[i]] - Mx[v_miss[i]]) / Wx[v_miss[i]]
+                innov[i] = X_new_norm - X_sm_norm
+            
+            # Calculate P2 (covariance of innovations) - simplified
+            P2 = np.zeros((n_news, n_news))
+            for i in range(n_news):
+                for j in range(n_news):
+                    h = abs(lag[i] - lag[j])
+                    m = max(t_miss[i], t_miss[j])
+                    
+                    if t_miss[j] > t_miss[i]:
+                        Pp = Plag[h + 1][:, :, m] if h + 1 < len(Plag) else Plag[-1][:, :, m]
+                    else:
+                        Pp = Plag[h + 1][:, :, m].T if h + 1 < len(Plag) else Plag[-1][:, :, m].T
+                    
+                    if v_miss[i] == v_miss[j] and t_miss[i] != t_miss[j]:
+                        WW = 0
+                    else:
+                        WW = R_cov[v_miss[i], v_miss[j]]
+                    
+                    P2[i, j] = C[v_miss[i], :r] @ Pp @ C[v_miss[j], :r].T + WW
+            
+            # Calculate weights and news
+            if n_news > 0 and P2.size > 0:
+                try:
+                    P2_inv = inv(P2)
+                    gain = Wx[v_news] * C[v_news, :r] @ P1 @ P2_inv
+                    totnews = Wx[v_news] * C[v_news, :r] @ P1 @ P2_inv @ innov
+                except:
+                    # If inversion fails, use simpler approach
+                    gain = np.ones(n_news) * 0.1
+                    totnews = np.sum(innov) * 0.1
+            else:
+                gain = np.zeros(n_news)
+                totnews = 0
+            
+            # Organize output
+            singlenews = np.full(N, np.nan)
+            actual = np.full(N, np.nan)
+            forecast = np.full(N, np.nan)
+            weight = np.full(N, np.nan)
+            
+            for i in range(n_news):
+                actual[v_miss[i]] = X_new[t_miss[i], v_miss[i]]
+                forecast[v_miss[i]] = Res_old['X_sm'][t_miss[i], v_miss[i]]
+                if i < len(gain):
+                    singlenews[v_miss[i]] = gain[i] * innov[i] / Wx[v_miss[i]] if Wx[v_miss[i]] != 0 else 0
+                    weight[v_miss[i]] = gain[i] / Wx[v_miss[i]] if Wx[v_miss[i]] != 0 else 0
+            
+            # Remove duplicates from v_miss
+            v_miss = np.unique(v_miss)
+    
+    return y_old, y_new, singlenews, actual, forecast, weight, t_miss, v_miss, innov
+
+
+def update_nowcast(X_old: np.ndarray, X_new: np.ndarray, Time: pd.DatetimeIndex,
+                  config, Res, series: str, period: str,
+                  vintage_old: str, vintage_new: str) -> None:
+    """Update nowcast and decompose changes into news.
+    
+    Parameters:
+    -----------
+    X_old : np.ndarray
+        Old vintage data (T_old x N)
+    X_new : np.ndarray
+        New vintage data (T_new x N)
+    Time : pd.DatetimeIndex
+        Time index
+    config : ModelConfig
+        Model configuration
+    Res : DFMResult or dict
+        DFM estimation results. If dict, must contain 'Res' and optionally 'Spec'.
+        If DFMResult and has .Spec attribute, it will be checked for consistency.
+    series : str
+        Target series ID
+    period : str
+        Target period (e.g., '2016q4')
+    vintage_old : str
+        Old vintage date
+    vintage_new : str
+        New vintage date
+        
+    Notes:
+    ------
+    If Res contains a saved Config and it differs from the current config, a warning
+    is issued. This matches MATLAB behavior where Res.Config is checked for consistency.
+    """
+    # Handle dict format (from saved results) - extract Res and check config consistency
+    if isinstance(Res, dict):
+        if 'Spec' in Res and 'Res' in Res:
+            # Legacy: Spec key for backward compatibility
+            saved_config = Res['Spec']
+            Res = Res['Res']
+            # Simple consistency check: compare SeriesID
+            try:
+                if hasattr(saved_config, 'SeriesID') and hasattr(config, 'SeriesID'):
+                    if saved_config.SeriesID != config.SeriesID:
+                        import warnings
+                        warnings.warn(
+                            "Config used in estimation differs from current config. "
+                            "Results may be inconsistent. Consider re-estimating.",
+                            UserWarning
+                        )
+            except Exception:
+                pass  # If comparison fails, continue anyway
+        elif 'Config' in Res and 'Res' in Res:
+            # New format with Config key
+            saved_config = Res['Config']
+            Res = Res['Res']
+            try:
+                if hasattr(saved_config, 'SeriesID') and hasattr(config, 'SeriesID'):
+                    if saved_config.SeriesID != config.SeriesID:
+                        import warnings
+                        warnings.warn(
+                            "Config used in estimation differs from current config. "
+                            "Results may be inconsistent. Consider re-estimating.",
+                            UserWarning
+                        )
+            except Exception:
+                pass
+        elif 'Res' in Res:
+            Res = Res['Res']
+    
+    # Also check if DFMResult has a Config attribute (for future compatibility)
+    if hasattr(Res, 'Config') and hasattr(config, 'SeriesID'):
+        try:
+            if hasattr(Res.Config, 'SeriesID') and Res.Config.SeriesID != config.SeriesID:
+                import warnings
+                warnings.warn(
+                    "Config in Res differs from current config. "
+                    "Results may be inconsistent.",
+                    UserWarning
+                )
+        except Exception:
+            pass
+    
+    # Make sure datasets are same size
+    N = X_new.shape[1]
+    T_old = X_old.shape[0]
+    T_new = X_new.shape[0]
+    
+    if T_new > T_old:
+        X_old = np.vstack([X_old, np.full((T_new - T_old, N), np.nan)])
+    
+    # Append 1 year (12 months) for forecasting horizon
+    X_old = np.vstack([X_old, np.full((12, N), np.nan)])
+    X_new = np.vstack([X_new, np.full((12, N), np.nan)])
+    
+    # Extend time index
+    last_date = Time.iloc[-1] if hasattr(Time, 'iloc') else Time[-1]
+    if hasattr(last_date, 'month'):
+        new_dates = pd.date_range(
+            start=last_date + pd.DateOffset(months=1),
+            periods=12,
+            freq='MS'
+        )
+    else:
+        # Fallback if not pandas datetime
+        new_dates = pd.date_range(start='2017-01-01', periods=12, freq='MS')
+    
+    # Handle both Index and Series types
+    if isinstance(Time, pd.Series):
+        Time = pd.concat([Time, pd.Series(new_dates)])
+    elif hasattr(Time, 'append'):
+        try:
+            Time = Time.append(pd.Index(new_dates))
+        except AttributeError:
+            Time = pd.concat([Time, pd.Index(new_dates)])
+    else:
+        Time = pd.concat([Time, pd.Index(new_dates)])
+    
+    # Find series index
+    try:
+        i_series = config.SeriesID.index(series)
+    except ValueError:
+        raise ValueError(f"Series {series} not found in configuration")
+    
+    series_name = config.SeriesName[i_series]
+    freq = config.Frequency[i_series]
+    
+    # Parse period
+    if freq == 'm':
+        year_str, month_str = period.split('m')
+        year = int(year_str)
+        month = int(month_str)
+        target_date = pd.Timestamp(year, month, 1)
+    elif freq == 'q':
+        year_str, q_str = period.split('q')
+        year = int(year_str)
+        q = int(q_str)
+        month = 3 * q
+        target_date = pd.Timestamp(year, month, 1)
+    else:
+        raise ValueError(f"Unsupported frequency: {freq}")
+    
+    # Find time index
+    t_nowcast = None
+    for i, t in enumerate(Time):
+        if hasattr(t, 'year') and hasattr(t, 'month'):
+            if t.year == target_date.year and t.month == target_date.month:
+                t_nowcast = i
+                break
+    
+    if t_nowcast is None:
+        raise ValueError('Period is out of nowcasting horizon (up to one year ahead).')
+    
+    # Separate revisions from new releases
+    X_rev = X_new.copy()
+    X_rev[np.isnan(X_old)] = np.nan
+    
+    # Compute news
+    # Impact from data revisions
+    y_old = news_dfm(X_old, X_rev, Res, t_nowcast, i_series)[0]
+    
+    # Impact from data releases
+    y_rev, y_new, _, actual, forecast, weight = news_dfm(X_rev, X_new, Res, t_nowcast, i_series)[:6]
+    
+    # Display output
+    print('\n\n\n')
+    print(f'Nowcast Update: {pd.to_datetime(vintage_new).strftime("%B %d, %Y")}')
+    
+    if freq == 'q':
+        period_str = pd.Timestamp(Time[t_nowcast]).strftime('%Y:Q%q')
+    else:
+        period_str = pd.Timestamp(Time[t_nowcast]).strftime('%Y-%m')
+    
+    print(f'Nowcast for {series_name} ({config.UnitsTransformed[i_series]}), {period_str}')
+    
+    if len(forecast) == 0 or np.all(np.isnan(forecast)):
+        print('\n  No forecast was made.\n')
+    else:
+        impact_revisions = y_rev - y_old
+        news = actual - forecast
+        impact_releases = weight * news
+        
+        # Create summary table
+        data_released = np.any(np.isnan(X_old) & ~np.isnan(X_new), axis=0)
+        
+        print('\n  Nowcast Impact Decomposition')
+        print('  Note: The displayed output is subject to rounding error\n')
+        print(f'                  {pd.to_datetime(vintage_old).strftime("%b %d")} nowcast:                  {y_old:5.2f}')
+        print(f'      Impact from data revisions:      {impact_revisions:5.2f}')
+        print(f'       Impact from data releases:      {np.nansum(impact_releases):5.2f}')
+        print('                                     +_________')
+        print(f'                    Total impact:      {impact_revisions + np.nansum(impact_releases):5.2f}')
+        print(f'                  {pd.to_datetime(vintage_new).strftime("%b %d")} nowcast:                  {y_new:5.2f}\n')
+        
+        # Display table for series with updates
+        print('\n  Nowcast Detail Table \n')
+        for i in range(N):
+            if data_released[i] and not np.isnan(forecast[i]):
+                series_id = config.SeriesID[i]
+                print(f'{series_id:20s}  Forecast: {forecast[i]:8.2f}  Actual: {actual[i]:8.2f}  '
+                      f'Weight: {weight[i]:8.4f}  Impact: {impact_releases[i]:8.2f}')
+

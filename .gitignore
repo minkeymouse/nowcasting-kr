@@ -1,0 +1,18 @@
+.env
+.env.local
+
+.vscode/
+
+# Excel files
+*.xls
+*.xlsx
+
+# MATLAB files
+*.mat
+data/**/*.xls
+data/**/*.xlsx
+matlab/**/*.xls
+*.m
+
+*.txt
+*.pyc

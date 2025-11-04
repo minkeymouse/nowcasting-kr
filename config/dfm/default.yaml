@@ -1,0 +1,11 @@
+# @package dfm
+
+defaults:
+  - _self_
+
+# DFM estimation parameters
+threshold: 1e-5  # EM convergence threshold
+max_iter: 5000    # Maximum EM iterations
+nan_method: 2     # NaN handling method (1-5)
+nan_k: 3          # NaN filter parameter
+

@@ -1,0 +1,35 @@
+# @package model
+
+defaults:
+  - _self_
+
+# Model specification for US macroeconomic data
+# This is a simplified example - expand with actual series from Spec_US_example.xls
+
+series:
+  - series_id: INDPRO
+    series_name: Industrial Production Index
+    frequency: m
+    units: Index
+    transformation: pch
+    category: Production
+    blocks: [1, 0]  # Global block only
+    
+  - series_id: PAYEMS
+    series_name: All Employees, Total Nonfarm
+    frequency: m
+    units: Thousands of Persons
+    transformation: pch
+    category: Labor
+    blocks: [1, 0]
+    
+  - series_id: GDPC1
+    series_name: Real Gross Domestic Product
+    frequency: q
+    units: Billions of Chained 2017 Dollars
+    transformation: pca
+    category: Output
+    blocks: [1, 1]  # Global and Output blocks
+
+block_names: [Global, Output]
+
