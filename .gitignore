@@ -1,7 +1,17 @@
 .env
 .env.local
+.env.*
+*.env
 
 .vscode/
+
+# Secrets and credentials
+secrets/
+credentials/
+*.key
+*.pem
+*.p12
+*.pfx
 
 # Excel files
 *.xls
