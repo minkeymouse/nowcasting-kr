@@ -94,27 +94,69 @@ def main(cfg: DictConfig) -> None:
         
         # Load or estimate DFM model
         base_dir = Path(__file__).parent.parent
+        model_dir = base_dir / 'model'
+        model_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Try to load model weights from model/ directory
+        model_file = None
+        if vintage_new:
+            # Try config-specific file first
+            if config_id:
+                model_file = model_dir / f"dfm_config_{config_id}_{vintage_new}.pkl"
+                if not model_file.exists():
+                    model_file = None
+            # Fallback to vintage-only file
+            if model_file is None or not model_file.exists():
+                model_file = model_dir / f"dfm_{vintage_new}.pkl"
+        
+        # Fallback to ResDFM.pkl if model file not found
         res_file = base_dir / 'ResDFM.pkl'
+        Res = None
         model_id = None
         
-        try:
-            logger.info(f"Loading DFM results from {res_file}")
-            with open(res_file, 'rb') as f:
-                data = pickle.load(f)
-                saved_config = data.get('Config', data.get('Spec'))
-                if saved_config and 'Res' in data:
-                    # Check config consistency
-                    if hasattr(saved_config, 'SeriesID') and saved_config.SeriesID != model_cfg.SeriesID:
-                        logger.warning('Configuration mismatch. Re-estimating...')
-                        raise FileNotFoundError
-                    Res = data.get('Res', data)
-                    # Try to get model_id from saved data
-                    model_id = data.get('model_id')
-                else:
-                    Res = data.get('Res', data)
-            logger.info("DFM results loaded successfully")
-        except FileNotFoundError:
-            # Re-estimate if file not found or config mismatch
+        # Try loading from model/ directory first
+        if model_file and model_file.exists():
+            try:
+                logger.info(f"Loading model weights from {model_file}")
+                with open(model_file, 'rb') as f:
+                    model_weights = pickle.load(f)
+                
+                # Reconstruct DFMResult from weights (need to estimate full model)
+                # For nowcasting, we need full Res object, so we'll still need to estimate
+                # But we can skip if we have ResDFM.pkl with full results
+                logger.info("Model weights loaded, but full DFM estimation needed for nowcasting")
+                logger.info("Checking for full DFM results in ResDFM.pkl...")
+                model_id = model_weights.get('config_id')
+            except Exception as e:
+                logger.warning(f"Failed to load model weights from {model_file}: {e}")
+                model_file = None
+        
+        # Try loading full results from ResDFM.pkl
+        if not Res:
+            try:
+                logger.info(f"Loading full DFM results from {res_file}")
+                with open(res_file, 'rb') as f:
+                    data = pickle.load(f)
+                    saved_config = data.get('Config', data.get('Spec'))
+                    if saved_config and 'Res' in data:
+                        # Check config consistency
+                        if hasattr(saved_config, 'SeriesID') and saved_config.SeriesID != model_cfg.SeriesID:
+                            logger.warning('Configuration mismatch. Re-estimating...')
+                            raise FileNotFoundError
+                        Res = data.get('Res', data)
+                        # Try to get model_id from saved data
+                        model_id = data.get('model_id')
+                    else:
+                        Res = data.get('Res', data)
+                logger.info("DFM results loaded successfully from ResDFM.pkl")
+            except FileNotFoundError:
+                Res = None
+            except Exception as e:
+                logger.warning(f"Failed to load from ResDFM.pkl: {e}")
+                Res = None
+        
+        # Re-estimate if not found
+        if Res is None:
             logger.info('Estimating DFM model...')
             
             if use_database:
@@ -135,45 +177,37 @@ def main(cfg: DictConfig) -> None:
             
             Res = dfm(X, model_cfg, threshold=threshold)
             
-            # Save model weights to database if available
-            if use_database and config_id:
-                try:
-                    from database import get_client, save_model_weights, get_latest_vintage_id
-                    
-                    client = get_client()
-                    vintage_id = get_latest_vintage_id(vintage_date=vintage_new, client=client)
-                    
-                    if vintage_id:
-                        # Serialize DFMResult to dict
-                        params = {
-                            'C': Res.C,
-                            'R': Res.R,
-                            'A': Res.A,
-                            'Q': Res.Q,
-                            'Z_0': Res.Z_0,
-                            'V_0': Res.V_0,
-                            'Mx': Res.Mx,
-                            'Wx': Res.Wx,
-                        }
-                        
-                        model_record = save_model_weights(
-                            config_id=config_id,
-                            vintage_id=vintage_id,
-                            parameters=params,
-                            threshold=threshold,
-                            convergence_iter=Res.convergence_iter if hasattr(Res, 'convergence_iter') else None,
-                            log_likelihood=Res.loglik if hasattr(Res, 'loglik') else None,
-                            client=client
-                        )
-                        model_id = model_record.get('model_id') if model_record else None
-                        logger.info(f"Model weights saved to database (model_id={model_id})")
-                except Exception as e:
-                    logger.warning(f"Failed to save model weights to database: {e}")
+            # Save model weights to model/ directory (not to database yet)
+            if vintage_new:
+                model_filename = f"dfm_{vintage_new}.pkl"
+                if config_id:
+                    model_filename = f"dfm_config_{config_id}_{vintage_new}.pkl"
+                model_file = model_dir / model_filename
+                
+                model_weights = {
+                    'C': Res.C,
+                    'R': Res.R,
+                    'A': Res.A,
+                    'Q': Res.Q,
+                    'Z_0': Res.Z_0,
+                    'V_0': Res.V_0,
+                    'Mx': Res.Mx,
+                    'Wx': Res.Wx,
+                    'threshold': threshold,
+                    'vintage': vintage_new,
+                    'config_id': config_id,
+                    'convergence_iter': getattr(Res, 'convergence_iter', None),
+                    'log_likelihood': getattr(Res, 'loglik', None),
+                }
+                
+                with open(model_file, 'wb') as f:
+                    pickle.dump(model_weights, f)
+                logger.info(f"Model weights saved to {model_file}")
             
-            # Save to file
+            # Save full results to ResDFM.pkl (legacy support)
             with open(res_file, 'wb') as f:
                 pickle.dump({'Res': Res, 'Config': model_cfg, 'model_id': model_id}, f)
-            logger.info(f"DFM model estimated and saved to {res_file}")
+            logger.info(f"Full DFM results saved to {res_file}")
         
         # Load datasets for vintage comparison (nowcasting)
         logger.info("Loading vintages for nowcast comparison...")
@@ -213,8 +247,13 @@ def main(cfg: DictConfig) -> None:
         logger.info(f"Running nowcast update for {series}, period {period}")
         logger.info("This compares old vs new vintage forecasts for the current period (nowcasting)")
         
-        update_nowcast(X_old, X_new, Time, model_cfg, Res, series, period,
-                      vintage_old, vintage_new)
+        update_nowcast(
+            X_old, X_new, Time, model_cfg, Res, series, period,
+            vintage_old, vintage_new,
+            model_id=model_id,
+            use_database=use_database,
+            save_to_db=use_database  # Save to DB if database is being used
+        )
         
         logger.info("=" * 80)
         logger.info("Nowcasting completed successfully")
