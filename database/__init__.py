@@ -77,6 +77,8 @@ __all__ = [
     'get_ingestion_job',
     'insert_observations_from_dataframe',
     'get_observations',
+    'get_latest_observation_date',
+    'check_series_exists',
     'get_vintage_data',
     'get_vintage_data_for_config',
     'get_latest_vintage_id',
