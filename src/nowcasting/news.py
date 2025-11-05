@@ -173,7 +173,7 @@ def news_dfm(X_old: np.ndarray, X_new: np.ndarray, Res, t_fcst: int,
                 singlenews = np.array([])
             else:
                 y_old = np.array([Res_old['X_sm'][t_fcst, v] for v in v_news_arr])
-            y_new = y_old
+                y_new = y_old
                 singlenews = np.array([]).reshape(0, n_targets)
             
             actual = np.array([])
