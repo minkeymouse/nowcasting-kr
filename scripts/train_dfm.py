@@ -85,7 +85,7 @@ def main(cfg: DictConfig) -> None:
     # Run DFM estimation
     Res = dfm(X, model_cfg, threshold=threshold)
     
-    # Save results
+    # Save results to pickle file (legacy support)
     output_dir = Path(cfg.get('output_dir', '.'))
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / 'ResDFM.pkl'
@@ -94,6 +94,40 @@ def main(cfg: DictConfig) -> None:
         pickle.dump({'Res': Res, 'Config': model_cfg}, f)
     
     print(f'\nResults saved to {output_file}')
+    
+    # Save model weights to model/ directory
+    base_dir = Path(__file__).parent.parent.parent
+    model_dir = base_dir / 'model'
+    model_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create model filename based on vintage and config
+    model_filename = f"dfm_{vintage or 'default'}.pkl"
+    if config_id:
+        model_filename = f"dfm_config_{config_id}_{vintage or 'default'}.pkl"
+    
+    model_file = model_dir / model_filename
+    
+    # Save model weights (parameters only, not full results)
+    model_weights = {
+        'C': Res.C,
+        'R': Res.R,
+        'A': Res.A,
+        'Q': Res.Q,
+        'Z_0': Res.Z_0,
+        'V_0': Res.V_0,
+        'Mx': Res.Mx,
+        'Wx': Res.Wx,
+        'threshold': threshold,
+        'vintage': vintage,
+        'config_id': config_id,
+        'convergence_iter': getattr(Res, 'convergence_iter', None),
+        'log_likelihood': getattr(Res, 'loglik', None),
+    }
+    
+    with open(model_file, 'wb') as f:
+        pickle.dump(model_weights, f)
+    
+    print(f'Model weights saved to {model_file}')
     print(f"Output directory: {output_dir}")
     print(f"\n{'='*70}\n")
 
