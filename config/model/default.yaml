@@ -1,0 +1,5 @@
+# Default model configuration
+# Use: python train_dfm.py model=kr_dfm_v1
+
+defaults:
+  - kr_dfm_v1

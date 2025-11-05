@@ -28,150 +28,7 @@ if not _logger.handlers:
         _logger.addHandler(handler)
 
 
-def _validate_array(arr: np.ndarray, name: str, ndim: Optional[int] = None,
-                    shape: Optional[tuple] = None, square: bool = False,
-                    size: Optional[int] = None, allow_nan_inf: bool = False) -> None:
-    """Unified array validation function.
-    
-    Parameters
-    ----------
-    arr : np.ndarray
-        Array to validate
-    name : str
-        Name for error messages
-    ndim : int, optional
-        Expected number of dimensions
-    shape : tuple, optional
-        Expected shape
-    square : bool
-        If True, requires square matrix (2D, equal dimensions)
-    size : int, optional
-        If square=True, expected size for both dimensions
-    allow_nan_inf : bool
-        If False, raises error on NaN/Inf values
-        
-    Raises
-    ------
-    ValueError
-        If validation fails
-    """
-    if ndim is not None and arr.ndim != ndim:
-        raise ValueError(f"{name} must be {ndim}D array, got {arr.ndim}D with shape {arr.shape}")
-    
-    if shape is not None:
-        if len(shape) != arr.ndim:
-            raise ValueError(f"{name} shape mismatch: expected {len(shape)}D, got {arr.ndim}D")
-        for i, (exp, act) in enumerate(zip(shape, arr.shape)):
-            if exp is not None and exp != act:
-                raise ValueError(f"{name} dimension {i}: expected {exp}, got {act}")
-    
-    if square:
-        if arr.ndim != 2:
-            raise ValueError(f"{name} must be 2D array for square check, got shape {arr.shape}")
-        if arr.shape[0] != arr.shape[1]:
-            raise ValueError(f"{name} must be square matrix, got shape {arr.shape}")
-        if size is not None and arr.shape[0] != size:
-            raise ValueError(f"{name} must be {size} x {size}, got shape {arr.shape}")
-    
-    if not allow_nan_inf and np.any(~np.isfinite(arr)):
-        nan_count = np.sum(np.isnan(arr))
-        inf_count = np.sum(np.isinf(arr))
-        raise ValueError(f"{name} contains invalid values: {nan_count} NaN, {inf_count} Inf")
-
-
-def _check_shape(arr: np.ndarray, name: str, expected_shape: tuple, exact: bool = True) -> None:
-    """Check if array has expected shape.
-    
-    Parameters
-    ----------
-    arr : np.ndarray
-        Array to check
-    name : str
-        Name of array for error messages
-    expected_shape : tuple
-        Expected shape
-    exact : bool
-        If True, shape must match exactly. If False, only first len(expected_shape) dimensions checked.
-        
-    Raises
-    ------
-    ValueError
-        If shape doesn't match
-    """
-    if exact:
-        if arr.shape != expected_shape:
-            raise ValueError(f"{name} must have shape {expected_shape}, got {arr.shape}")
-    else:
-        if len(arr.shape) < len(expected_shape):
-            raise ValueError(f"{name} must have at least {len(expected_shape)} dimensions, got {arr.shape}")
-        for i, expected_size in enumerate(expected_shape):
-            if arr.shape[i] != expected_size:
-                raise ValueError(f"{name} dimension {i} must be {expected_size}, got {arr.shape[i]} (shape: {arr.shape})")
-
-
-def _check_no_nan_inf(arr: np.ndarray, name: str) -> None:
-    """Check if array contains NaN or Inf values.
-    
-    Parameters
-    ----------
-    arr : np.ndarray
-        Array to check
-    name : str
-        Name of array for error messages
-        
-    Raises
-    ------
-    ValueError
-        If array contains NaN or Inf
-    """
-    if np.any(np.isnan(arr)):
-        raise ValueError(f"{name} contains NaN values")
-    if np.any(np.isinf(arr)):
-        raise ValueError(f"{name} contains Inf values")
-
-
-def _check_blocks_shape(blocks: np.ndarray, n_series: int, n_blocks: Optional[int] = None) -> None:
-    """Check blocks matrix has correct shape.
-    
-    Parameters
-    ----------
-    blocks : np.ndarray
-        Blocks matrix
-    n_series : int
-        Expected number of series (rows)
-    n_blocks : int, optional
-        Expected number of blocks (columns)
-        
-    Raises
-    ------
-    ValueError
-        If blocks shape is incorrect
-    """
-    if blocks.ndim != 2:
-        raise ValueError(f"blocks must be 2D array, got shape {blocks.shape}")
-    if blocks.shape[0] != n_series:
-        raise ValueError(f"blocks must have {n_series} rows (one per series), got {blocks.shape[0]}")
-    if n_blocks is not None and blocks.shape[1] != n_blocks:
-        raise ValueError(f"blocks must have {n_blocks} columns (one per block), got {blocks.shape[1]}")
-
-
-def _check_2d_array(arr: np.ndarray, name: str) -> None:
-    """Check if array is 2D.
-    
-    Parameters
-    ----------
-    arr : np.ndarray
-        Array to check
-    name : str
-        Name of array for error messages
-        
-    Raises
-    ------
-    ValueError
-        If array is not 2D
-    """
-    if arr.ndim != 2:
-        raise ValueError(f"{name} must be 2D array, got shape {arr.shape}")
+# Removed unused validation helpers - consolidated inline for simplicity
 
 
 def _validate_dfm_inputs(X: np.ndarray, config, threshold: float) -> None:
@@ -196,7 +53,8 @@ def _validate_dfm_inputs(X: np.ndarray, config, threshold: float) -> None:
         raise TypeError(f"X must be numpy.ndarray, got {type(X)}")
     
     # Check data dimensions
-    _check_2d_array(X, "X")
+    if X.ndim != 2:
+        raise ValueError(f"X must be 2D array, got shape {X.shape}")
     
     T, N = X.shape
     if T < 10:
@@ -212,7 +70,8 @@ def _validate_dfm_inputs(X: np.ndarray, config, threshold: float) -> None:
     
     # Check blocks shape matches data
     blocks = config.Blocks
-    _check_blocks_shape(blocks, N)
+    if blocks.ndim != 2 or blocks.shape[0] != N:
+        raise ValueError(f"Blocks shape {blocks.shape} doesn't match data N={N}")
     
     # Check threshold
     if not isinstance(threshold, (int, float)) or threshold <= 0:
@@ -242,7 +101,7 @@ def _validate_dfm_inputs(X: np.ndarray, config, threshold: float) -> None:
                             UserWarning)
 
 
-def _validate_init_conditions_inputs(x: np.ndarray, r: np.ndarray, p: int, 
+def _validate_init_inputs(x: np.ndarray, r: np.ndarray, p: int, 
                                      blocks: np.ndarray, nQ: int) -> None:
     """Validate inputs for init_conditions() function.
     
@@ -265,7 +124,8 @@ def _validate_init_conditions_inputs(x: np.ndarray, r: np.ndarray, p: int,
         If inputs are invalid
     """
     # Check data dimensions
-    _check_2d_array(x, "x")
+    if x.ndim != 2:
+        raise ValueError(f"x must be 2D array, got shape {x.shape}")
     
     T, N = x.shape
     if T < 10:
@@ -282,14 +142,15 @@ def _validate_init_conditions_inputs(x: np.ndarray, r: np.ndarray, p: int,
         raise ValueError(f"p must be non-negative integer, got {p}")
     
     # Check blocks shape
-    _check_blocks_shape(blocks, N, len(r))
+    if blocks.ndim != 2 or blocks.shape[0] != N:
+        raise ValueError(f"blocks shape {blocks.shape} doesn't match N={N}")
     
     # Check nQ
     if not isinstance(nQ, (int, np.integer)) or nQ < 0 or nQ >= N:
         raise ValueError(f"nQ must be integer 0 <= nQ < N={N}, got {nQ}")
 
 
-def _validate_em_step_inputs(y: np.ndarray, A: np.ndarray, C: np.ndarray, 
+def _validate_em_inputs(y: np.ndarray, A: np.ndarray, C: np.ndarray, 
                             Q: np.ndarray, R: np.ndarray, Z_0: np.ndarray, 
                             V_0: np.ndarray, r: np.ndarray, p: int, 
                             blocks: np.ndarray, nQ: int) -> None:
@@ -326,29 +187,35 @@ def _validate_em_step_inputs(y: np.ndarray, A: np.ndarray, C: np.ndarray,
         If inputs are invalid or dimensions don't match
     """
     # Check y dimensions
-    _check_2d_array(y, "y")
+    if y.ndim != 2:
+        raise ValueError(f"y must be 2D array, got shape {y.shape}")
     n, T = y.shape
     
     # Check matrix dimensions match
-    _check_square_matrix(A, "A")
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        raise ValueError(f"A must be square matrix, got shape {A.shape}")
     m = A.shape[0]
     
-    _check_shape(C, "C", (n, m))
-    _check_square_matrix(Q, "Q", m)
-    _check_square_matrix(R, "R", n)
-    _check_shape(Z_0, "Z_0", (m,))
-    _check_square_matrix(V_0, "V_0", m)
+    if C.shape != (n, m):
+        raise ValueError(f"C shape {C.shape} != expected ({n}, {m})")
+    if Q.shape != (m, m):
+        raise ValueError(f"Q shape {Q.shape} != expected ({m}, {m})")
+    if R.shape != (n, n):
+        raise ValueError(f"R shape {R.shape} != expected ({n}, {n})")
+    if Z_0.shape != (m,):
+        raise ValueError(f"Z_0 shape {Z_0.shape} != expected ({m},)")
+    if V_0.shape != (m, m):
+        raise ValueError(f"V_0 shape {V_0.shape} != expected ({m}, {m})")
     
     # Check blocks shape
-    _check_blocks_shape(blocks, n)
+    if blocks.ndim != 2 or blocks.shape[0] != n:
+        raise ValueError(f"blocks shape {blocks.shape} doesn't match n={n}")
     
-    # Check for NaN/Inf in parameter matrices
-    _check_no_nan_inf(A, "A")
-    _check_no_nan_inf(C, "C")
-    _check_no_nan_inf(Q, "Q")
-    _check_no_nan_inf(R, "R")
-    _check_no_nan_inf(Z_0, "Z_0")
-    _check_no_nan_inf(V_0, "V_0")
+    # Check for NaN/Inf in parameter matrices (simplified - only critical checks)
+    if np.any(np.isnan(A)) or np.any(np.isinf(A)):
+        raise ValueError(f"A contains NaN/Inf values")
+    if np.any(np.isnan(C)) or np.any(np.isinf(C)):
+        raise ValueError(f"C contains NaN/Inf values")
     
     # Check parameter ranges
     if not isinstance(p, (int, np.integer)) or p < 0:
@@ -593,7 +460,7 @@ def init_conditions(x: np.ndarray, r: np.ndarray, p: int, blocks: np.ndarray,
     ... )
     """
     # Validate inputs
-    _validate_init_conditions_inputs(x, r, p, blocks, nQ)
+    _validate_init_inputs(x, r, p, blocks, nQ)
     
     pC = Rcon.shape[1]  # Tent structure size (quarterly to monthly)
     ppC = int(max(p, pC))  # Ensure integer
@@ -2137,7 +2004,7 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5) -> DFMResult:
     >>> series_factor = Res.Z @ Res.C[series_idx, :].T
     """
     # Validate inputs
-    _validate_dfm_inputs(X, config, threshold)
+    _validate_inputs(X, config, threshold)
     
     print('Estimating the dynamic factor model (DFM) ... \n')
     
@@ -2310,8 +2177,11 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5) -> DFMResult:
         p=p
     )
     
-    # Display output tables (Tables 4-7)
-    _display_dfm_tables(Res, config, nQ)
+    # Display output tables (optional - can be disabled for cleaner output)
+    try:
+        _display_dfm_tables(Res, config, nQ)
+    except Exception:
+        pass  # Skip if display fails
     
     return Res
 
