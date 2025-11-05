@@ -40,7 +40,7 @@ def export_config_to_csv(
     config_name : str
         Name of the model configuration in database
     output_path : Path, optional
-        Output CSV file path. If None, uses migrations/001_initial_spec.csv
+        Output CSV file path. If None, uses src/spec/001_initial_spec.csv
     client : Client, optional
         Supabase client instance
         
@@ -162,7 +162,7 @@ def export_config_to_csv(
     # Determine output path
     if output_path is None:
         project_root = Path(__file__).parent.parent.parent
-        output_path = project_root / 'migrations' / '001_initial_spec.csv'
+        output_path = project_root / 'src' / 'spec' / '001_initial_spec.csv'
     else:
         output_path = Path(output_path)
     
@@ -328,7 +328,7 @@ def sync_csv_from_db(
     config_name : str
         Name of the model configuration in database
     csv_path : Path, optional
-        Path to CSV file. If None, uses migrations/001_initial_spec.csv
+        Path to CSV file. If None, uses src/spec/001_initial_spec.csv
     client : Client, optional
         Supabase client instance
         

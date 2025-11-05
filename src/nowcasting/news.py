@@ -106,7 +106,7 @@ def news_dfm(X_old: np.ndarray, X_new: np.ndarray, Res, t_fcst: int,
     If v_news is array:
         - y_old, y_new: (n_targets,) array
         - singlenews: (N, n_targets) array where each column is news for one target
-        
+    
     Note:
     -----
     Now supports both single and multiple target variables, matching MATLAB functionality.
@@ -289,13 +289,13 @@ def news_dfm(X_old: np.ndarray, X_new: np.ndarray, Res, t_fcst: int,
                 actual = np.full(N, np.nan)
                 forecast = np.full(N, np.nan)
                 weight = np.full(N, np.nan)
-                
-                for i in range(n_news):
-                    actual[v_miss[i]] = X_new[t_miss[i], v_miss[i]]
-                    forecast[v_miss[i]] = Res_old['X_sm'][t_miss[i], v_miss[i]]
-                    if i < len(gain):
-                        singlenews[v_miss[i]] = gain[i] * innov[i] / Wx[v_miss[i]] if Wx[v_miss[i]] != 0 else 0
-                        weight[v_miss[i]] = gain[i] / Wx[v_miss[i]] if Wx[v_miss[i]] != 0 else 0
+            
+            for i in range(n_news):
+                actual[v_miss[i]] = X_new[t_miss[i], v_miss[i]]
+                forecast[v_miss[i]] = Res_old['X_sm'][t_miss[i], v_miss[i]]
+                if i < len(gain):
+                    singlenews[v_miss[i]] = gain[i] * innov[i] / Wx[v_miss[i]] if Wx[v_miss[i]] != 0 else 0
+                    weight[v_miss[i]] = gain[i] / Wx[v_miss[i]] if Wx[v_miss[i]] != 0 else 0
             else:
                 # Multiple targets: singlenews is (N, n_targets)
                 singlenews = np.full((N, n_targets), np.nan)

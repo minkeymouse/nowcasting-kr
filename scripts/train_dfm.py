@@ -30,7 +30,7 @@ def main(cfg: DictConfig) -> None:
         python train_dfm.py --multirun dfm.threshold=1e-5,1e-4,1e-3  # Sweep
     """
     # Load model configuration - prefer CSV if config_path provided, otherwise use YAML
-    # Researchers update migrations/001_initial_spec.csv for model specifications
+    # Researchers update src/spec/001_initial_spec.csv for model specifications
     model_cfg = load_model_config_from_hydra(cfg.model)
     
     # Load data and DFM configs (use OmegaConf directly, no Pydantic classes needed)
