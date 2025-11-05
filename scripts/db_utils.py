@@ -173,14 +173,29 @@ def ensure_vintage_and_job(
     return vintage_id, job_id
 
 
-def finalize_ingestion_job(job_id: Optional[int], client: Optional[Any] = None) -> None:
+def finalize_ingestion_job(
+    job_id: Optional[int],
+    status: str = 'completed',
+    successful_series: Optional[int] = None,
+    failed_series: Optional[int] = None,
+    total_series: Optional[int] = None,
+    client: Optional[Any] = None
+) -> None:
     """
-    Finalize an ingestion job by updating its status.
+    Finalize an ingestion job by updating its status and statistics.
     
     Parameters
     ----------
     job_id : int, optional
         Job ID to finalize
+    status : str
+        Final status of the job (e.g., 'completed', 'failed'). Defaults to 'completed'.
+    successful_series : int, optional
+        Number of series successfully processed.
+    failed_series : int, optional
+        Number of series that failed to process.
+    total_series : int, optional
+        Total number of series attempted.
     client : Any, optional
         Supabase client (default: get_client())
     """
@@ -191,8 +206,15 @@ def finalize_ingestion_job(job_id: Optional[int], client: Optional[Any] = None) 
         client = get_client()
     
     try:
-        update_ingestion_job(job_id, status='completed', client=client)
-        logger.info(f"✅ Updated ingestion job {job_id} to completed")
+        update_ingestion_job(
+            job_id=job_id,
+            status=status,
+            successful_series=successful_series,
+            failed_series=failed_series,
+            total_series=total_series,
+            client=client
+        )
+        logger.info(f"✅ Updated ingestion job {job_id} to {status}")
     except Exception as e:
         logger.warning(f"Could not update ingestion job {job_id}: {e}")
 
