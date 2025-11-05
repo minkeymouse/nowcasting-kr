@@ -118,7 +118,7 @@ try:
     if bok_api_key:
         print("   ✅ BOK_API_KEY found")
         print("   🔧 Initializing BOK API client...")
-        bok_config = BOKAPIConfig(api_key=bok_api_key)
+        bok_config = BOKAPIConfig(auth_key=bok_api_key)
         bok_client = BOKAPIClient(bok_config)
         logger.info("✅ BOK API client initialized")
         print("   ✅ BOK API client initialized")
