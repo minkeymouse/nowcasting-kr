@@ -263,6 +263,10 @@ def upsert_series(
 ) -> Dict[str, Any]:
     """Insert or update a series."""
     data = series.model_dump(exclude_none=True)
+    # Remove any fields that don't exist in the database table
+    # (updated_at and created_at are managed by triggers)
+    data.pop('updated_at', None)
+    data.pop('created_at', None)
     if statistics_metadata_id is not None:
         data['statistics_metadata_id'] = statistics_metadata_id
     if item_code is not None:
@@ -598,7 +602,7 @@ def insert_observations_from_dataframe(
         df['date'] = pd.to_datetime(df['date']).dt.date.astype(str)
     
     # Select columns - required + optional
-    required_cols = ['series_id', 'date', 'value']
+    required_cols = ['series_id', 'date', 'value', 'vintage_id']  # vintage_id is required
     optional_cols = ['job_id', 'api_source', 'weight'] + \
                    [f'item_code{i}' for i in range(1, 5)] + \
                    [f'item_name{i}' for i in range(1, 5)]

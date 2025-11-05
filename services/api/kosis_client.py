@@ -66,7 +66,38 @@ class KOSISAPIClient(BaseAPIClient):
                     response = client.get(url, params=params)
                     response.raise_for_status()
                     
-                    data = response.json()
+                    # KOSIS sometimes returns invalid JSON (unquoted keys)
+                    # Try to parse as JSON, if it fails, fix unquoted keys
+                    text = response.text.strip()
+                    try:
+                        data = response.json()
+                    except ValueError as json_err:
+                        # Try to fix unquoted keys (common KOSIS issue)
+                        import re
+                        import json as json_lib
+                        
+                        # Check if it's the KOSIS error format: {err:"20",errMsg:"..."}
+                        if text.startswith('{') and 'err' in text.lower():
+                            # Fix unquoted keys for error response
+                            fixed_text = re.sub(r'(\w+):', r'"\1":', text)
+                            try:
+                                error_data = json_lib.loads(fixed_text)
+                                err_code = error_data.get('err', '')
+                                err_msg = error_data.get('errMsg', 'Unknown error')
+                                raise KOSISAPIError(f"KOSIS API error {err_code}: {err_msg}")
+                            except (json_lib.JSONDecodeError, KeyError):
+                                raise KOSISAPIError(f"KOSIS API returned invalid response: {text[:200]}")
+                        elif text.startswith('['):
+                            # Fix unquoted keys for array response
+                            # Pattern: {KEY:"value"} -> {"KEY":"value"}
+                            fixed_text = re.sub(r'\{(\w+):', r'{"\1":', text)
+                            fixed_text = re.sub(r',(\w+):', r',"\1":', fixed_text)
+                            try:
+                                data = json_lib.loads(fixed_text)
+                            except json_lib.JSONDecodeError:
+                                raise KOSISAPIError(f"KOSIS API returned invalid JSON: {text[:200]}")
+                        else:
+                            raise KOSISAPIError(f"Invalid JSON response: {str(json_err)}")
                     
                     # KOSIS returns list directly, not wrapped in dict
                     if isinstance(data, list):
@@ -214,7 +245,10 @@ class KOSISAPIClient(BaseAPIClient):
             org_id = '101'  # Default
             tbl_id = stat_code
         
-        url = f"{self.base_url}Param/statisticsParameterData.do"
+        # According to note_kosis.txt, use statisticsParameterData.do
+        # This endpoint REQUIRES both objL1 (필수) and itmId (필수)
+        # Note: base_url already includes '/openapi', so we need '/Param/statisticsParameterData.do'
+        url = f"{self.base_url}/Param/statisticsParameterData.do"
         params = {
             'method': 'getList',
             'apiKey': self.api_key,
@@ -224,21 +258,26 @@ class KOSISAPIClient(BaseAPIClient):
             'prdSe': frequency
         }
         
-        # Add classification codes (objL1~objL8)
-        # item_code1 = objL1, item_code2 = objL2, etc.
-        if item_code1:
-            params['objL1'] = item_code1
-        if item_code2:
-            params['objL2'] = item_code2
-        if item_code3:
-            params['objL3'] = item_code3
-        if item_code4:
-            params['objL4'] = item_code4
+        # objL1 is REQUIRED (필수) - use item_code1 or default to 'ALL' (works for many tables)
+        # Note: 'ALL' works for DT_1J22003 (CPI), '00' or specific codes for others
+        obj_l1 = item_code1 if item_code1 else 'ALL'
+        params['objL1'] = obj_l1
         
-        # For KOSIS, typically need itmId separately
-        # If item_code2 is provided and looks like an item ID, use it as itmId
-        # Otherwise, we need itmId as a separate parameter
-        # This is a simplified mapping - may need adjustment based on actual usage
+        # itmId is REQUIRED (필수) - use item_code2 or default to 'T' (total/common item)
+        # Note: 'T' works for DT_1J22003 (CPI total index), specific IDs for others
+        if item_code2:
+            params['itmId'] = item_code2
+        else:
+            # Default to 'T' - common for total/aggregate indices
+            params['itmId'] = 'T'
+        
+        # Add optional classification codes (objL2~objL8)
+        # Only add if provided and not '?' (KOSIS doesn't accept '?' as value)
+        if item_code3 and item_code3 != '?':
+            params['objL2'] = item_code3
+        if item_code4 and item_code4 != '?':
+            params['objL3'] = item_code4
+        
         
         # Date range
         if start_date:

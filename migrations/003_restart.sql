@@ -1080,8 +1080,20 @@ CREATE TRIGGER update_statistics_metadata_updated_at BEFORE UPDATE ON statistics
 CREATE TRIGGER update_statistics_items_updated_at BEFORE UPDATE ON statistics_items
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- Series table uses 'last_updated' instead of 'updated_at', so create a custom trigger function
+CREATE OR REPLACE FUNCTION update_series_last_updated()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+    NEW.last_updated = NOW();
+    RETURN NEW;
+END;
+$$;
+
 CREATE TRIGGER update_series_last_updated BEFORE UPDATE ON series
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    FOR EACH ROW EXECUTE FUNCTION update_series_last_updated();
 
 CREATE TRIGGER update_model_configs_updated_at BEFORE UPDATE ON model_configs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
