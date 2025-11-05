@@ -14,7 +14,7 @@ import pickle
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.nowcasting import load_config, load_data, dfm, load_data_from_db
+from src.nowcasting import load_config, load_data, dfm, load_data_from_db, load_model_config_from_hydra
 from src.nowcasting.config import ModelConfig, DataConfig, DFMConfig, AppConfig
 from src.utils import summarize
 import logging
@@ -33,9 +33,9 @@ def main(cfg: DictConfig) -> None:
         python train_dfm.py data.vintage=2016-12-23  # Use different vintage
         python train_dfm.py --multirun dfm.threshold=1e-5,1e-4,1e-3  # Sweep
     """
-    # Convert OmegaConf to Pydantic models for validation
-    # Model config is loaded from Hydra (config/model/*.yaml) - no database needed!
-    model_cfg = ModelConfig.from_dict(OmegaConf.to_container(cfg.model, resolve=True))
+    # Load model configuration - prefer CSV if config_path provided, otherwise use YAML
+    # Researchers update migrations/001_initial_spec.csv for model specifications
+    model_cfg = load_model_config_from_hydra(cfg.model)
     data_cfg = DataConfig(**OmegaConf.to_container(cfg.data, resolve=True))
     dfm_cfg = DFMConfig(**OmegaConf.to_container(cfg.dfm, resolve=True))
     

@@ -15,7 +15,7 @@ from omegaconf import DictConfig, OmegaConf
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.nowcasting import load_config, load_data, dfm, update_nowcast, load_data_from_db
+from src.nowcasting import load_config, load_data, dfm, update_nowcast, load_data_from_db, load_model_config_from_hydra
 from src.nowcasting.config import ModelConfig, DataConfig, DFMConfig
 import pickle
 
@@ -52,8 +52,9 @@ def main(cfg: DictConfig) -> None:
             logger.info(f"Workflow URL: {github_run_url}")
     
     try:
-        # Convert OmegaConf to Pydantic models
-        model_cfg = ModelConfig.from_dict(OmegaConf.to_container(cfg.model, resolve=True))
+        # Load model configuration - prefer CSV if config_path provided, otherwise use YAML
+        # Researchers update migrations/001_initial_spec.csv for model specifications
+        model_cfg = load_model_config_from_hydra(cfg.model)
         data_cfg = DataConfig(**OmegaConf.to_container(cfg.data, resolve=True))
         dfm_cfg = DFMConfig(**OmegaConf.to_container(cfg.dfm, resolve=True))
         
