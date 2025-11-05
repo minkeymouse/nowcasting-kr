@@ -721,7 +721,7 @@ def check_series_exists(
     bool
         True if series exists, False otherwise
     """
-    series = get_series(series_id, client)
+    series = get_series(series_id, client=client)
     return series is not None
 
 

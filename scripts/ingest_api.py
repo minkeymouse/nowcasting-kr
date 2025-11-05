@@ -1,66 +1,523 @@
-"""Main entry point for data ingestion (GitHub Actions)."""
+"""Main entry point for data ingestion (GitHub Actions).
+
+This script reads from src/spec/001_initial_spec.csv and updates the database:
+- For new series: fetches full history and inserts series metadata + observations
+- For existing series: fetches incremental data (from latest observation date) and inserts observations only
+
+Usage:
+    python scripts/ingest_api.py
+"""
 
 import sys
 import logging
-from datetime import date
 from pathlib import Path
+from datetime import date
+from typing import Dict, Any, Optional, Set
+from dotenv import load_dotenv
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-from services.ingestion.orchestrator import DataIngestionOrchestrator
-
-# Configure logging
+# Configure logging first
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-
 logger = logging.getLogger(__name__)
 
+# Add project root to path (script is in scripts/ directory)
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
 
-def main():
-    """Main entry point for data ingestion."""
-    import argparse
+# Load environment variables - check multiple locations
+env_locations = [
+    project_root / '.env.local',
+    Path('/home/minkeymouse/Nowcasting') / '.env.local',  # Main worktree
+    Path.home() / '.env.local',
+    Path('.env.local'),  # Current directory
+]
+
+env_loaded = False
+for env_path in env_locations:
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+        logger.info(f"✅ Loaded environment from: {env_path}")
+        env_loaded = True
+        break
+
+if not env_loaded:
+    # Try loading from current directory's .env.local if it exists
+    try:
+        load_dotenv('.env.local', override=True)
+        logger.info("✅ Loaded environment from current directory .env.local")
+        env_loaded = True
+    except:
+        pass
+
+if not env_loaded:
+    logger.warning("⚠️  .env.local not found in standard locations")
+    logger.warning("   Checked: project root, main worktree, home directory, current directory")
+
+import pandas as pd
+
+from database import (
+    get_client,
+    upsert_series,
+    get_series,
+    insert_observations_from_dataframe,
+    save_model_config,
+    get_source_id,
+    update_vintage_status,
+)
+from database.operations import (
+    get_latest_observation_date,
+    check_series_exists,
+)
+from database.models import SeriesModel
+from database.operations import TABLES
+from scripts.db_utils import (
+    RateLimiter,
+    initialize_api_clients,
+    ensure_vintage_and_job,
+    finalize_ingestion_job,
+    fetch_series_data,
+    get_next_period_date,
+)
+
+
+def main() -> None:
+    """Main ingestion workflow."""
     
-    parser = argparse.ArgumentParser(description='Run data ingestion')
-    parser.add_argument(
-        '--update-metadata',
-        action='store_true',
-        help='Update metadata before data collection'
+    print("=" * 80)
+    print("🔄 MACROECONOMIC FORECASTING DATABASE INGESTION")
+    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("Macroeconomic Forecasting Database Ingestion")
+    logger.info("=" * 80)
+    
+    # Load CSV specification (single source of truth)
+    csv_path = project_root / 'src' / 'spec' / '001_initial_spec.csv'
+    if not csv_path.exists():
+        logger.error(f"CSV specification file not found: {csv_path}")
+        print(f"❌ Error: CSV file not found: {csv_path}")
+        sys.exit(1)
+    
+    print(f"\n📄 CSV file: {csv_path}")
+    logger.info(f"CSV file: {csv_path}")
+    
+    # Load CSV
+    csv_df = pd.read_csv(csv_path)
+    print(f"   ✅ Loaded CSV: {len(csv_df)} series")
+    logger.info(f"Loaded CSV: {len(csv_df)} series")
+    
+    # Create a simple config-like object from CSV
+    class SimpleSeriesConfig:
+        def __init__(self, row):
+            self.series_id = row['series_id']
+            self.series_name = row['series_name']
+            self.frequency = row['frequency']
+            self.transformation = row['transformation']
+            self.category = row.get('category')
+            self.units = row.get('units')
+            self.api_code = row.get('api_code')
+            self.api_source = row.get('api_source')
+            # Block assignments
+            self.blocks = {
+                'Global': int(row.get('Global', 0)),
+                'Consumption': int(row.get('Consumption', 0)),
+                'Investment': int(row.get('Investment', 0)),
+                'External': int(row.get('External', 0))
+            }
+    
+    class SimpleModelConfig:
+        def __init__(self, df):
+            self.series = [SimpleSeriesConfig(row) for _, row in df.iterrows()]
+            self.config_name = csv_path.stem.replace('_', '-')
+            self.country = 'KR'
+            # Detect block names from columns
+            block_cols = [col for col in df.columns if col not in 
+                         ['series_id', 'series_name', 'frequency', 'transformation', 
+                          'category', 'units', 'api_code', 'api_source']]
+            self.block_names = block_cols if block_cols else ['Global', 'Consumption', 'Investment', 'External']
+    
+    model_cfg = SimpleModelConfig(csv_df)
+    csv_dict = csv_df.set_index('series_id').to_dict('index')
+    
+    print(f"   ✅ Parsed model config: {len(model_cfg.series)} series")
+    print(f"   📊 Block names: {', '.join(model_cfg.block_names)}")
+    logger.info(f"Parsed model config: {len(model_cfg.series)} series")
+    logger.info(f"Block names: {model_cfg.block_names}")
+    
+    # Initialize database client
+    print("\n📡 Connecting to database...")
+    client = get_client()
+    logger.info("✅ Database client initialized")
+    print("✅ Database connection established")
+    
+    # Initialize API clients
+    print("\n🔧 Initializing API clients...")
+    bok_client, kosis_client = initialize_api_clients()
+    
+    if not bok_client and not kosis_client:
+        logger.error("No API clients available. Check API keys.")
+        print("❌ Error: No API clients available")
+        sys.exit(1)
+    
+    # Get source IDs
+    bok_source_id = get_source_id('BOK', client) if bok_client else None
+    kosis_source_id = get_source_id('KOSIS', client) if kosis_client else None
+    
+    print(f"   ✅ BOK source_id: {bok_source_id}")
+    print(f"   ✅ KOSIS source_id: {kosis_source_id}")
+    
+    # Create vintage and ingestion job
+    vintage_date = date.today()
+    print(f"\n📦 Creating vintage and ingestion job for {vintage_date}...")
+    vintage_id, job_id = ensure_vintage_and_job(
+        vintage_date=vintage_date,
+        client=client,
+        dry_run=False
     )
     
-    args = parser.parse_args()
+    if vintage_id:
+        print(f"   ✅ Vintage: {vintage_id}")
+    if job_id:
+        print(f"   ✅ Ingestion job: {job_id}")
     
-    try:
-        orchestrator = DataIngestionOrchestrator()
-        result = orchestrator.run(update_metadata=args.update_metadata)
+    # Rate limiting
+    rate_limiter = RateLimiter(bok_delay=0.6, kosis_delay=0.5)
+    
+    all_observations = []
+    successfully_processed_series = set()  # Track series that were successfully saved
+    stats = {
+        'total': len(model_cfg.series),
+        'new_series': 0,
+        'existing_series': 0,
+        'successful': 0,
+        'failed': 0,
+        'skipped': 0,
+        'errors': []
+    }
+    
+    print("\n" + "=" * 80)
+    print(f"🔄 PROCESSING {len(model_cfg.series)} SERIES")
+    print("=" * 80)
+    logger.info(f"Processing {len(model_cfg.series)} series...")
+    
+    # Process each series
+    for i, series_cfg in enumerate(model_cfg.series, 1):
+        series_id = series_cfg.series_id
+        series_name = series_cfg.series_name
+        frequency = series_cfg.frequency
+        transformation = series_cfg.transformation
+        units = getattr(series_cfg, 'units', None)
+        category = getattr(series_cfg, 'category', None)
         
-        logger.info("=" * 80)
-        logger.info("Ingestion Summary")
-        logger.info("=" * 80)
-        logger.info(f"Vintage ID: {result['vintage_id']}")
-        logger.info(f"Job ID: {result['job_id']}")
-        logger.info(f"Total: {result['stats']['total']}")
-        logger.info(f"Successful: {result['stats']['successful']}")
-        logger.info(f"Failed: {result['stats']['failed']}")
-        logger.info(f"Skipped: {result['stats']['skipped']}")
+        print(f"\n[{i}/{len(model_cfg.series)}] {series_id}")
+        print(f"   Name: {series_name[:70]}...")
+        print(f"   Frequency: {frequency}, Transformation: {transformation}")
+        logger.info(f"[{i}/{len(model_cfg.series)}] {series_id}: {series_name}")
         
-        if result['stats']['errors']:
-            logger.warning("Errors encountered:")
-            for error in result['stats']['errors']:
-                logger.warning(f"  - {error}")
-        
-        # Exit with error code if failures
-        if result['stats']['failed'] > 0:
-            sys.exit(1)
+        try:
+            # Check if series exists
+            series_exists = check_series_exists(series_id, client)
             
-    except Exception as e:
-        logger.error(f"Fatal error in ingestion: {e}", exc_info=True)
+            # Get api_code and api_source from CSV
+            if series_id not in csv_dict:
+                logger.warning(f"  ⚠ Series {series_id} not found in CSV")
+                stats['skipped'] += 1
+                continue
+            
+            csv_row = csv_dict[series_id]
+            api_code = csv_row.get('api_code')
+            api_source = csv_row.get('api_source')
+            
+            if not api_code or not api_source:
+                logger.warning(f"  ⚠ Missing api_code or api_source for {series_id}")
+                stats['skipped'] += 1
+                continue
+            
+            # Get appropriate API client
+            api_client = None
+            source_id = None
+            if api_source == 'BOK' and bok_client:
+                api_client = bok_client
+                source_id = bok_source_id
+                rate_limiter.wait_if_needed(api_source)
+            elif api_source == 'KOSIS' and kosis_client:
+                api_client = kosis_client
+                source_id = kosis_source_id
+                rate_limiter.wait_if_needed(api_source)
+            else:
+                logger.warning(f"  ⚠ No API client available for {api_source}")
+                stats['skipped'] += 1
+                continue
+            
+            # Determine start_date based on whether series exists
+            start_date = None
+            end_date = None
+            
+            if series_exists:
+                # Incremental update: fetch from latest observation date forward
+                latest_date = get_latest_observation_date(series_id, vintage_id=None, client=client)
+                if latest_date:
+                    start_date = get_next_period_date(latest_date, frequency)
+                    print(f"   📅 Latest observation: {latest_date}, fetching from {start_date}")
+                    logger.info(f"  Latest observation: {latest_date}, fetching from {start_date}")
+                else:
+                    # No observations yet - fetch full history
+                    start_date = None
+                    print(f"   📅 No observations found - fetching full history")
+                    logger.info(f"  No observations found - fetching full history")
+            else:
+                # New series - fetch full history
+                stats['new_series'] += 1
+                print(f"   ✨ New series - fetching full history")
+                logger.info(f"  New series - fetching full history")
+            
+            # Fetch data
+            print(f"   🌐 Fetching data from {api_source} API (code: {api_code})...")
+            logger.info(f"  Fetching data from {api_source} API (code: {api_code})...")
+            df_data = fetch_series_data(
+                series_id=series_id,
+                api_code=api_code,
+                api_client=api_client,
+                source=api_source,
+                frequency=frequency,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            if df_data.empty:
+                print(f"   ⚠️  No data fetched - skipping")
+                logger.warning(f"  ⚠ No data fetched for {series_id}")
+                stats['skipped'] += 1
+                continue
+            
+            print(f"   ✅ Fetched {len(df_data)} data points")
+            if len(df_data) > 0:
+                print(f"      Date range: {df_data['date'].min()} to {df_data['date'].max()}")
+            logger.info(f"  ✓ Fetched {len(df_data)} data points")
+            
+            # Insert/update series metadata (only for new series)
+            if not series_exists:
+                print(f"   💾 Saving series metadata...")
+                series_model = SeriesModel(
+                    series_id=series_id,
+                    series_name=series_name,
+                    frequency=frequency,
+                    transformation=transformation,
+                    units=units,
+                    category=category,
+                    api_source=api_source,
+                    api_code=api_code,
+                    is_active=True
+                )
+                
+                # Workaround for trigger issue - use insert for new, skip for existing
+                existing_series = get_series(series_id, client=client)
+                if not existing_series:
+                    # New series - use direct insert to avoid trigger issue
+                    data = series_model.model_dump(exclude_none=True)
+                    data.pop('updated_at', None)
+                    data.pop('created_at', None)
+                    client.table('series').insert(data).execute()
+                    print(f"   ✅ Series metadata saved (new series)")
+                    logger.info(f"  ✓ Inserted series metadata for new series")
+            
+            # Add to observations list
+            df_data['vintage_id'] = vintage_id
+            df_data['job_id'] = job_id
+            all_observations.append(df_data)
+            
+            print(f"   ✅ Series {series_id} processed successfully")
+            successfully_processed_series.add(series_id)  # Track successful series
+            if series_exists:
+                stats['existing_series'] += 1
+            stats['successful'] += 1
+            
+        except Exception as e:
+            print(f"   ❌ Error: {str(e)}")
+            logger.error(f"  ❌ Error processing {series_id}: {e}", exc_info=True)
+            stats['failed'] += 1
+            stats['errors'].append(f"{series_id}: {str(e)[:100]}")
+        
+        print()
+    
+    # Insert all observations
+    print("\n" + "=" * 80)
+    print("💾 INSERTING OBSERVATIONS INTO DATABASE")
+    print("=" * 80)
+    if all_observations:
+        print(f"📊 Preparing {len(all_observations)} series for batch insertion...")
+        logger.info("Inserting observations into database...")
+        df_obs = pd.concat(all_observations, ignore_index=True)
+        
+        # Deduplicate observations
+        df_obs = df_obs.drop_duplicates(subset=['series_id', 'vintage_id', 'date'], keep='first')
+        print(f"   Total observations: {len(df_obs)} (after deduplication)")
+        print("   💾 Inserting into database...")
+        
+        result = insert_observations_from_dataframe(
+            df=df_obs,
+            vintage_id=vintage_id,
+            job_id=job_id,
+            client=client
+        )
+        
+        print(f"   ✅ Successfully inserted {len(df_obs)} observations")
+        logger.info(f"✓ Inserted {len(df_obs)} observations")
+    else:
+        print("⚠️  No observations to insert")
+    
+    # Save model configuration
+    print("\n" + "=" * 80)
+    print("💾 SAVING MODEL CONFIGURATION")
+    print("=" * 80)
+    print("📋 Preparing model configuration...")
+    logger.info("Saving model configuration to database...")
+    
+    # Use CSV filename as config name
+    config_name = model_cfg.config_name
+    print(f"   Config name: {config_name}")
+    
+    # Extract block assignments from ModelConfig
+    block_names = model_cfg.block_names
+    print(f"   Block names: {', '.join(block_names)}")
+    block_records = []
+    
+    for series_cfg in model_cfg.series:
+        # Only create block assignments for series that were successfully saved
+        if series_cfg.series_id not in successfully_processed_series:
+            logger.debug(f"Skipping block assignment for {series_cfg.series_id} (not in database)")
+            continue
+        
+        blocks = getattr(series_cfg, 'blocks', None)
+        if blocks:
+            for block_idx, block_name in enumerate(block_names):
+                # blocks is a dict with block_name as key, not index
+                if blocks.get(block_name, 0) == 1:
+                    block_records.append({
+                        'series_id': series_cfg.series_id,
+                        'block_name': block_name,
+                        'block_index': block_idx
+                    })
+    
+    # Convert to config_json format
+    config_json = {
+        'block_names': block_names,
+        'series': [
+            {
+                'series_id': s.series_id,
+                'series_name': s.series_name,
+                'frequency': s.frequency,
+                'transformation': s.transformation,
+                'units': getattr(s, 'units', None),
+                'category': getattr(s, 'category', None),
+                'blocks': getattr(s, 'blocks', None)
+            }
+            for s in model_cfg.series
+            if s.series_id in successfully_processed_series
+        ]
+    }
+    
+    # Save model config
+    print("   💾 Saving model configuration to database...")
+    config_result = save_model_config(
+        config_name=config_name,
+        config_json=config_json,
+        block_names=block_names,
+        description=f"Macroeconomic forecasting model configuration from {csv_path.name}",
+        country='KR',
+        client=client
+    )
+    
+    config_id = config_result['config_id']
+    print(f"   ✅ Saved model configuration: {config_name} (ID: {config_id})")
+    logger.info(f"✓ Saved model configuration: {config_name} (ID: {config_id})")
+    
+    # Save block assignments
+    if block_records:
+        print(f"   📊 Saving {len(block_records)} block assignments...")
+        
+        # Delete existing assignments and insert new ones
+        client.table(TABLES['model_block_assignments']).delete().eq('config_id', config_id).execute()
+        
+        # Insert in batches
+        batch_size = 100
+        batches = (len(block_records) + batch_size - 1) // batch_size
+        for i in range(0, len(block_records), batch_size):
+            batch_num = i // batch_size + 1
+            print(f"      Inserting batch {batch_num}/{batches}...")
+            batch = [
+                {**rec, 'config_id': config_id}
+                for rec in block_records[i:i + batch_size]
+            ]
+            client.table(TABLES['model_block_assignments']).insert(batch).execute()
+        
+        print(f"   ✅ Saved {len(block_records)} block assignments")
+        logger.info(f"✓ Saved {len(block_records)} block assignments")
+    else:
+        print("   ⚠️  No block assignments to save")
+    
+    # Update status
+    print("\n" + "=" * 80)
+    print("📝 UPDATING STATUS")
+    print("=" * 80)
+    print("   📅 Updating vintage status to 'completed'...")
+    update_vintage_status(
+        vintage_id=vintage_id,
+        status='completed',
+        client=client
+    )
+    print("   ✅ Vintage status updated")
+    
+    print("   📋 Updating ingestion job status...")
+    finalize_ingestion_job(
+        job_id=job_id,
+        status='completed',
+        successful_series=stats['successful'],
+        failed_series=stats['failed'],
+        total_series=stats['total'],
+        client=client
+    )
+    print("   ✅ Ingestion job status updated")
+    
+    # Print summary
+    print("\n" + "=" * 80)
+    print("📊 SUMMARY")
+    print("=" * 80)
+    print(f"   Total series: {stats['total']}")
+    print(f"   ✨ New series: {stats['new_series']}")
+    print(f"   🔄 Existing series: {stats['existing_series']}")
+    print(f"   ✅ Successful: {stats['successful']}")
+    print(f"   ❌ Failed: {stats['failed']}")
+    print(f"   ⏭️  Skipped: {stats['skipped']}")
+    logger.info(f"Total series: {stats['total']}")
+    logger.info(f"New series: {stats['new_series']}")
+    logger.info(f"Existing series: {stats['existing_series']}")
+    logger.info(f"Successful: {stats['successful']}")
+    logger.info(f"Failed: {stats['failed']}")
+    logger.info(f"Skipped: {stats['skipped']}")
+    
+    if stats['errors']:
+        print(f"\n⚠️  Errors ({len(stats['errors'])}):")
+        for error in stats['errors'][:10]:
+            print(f"   - {error}")
+        if len(stats['errors']) > 10:
+            print(f"   ... and {len(stats['errors']) - 10} more errors")
+    
+    success_rate = (stats['successful'] / stats['total'] * 100) if stats['total'] > 0 else 0
+    print(f"\n📈 Success rate: {success_rate:.1f}%")
+    
+    if stats['failed'] == 0 and stats['successful'] == stats['total']:
+        print("\n🎉 All series processed successfully!")
+    elif stats['failed'] > 0:
+        print(f"\n⚠️  {stats['failed']} series failed to process")
+    
+    print("=" * 80)
+    
+    # Exit with error code if failures
+    if stats['failed'] > 0:
         sys.exit(1)
 
 
 if __name__ == '__main__':
     main()
-
