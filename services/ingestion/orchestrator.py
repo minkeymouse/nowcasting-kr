@@ -23,7 +23,7 @@ from database.series import SeriesManager
 from services.ingestion.bok import BOKIngestion
 from services.ingestion.kosis import KOSISIngestion
 from database.settings import AppSettings, DataSourceConfig
-from database.utils import map_frequency_to_code
+from database.helpers import map_frequency_to_code
 from services.api.base import APIError
 
 logger = logging.getLogger(__name__)

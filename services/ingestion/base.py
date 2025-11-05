@@ -21,7 +21,7 @@ from database import (
 )
 from database.models import StatisticsMetadataModel, StatisticsItemModel
 from database.series import SeriesManager
-from database.utils import map_frequency_to_code
+from database.helpers import map_frequency_to_code
 from services.api.base import BaseAPIClient
 
 logger = logging.getLogger(__name__)

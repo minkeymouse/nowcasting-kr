@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any, Callable
 from .client import get_client
 from .operations import get_series, upsert_series
 from .models import SeriesModel
-from .utils import map_frequency_to_code
+from .helpers import map_frequency_to_code
 
 logger = logging.getLogger(__name__)
 
