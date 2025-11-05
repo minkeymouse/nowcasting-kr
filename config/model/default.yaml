@@ -1,13 +1,13 @@
 # Default model configuration
-# Researchers update migrations/001_initial_spec.csv for model specifications
+# Researchers update src/spec/001_initial_spec.csv for model specifications
 # CSV format is recommended for easy editing in Excel
 # 
 # Usage:
 #   python train_dfm.py                                    # Use CSV default
-#   python train_dfm.py model.config_path=migrations/001_initial_spec.csv
+#   python train_dfm.py model.config_path=src/spec/001_initial_spec.csv
 #   python train_dfm.py model=kr_dfm_v1                   # Use YAML instead (fallback)
 
 # If config_path is provided, load from CSV/YAML file directly
 # Otherwise, use kr_dfm_v1.yaml as fallback
-config_path: migrations/001_initial_spec.csv  # CSV file for researchers to update
+config_path: src/spec/001_initial_spec.csv  # CSV file for researchers to update
 fallback: kr_dfm_v1  # YAML fallback if config_path not found

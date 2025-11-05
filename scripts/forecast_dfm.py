@@ -23,6 +23,9 @@ from src.nowcasting import (
     load_config, load_data, dfm, update_nowcast, load_data_from_db,
     load_model_config_from_hydra
 )
+from src.nowcasting.forecasting import (
+    forecast_with_intervals, generate_forecast_dates
+)
 import pickle
 
 # Configure logging
@@ -57,7 +60,7 @@ def main(cfg: DictConfig) -> None:
     
     try:
         # Load model configuration - try DB first, then CSV/YAML
-        # Researchers update spec in DB or migrations/001_initial_spec.csv
+        # Researchers update spec in DB or src/spec/001_initial_spec.csv
         use_db_for_config = cfg.get('model', {}).get('use_db', True)
         model_cfg = load_model_config_from_hydra(cfg.model, use_db=use_db_for_config)
         
@@ -195,77 +198,85 @@ def main(cfg: DictConfig) -> None:
             update_nowcast(X_old, X_new, Time, model_cfg, Res, series, period,
                           vintage_old, vintage_new)
         
-        # Generate forecasts
-        logger.info("Generating forecasts...")
+        # Generate forecasts using proper AR dynamics
+        logger.info("Generating forecasts with AR dynamics...")
         
-        # Extract forecasts from DFM result
-        # Forecast logic: use smoothed factors to predict future values
-        if hasattr(Res, 'Zsmooth') and Res.Zsmooth is not None:
-            # Use smoothed factors for forecasting
-            factors = Res.Zsmooth  # (n_factors, T)
-            n_factors = factors.shape[0]
-            T = factors.shape[1]
+        # Forecast horizon (can be configured)
+        forecast_horizon = cfg.get('forecast', {}).get('horizon', 4)
+        confidence_level = cfg.get('forecast', {}).get('confidence_level', 0.95)
+        
+        # Get series index for target series
+        if series in model_cfg.SeriesID:
+            series_idx = model_cfg.SeriesID.index(series)
             
-            # Forecast horizon (can be configured)
-            forecast_horizon = cfg.get('forecast', {}).get('horizon', 4)
-            
-            # Get loading matrix C
-            C = Res.C  # (N, n_factors * p)
-            
-            # For simplicity, forecast using last factor values
-            # More sophisticated forecasting would use AR dynamics
-            last_factors = factors[:, -1:]  # (n_factors, 1)
-            
-            # Forecast values (simplified - uses last factor values)
-            # This is a placeholder - actual forecasting should use AR dynamics
-            forecast_values = {}
-            
-            # Get series index for target series
-            if series in model_cfg.SeriesID:
-                series_idx = model_cfg.SeriesID.index(series)
+            try:
+                # Generate forecasts with confidence intervals
+                forecast_results = forecast_with_intervals(
+                    Res=Res,
+                    config=model_cfg,
+                    horizon=forecast_horizon,
+                    series_indices=[series_idx],
+                    confidence_level=confidence_level
+                )
                 
-                # Extract relevant loadings for this series
-                # Simplified: use first factor loading
-                loading = C[series_idx, 0] if C.shape[1] > 0 else 0
+                # Get forecast dates
+                # Use last date from Time if available, otherwise use period
+                if 'Time' in locals() and len(Time) > 0:
+                    last_date = Time[-1]
+                else:
+                    # Parse period to get date
+                    if isinstance(period, str):
+                        last_date = pd.to_datetime(period)
+                    else:
+                        last_date = pd.Timestamp.now()
                 
-                # Forecast (simplified - should use proper AR forecasting)
-                base_value = loading * last_factors[0, 0] if last_factors.shape[0] > 0 else 0
+                # Determine frequency from series
+                series_freq = model_cfg.Frequency[series_idx]
+                forecast_dates = generate_forecast_dates(last_date, series_freq, forecast_horizon)
+                forecast_results['forecast_dates'] = forecast_dates
                 
-                # Store forecast for target date
-                forecast_date = pd.to_datetime(period).to_pydatetime().date() if isinstance(period, str) else period
+                # Extract forecasts for target series
+                forecast_values = forecast_results['forecast_levels'][:, 0]  # (horizon,)
+                lower_bounds = forecast_results['lower_bound'][:, 0]  # (horizon,)
+                upper_bounds = forecast_results['upper_bound'][:, 0]  # (horizon,)
                 
-                forecast_values[series] = {
-                    'value': float(base_value),
-                    'date': forecast_date
-                }
+                logger.info(f"Generated {forecast_horizon}-step ahead forecasts for {series}")
+                logger.info(f"Forecast dates: {forecast_dates[0].date()} to {forecast_dates[-1].date()}")
                 
-                logger.info(f"Forecast for {series}: {base_value:.4f} on {forecast_date}")
+                # Log first forecast
+                logger.info(
+                    f"Forecast for {series} on {forecast_dates[0].date()}: "
+                    f"{forecast_values[0]:.4f} "
+                    f"({lower_bounds[0]:.4f}, {upper_bounds[0]:.4f})"
+                )
                 
-                # Save forecast to database
+                # Save forecasts to database
                 if use_database and model_id:
                     try:
                         from database import get_client, save_forecast
                         
                         client = get_client()
                         
-                        save_forecast(
-                            model_id=model_id,
-                            series_id=series,
-                            forecast_date=forecast_date,
-                            forecast_value=base_value,
-                            lower_bound=None,  # Can be calculated from confidence intervals
-                            upper_bound=None,
-                            confidence_level=0.95,
-                            client=client
-                        )
-                        logger.info(f"Forecast saved to database for {series}")
+                        for h in range(forecast_horizon):
+                            save_forecast(
+                                model_id=model_id,
+                                series_id=series,
+                                forecast_date=forecast_dates[h].date(),
+                                forecast_value=float(forecast_values[h]),
+                                lower_bound=float(lower_bounds[h]),
+                                upper_bound=float(upper_bounds[h]),
+                                confidence_level=confidence_level,
+                                client=client
+                            )
+                        logger.info(f"Saved {forecast_horizon} forecasts to database for {series}")
                     except Exception as e:
-                        logger.warning(f"Failed to save forecast to database: {e}")
-            
-            else:
-                logger.warning(f"Series {series} not found in model configuration")
+                        logger.warning(f"Failed to save forecasts to database: {e}")
+                
+            except Exception as e:
+                logger.error(f"Error generating forecasts: {e}", exc_info=True)
+                logger.warning("Falling back to simplified forecast")
         else:
-            logger.warning("No smoothed factors available for forecasting")
+            logger.warning(f"Series {series} not found in model configuration")
         
         logger.info("=" * 80)
         logger.info("Forecasting completed successfully")
