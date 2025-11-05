@@ -16,7 +16,7 @@ from database import (
 )
 from database.models import StatisticsMetadataModel, StatisticsItemModel
 from database.settings import AppSettings
-from database.utils import map_frequency_to_code
+from database.helpers import map_frequency_to_code
 from services.api.kosis_client import KOSISAPIClient
 from services.ingestion.base import BaseIngestion
 
