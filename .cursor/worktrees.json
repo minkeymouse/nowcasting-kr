@@ -2,6 +2,6 @@
   "setup-worktree": [
     "source .venv/bin/activate && uv sync",
     "cp $ROOT_WORKTREE_PATH/.env.local .env.local",
-    "source .env.local"
+    "set -a && source .env.local && set +a"
   ]
 }

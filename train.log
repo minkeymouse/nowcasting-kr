@@ -1,0 +1,30 @@
+Traceback (most recent call last):
+  File "/home/minkeymouse/Nowcasting/scripts/train_dfm.py", line 17, in <module>
+    from src.nowcasting import load_config, load_data, dfm, load_model_config_from_hydra
+  File "/home/minkeymouse/Nowcasting/src/__init__.py", line 10, in <module>
+    from .nowcasting import (
+  File "/home/minkeymouse/Nowcasting/src/nowcasting/__init__.py", line 3, in <module>
+    from .config import ModelConfig, DataConfig, DFMConfig, AppConfig
+  File "/home/minkeymouse/Nowcasting/src/nowcasting/config.py", line 304, in <module>
+    cs.store(name="model_config", node=ModelConfig)
+  File "/home/minkeymouse/Nowcasting/.venv/lib/python3.12/site-packages/hydra/core/config_store.py", line 85, in store
+    cfg = OmegaConf.structured(node)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/minkeymouse/Nowcasting/.venv/lib/python3.12/site-packages/omegaconf/omegaconf.py", line 125, in structured
+    return OmegaConf.create(obj, parent, flags)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/minkeymouse/Nowcasting/.venv/lib/python3.12/site-packages/omegaconf/omegaconf.py", line 178, in create
+    return OmegaConf._create_impl(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/minkeymouse/Nowcasting/.venv/lib/python3.12/site-packages/omegaconf/omegaconf.py", line 900, in _create_impl
+    format_and_raise(node=None, key=None, value=None, msg=str(e), cause=e)
+  File "/home/minkeymouse/Nowcasting/.venv/lib/python3.12/site-packages/omegaconf/_utils.py", line 899, in format_and_raise
+    _raise(ex, cause)
+  File "/home/minkeymouse/Nowcasting/.venv/lib/python3.12/site-packages/omegaconf/_utils.py", line 797, in _raise
+    raise ex.with_traceback(sys.exc_info()[2])  # set env var OC_CAUSE=1 for full trace
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/minkeymouse/Nowcasting/.venv/lib/python3.12/site-packages/omegaconf/omegaconf.py", line 891, in _create_impl
+    raise ValidationError(
+omegaconf.errors.ValidationError: Input class 'ModelConfig' is not a structured config. did you forget to decorate it as a dataclass?
+    full_key: 
+    object_type=None
