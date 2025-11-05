@@ -158,9 +158,11 @@ def ensure_vintage_and_job(
     # Create ingestion job
     job_id = None
     try:
+        # Use a default run ID if not provided (for manual runs)
+        run_id = os.getenv('GITHUB_RUN_ID', f'manual-{vintage_date.isoformat()}')
         job_result = create_ingestion_job(
             vintage_date=vintage_date,
-            github_run_id=None,
+            github_run_id=run_id,
             client=client
         )
         job_id = job_result['job_id']
