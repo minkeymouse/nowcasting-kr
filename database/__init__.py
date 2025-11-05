@@ -54,6 +54,11 @@ from .models import (
     ObservationModel,
 )
 from .series import SeriesManager
+from .spec_manager import (
+    export_config_to_csv,
+    get_latest_spec_from_db,
+    sync_csv_from_db,
+)
 
 __all__ = [
     'get_client',
@@ -100,5 +105,8 @@ __all__ = [
     'DatabaseError',
     'NotFoundError',
     'ValidationError',
+    'export_config_to_csv',
+    'get_latest_spec_from_db',
+    'sync_csv_from_db',
 ]
 

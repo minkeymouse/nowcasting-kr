@@ -1,28 +1,38 @@
-"""Helper functions for loading model configurations from CSV or YAML.
+"""Configuration loading for DFM models.
 
-This module provides utilities for loading model configurations, with CSV as the
-primary format for researchers to update. CSV configs are easier to edit in Excel
-and maintain for large model specifications.
+This module provides functions to load model configurations from various sources:
+- CSV files (local specification files)
+- Database (latest specification from database)
+- YAML files (Hydra configs)
+
+The DFM module should use get_latest_spec_from_db() to always pull the latest
+specification from the database for forecasting.
 """
 
+import logging
 from pathlib import Path
-from typing import Union
-from omegaconf import DictConfig
+from typing import Union, Optional
+import pandas as pd
 
-from .config import ModelConfig
-from .data_loader import load_config
+logger = logging.getLogger(__name__)
 
 
-def load_model_config_from_hydra(cfg_model: DictConfig) -> ModelConfig:
-    """Load model configuration from Hydra config, supporting CSV or YAML.
+def load_config_from_db(
+    config_name: str = '001-initial-spec',
+    client=None
+):
+    """
+    Load model configuration from database.
     
-    Researchers update migrations/001_initial_spec.csv for model specifications.
-    This function handles both CSV and YAML configs transparently.
+    This is the recommended method for DFM module to get the latest spec,
+    ensuring it always uses the most up-to-date configuration from the database.
     
     Parameters
     ----------
-    cfg_model : DictConfig
-        Hydra model configuration dict
+    config_name : str
+        Name of the model configuration in database
+    client : Client, optional
+        Supabase client instance (if None, will be created automatically)
         
     Returns
     -------
@@ -31,53 +41,77 @@ def load_model_config_from_hydra(cfg_model: DictConfig) -> ModelConfig:
         
     Raises
     ------
-    FileNotFoundError
-        If config_path is specified but file doesn't exist
+    ValueError
+        If config_name not found in database
+    ImportError
+        If database module not available
     """
-    model_config_path = cfg_model.get('config_path')
-    if model_config_path:
-        # Load from CSV or YAML file (researchers update CSV)
-        config_file = Path(model_config_path)
-        if not config_file.is_absolute():
-            # Relative path - resolve from project root
-            # Try to find project root (where migrations/ exists)
-            current = Path.cwd()
-            for parent in [current] + list(current.parents):
-                candidate = parent / model_config_path
-                if candidate.exists():
-                    config_file = candidate
-                    break
-            else:
-                # Fallback: assume relative to script location
-                config_file = Path(__file__).parent.parent.parent / model_config_path
-        
-        if not config_file.exists():
-            raise FileNotFoundError(
-                f"Model config file not found: {config_file}\n"
-                f"Researchers should update: migrations/001_initial_spec.csv"
-            )
-        
-        return load_config(config_file)
-    else:
-        # Fallback to YAML config (legacy support)
-        from omegaconf import OmegaConf
-        return ModelConfig.from_dict(OmegaConf.to_container(cfg_model, resolve=True))
-
-
-def get_default_config_path() -> Path:
-    """Get default CSV config path for researchers to update.
+    try:
+        from database import get_latest_spec_from_db
+    except ImportError:
+        raise ImportError(
+            "Database module not available. Install required dependencies or use CSV file."
+        )
     
+    # Get latest spec from database as DataFrame
+    df = get_latest_spec_from_db(config_name=config_name, client=client)
+    
+    # Convert DataFrame to ModelConfig using existing CSV loader
+    # (reuse the CSV parsing logic)
+    from io import StringIO
+    csv_buffer = StringIO()
+    df.to_csv(csv_buffer, index=False)
+    csv_buffer.seek(0)
+    
+    # Use existing load_config_from_csv logic (import here to avoid Hydra issues)
+    from .data_loader import load_config_from_csv
+    return load_config_from_csv(csv_buffer)
+
+
+def load_config_from_file_or_db(
+    config_path: Optional[Union[str, Path]] = None,
+    config_name: Optional[str] = '001-initial-spec',
+    prefer_db: bool = True
+):
+    """
+    Load configuration from database or file, with preference for database.
+    
+    This is a convenience function that tries to load from database first,
+    then falls back to file if database is not available.
+    
+    Parameters
+    ----------
+    config_path : str or Path, optional
+        Path to CSV file (fallback)
+    config_name : str, optional
+        Database config name (default: '001-initial-spec')
+    prefer_db : bool
+        If True, try database first, then file. If False, try file first.
+        
     Returns
     -------
-    Path
-        Path to migrations/001_initial_spec.csv
+    ModelConfig
+        Model configuration object
     """
-    # Try to find project root (where migrations/ exists)
-    current = Path.cwd()
-    for parent in [current] + list(current.parents):
-        candidate = parent / 'migrations' / '001_initial_spec.csv'
-        if candidate.exists():
-            return candidate
-    
-    # Fallback: assume relative to this file
-    return Path(__file__).parent.parent.parent / 'migrations' / '001_initial_spec.csv'
+    if prefer_db:
+        # Try database first
+        try:
+            return load_config_from_db(config_name=config_name)
+        except (ImportError, ValueError) as e:
+            logger.warning(f"Could not load from database: {e}. Falling back to file.")
+            if config_path:
+                from .data_loader import load_config_from_csv
+                return load_config_from_csv(config_path)
+            else:
+                raise ValueError("No database config found and no file path provided")
+    else:
+        # Try file first
+        if config_path:
+            try:
+                from .data_loader import load_config_from_csv
+                return load_config_from_csv(config_path)
+            except Exception as e:
+                logger.warning(f"Could not load from file: {e}. Falling back to database.")
+                return load_config_from_db(config_name=config_name)
+        else:
+            return load_config_from_db(config_name=config_name)
