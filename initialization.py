@@ -607,7 +607,10 @@ def main() -> None:
         print(f"📊 Preparing {len(all_observations)} series for batch insertion...")
         logger.info("Inserting observations into database...")
         df_obs = pd.concat(all_observations, ignore_index=True)
-        print(f"   Total observations: {len(df_obs)}")
+        
+        # Deduplicate observations (same as test_initialization.py)
+        df_obs = df_obs.drop_duplicates(subset=['series_id', 'vintage_id', 'date'], keep='first')
+        print(f"   Total observations: {len(df_obs)} (after deduplication)")
         print("   💾 Inserting into database...")
         
         result = insert_observations_from_dataframe(
