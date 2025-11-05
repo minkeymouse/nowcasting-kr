@@ -7,7 +7,7 @@ This directory contains:
 
 2. On-demand/periodic scripts (not for GitHub Actions):
    - Training DFM models (train_dfm.py)
-   - Running nowcasting (run_nowcast.py)
+   - Running forecasting/nowcasting (forecast_dfm.py)
 
 For regular data ingestion (GitHub Actions), use scripts/ingest_data.py instead.
 """

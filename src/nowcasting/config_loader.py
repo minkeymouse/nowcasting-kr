@@ -13,16 +13,22 @@ from .config import ModelConfig
 from .data_loader import load_config
 
 
-def load_model_config_from_hydra(cfg_model: DictConfig) -> ModelConfig:
-    """Load model configuration from Hydra config, supporting CSV or YAML.
+def load_model_config_from_hydra(cfg_model: DictConfig, use_db: bool = True) -> ModelConfig:
+    """Load model configuration from database (latest) or CSV/YAML file.
     
-    Researchers update migrations/001_initial_spec.csv for model specifications.
-    This function handles both CSV and YAML configs transparently.
+    Priority order:
+    1. Database (if use_db=True) - loads latest spec from DB
+    2. CSV file (if config_path specified) - from migrations/001_initial_spec.csv
+    3. YAML file (fallback) - from config/model/*.yaml
+    
+    Researchers update the spec file/database, and this function always uses the latest.
     
     Parameters
     ----------
     cfg_model : DictConfig
         Hydra model configuration dict
+    use_db : bool, default True
+        If True, try to load latest spec from database first
         
     Returns
     -------
@@ -34,13 +40,33 @@ def load_model_config_from_hydra(cfg_model: DictConfig) -> ModelConfig:
     FileNotFoundError
         If config_path is specified but file doesn't exist
     """
+    # Try to load from database first (latest spec)
+    if use_db:
+        try:
+            from database import get_client, load_model_config
+            
+            client = get_client()
+            config_name = cfg_model.get('config_name', 'kr_dfm_v1')
+            
+            db_config = load_model_config(config_name, client=client)
+            if db_config and 'config_json' in db_config:
+                # Convert DB config to ModelConfig
+                from .config import ModelConfig
+                config_dict = db_config['config_json']
+                # Handle block_names from DB
+                if 'block_names' not in config_dict and 'block_names' in db_config:
+                    config_dict['block_names'] = db_config['block_names']
+                return ModelConfig.from_dict(config_dict)
+        except (ImportError, Exception) as e:
+            # Database not available or config not found - fall back to file
+            pass
+    
+    # Load from CSV or YAML file
     model_config_path = cfg_model.get('config_path')
     if model_config_path:
-        # Load from CSV or YAML file (researchers update CSV)
         config_file = Path(model_config_path)
         if not config_file.is_absolute():
             # Relative path - resolve from project root
-            # Try to find project root (where migrations/ exists)
             current = Path.cwd()
             for parent in [current] + list(current.parents):
                 candidate = parent / model_config_path
@@ -57,10 +83,12 @@ def load_model_config_from_hydra(cfg_model: DictConfig) -> ModelConfig:
                 f"Researchers should update: migrations/001_initial_spec.csv"
             )
         
+        from .data_loader import load_config
         return load_config(config_file)
     else:
         # Fallback to YAML config (legacy support)
         from omegaconf import OmegaConf
+        from .config import ModelConfig
         return ModelConfig.from_dict(OmegaConf.to_container(cfg_model, resolve=True))
 
 

@@ -15,7 +15,6 @@ import pickle
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.nowcasting import load_config, load_data, dfm, load_model_config_from_hydra
-from src.nowcasting.config import ModelConfig, DataConfig, DFMConfig, AppConfig
 from src.utils import summarize
 
 
@@ -34,35 +33,57 @@ def main(cfg: DictConfig) -> None:
     # Researchers update migrations/001_initial_spec.csv for model specifications
     model_cfg = load_model_config_from_hydra(cfg.model)
     
-    # Load data and DFM configs
-    data_cfg = DataConfig(**OmegaConf.to_container(cfg.data, resolve=True))
-    dfm_cfg = DFMConfig(**OmegaConf.to_container(cfg.dfm, resolve=True))
+    # Load data and DFM configs (use OmegaConf directly, no Pydantic classes needed)
+    data_cfg_dict = OmegaConf.to_container(cfg.data, resolve=True)
+    dfm_cfg_dict = OmegaConf.to_container(cfg.dfm, resolve=True)
     
     print(f"\n{'='*70}")
     print(f"DFM Estimation - Experiment: {cfg.get('experiment_name', 'default')}")
     print(f"{'='*70}\n")
     
-    # Construct data file path if not provided
-    if data_cfg.data_path:
-        data_file = Path(data_cfg.data_path)
-    else:
-        base_dir = Path(__file__).parent.parent.parent
-        data_file = base_dir / 'data' / data_cfg.country / f'{data_cfg.vintage}.csv'
-        
-        if not data_file.exists():
-            logger.error(f"CSV file not found: {data_file}")
-            logger.error("Please use database mode (data.use_database=true) or provide a CSV file")
-            raise FileNotFoundError(f"Data file not found: {data_file}")
+    # Extract settings from config dicts
+    use_database = data_cfg_dict.get('use_database', True)
+    data_path = data_cfg_dict.get('data_path')
+    country = data_cfg_dict.get('country', 'KR')
+    vintage = data_cfg_dict.get('vintage')
+    sample_start = data_cfg_dict.get('sample_start')
+    config_id = data_cfg_dict.get('config_id')
+    strict_mode = data_cfg_dict.get('strict_mode', False)
+    threshold = dfm_cfg_dict.get('threshold', 1e-5)
     
     # Load data
-    sample_start = pd.to_datetime(data_cfg.sample_start) if data_cfg.sample_start else None
-    X, Time, Z = load_data(data_file, model_cfg, sample_start=sample_start)
+    if use_database:
+        from src.nowcasting import load_data_from_db
+        sample_start_dt = pd.to_datetime(sample_start) if sample_start else None
+        X, Time, Z = load_data_from_db(
+            vintage_date=vintage,
+            config=model_cfg,
+            config_id=config_id,
+            sample_start=sample_start_dt,
+            strict_mode=strict_mode
+        )
+    else:
+        # File-based loading
+        if data_path:
+            data_file = Path(data_path)
+        else:
+            base_dir = Path(__file__).parent.parent.parent
+            data_file = base_dir / 'data' / country / f'{vintage}.csv'
+        
+        if not data_file.exists():
+            raise FileNotFoundError(
+                f"CSV file not found: {data_file}\n"
+                f"Use database mode (data.use_database=true) or provide CSV file"
+            )
+        
+        sample_start_dt = pd.to_datetime(sample_start) if sample_start else None
+        X, Time, Z = load_data(data_file, model_cfg, sample_start=sample_start_dt)
     
     # Summarize data
-    summarize(X, Time, model_cfg, data_cfg.vintage)
+    summarize(X, Time, model_cfg, vintage)
     
     # Run DFM estimation
-    Res = dfm(X, model_cfg, threshold=dfm_cfg.threshold)
+    Res = dfm(X, model_cfg, threshold=threshold)
     
     # Save results
     output_dir = Path(cfg.get('output_dir', '.'))
