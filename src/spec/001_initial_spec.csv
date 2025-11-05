@@ -1,5 +1,5 @@
 series_id,series_name,frequency,transformation,category,units,api_code,api_source,Global,Consumption,Investment,External
-BOK_200Y109,"2.1.2.2.3. 국내총생산에 대한 지출(원계열, 명목, 분기 및 연간)",q,pch,GDP,PCT,200Y109,BOK,1,0,0,0
+BOK_200Y109,"23.1.2.2.. 국내총생산에 대한 지출(원계열, 명목, 분기 및 연간)",q,pch,GDP,PCT,200Y109,BOK,1,0,0,0
 BOK_200Y105,"2.1.2.1.3. 경제활동별 GDP 및 GNI(원계열, 명목, 분기 및 연간)",q,pch,GDP,PCT,200Y105,BOK,1,0,0,0
 BOK_200Y161,"2.1.2.3.2. 부가가치 항목별 명목 GDP(원계열, 명목, 분기 및 연간)",q,pch,GDP,PCT,200Y161,BOK,1,0,0,0
 BOK_404Y017,4.1.1.4. 생산자물가지수-총지수(1910~1964),m,pch,Investment,PCT,404Y017,BOK,1,0,1,0

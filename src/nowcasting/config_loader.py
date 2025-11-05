@@ -26,7 +26,7 @@ def load_model_config_from_hydra(cfg_model: DictConfig, use_db: bool = True) -> 
     
     Priority order:
     1. Database (if use_db=True) - loads latest spec from DB
-    2. CSV file (if config_path specified) - from migrations/001_initial_spec.csv
+    2. CSV file (if config_path specified) - from src/spec/001_initial_spec.csv
     3. YAML file (fallback) - from config/model/*.yaml
     
     Researchers update the spec file/database, and this function always uses the latest.
@@ -88,7 +88,7 @@ def load_model_config_from_hydra(cfg_model: DictConfig, use_db: bool = True) -> 
         if not config_file.exists():
             raise FileNotFoundError(
                 f"Model config file not found: {config_file}\n"
-                f"Researchers should update: migrations/001_initial_spec.csv"
+                f"Researchers should update: src/spec/001_initial_spec.csv"
             )
         
         return load_config(config_file)
@@ -104,17 +104,17 @@ def get_default_config_path() -> Path:
     Returns
     -------
     Path
-        Path to migrations/001_initial_spec.csv
+        Path to src/spec/001_initial_spec.csv
     """
-    # Try to find project root (where migrations/ exists)
+    # Try to find project root (where src/spec/ exists)
     current = Path.cwd()
     for parent in [current] + list(current.parents):
-        candidate = parent / 'migrations' / '001_initial_spec.csv'
+        candidate = parent / 'src' / 'spec' / '001_initial_spec.csv'
         if candidate.exists():
             return candidate
     
     # Fallback: assume relative to this file
-    return Path(__file__).parent.parent.parent / 'migrations' / '001_initial_spec.csv'
+    return Path(__file__).parent.parent / 'spec' / '001_initial_spec.csv'
 
 
 def load_config_from_db(

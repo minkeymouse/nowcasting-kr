@@ -1,7 +1,10 @@
-"""Forecast generation script for DFM models.
+"""Nowcasting script for DFM models (MATLAB-compatible).
 
-This script generates forecasts using trained DFM models and saves them to the database.
-It consolidates both nowcasting (vintage comparison) and forecasting functionality.
+This script performs nowcasting (vintage comparison) using trained DFM models.
+It matches MATLAB functionality: compares old vs new vintage forecasts for the current period,
+and decomposes changes into news components.
+
+This is NOT forward forecasting - it only nowcasts the current period (t=now).
 """
 
 import sys
@@ -35,20 +38,22 @@ logger = logging.getLogger(__name__)
 
 @hydra.main(version_base=None, config_path="../config", config_name="defaults")
 def main(cfg: DictConfig) -> None:
-    """Run forecasting with Hydra configuration.
+    """Run nowcasting with Hydra configuration (MATLAB-compatible).
     
-    This script:
+    This script performs nowcasting (current period forecast comparison):
     1. Loads latest model spec from database (or CSV/YAML fallback)
     2. Loads data from database or files
     3. Estimates DFM model (if not already trained)
-    4. Generates forecasts
-    5. Saves forecasts to database
+    4. Compares old vs new vintage forecasts for current period
+    5. Decomposes changes into news components (MATLAB news_dfm functionality)
+    
+    This matches MATLAB functionality - no forward forecasting, only nowcasting.
     
     Usage:
         python forecast_dfm.py                                    # Use defaults
-        python forecast_dfm.py data.vintage_old=2016-12-16        # Specify vintage
-        python forecast_dfm.py series=GDPC1 period=2016q4         # Specific series
-        python forecast_dfm.py forecast.use_db=false              # Don't save to DB
+        python forecast_dfm.py data.vintage_old=2016-12-16        # Specify old vintage
+        python forecast_dfm.py data.vintage_new=2016-12-23        # Specify new vintage
+        python forecast_dfm.py series=GDPC1 period=2016q4         # Specific series and period
     """
     # GitHub Actions context
     github_run_id = os.getenv('GITHUB_RUN_ID')
@@ -57,7 +62,7 @@ def main(cfg: DictConfig) -> None:
     
     try:
         # Load model configuration - try DB first, then CSV/YAML
-        # Researchers update spec in DB or migrations/001_initial_spec.csv
+        # Researchers update spec in DB or src/spec/001_initial_spec.csv
         use_db_for_config = cfg.get('model', {}).get('use_db', True)
         model_cfg = load_model_config_from_hydra(cfg.model, use_db=use_db_for_config)
         
@@ -67,8 +72,15 @@ def main(cfg: DictConfig) -> None:
         
         # Extract settings
         use_database = data_cfg_dict.get('use_database', True)
-        vintage_old = cfg.get('vintage_old') or data_cfg_dict.get('vintage')
-        vintage_new = cfg.get('vintage_new') or data_cfg_dict.get('vintage')
+        vintage_old = cfg.get('vintage_old') or data_cfg_dict.get('vintage_old')
+        vintage_new = cfg.get('vintage_new') or data_cfg_dict.get('vintage_new') or data_cfg_dict.get('vintage')
+        
+        if not vintage_old or not vintage_new:
+            raise ValueError(
+                "Both vintage_old and vintage_new must be specified for nowcasting. "
+                "Nowcasting compares forecasts between two vintages for the same period."
+            )
+        
         series = cfg.get('series', data_cfg_dict.get('target_series', 'GDPC1'))
         period = cfg.get('period', data_cfg_dict.get('target_period', '2016q4'))
         threshold = dfm_cfg_dict.get('threshold', 1e-5)
@@ -76,7 +88,7 @@ def main(cfg: DictConfig) -> None:
         strict_mode = data_cfg_dict.get('strict_mode', False)
         
         logger.info("=" * 80)
-        logger.info(f"Forecasting - Series: {series}, Period: {period}")
+        logger.info(f"Nowcasting - Series: {series}, Period: {period}")
         logger.info(f"Vintage (old): {vintage_old}, Vintage (new): {vintage_new}")
         logger.info("=" * 80)
         
@@ -164,115 +176,52 @@ def main(cfg: DictConfig) -> None:
             logger.info(f"DFM model estimated and saved to {res_file}")
         
         # Load datasets for vintage comparison (nowcasting)
-        if vintage_old and vintage_old != vintage_new:
-            logger.info("Loading vintages for nowcast update...")
-            
-            if use_database:
-                X_old, Time_old, _ = load_data_from_db(
-                    vintage_date=vintage_old,
-                    config=model_cfg,
-                    config_id=config_id,
-                    strict_mode=strict_mode
-                )
-                X_new, Time, _ = load_data_from_db(
-                    vintage_date=vintage_new,
-                    config=model_cfg,
-                    config_id=config_id,
-                    strict_mode=strict_mode
-                )
-            else:
-                datafile_old = base_dir / 'data' / data_cfg_dict.get('country', 'KR') / f'{vintage_old}.csv'
-                datafile_new = base_dir / 'data' / data_cfg_dict.get('country', 'KR') / f'{vintage_new}.csv'
-                
-                if not datafile_old.exists() or not datafile_new.exists():
-                    raise FileNotFoundError("CSV data files not found")
-                
-                X_old, Time_old, _ = load_data(datafile_old, model_cfg)
-                X_new, Time, _ = load_data(datafile_new, model_cfg)
-            
-            # Update nowcast (news decomposition)
-            logger.info(f"Running nowcast update for {series}, period {period}")
-            update_nowcast(X_old, X_new, Time, model_cfg, Res, series, period,
-                          vintage_old, vintage_new)
+        logger.info("Loading vintages for nowcast comparison...")
         
-        # Generate forecasts
-        logger.info("Generating forecasts...")
-        
-        # Extract forecasts from DFM result
-        # Forecast logic: use smoothed factors to predict future values
-        if hasattr(Res, 'Zsmooth') and Res.Zsmooth is not None:
-            # Use smoothed factors for forecasting
-            factors = Res.Zsmooth  # (n_factors, T)
-            n_factors = factors.shape[0]
-            T = factors.shape[1]
-            
-            # Forecast horizon (can be configured)
-            forecast_horizon = cfg.get('forecast', {}).get('horizon', 4)
-            
-            # Get loading matrix C
-            C = Res.C  # (N, n_factors * p)
-            
-            # For simplicity, forecast using last factor values
-            # More sophisticated forecasting would use AR dynamics
-            last_factors = factors[:, -1:]  # (n_factors, 1)
-            
-            # Forecast values (simplified - uses last factor values)
-            # This is a placeholder - actual forecasting should use AR dynamics
-            forecast_values = {}
-            
-            # Get series index for target series
-            if series in model_cfg.SeriesID:
-                series_idx = model_cfg.SeriesID.index(series)
-                
-                # Extract relevant loadings for this series
-                # Simplified: use first factor loading
-                loading = C[series_idx, 0] if C.shape[1] > 0 else 0
-                
-                # Forecast (simplified - should use proper AR forecasting)
-                base_value = loading * last_factors[0, 0] if last_factors.shape[0] > 0 else 0
-                
-                # Store forecast for target date
-                forecast_date = pd.to_datetime(period).to_pydatetime().date() if isinstance(period, str) else period
-                
-                forecast_values[series] = {
-                    'value': float(base_value),
-                    'date': forecast_date
-                }
-                
-                logger.info(f"Forecast for {series}: {base_value:.4f} on {forecast_date}")
-                
-                # Save forecast to database
-                if use_database and model_id:
-                    try:
-                        from database import get_client, save_forecast
-                        
-                        client = get_client()
-                        
-                        save_forecast(
-                            model_id=model_id,
-                            series_id=series,
-                            forecast_date=forecast_date,
-                            forecast_value=base_value,
-                            lower_bound=None,  # Can be calculated from confidence intervals
-                            upper_bound=None,
-                            confidence_level=0.95,
-                            client=client
-                        )
-                        logger.info(f"Forecast saved to database for {series}")
-                    except Exception as e:
-                        logger.warning(f"Failed to save forecast to database: {e}")
-            
-            else:
-                logger.warning(f"Series {series} not found in model configuration")
+        if use_database:
+            # Load old vintage
+            X_old, Time_old, _ = load_data_from_db(
+                vintage_date=vintage_old,
+                config=model_cfg,
+                config_id=config_id,
+                strict_mode=strict_mode
+            )
+            # Load new vintage
+            X_new, Time, _ = load_data_from_db(
+                vintage_date=vintage_new,
+                config=model_cfg,
+                config_id=config_id,
+                strict_mode=strict_mode
+            )
+            logger.info("Vintages loaded successfully from database")
         else:
-            logger.warning("No smoothed factors available for forecasting")
+            # Load from files
+            datafile_old = base_dir / 'data' / data_cfg_dict.get('country', 'KR') / f'{vintage_old}.csv'
+            datafile_new = base_dir / 'data' / data_cfg_dict.get('country', 'KR') / f'{vintage_new}.csv'
+            
+            if not datafile_old.exists() or not datafile_new.exists():
+                raise FileNotFoundError(
+                    f"CSV files not found: {datafile_old} or {datafile_new}\n"
+                    f"Use database mode (data.use_database=true) or provide CSV files"
+                )
+            
+            logger.info(f"Loading data from {datafile_old} and {datafile_new}")
+            X_old, Time_old, _ = load_data(datafile_old, model_cfg)
+            X_new, Time, _ = load_data(datafile_new, model_cfg)
+        
+        # Update nowcast (news decomposition) - MATLAB functionality
+        logger.info(f"Running nowcast update for {series}, period {period}")
+        logger.info("This compares old vs new vintage forecasts for the current period (nowcasting)")
+        
+        update_nowcast(X_old, X_new, Time, model_cfg, Res, series, period,
+                      vintage_old, vintage_new)
         
         logger.info("=" * 80)
-        logger.info("Forecasting completed successfully")
+        logger.info("Nowcasting completed successfully")
         logger.info("=" * 80)
         
     except Exception as e:
-        logger.error(f"Fatal error in forecasting: {e}", exc_info=True)
+        logger.error(f"Fatal error in nowcasting: {e}", exc_info=True)
         sys.exit(1)
 
 
