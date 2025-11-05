@@ -343,11 +343,45 @@ def main() -> None:
     print(f"   ✅ Found CSV file: {csv_path}")
     try:
         print("   📖 Parsing CSV configuration...")
-        from src.nowcasting.data_loader import load_config_from_csv
-        model_cfg = load_config_from_csv(csv_path)
-        print(f"   ✅ Loaded model config: {len(model_cfg.series)} series")
+        # Load CSV directly to avoid Hydra initialization issues
+        csv_df = pd.read_csv(csv_path)
+        print(f"   ✅ Loaded CSV: {len(csv_df)} series")
+        logger.info(f"Loaded CSV: {len(csv_df)} series")
+        
+        # Create a simple config-like object from CSV
+        class SimpleSeriesConfig:
+            def __init__(self, row):
+                self.series_id = row['series_id']
+                self.series_name = row['series_name']
+                self.frequency = row['frequency']
+                self.transformation = row['transformation']
+                self.category = row.get('category')
+                self.units = row.get('units')
+                self.api_code = row.get('api_code')
+                self.api_source = row.get('api_source')
+                # Block assignments
+                self.blocks = {
+                    'Global': int(row.get('Global', 0)),
+                    'Consumption': int(row.get('Consumption', 0)),
+                    'Investment': int(row.get('Investment', 0)),
+                    'External': int(row.get('External', 0))
+                }
+        
+        class SimpleModelConfig:
+            def __init__(self, df):
+                self.series = [SimpleSeriesConfig(row) for _, row in df.iterrows()]
+                self.config_name = csv_path.stem.replace('_', '-')
+                self.country = 'KR'
+                # Detect block names from columns
+                block_cols = [col for col in df.columns if col not in 
+                             ['series_id', 'series_name', 'frequency', 'transformation', 
+                              'category', 'units', 'api_code', 'api_source']]
+                self.block_names = block_cols if block_cols else ['Global', 'Consumption', 'Investment', 'External']
+        
+        model_cfg = SimpleModelConfig(csv_df)
+        print(f"   ✅ Parsed model config: {len(model_cfg.series)} series")
         print(f"   📊 Block names: {', '.join(model_cfg.block_names)}")
-        logger.info(f"Loaded model config: {len(model_cfg.series)} series")
+        logger.info(f"Parsed model config: {len(model_cfg.series)} series")
         logger.info(f"Block names: {model_cfg.block_names}")
     except Exception as e:
         print(f"❌ Failed to load model config: {e}")
