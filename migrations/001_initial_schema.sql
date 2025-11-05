@@ -1,6 +1,11 @@
 -- ============================================================================
--- Initial Schema for Nowcasting Project
--- Supports multiple data sources: BOK, KOSIS, and future sources
+-- Migration: 001_initial_schema.sql
+-- Purpose: Initial database schema for DFM nowcasting system
+-- 
+-- Note: Initial series specification is defined in migrations/001_initial_spec.csv
+-- This CSV file contains the list of series, their transformations, and block assignments
+-- that will be used for DFM initialization. The initialization script reads from this CSV
+-- to fetch data and populate the database.
 -- ============================================================================
 
 -- ============================================================================
