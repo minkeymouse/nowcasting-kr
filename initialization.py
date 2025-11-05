@@ -52,6 +52,7 @@ from database import (
     create_ingestion_job,
     update_ingestion_job,
     upsert_series,
+    get_series,
     insert_observations_from_dataframe,
     save_model_config,
     get_source_id,
@@ -564,7 +565,6 @@ def main() -> None:
                     is_active=True
                 )
                 # Workaround for trigger issue - use insert for new, skip for existing
-                from database.operations import get_series
                 existing_series = get_series(series_id, client=client)
                 if not existing_series:
                     # New series - use direct insert to avoid trigger issue
