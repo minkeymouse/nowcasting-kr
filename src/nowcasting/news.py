@@ -288,7 +288,7 @@ def news_dfm(X_old: np.ndarray, X_new: np.ndarray, Res, t_fcst: int,
                 singlenews = np.full(N, np.nan)
                 actual = np.full(N, np.nan)
                 forecast = np.full(N, np.nan)
-            weight = np.full(N, np.nan)
+                weight = np.full(N, np.nan)
             
             for i in range(n_news):
                 actual[v_miss[i]] = X_new[t_miss[i], v_miss[i]]
