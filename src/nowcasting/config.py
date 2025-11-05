@@ -57,6 +57,8 @@ if PYDANTIC_AVAILABLE:
         transformation: str = Field(..., description="Transformation code")
         category: str = Field(..., description="Category classification")
         blocks: List[int] = Field(..., description="Block loading structure (binary list)")
+        api_code: Optional[str] = Field(None, description="API code for database agent to fetch data (e.g., BOK API code, FRED series ID)")
+        api_source: Optional[str] = Field(None, description="API source name (e.g., 'BOK', 'FRED', 'ECOS')")
         
         @field_validator('frequency')
         @classmethod
@@ -215,8 +217,7 @@ if PYDANTIC_AVAILABLE:
         vintage: Optional[str] = Field(None, description="Data vintage date (YYYY-MM-DD)")
         country: str = Field("US", description="Country code")
         sample_start: Optional[str] = Field(None, description="Sample start date (YYYY-MM-DD)")
-        data_path: Optional[str] = Field(None, description="Custom data file path")
-        load_excel: bool = Field(False, description="Force loading from Excel even if cache exists")
+        data_path: Optional[str] = Field(None, description="Custom data file path (CSV format)")
         # Database-related fields
         use_database: bool = Field(False, description="Use database instead of files")
         vintage_id: Optional[int] = Field(None, description="Vintage ID (alternative to vintage date)")
@@ -258,6 +259,8 @@ else:
         transformation: str
         category: str
         blocks: List[int]
+        api_code: Optional[str] = None
+        api_source: Optional[str] = None
     
     @dataclass
     class ModelConfig:
@@ -269,8 +272,7 @@ else:
         vintage: Optional[str] = None
         country: str = "US"
         sample_start: Optional[str] = None
-        data_path: Optional[str] = None
-        load_excel: bool = False
+        data_path: Optional[str] = None  # CSV file path
         # Database-related fields
         use_database: bool = False
         vintage_id: Optional[int] = None
