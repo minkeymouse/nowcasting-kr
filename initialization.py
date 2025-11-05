@@ -23,21 +23,24 @@ from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 import os
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
+# Configure logging first
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Add project root to path (script is at project root)
+project_root = Path(__file__).resolve().parent
 sys.path.insert(0, str(project_root))
 
-# Load environment variables
-env_paths = [
-    project_root / '.env.local',
-    project_root.parent / '.env.local',
-    Path.home() / 'Nowcasting' / '.env.local',
-]
-
-for env_path in env_paths:
-    if env_path.exists():
-        load_dotenv(env_path)
-        break
+# Load environment variables from project root
+env_path = project_root / '.env.local'
+if env_path.exists():
+    load_dotenv(env_path)
+    logger.info(f"✅ Loaded environment from: {env_path}")
+else:
+    logger.warning("⚠️  .env.local not found at project root")
 
 import pandas as pd
 import numpy as np
@@ -227,110 +230,167 @@ def main() -> None:
     
     args = parser.parse_args()
     
+    print("\n" + "=" * 80)
+    print("🚀 DFM DATABASE INITIALIZATION")
+    print("=" * 80)
     logger.info("=" * 80)
     logger.info("DFM Database Initialization")
     logger.info("=" * 80)
+    print(f"📄 CSV file: {args.csv_file}")
+    print(f"🧪 Dry run: {args.dry_run}")
     logger.info(f"CSV file: {args.csv_file}")
     logger.info(f"Dry run: {args.dry_run}")
+    print("=" * 80)
     logger.info("=" * 80)
-    logger.info()
+    print()
     
     # Load model configuration from CSV
+    print("\n📂 Loading CSV specification file...")
     csv_path = Path(args.csv_file)
     if not csv_path.is_absolute():
         csv_path = project_root / csv_path
     
     if not csv_path.exists():
+        print(f"❌ CSV file not found: {csv_path}")
         logger.error(f"CSV file not found: {csv_path}")
         sys.exit(1)
     
+    print(f"   ✅ Found CSV file: {csv_path}")
     try:
+        print("   📖 Parsing CSV configuration...")
         from src.nowcasting.data_loader import load_config_from_csv
         model_cfg = load_config_from_csv(csv_path)
+        print(f"   ✅ Loaded model config: {len(model_cfg.series)} series")
+        print(f"   📊 Block names: {', '.join(model_cfg.block_names)}")
         logger.info(f"Loaded model config: {len(model_cfg.series)} series")
         logger.info(f"Block names: {model_cfg.block_names}")
     except Exception as e:
+        print(f"❌ Failed to load model config: {e}")
         logger.error(f"Failed to load model config from CSV: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
     
     # Determine vintage date
+    print("\n📅 Determining vintage date...")
     if args.vintage_date:
         vintage_date = datetime.strptime(args.vintage_date, '%Y-%m-%d').date()
+        print(f"   ✅ Using provided vintage date: {vintage_date}")
     else:
         vintage_date = date.today()
+        print(f"   ✅ Using today's date: {vintage_date}")
     
     dry_run = args.dry_run
     
     logger.info(f"Vintage date: {vintage_date}")
+    print()
     logger.info()
     
     # Check if vintage already exists
+    print("🔍 Checking for existing vintage...")
     client = get_client()
     existing_vintage_id = get_latest_vintage_id(vintage_date=vintage_date, client=client)
     if existing_vintage_id:
+        print(f"⚠️  Vintage {vintage_date} already exists (ID: {existing_vintage_id})")
         logger.warning(f"Vintage {vintage_date} already exists (ID: {existing_vintage_id})")
         if not dry_run:
-            response = input("Continue anyway? (y/n): ")
+            response = input("   Continue anyway? (y/n): ")
             if response.lower() != 'y':
+                print("❌ Aborted by user")
                 logger.info("Aborted")
                 sys.exit(0)
+    else:
+        print(f"   ✅ No existing vintage found for {vintage_date}")
     
     # Create vintage
+    print("\n📦 Creating vintage and ingestion job...")
     if not dry_run:
+        print("   📅 Creating vintage...")
         vintage = create_vintage(
             vintage_date=vintage_date,
             country='KR',
             client=client
         )
         vintage_id = vintage['vintage_id']
+        print(f"   ✅ Created vintage: {vintage_id}")
         logger.info(f"Created vintage: {vintage_id}")
         
         # Create ingestion job
+        print("   📋 Creating ingestion job...")
         job = create_ingestion_job(
             vintage_id=vintage_id,
             github_run_id=None,
             client=client
         )
         job_id = job['job_id']
+        print(f"   ✅ Created ingestion job: {job_id}")
         logger.info(f"Created ingestion job: {job_id}")
     else:
         vintage_id = None
         job_id = None
+        print("   🧪 Dry run: Skipping vintage/job creation")
         logger.info("Dry run: Skipping vintage/job creation")
     
+    print()
     logger.info()
     
     # Initialize API clients
+    print("\n🔧 Initializing API clients...")
     bok_key = os.getenv('BOK_API_KEY')
     kosis_key = os.getenv('KOSIS_API_KEY')
     
     bok_client = None
     if bok_key:
+        print("   ✅ BOK_API_KEY found")
+        print("   🔌 Initializing BOK API client...")
         bok_config = BOKAPIConfig(auth_key=bok_key)
         bok_client = BOKAPIClient(bok_config)
+        print("   ✅ BOK API client initialized")
         logger.info("✓ BOK API client initialized")
+    else:
+        print("   ⚠️  BOK_API_KEY not found")
     
     kosis_client = None
     if kosis_key:
+        print("   ✅ KOSIS_API_KEY found")
+        print("   🔌 Initializing KOSIS API client...")
         kosis_config = KOSISAPIConfig(api_key=kosis_key)
         kosis_client = KOSISAPIClient(kosis_config)
+        print("   ✅ KOSIS API client initialized")
         logger.info("✓ KOSIS API client initialized")
+    else:
+        print("   ⚠️  KOSIS_API_KEY not found")
     
+    print()
     logger.info()
     
     # Get source IDs
+    print("\n📋 Getting source IDs from database...")
     try:
-        bok_source_id = get_source_id('BOK', client=client) if not dry_run else None
-        kosis_source_id = get_source_id('KOSIS', client=client) if not dry_run else None
+        if not dry_run:
+            print("   🔍 Retrieving BOK source ID...")
+            bok_source_id = get_source_id('BOK', client=client)
+            print(f"   ✅ BOK source_id: {bok_source_id}")
+            print("   🔍 Retrieving KOSIS source ID...")
+            kosis_source_id = get_source_id('KOSIS', client=client)
+            print(f"   ✅ KOSIS source_id: {kosis_source_id}")
+        else:
+            bok_source_id = None
+            kosis_source_id = None
+            print("   🧪 Dry run: Skipping source ID retrieval")
     except ValueError as e:
+        print(f"❌ Source not found: {e}")
+        print("   💡 Run initial setup to create data sources first")
         logger.error(f"Source not found: {e}")
         logger.error("Run initial setup to create data sources first")
         sys.exit(1)
     
     # Process each series
+    print("\n" + "=" * 80)
+    print(f"🔄 PROCESSING {len(model_cfg.series)} SERIES")
+    print("=" * 80)
     logger.info(f"Processing {len(model_cfg.series)} series...")
+    print()
     logger.info()
     
     all_observations = []
@@ -354,6 +414,9 @@ def main() -> None:
         units = getattr(series_cfg, 'units', None)
         category = getattr(series_cfg, 'category', None)
         
+        print(f"\n[{i}/{len(model_cfg.series)}] {series_id}")
+        print(f"   Name: {series_name[:70]}...")
+        print(f"   Frequency: {frequency}, Transformation: {transformation}")
         logger.info(f"[{i}/{len(model_cfg.series)}] {series_id}: {series_name}")
         
         try:
@@ -387,6 +450,7 @@ def main() -> None:
                 continue
             
             # Fetch data
+            print(f"   🌐 Fetching data from {api_source} API (code: {api_code})...")
             logger.info(f"  Fetching data from {api_source} API (code: {api_code})...")
             df_data = fetch_series_data(
                 series_id=series_id,
@@ -397,14 +461,19 @@ def main() -> None:
             )
             
             if df_data.empty:
+                print(f"   ⚠️  No data fetched - skipping")
                 logger.warning(f"  ⚠ No data fetched for {series_id}")
                 stats['skipped'] += 1
                 continue
             
+            print(f"   ✅ Fetched {len(df_data)} data points")
+            if len(df_data) > 0:
+                print(f"      Date range: {df_data['date'].min()} to {df_data['date'].max()}")
             logger.info(f"  ✓ Fetched {len(df_data)} data points")
             
             # Create/update series metadata
             if not dry_run:
+                print(f"   💾 Saving series metadata...")
                 series_model = SeriesModel(
                     series_id=series_id,
                     series_name=series_name,
@@ -417,28 +486,40 @@ def main() -> None:
                     is_active=True
                 )
                 upsert_series(series_model, client=client)
+                print(f"   ✅ Series metadata saved")
                 logger.info(f"  ✓ Updated series metadata")
+            else:
+                print(f"   🧪 Dry run: Skipping metadata save")
             
             # Add to observations list
             df_data['vintage_id'] = vintage_id
             df_data['job_id'] = job_id
             all_observations.append(df_data)
             
+            print(f"   ✅ Series {series_id} processed successfully")
             stats['successful'] += 1
             
         except Exception as e:
+            print(f"   ❌ Error: {str(e)}")
             logger.error(f"  ❌ Error processing {series_id}: {e}")
             stats['failed'] += 1
             stats['errors'].append(f"{series_id}: {str(e)}")
             import traceback
             traceback.print_exc()
         
+        print()
         logger.info()
     
     # Insert all observations
+    print("\n" + "=" * 80)
+    print("💾 INSERTING OBSERVATIONS INTO DATABASE")
+    print("=" * 80)
     if all_observations and not dry_run:
+        print(f"📊 Preparing {len(all_observations)} series for batch insertion...")
         logger.info("Inserting observations into database...")
         df_obs = pd.concat(all_observations, ignore_index=True)
+        print(f"   Total observations: {len(df_obs)}")
+        print("   💾 Inserting into database...")
         
         result = insert_observations_from_dataframe(
             df=df_obs,
@@ -447,18 +528,30 @@ def main() -> None:
             client=client
         )
         
+        print(f"   ✅ Successfully inserted {len(df_obs)} observations")
         logger.info(f"✓ Inserted {len(df_obs)} observations")
+    elif all_observations and dry_run:
+        df_obs = pd.concat(all_observations, ignore_index=True)
+        print(f"🧪 Dry run: Would insert {len(df_obs)} observations")
+    else:
+        print("⚠️  No observations to insert")
     
     # Save model configuration
+    print("\n" + "=" * 80)
+    print("💾 SAVING MODEL CONFIGURATION")
+    print("=" * 80)
     if not dry_run:
+        print("📋 Preparing model configuration...")
         logger.info()
         logger.info("Saving model configuration to database...")
         
         # Use CSV filename as config name (without extension)
         config_name = csv_path.stem.replace('_', '-')  # e.g., 001-initial-spec
+        print(f"   Config name: {config_name}")
         
         # Extract block assignments from ModelConfig
         block_names = model_cfg.block_names
+        print(f"   Block names: {', '.join(block_names)}")
         block_records = []
         
         for series_cfg in model_cfg.series:
@@ -490,6 +583,7 @@ def main() -> None:
         }
         
         # Save model config
+        print("   💾 Saving model configuration to database...")
         config_result = save_model_config(
             config_name=config_name,
             config_json=config_json,
@@ -500,10 +594,12 @@ def main() -> None:
         )
         
         config_id = config_result['config_id']
+        print(f"   ✅ Saved model configuration: {config_name} (ID: {config_id})")
         logger.info(f"✓ Saved model configuration: {config_name} (ID: {config_id})")
         
         # Save block assignments
         if block_records:
+            print(f"   📊 Saving {len(block_records)} block assignments...")
             from database.operations import TABLES
             
             # Delete existing assignments and insert new ones
@@ -511,22 +607,37 @@ def main() -> None:
             
             # Insert in batches
             batch_size = 100
+            batches = (len(block_records) + batch_size - 1) // batch_size
             for i in range(0, len(block_records), batch_size):
+                batch_num = i // batch_size + 1
+                print(f"      Inserting batch {batch_num}/{batches}...")
                 batch = [
                     {**rec, 'config_id': config_id}
                     for rec in block_records[i:i + batch_size]
                 ]
                 client.table(TABLES['model_block_assignments']).insert(batch).execute()
             
+            print(f"   ✅ Saved {len(block_records)} block assignments")
             logger.info(f"✓ Saved {len(block_records)} block assignments")
+        else:
+            print("   ⚠️  No block assignments to save")
+    else:
+        print("🧪 Dry run: Skipping model configuration save")
     
     # Update vintage status
+    print("\n" + "=" * 80)
+    print("📝 UPDATING STATUS")
+    print("=" * 80)
     if not dry_run and vintage_id:
+        print("   📅 Updating vintage status to 'completed'...")
         update_vintage_status(
             vintage_id=vintage_id,
             status='completed',
             client=client
         )
+        print("   ✅ Vintage status updated")
+        
+        print("   📋 Updating ingestion job status...")
         update_ingestion_job(
             job_id=job_id,
             status='completed',
@@ -535,29 +646,58 @@ def main() -> None:
             total_series=stats['total'],
             client=client
         )
+        print("   ✅ Ingestion job status updated")
+    else:
+        print("🧪 Dry run: Skipping status updates")
     
     # Summary
+    print("\n" + "=" * 80)
+    print("✅ INITIALIZATION SUMMARY")
+    print("=" * 80)
     logger.info()
     logger.info("=" * 80)
     logger.info("Initialization Summary")
     logger.info("=" * 80)
     if not dry_run:
+        print(f"📦 Vintage ID: {vintage_id}")
+        print(f"📋 Job ID: {job_id}")
         logger.info(f"Vintage ID: {vintage_id}")
         logger.info(f"Job ID: {job_id}")
+    print(f"\n📊 Statistics:")
+    print(f"   Total series: {stats['total']}")
+    print(f"   ✅ Successful: {stats['successful']}")
+    print(f"   ❌ Failed: {stats['failed']}")
+    print(f"   ⏭️  Skipped: {stats['skipped']}")
     logger.info(f"Total series: {stats['total']}")
     logger.info(f"Successful: {stats['successful']}")
     logger.info(f"Failed: {stats['failed']}")
     logger.info(f"Skipped: {stats['skipped']}")
     
     if stats['errors']:
+        print(f"\n⚠️  Errors encountered ({len(stats['errors'])}):")
         logger.warning("Errors encountered:")
-        for error in stats['errors']:
+        for error in stats['errors'][:10]:  # Show first 10 errors
+            print(f"   - {error}")
             logger.warning(f"  - {error}")
+        if len(stats['errors']) > 10:
+            print(f"   ... and {len(stats['errors']) - 10} more errors")
     
+    success_rate = (stats['successful'] / stats['total'] * 100) if stats['total'] > 0 else 0
+    print(f"\n📈 Success rate: {success_rate:.1f}%")
+    
+    if stats['failed'] == 0 and stats['successful'] == stats['total']:
+        print("\n🎉 All series processed successfully!")
+    elif stats['failed'] > 0:
+        print(f"\n⚠️  {stats['failed']} series failed to process")
+    
+    print("=" * 80)
     logger.info("=" * 80)
     
     if stats['failed'] > 0 and not args.dry_run:
+        print("\n❌ Exiting with error code due to failed series")
         sys.exit(1)
+    else:
+        print("\n✅ Initialization completed successfully!")
 
 
 if __name__ == '__main__':
