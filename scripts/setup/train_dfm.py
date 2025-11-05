@@ -67,10 +67,14 @@ def main(cfg: DictConfig) -> None:
             data_file = Path(data_cfg.data_path)
         else:
             base_dir = Path(__file__).parent.parent.parent
-            data_file = base_dir / 'data' / data_cfg.country / f'{data_cfg.vintage}.xls'
+            data_file = base_dir / 'data' / data_cfg.country / f'{data_cfg.vintage}.csv'
+            
+            if not data_file.exists():
+                logger.error(f"CSV file not found: {data_file}")
+                logger.error("Please use database mode (data.use_database=true) or provide a CSV file")
+                raise FileNotFoundError(f"Data file not found: {data_file}")
         
-        X, Time, Z = load_data(data_file, model_cfg, sample_start=sample_start, 
-                             load_excel=data_cfg.load_excel)
+        X, Time, Z = load_data(data_file, model_cfg, sample_start=sample_start)
         logger.info("Data loaded successfully from file")
     
     # Summarize data

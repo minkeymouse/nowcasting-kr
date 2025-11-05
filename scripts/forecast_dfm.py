@@ -88,20 +88,29 @@ def main(cfg: DictConfig) -> None:
         except FileNotFoundError:
             # Re-estimate if file not found or config mismatch
             logger.info('Estimating DFM model...')
-            data_file = base_dir / 'data' / data_cfg.country / f'{vintage_new}.xls'
-            X, Time, Z = load_data(data_file, model_cfg, load_excel=data_cfg.load_excel)
+            data_file = base_dir / 'data' / data_cfg.country / f'{vintage_new}.csv'
+            if not data_file.exists():
+                logger.error(f"CSV file not found: {data_file}")
+                logger.error("Please use database mode (data.use_database=true) or provide a CSV file")
+                raise FileNotFoundError(f"Data file not found: {data_file}")
+            X, Time, Z = load_data(data_file, model_cfg)
             Res = dfm(X, model_cfg, threshold=dfm_cfg.threshold)
             with open(res_file, 'wb') as f:
                 pickle.dump({'Res': Res, 'Config': model_cfg}, f)
             logger.info(f"DFM model estimated and saved to {res_file}")
         
         # Load datasets for each vintage
-        datafile_old = base_dir / 'data' / data_cfg.country / f'{vintage_old}.xls'
-        datafile_new = base_dir / 'data' / data_cfg.country / f'{vintage_new}.xls'
+        datafile_old = base_dir / 'data' / data_cfg.country / f'{vintage_old}.csv'
+        datafile_new = base_dir / 'data' / data_cfg.country / f'{vintage_new}.csv'
+        
+        if not datafile_old.exists() or not datafile_new.exists():
+            logger.error(f"CSV files not found: {datafile_old} or {datafile_new}")
+            logger.error("Please use database mode (data.use_database=true) or provide CSV files")
+            raise FileNotFoundError("CSV data files not found")
         
         logger.info(f"Loading data from {datafile_old} and {datafile_new}")
-        X_old, Time_old, _ = load_data(datafile_old, model_cfg, load_excel=data_cfg.load_excel)
-        X_new, Time, _ = load_data(datafile_new, model_cfg, load_excel=data_cfg.load_excel)
+        X_old, Time_old, _ = load_data(datafile_old, model_cfg)
+        X_new, Time, _ = load_data(datafile_new, model_cfg)
         
         # Update nowcast
         logger.info(f"Running nowcast for {series}, period {period}")

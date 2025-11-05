@@ -75,18 +75,28 @@ def load_config_from_yaml(configfile: Union[str, Path]) -> ModelConfig:
         return ModelConfig.from_dict(cfg_dict)
 
 
-def load_config_from_excel(configfile: Union[str, Path]) -> ModelConfig:
-    """Load model configuration from Excel file (backward compatibility).
+def load_config_from_csv(configfile: Union[str, Path]) -> ModelConfig:
+    """Load model configuration from CSV file.
+    
+    CSV format should have columns:
+    - series_id, series_name, frequency, transformation, category, units
+    - Block columns (named after block names, e.g., Global, Consumption, Investment, External)
+    - Block columns contain 0 or 1 (1 = series loads on that block)
+    
+    Example:
+        series_id,series_name,frequency,transformation,category,units,Global,Consumption,Investment,External
+        BOK_200Y001,GDP Growth Rate,q,pch,GDP,PCT,1,0,0,0
+        BOK_200Y002,Consumption,q,pch,Consumption,PCT,1,1,0,0
     
     Parameters
     ----------
     configfile : str or Path
-        Path to Excel specification file
+        Path to CSV specification file
         
     Returns
     -------
     ModelConfig
-        Model configuration (Pydantic model with validation)
+        Model configuration object
         
     Raises
     ------
@@ -99,80 +109,75 @@ def load_config_from_excel(configfile: Union[str, Path]) -> ModelConfig:
     if not configfile.exists():
         raise FileNotFoundError(f"Configuration file not found: {configfile}")
     
-    # Try openpyxl first (for .xlsx), then xlrd (for .xls)
     try:
-        df = pd.read_excel(configfile, sheet_name=0, engine='openpyxl')
+        df = pd.read_csv(configfile)
     except Exception as e:
-        try:
-            df = pd.read_excel(configfile, sheet_name=0, engine='xlrd')
-        except Exception as e2:
-            raise ValueError(f"Failed to read Excel file {configfile}: {e}. Also tried xlrd: {e2}")
+        raise ValueError(f"Failed to read CSV file {configfile}: {e}")
     
-    if 'Model' not in df.columns:
-        raise ValueError("'Model' column missing from model specification.")
-    df = df[df['Model'] == 1].copy()
+    # Required fields
+    required_fields = ['series_id', 'series_name', 'frequency', 'transformation', 'category', 'units']
+    optional_fields = ['api_code', 'api_source']  # Optional but useful for database agent
     
-    required_fields = ['SeriesID', 'SeriesName', 'Frequency', 'Units', 'Transformation', 'Category']
     missing = [f for f in required_fields if f not in df.columns]
     if missing:
-        raise ValueError(f"Missing columns: {', '.join(missing)}")
+        raise ValueError(f"Missing required columns: {', '.join(missing)}")
     
-    block_cols = [col for col in df.columns if col.startswith('Block')]
-    if not block_cols:
-        raise ValueError("No Block columns found.")
+    # Detect block columns (all columns that are not in required_fields or optional_fields)
+    all_columns = set(df.columns)
+    excluded_fields = set(required_fields) | set(optional_fields)
+    block_columns = sorted([col for col in all_columns if col not in excluded_fields])
     
-    blocks_data = np.nan_to_num(df[block_cols].values, nan=0.0).astype(int)
-    if not np.all(blocks_data[:, 0] == 1):
-        raise ValueError("All variables must load on global block.")
+    if not block_columns:
+        raise ValueError("No block columns found. Expected columns like 'Global', 'Consumption', etc.")
     
-    # Sort by frequency order
-    freq_order = ['d', 'w', 'm', 'q', 'sa', 'a']
-    perm = [i for freq in freq_order for i, f in enumerate(df['Frequency']) if f == freq]
+    # Validate block columns contain only 0 or 1
+    for block_col in block_columns:
+        if not df[block_col].isin([0, 1]).all():
+            raise ValueError(f"Block column '{block_col}' must contain only 0 or 1")
     
-    # Convert to legacy format dict for ModelConfig.from_dict()
-    spec_dict = {
-        'SeriesID': [df['SeriesID'].iloc[i] for i in perm],
-        'SeriesName': [df['SeriesName'].iloc[i] for i in perm],
-        'Frequency': [df['Frequency'].iloc[i] for i in perm],
-        'Units': [df['Units'].iloc[i] for i in perm],
-        'Transformation': [df['Transformation'].iloc[i] for i in perm],
-        'Category': [df['Category'].iloc[i] for i in perm],
-        'Blocks': blocks_data[perm, :],
-        'BlockNames': [re.sub(r'Block\d+-', '', col) for col in block_cols]
-    }
+    # Ensure all series load on at least one block (first block should always be 1)
+    if block_columns[0] not in df.columns:
+        raise ValueError(f"First block column '{block_columns[0]}' is required")
     
-    # Map transformations to readable units
-    transform_map = {
-        'lin': 'Levels (No Transformation)', 'chg': 'Change (Difference)',
-        'ch1': 'Year over Year Change (Difference)', 'pch': 'Percent Change',
-        'pc1': 'Year over Year Percent Change', 'pca': 'Percent Change (Annual Rate)',
-        'cch': 'Continuously Compounded Rate of Change',
-        'cca': 'Continuously Compounded Annual Rate of Change', 'log': 'Natural Log'
-    }
-    spec_dict['UnitsTransformed'] = [transform_map.get(t, t) for t in spec_dict['Transformation']]
+    if not (df[block_columns[0]] == 1).all():
+        raise ValueError(f"All series must load on the first block '{block_columns[0]}' (Global)")
     
-    print('\n\n\nTable 1: Model specification')
-    try:
-        print(pd.DataFrame({
-            'SeriesID': spec_dict['SeriesID'],
-            'SeriesName': spec_dict['SeriesName'],
-            'Units': spec_dict['Units'],
-            'UnitsTransformed': spec_dict['UnitsTransformed']
-        }).to_string(index=False))
-    except:
-        pass
-    print('\n\n\n')
+    # Build blocks array (N x n_blocks)
+    blocks_data = df[block_columns].values.astype(int)
     
-    return ModelConfig.from_dict(spec_dict)
+    # Convert to ModelConfig format
+    from .config import SeriesConfig
+    
+    series_list = []
+    for idx, row in df.iterrows():
+        # Build block array from block columns
+        blocks = [int(row[col]) for col in block_columns]
+        
+        series_list.append(SeriesConfig(
+            series_id=row['series_id'],
+            series_name=row['series_name'],
+            frequency=row['frequency'],
+            transformation=row['transformation'],
+            category=row['category'],
+            units=row['units'],
+            blocks=blocks,
+            api_code=row.get('api_code'),  # Optional field
+            api_source=row.get('api_source')  # Optional field
+        ))
+    
+    return ModelConfig(series=series_list, block_names=block_columns)
+
+
+# Note: Excel support removed - use CSV or YAML configs instead
 
 
 def load_config(configfile: Union[str, Path]) -> ModelConfig:
-    """Load model configuration from file (auto-detects YAML or Excel).
+    """Load model configuration from file (auto-detects YAML or CSV).
     
     Parameters
     ----------
     configfile : str or Path
-        Path to configuration file (.yaml, .yml, .xlsx, or .xls)
+        Path to configuration file (.yaml, .yml, or .csv)
         
     Returns
     -------
@@ -193,10 +198,10 @@ def load_config(configfile: Union[str, Path]) -> ModelConfig:
     suffix = configfile.suffix.lower()
     if suffix in ['.yaml', '.yml']:
         return load_config_from_yaml(configfile)
-    elif suffix in ['.xlsx', '.xls']:
-        return load_config_from_excel(configfile)
+    elif suffix == '.csv':
+        return load_config_from_csv(configfile)
     else:
-        raise ValueError(f"Unsupported file format: {suffix}. Use .yaml, .yml, .xlsx, or .xls")
+        raise ValueError(f"Unsupported file format: {suffix}. Use .yaml, .yml, or .csv")
 
 
 def _transform_series(Z: np.ndarray, formula: str, freq: str, step: int) -> np.ndarray:
@@ -262,26 +267,28 @@ def transform_data(Z: np.ndarray, Time: pd.DatetimeIndex, config: ModelConfig) -
 
 
 def read_data(datafile: Union[str, Path]) -> Tuple[np.ndarray, pd.DatetimeIndex, List[str]]:
-    """Read data from Excel file."""
+    """Read data from CSV file.
+    
+    CSV file should have:
+    - First column: Date (YYYY-MM-DD format or pandas parseable)
+    - Subsequent columns: Series data (one column per series)
+    - Header row: Series IDs (matching config.SeriesID)
+    """
     datafile = Path(datafile)
-    # Try openpyxl first (for .xlsx), then xlrd (for .xls)
-    try:
-        df = pd.read_excel(datafile, sheet_name='data', engine='openpyxl')
-    except:
-        df = pd.read_excel(datafile, sheet_name='data', engine='xlrd')
-    mnemonics = df.columns[1:].tolist()
+    if not datafile.exists():
+        raise FileNotFoundError(f"Data file not found: {datafile}")
     
-    # Parse dates
-    date_col = df.iloc[:, 0]
+    # Read CSV file
     try:
-        Time = pd.to_datetime(date_col, format='%m/%d/%Y')
-    except:
-        try:
-            Time = pd.Timestamp('1899-12-30') + pd.to_timedelta(date_col - 1, unit='D')
-        except:
-            Time = pd.to_datetime(date_col, errors='coerce')
+        df = pd.read_csv(datafile, index_col=0, parse_dates=True)
+    except Exception as e:
+        raise ValueError(f"Failed to read CSV file {datafile}: {e}")
     
-    return df.iloc[:, 1:].values.astype(float), Time, mnemonics
+    mnemonics = df.columns.tolist()
+    Time = df.index
+    Z = df.values.astype(float)
+    
+    return Z, Time, mnemonics
 
 
 def sort_data(Z: np.ndarray, Mnem: List[str], config: ModelConfig) -> Tuple[np.ndarray, List[str]]:
@@ -373,7 +380,7 @@ def _load_from_mat_cache(datafile_mat: Path) -> Optional[Tuple[np.ndarray, pd.Da
         print(f'  Loaded from cached .mat file: {datafile_mat}')
         return Z, Time, Mnem
     except Exception as e:
-        warnings.warn(f"Failed to load from .mat cache ({e}). Reading from Excel instead.")
+        warnings.warn(f"Failed to load from .mat cache ({e}). Reading from CSV instead.")
         return None
 
 
@@ -395,49 +402,48 @@ def _save_to_mat_cache(Z: np.ndarray, Time: pd.DatetimeIndex, Mnem: List[str],
 
 
 def load_data(datafile: Union[str, Path], config: ModelConfig,
-              sample_start: Optional[Union[pd.Timestamp, str]] = None,
-              load_excel: bool = False) -> Tuple[np.ndarray, pd.DatetimeIndex, np.ndarray]:
-    """Load vintage of data from file and format.
+              sample_start: Optional[Union[pd.Timestamp, str]] = None) -> Tuple[np.ndarray, pd.DatetimeIndex, np.ndarray]:
+    """Load and transform data from CSV file.
     
-    This function supports caching to .mat files for faster subsequent loads,
-    matching MATLAB's behavior. If a cached .mat file exists and load_excel=False,
-    data will be loaded from the cache instead of reading Excel.
+    This function reads data from a CSV file, sorts it to match the model
+    configuration, and applies the specified transformations.
+    
+    Note: For production use, prefer `load_data_from_db()` which loads data
+    directly from the database.
     
     Parameters
     ----------
     datafile : str or Path
-        Path to Excel data file (.xlsx or .xls)
+        Path to CSV data file (.csv)
     config : ModelConfig
         Model configuration object
-    sample_start : Timestamp or str, optional
-        Start date for estimation sample. Data before this date will be dropped.
-    load_excel : bool, default False
-        If True, forces reading from Excel even if cached .mat file exists.
-        If False and .mat cache exists, loads from cache.
+    sample_start : pd.Timestamp or str, optional
+        Start date for sample (YYYY-MM-DD). If None, uses all available data.
+        Data before this date will be dropped.
         
     Returns
     -------
     X : np.ndarray
-        Transformed data matrix (T x N)
+        Transformed data matrix (T x N), ready for DFM estimation
     Time : pd.DatetimeIndex
-        Time index for observations
+        Time index for the data
     Z : np.ndarray
-        Raw (untransformed) data matrix (T x N)
+        Original untransformed data (T x N), for reference
     """
     print('Loading data...')
     
     datafile = Path(datafile)
-    if datafile.suffix.lower() not in ['.xlsx', '.xls']:
-        raise ValueError('Only Microsoft Excel workbook files supported.')
+    if datafile.suffix.lower() != '.csv':
+        raise ValueError('Only CSV files supported. Use database for production data loading.')
     
     # Create path for cached .mat file (matching MATLAB behavior)
     mat_dir = datafile.parent / 'mat'
     datafile_mat = mat_dir / f'{datafile.stem}.mat'
     
     # Try to load from cache first
-    cache_data = None if load_excel else _load_from_mat_cache(datafile_mat)
+    cache_data = _load_from_mat_cache(datafile_mat)
     
-    # Read from Excel if cache load failed or was skipped
+    # Read from CSV if cache load failed
     if cache_data is None:
         Z, Time, Mnem = read_data(datafile)
         _save_to_mat_cache(Z, Time, Mnem, mat_dir, datafile_mat)

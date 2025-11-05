@@ -441,8 +441,8 @@ def init_conditions(x: np.ndarray, r: np.ndarray, p: int, blocks: np.ndarray,
     Examples
     --------
     >>> from src.nowcasting import load_config, load_data
-    >>> config = load_config('Spec_US_example.xls')
-    >>> X, Time, Z = load_data('data.xls', config)
+    >>> config = load_config('config/model/kr_dfm_v1.yaml')
+    >>> X, Time, Z = load_data_from_db(config=config, vintage_date='2024-01-01')
     >>> # Standardize data
     >>> x = (X - np.nanmean(X, axis=0)) / np.nanstd(X, axis=0)
     >>> # Set up parameters
@@ -1987,10 +1987,11 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5) -> DFMResult:
     >>> from src.nowcasting import load_config, load_data, dfm
     >>> import pandas as pd
     >>> # Load configuration
-    >>> config = load_config('matlab/Spec_US_example.xls')
-    >>> # Load data
-    >>> X, Time, Z = load_data('data/US/2016-06-29.xls', config, 
-    ...                        sample_start=pd.Timestamp('2000-01-01'))
+    >>> config = load_config('config/model/kr_dfm_v1.yaml')
+    >>> # Load data from database
+    >>> from src.nowcasting import load_data_from_db
+    >>> X, Time, Z = load_data_from_db(config=config, vintage_date='2016-06-29',
+    ...                                 sample_start=pd.Timestamp('2000-01-01'))
     >>> # Estimate DFM
     >>> Res = dfm(X, config, threshold=1e-4)
     >>> # Access results

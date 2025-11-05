@@ -2,7 +2,7 @@
 
 from .config import ModelConfig, DataConfig, DFMConfig, AppConfig
 from .data_loader import (
-    load_config, load_config_from_yaml, load_config_from_excel, load_data, transform_data,
+    load_config, load_config_from_yaml, load_config_from_csv, load_data, transform_data,
     load_data_from_db
 )
 from .dfm import DFMResult, dfm
@@ -15,7 +15,7 @@ load_spec = load_config  # Deprecated: use load_config
 
 __all__ = [
     'ModelConfig', 'DataConfig', 'DFMConfig', 'AppConfig',
-    'load_config', 'load_config_from_yaml', 'load_config_from_excel',
+    'load_config', 'load_config_from_yaml', 'load_config_from_csv',
     'load_data', 'transform_data',
     'load_data_from_db',
     'DFMResult', 'dfm',
