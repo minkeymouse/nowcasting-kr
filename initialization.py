@@ -563,9 +563,21 @@ def main() -> None:
                     api_code=api_code,
                     is_active=True
                 )
-                upsert_series(series_model, client=client)
-                print(f"   ✅ Series metadata saved")
-                logger.info(f"  ✓ Updated series metadata")
+                # Workaround for trigger issue - use insert for new, skip for existing
+                from database.operations import get_series
+                existing_series = get_series(series_id, client=client)
+                if not existing_series:
+                    # New series - use direct insert to avoid trigger issue
+                    data = series_model.model_dump(exclude_none=True)
+                    data.pop('updated_at', None)
+                    data.pop('created_at', None)
+                    client.table('series').insert(data).execute()
+                    print(f"   ✅ Series metadata saved (new series)")
+                    logger.info(f"  ✓ Inserted series metadata for new series")
+                else:
+                    # Existing series - skip update to avoid trigger issue
+                    print(f"   ⏭️  Series already exists, skipping metadata update")
+                    logger.info(f"  ⏭️  Series already exists, skipping metadata update")
             else:
                 print(f"   🧪 Dry run: Skipping metadata save")
             
