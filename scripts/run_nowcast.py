@@ -15,8 +15,9 @@ from omegaconf import DictConfig, OmegaConf
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.nowcasting import load_config, load_data, dfm, update_nowcast
+from src.nowcasting import load_config, load_data, dfm, update_nowcast, load_data_from_db
 from src.nowcasting.config import ModelConfig, DataConfig, DFMConfig
+import pickle
 
 # Configure logging
 logging.basicConfig(
@@ -88,20 +89,49 @@ def main(cfg: DictConfig) -> None:
         except FileNotFoundError:
             # Re-estimate if file not found or config mismatch
             logger.info('Estimating DFM model...')
-            data_file = base_dir / 'data' / data_cfg.country / f'{vintage_new}.xls'
-            X, Time, Z = load_data(data_file, model_cfg, load_excel=data_cfg.load_excel)
+            if data_cfg.use_database:
+                # Load from database
+                X, Time, Z = load_data_from_db(
+                    vintage_date=vintage_new,
+                    config=model_cfg,
+                    config_id=data_cfg.config_id,
+                    strict_mode=data_cfg.strict_mode
+                )
+            else:
+                # Load from file
+                data_file = base_dir / 'data' / data_cfg.country / f'{vintage_new}.xls'
+                X, Time, Z = load_data(data_file, model_cfg, load_excel=data_cfg.load_excel)
             Res = dfm(X, model_cfg, threshold=dfm_cfg.threshold)
             with open(res_file, 'wb') as f:
                 pickle.dump({'Res': Res, 'Config': model_cfg}, f)
             logger.info(f"DFM model estimated and saved to {res_file}")
         
         # Load datasets for each vintage
-        datafile_old = base_dir / 'data' / data_cfg.country / f'{vintage_old}.xls'
-        datafile_new = base_dir / 'data' / data_cfg.country / f'{vintage_new}.xls'
-        
-        logger.info(f"Loading data from {datafile_old} and {datafile_new}")
-        X_old, Time_old, _ = load_data(datafile_old, model_cfg, load_excel=data_cfg.load_excel)
-        X_new, Time, _ = load_data(datafile_new, model_cfg, load_excel=data_cfg.load_excel)
+        if data_cfg.use_database:
+            logger.info("Loading vintages from database...")
+            # Load old vintage
+            X_old, Time_old, _ = load_data_from_db(
+                vintage_date=vintage_old,
+                config=model_cfg,
+                config_id=data_cfg.config_id,
+                strict_mode=data_cfg.strict_mode
+            )
+            # Load new vintage
+            X_new, Time, _ = load_data_from_db(
+                vintage_date=vintage_new,
+                config=model_cfg,
+                config_id=data_cfg.config_id,
+                strict_mode=data_cfg.strict_mode
+            )
+            logger.info("Vintages loaded successfully from database")
+        else:
+            # Load from files
+            datafile_old = base_dir / 'data' / data_cfg.country / f'{vintage_old}.xls'
+            datafile_new = base_dir / 'data' / data_cfg.country / f'{vintage_new}.xls'
+            
+            logger.info(f"Loading data from {datafile_old} and {datafile_new}")
+            X_old, Time_old, _ = load_data(datafile_old, model_cfg, load_excel=data_cfg.load_excel)
+            X_new, Time, _ = load_data(datafile_new, model_cfg, load_excel=data_cfg.load_excel)
         
         # Update nowcast
         logger.info(f"Running nowcast for {series}, period {period}")
