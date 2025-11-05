@@ -179,9 +179,24 @@ def fetch_series_data(
                 logger.warning(f"No data returned for {series_id}")
                 return pd.DataFrame()
         else:
-            # BOK response format
+            # BOK response format - check for rate limiting errors
+            if 'RESULT' in data_result:
+                result = data_result['RESULT']
+                if isinstance(result, dict) and 'CODE' in result:
+                    error_code = result.get('CODE', '')
+                    error_msg = result.get('MESSAGE', '')
+                    if 'ERROR' in error_code or '602' in error_code:
+                        logger.error(f"BOK API rate limit error for {series_id}: {error_msg}")
+                        print(f"   ⚠️  BOK API rate limited: {error_msg[:50]}...")
+                        raise Exception(f"BOK API rate limit: {error_msg}")
+                    else:
+                        logger.warning(f"BOK API error for {series_id}: {error_code} - {error_msg}")
+                        print(f"   ⚠️  BOK API error: {error_code}")
+                        return pd.DataFrame()
+            
             if 'StatisticSearch' not in data_result:
                 logger.warning(f"No data returned for {series_id}")
+                print(f"   ⚠️  No StatisticSearch in response for {series_id}")
                 return pd.DataFrame()
             rows = data_result['StatisticSearch'].get('row', [])
         if not rows:
@@ -460,6 +475,12 @@ def main() -> None:
     print()
     logger.info()
     
+    # Rate limiting: BOK API allows 300 calls per 3 minutes
+    # Add delay between API calls to avoid rate limiting
+    import time
+    last_api_call_time = {}
+    min_delay_seconds = 0.6  # 600ms between calls = ~100 calls per minute = safe for 300/3min limit
+    
     all_observations = []
     stats = {
         'total': len(model_cfg.series),
@@ -502,15 +523,33 @@ def main() -> None:
                 stats['skipped'] += 1
                 continue
             
-            # Get appropriate API client
+            # Get appropriate API client with rate limiting
             api_client = None
             source_id = None
             if api_source == 'BOK' and bok_client:
                 api_client = bok_client
                 source_id = bok_source_id
+                # Rate limiting for BOK API (300 calls per 3 minutes)
+                current_time = time.time()
+                if api_source in last_api_call_time:
+                    time_since_last = current_time - last_api_call_time[api_source]
+                    if time_since_last < min_delay_seconds:
+                        sleep_time = min_delay_seconds - time_since_last
+                        logger.debug(f"Rate limiting: sleeping {sleep_time:.2f}s before {api_source} API call")
+                        time.sleep(sleep_time)
+                last_api_call_time[api_source] = time.time()
             elif api_source == 'KOSIS' and kosis_client:
                 api_client = kosis_client
                 source_id = kosis_source_id
+                # Rate limiting for KOSIS API (add small delay)
+                current_time = time.time()
+                if api_source in last_api_call_time:
+                    time_since_last = current_time - last_api_call_time[api_source]
+                    if time_since_last < 0.5:  # 500ms for KOSIS
+                        sleep_time = 0.5 - time_since_last
+                        logger.debug(f"Rate limiting: sleeping {sleep_time:.2f}s before {api_source} API call")
+                        time.sleep(sleep_time)
+                last_api_call_time[api_source] = time.time()
             else:
                 logger.warning(f"  ⚠ No API client available for {api_source}")
                 stats['skipped'] += 1
