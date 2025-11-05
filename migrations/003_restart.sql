@@ -25,14 +25,9 @@ DROP VIEW IF EXISTS dfm_selected_statistics CASCADE;
 DROP VIEW IF EXISTS latest_forecasts_view CASCADE;
 DROP VIEW IF EXISTS model_training_history CASCADE;
 
--- Drop all triggers (must be dropped before tables)
-DROP TRIGGER IF EXISTS update_data_sources_updated_at ON data_sources CASCADE;
-DROP TRIGGER IF EXISTS update_statistics_metadata_updated_at ON statistics_metadata CASCADE;
-DROP TRIGGER IF EXISTS update_statistics_items_updated_at ON statistics_items CASCADE;
-DROP TRIGGER IF EXISTS update_series_last_updated ON series CASCADE;
-DROP TRIGGER IF EXISTS update_model_configs_updated_at ON model_configs CASCADE;
-
 -- Drop all tables (CASCADE handles all dependencies: constraints, indexes, triggers, etc.)
+-- Note: Triggers are dropped automatically with CASCADE, and will be dropped again
+-- right before PART 5 to ensure clean state
 DROP TABLE IF EXISTS forecasts CASCADE;
 DROP TABLE IF EXISTS forecast_runs CASCADE;
 DROP TABLE IF EXISTS trained_models CASCADE;
@@ -1067,7 +1062,15 @@ $$;
 -- ============================================================================
 -- PART 5: CREATE TRIGGERS FOR updated_at
 -- ============================================================================
+-- Drop all triggers before creating new ones (ensures clean state)
+-- This is safe because tables exist at this point
+DROP TRIGGER IF EXISTS update_data_sources_updated_at ON data_sources CASCADE;
+DROP TRIGGER IF EXISTS update_statistics_metadata_updated_at ON statistics_metadata CASCADE;
+DROP TRIGGER IF EXISTS update_statistics_items_updated_at ON statistics_items CASCADE;
+DROP TRIGGER IF EXISTS update_series_last_updated ON series CASCADE;
+DROP TRIGGER IF EXISTS update_model_configs_updated_at ON model_configs CASCADE;
 
+-- Now create all triggers
 CREATE TRIGGER update_data_sources_updated_at BEFORE UPDATE ON data_sources
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
