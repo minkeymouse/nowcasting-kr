@@ -63,13 +63,6 @@ from services.api.bok_client import BOKAPIClient
 from services.api.kosis_client import KOSISAPIClient
 # Import load_config_from_csv inside main to avoid Hydra initialization issues
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
 
 # No longer needed - CSV provides api_code and api_source directly
 
@@ -343,7 +336,7 @@ def main() -> None:
     if bok_key:
         print("   ✅ BOK_API_KEY found")
         print("   🔌 Initializing BOK API client...")
-        bok_config = BOKAPIConfig(auth_key=bok_key)
+        bok_config = BOKAPIConfig(api_key=bok_key)
         bok_client = BOKAPIClient(bok_config)
         print("   ✅ BOK API client initialized")
         logger.info("✓ BOK API client initialized")

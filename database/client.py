@@ -34,12 +34,16 @@ def get_supabase_client(
         If URL or key is not provided and not in environment variables.
     """
     url = url or os.getenv('SUPABASE_URL')
-    key = key or os.getenv('SUPABASE_KEY')
+    # Check multiple possible environment variable names for the Supabase key
+    key = key or os.getenv('SUPABASE_KEY') or os.getenv('SUPABASE_SERVICE_ROLE_KEY') or os.getenv('SUPABASE_SECRET_KEY')
     
     if not url:
         raise ValueError("Supabase URL must be provided or set in SUPABASE_URL environment variable")
     if not key:
-        raise ValueError("Supabase key must be provided or set in SUPABASE_KEY environment variable")
+        raise ValueError(
+            "Supabase key must be provided or set in one of these environment variables: "
+            "SUPABASE_KEY, SUPABASE_SERVICE_ROLE_KEY, or SUPABASE_SECRET_KEY"
+        )
     
     return create_client(url, key, options=options)
 
