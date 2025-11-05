@@ -49,6 +49,6 @@ BOK_111Y006,1.1.4.2.1. Lf 기관별 구성내역(평잔),m,pch,Financial,PCT,111
 BOK_104Y008,"1.2.1.1.3. 예금은행 원화예금(종별, 평잔)",m,pch,Other,PCT,104Y008,BOK,1,0,0,0
 BOK_111Y008,1.2.1.2.1. 비은행금융기관 수신(평잔),m,pch,Other,PCT,111Y008,BOK,1,0,0,0
 BOK_200Y142,"2.1.7.1.3. 가계의 목적별 최종소비지출(원계열, 명목, 분기 및 연간)",q,pch,Consumption,PCT,200Y142,BOK,1,1,0,0
-KOSIS_101_DT_1B04001,Consumer Price Index,m,pch,Consumption,PCT,101_DT_1B04001,KOSIS,1,1,0,0
-KOSIS_101_DT_1DE7011,Economically Active Population,m,pch,Labor,PCT,101_DT_1DE7011,KOSIS,1,0,0,0
-KOSIS_101_DT_1DE7012,Household Income and Expenditure Survey,m,pch,Consumption,PCT,101_DT_1DE7012,KOSIS,1,1,0,0
+KOSIS_101_DT_1J22003,Consumer Price Index,m,pch,Consumption,PCT,101_DT_1J22003,KOSIS,1,1,0,0
+KOSIS_101_DT_1JH20201,All-industry Production Index,m,pch,Investment,PCT,101_DT_1JH20201,KOSIS,1,0,1,0
+KOSIS_101_DT_1DA7002S,Employment Rate,m,pch,Labor,PCT,101_DT_1DA7002S,KOSIS,1,0,0,0

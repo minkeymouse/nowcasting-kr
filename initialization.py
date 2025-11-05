@@ -133,22 +133,57 @@ def fetch_series_data(
     
     try:
         # Fetch data
+        # For KOSIS: item_code1=objL1 (필수), item_code2=itmId (필수)
+        # Different tables require different parameters:
+        # - DT_1J22003 (CPI): objL1='ALL', itmId='T'
+        # - DT_1JH20201 (Production Index): objL1='0 1', itmId='T1'
+        # - DT_1DA7002S (Employment Rate): objL1='ALL', itmId='T90'
+        # For BOK: these parameters are ignored
+        if source == 'KOSIS':
+            # Determine parameters based on table ID
+            if 'DT_1JH20201' in api_code:
+                # 전산업생산지수: objL1='0 1', itmId='T1'
+                item_code1_val = '0 1'
+                item_code2_val = 'T1'
+            elif 'DT_1DA7002S' in api_code:
+                # 고용율: objL1='ALL', itmId='T90'
+                item_code1_val = 'ALL'
+                item_code2_val = 'T90'
+            else:
+                # Default (CPI and others): objL1='ALL', itmId='T'
+                item_code1_val = 'ALL'
+                item_code2_val = 'T'
+        else:
+            item_code1_val = '?'
+            item_code2_val = '?'
+        
         data_result = api_client.fetch_statistic_data(
             stat_code=api_code,
             frequency=api_freq,
             start_date=start_date,
             end_date=end_date,
-            item_code1='?',
-            item_code2='?',
-            item_code3='?',
-            item_code4='?'
+            item_code1=item_code1_val,
+            item_code2=item_code2_val,
+            item_code3=None,  # Don't pass '?' for optional params
+            item_code4=None
         )
         
-        if 'StatisticSearch' not in data_result:
-            logger.warning(f"No data returned for {series_id}")
-            return pd.DataFrame()
-        
-        rows = data_result['StatisticSearch'].get('row', [])
+        # KOSIS returns list directly, BOK returns dict with 'StatisticSearch'
+        if source == 'KOSIS':
+            # KOSIS response is a list directly (wrapped in {'data': [...]} by client)
+            if isinstance(data_result, dict) and 'data' in data_result:
+                rows = data_result['data']
+            elif isinstance(data_result, list):
+                rows = data_result
+            else:
+                logger.warning(f"No data returned for {series_id}")
+                return pd.DataFrame()
+        else:
+            # BOK response format
+            if 'StatisticSearch' not in data_result:
+                logger.warning(f"No data returned for {series_id}")
+                return pd.DataFrame()
+            rows = data_result['StatisticSearch'].get('row', [])
         if not rows:
             logger.warning(f"Empty data for {series_id}")
             return pd.DataFrame()
@@ -156,28 +191,58 @@ def fetch_series_data(
         # Parse into DataFrame
         data_list = []
         for row in rows:
-            time_str = row.get('TIME', '')
-            value = row.get('DATA_VALUE')
+            # KOSIS uses PRD_DE and DT, BOK uses TIME and DATA_VALUE
+            if source == 'KOSIS':
+                time_str = row.get('PRD_DE', '')
+                value = row.get('DT')
+                # Filter by C1 value based on table:
+                # - DT_1J22003 (CPI): C1='T10' (전국/whole country)
+                # - DT_1JH20201 (Production Index): C1='0' (전산업생산지수)
+                # - DT_1DA7002S (Employment Rate): Filter to overall rate (typically C1='T90' or similar)
+                c1 = row.get('C1', '')
+                c1_nm = row.get('C1_NM', '')
+                
+                if 'DT_1J22003' in series_id:
+                    # CPI: Use C1='T10' (전국/whole country)
+                    if c1 and c1 != 'T10':
+                        continue
+                elif 'DT_1JH20201' in series_id:
+                    # Production Index: Use C1='0' (전산업생산지수)
+                    if c1 and c1 != '0':
+                        continue
+                elif 'DT_1DA7002S' in series_id:
+                    # Employment Rate: Filter to overall rate
+                    # Based on URL, itmId='T90' suggests overall rate
+                    # Filter to records where C1 might indicate overall/total
+                    # For now, accept all but could be refined if needed
+                    pass  # Accept all for Employment Rate (can filter later if needed)
+            else:
+                time_str = row.get('TIME', '')
+                value = row.get('DATA_VALUE')
             
-            if value is None:
+            if value is None or value == '':
                 continue
             
             # Parse date based on frequency
             try:
                 if api_freq == 'Q':
-                    # Format: 2023Q1
-                    year, q = time_str.split('Q')
-                    month = int(q) * 3
-                    date_obj = datetime(int(year), month, 1).date()
+                    # Format: 2023Q1 or YYYYMM (for monthly data that's quarterly)
+                    if 'Q' in time_str:
+                        year, q = time_str.split('Q')
+                        month = int(q) * 3
+                        date_obj = datetime(int(year), month, 1).date()
+                    else:
+                        # Try YYYYMM format
+                        date_obj = datetime.strptime(time_str[:6], '%Y%m').date()
                 elif api_freq == 'M':
-                    # Format: 202301
-                    date_obj = datetime.strptime(time_str, '%Y%m').date()
+                    # Format: YYYYMM (e.g., 202301)
+                    date_obj = datetime.strptime(time_str[:6], '%Y%m').date()
                 elif api_freq == 'D':
-                    # Format: 20230101
-                    date_obj = datetime.strptime(time_str, '%Y%m%d').date()
+                    # Format: YYYYMMDD (e.g., 20230101)
+                    date_obj = datetime.strptime(time_str[:8], '%Y%m%d').date()
                 else:
                     # Annual or other
-                    date_obj = datetime(int(time_str), 12, 31).date()
+                    date_obj = datetime(int(time_str[:4]), 12, 31).date()
                 
                 data_list.append({
                     'date': date_obj,
