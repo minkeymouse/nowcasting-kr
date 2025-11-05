@@ -649,7 +649,8 @@ def main() -> None:
             blocks = getattr(series_cfg, 'blocks', None)
             if blocks:
                 for block_idx, block_name in enumerate(block_names):
-                    if blocks[block_idx] == 1:
+                    # blocks is a dict with block_name as key, not index
+                    if blocks.get(block_name, 0) == 1:
                         block_records.append({
                             'series_id': series_cfg.series_id,
                             'block_name': block_name,
