@@ -11,10 +11,6 @@ from .config_loader import load_config_from_db, load_config_from_file_or_db
 from .dfm import DFMResult, dfm
 from .kalman import run_kf, skf, fis, miss_data
 from .news import update_nowcast, news_dfm, para_const
-from .forecasting import (
-    forecast_factors, forecast_data, inverse_transform_series,
-    forecast_with_intervals, generate_forecast_dates
-)
 
 # Backward compatibility aliases
 ModelSpec = ModelConfig  # Deprecated: use ModelConfig
@@ -29,8 +25,6 @@ __all__ = [
     'DFMResult', 'dfm',
     'run_kf', 'skf', 'fis', 'miss_data',
     'update_nowcast', 'news_dfm', 'para_const',
-    'forecast_factors', 'forecast_data', 'inverse_transform_series',
-    'forecast_with_intervals', 'generate_forecast_dates',
     # Deprecated aliases
     'ModelSpec', 'load_spec',
 ]

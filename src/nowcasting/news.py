@@ -106,7 +106,7 @@ def news_dfm(X_old: np.ndarray, X_new: np.ndarray, Res, t_fcst: int,
     If v_news is array:
         - y_old, y_new: (n_targets,) array
         - singlenews: (N, n_targets) array where each column is news for one target
-        
+    
     Note:
     -----
     Now supports both single and multiple target variables, matching MATLAB functionality.
@@ -173,7 +173,7 @@ def news_dfm(X_old: np.ndarray, X_new: np.ndarray, Res, t_fcst: int,
                 singlenews = np.array([])
             else:
                 y_old = np.array([Res_old['X_sm'][t_fcst, v] for v in v_news_arr])
-                y_new = y_old
+            y_new = y_old
                 singlenews = np.array([]).reshape(0, n_targets)
             
             actual = np.array([])
@@ -270,32 +270,32 @@ def news_dfm(X_old: np.ndarray, X_new: np.ndarray, Res, t_fcst: int,
                 except:
                     # If inversion fails, use simpler approach
                     if is_scalar:
-                        gain = np.ones(n_news) * 0.1
-                        totnews = np.sum(innov) * 0.1
+                    gain = np.ones(n_news) * 0.1
+                    totnews = np.sum(innov) * 0.1
                     else:
                         gain = np.ones((n_targets, n_news)) * 0.1
                         totnews = np.ones(n_targets) * np.sum(innov) * 0.1
             else:
                 if is_scalar:
-                    gain = np.zeros(n_news)
-                    totnews = 0
+                gain = np.zeros(n_news)
+                totnews = 0
                 else:
                     gain = np.zeros((n_targets, n_news))
                     totnews = np.zeros(n_targets)
             
             # Organize output
             if is_scalar:
-                singlenews = np.full(N, np.nan)
-                actual = np.full(N, np.nan)
-                forecast = np.full(N, np.nan)
-                weight = np.full(N, np.nan)
-                
-                for i in range(n_news):
-                    actual[v_miss[i]] = X_new[t_miss[i], v_miss[i]]
-                    forecast[v_miss[i]] = Res_old['X_sm'][t_miss[i], v_miss[i]]
-                    if i < len(gain):
-                        singlenews[v_miss[i]] = gain[i] * innov[i] / Wx[v_miss[i]] if Wx[v_miss[i]] != 0 else 0
-                        weight[v_miss[i]] = gain[i] / Wx[v_miss[i]] if Wx[v_miss[i]] != 0 else 0
+            singlenews = np.full(N, np.nan)
+            actual = np.full(N, np.nan)
+            forecast = np.full(N, np.nan)
+            weight = np.full(N, np.nan)
+            
+            for i in range(n_news):
+                actual[v_miss[i]] = X_new[t_miss[i], v_miss[i]]
+                forecast[v_miss[i]] = Res_old['X_sm'][t_miss[i], v_miss[i]]
+                if i < len(gain):
+                    singlenews[v_miss[i]] = gain[i] * innov[i] / Wx[v_miss[i]] if Wx[v_miss[i]] != 0 else 0
+                    weight[v_miss[i]] = gain[i] / Wx[v_miss[i]] if Wx[v_miss[i]] != 0 else 0
             else:
                 # Multiple targets: singlenews is (N, n_targets)
                 singlenews = np.full((N, n_targets), np.nan)
