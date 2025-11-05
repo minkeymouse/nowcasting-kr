@@ -234,10 +234,20 @@ def forecast_with_intervals(
     else:
         raise ValueError("DFMResult must have smoothed factors (Z)")
     
-    # Get last smoothed factor covariance (from Kalman smoother)
-    # Note: V_0 is initial covariance, need to compute from smoother
-    # For now, use V_0 as approximation (proper implementation would store V_t|T)
-    V_last = Res.V_0.copy()
+    # Get last smoothed factor covariance
+    # Note: DFMResult doesn't store V_t|T for each time step
+    # Use steady-state approximation: V_ss = V_0 (stationary) or compute from A, Q
+    # For proper implementation, we'd need to store V_t|T from smoother
+    # For now, use V_0 as approximation (reasonable for stationary processes)
+    # Alternative: solve Lyapunov equation for steady-state covariance
+    try:
+        from scipy.linalg import solve_discrete_lyapunov
+        # Steady-state covariance: V_ss = A @ V_ss @ A^T + Q
+        V_steady = solve_discrete_lyapunov(Res.A, Res.Q)
+        V_last = V_steady
+    except (ImportError, Exception):
+        # Fallback: use V_0 if Lyapunov solver not available
+        V_last = Res.V_0.copy()
     
     # Forecast factors forward
     Z_forecast, V_forecast = forecast_factors(
