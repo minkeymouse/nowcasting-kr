@@ -247,6 +247,7 @@ CREATE TABLE IF NOT EXISTS ingestion_jobs (
     github_run_id VARCHAR(100) NOT NULL,
     github_workflow_run_url VARCHAR(500),
     vintage_date DATE NOT NULL,
+    country VARCHAR(10) DEFAULT 'KR',
     
     -- Job status
     status VARCHAR(20) DEFAULT 'pending',  -- pending, running, completed, failed, cancelled
@@ -264,7 +265,7 @@ CREATE TABLE IF NOT EXISTS ingestion_jobs (
     
     created_at TIMESTAMP DEFAULT NOW(),
     
-    CONSTRAINT fk_vintage_date FOREIGN KEY (vintage_date, 'KR') 
+    CONSTRAINT fk_vintage_date FOREIGN KEY (vintage_date, country) 
         REFERENCES data_vintages(vintage_date, country)
 );
 
