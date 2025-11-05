@@ -471,6 +471,7 @@ def main() -> None:
     rate_limiter = RateLimiter(bok_delay=0.6, kosis_delay=0.5)
     
     all_observations = []
+    successfully_processed_series = set()  # Track series that were successfully saved
     stats = {
         'total': len(model_cfg.series),
         'successful': 0,
@@ -587,6 +588,7 @@ def main() -> None:
             all_observations.append(df_data)
             
             print(f"   ✅ Series {series_id} processed successfully")
+            successfully_processed_series.add(series_id)  # Track successful series
             stats['successful'] += 1
             
         except Exception as e:
@@ -646,6 +648,11 @@ def main() -> None:
         block_records = []
         
         for series_cfg in model_cfg.series:
+            # Only create block assignments for series that were successfully saved
+            if series_cfg.series_id not in successfully_processed_series:
+                logger.debug(f"Skipping block assignment for {series_cfg.series_id} (not in database)")
+                continue
+            
             blocks = getattr(series_cfg, 'blocks', None)
             if blocks:
                 for block_idx, block_name in enumerate(block_names):
