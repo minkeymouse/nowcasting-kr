@@ -209,6 +209,11 @@ try:
         'errors': []
     }
     
+    # Rate limiting: Add delays between API calls
+    import time
+    last_api_call_time = {}
+    min_delay_seconds = 0.6  # BOK API: 300 calls per 3 minutes = 0.6s between calls
+    
     # Create vintage and ingestion job (matching initialization.py)
     print("\n📦 Creating vintage and ingestion job...")
     print("   📅 Creating/getting vintage...")
@@ -274,8 +279,26 @@ try:
             api_client = None
             if series_cfg['api_source'] == 'BOK' and bok_client:
                 api_client = bok_client
+                # Rate limiting for BOK API
+                current_time = time.time()
+                if series_cfg['api_source'] in last_api_call_time:
+                    time_since_last = current_time - last_api_call_time[series_cfg['api_source']]
+                    if time_since_last < min_delay_seconds:
+                        sleep_time = min_delay_seconds - time_since_last
+                        logger.debug(f"Rate limiting: sleeping {sleep_time:.2f}s")
+                        time.sleep(sleep_time)
+                last_api_call_time[series_cfg['api_source']] = time.time()
             elif series_cfg['api_source'] == 'KOSIS' and kosis_client:
                 api_client = kosis_client
+                # Rate limiting for KOSIS API
+                current_time = time.time()
+                if series_cfg['api_source'] in last_api_call_time:
+                    time_since_last = current_time - last_api_call_time[series_cfg['api_source']]
+                    if time_since_last < 0.5:  # 500ms for KOSIS
+                        sleep_time = 0.5 - time_since_last
+                        logger.debug(f"Rate limiting: sleeping {sleep_time:.2f}s")
+                        time.sleep(sleep_time)
+                last_api_call_time[series_cfg['api_source']] = time.time()
             else:
                 logger.warning(f"⚠️  No API client available for {series_cfg['api_source']}")
                 stats['skipped'] += 1
