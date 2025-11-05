@@ -1,4 +1,8 @@
-"""Hydra-enabled script for DFM estimation with experiment management."""
+"""Hydra-enabled script for DFM estimation with experiment management.
+
+This script is for training DFM models, typically run on-demand or periodically.
+For regular data ingestion (GitHub Actions), use scripts/ingest_data.py instead.
+"""
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
@@ -20,11 +24,11 @@ def main(cfg: DictConfig) -> None:
     """Run DFM estimation with Hydra configuration.
     
     Usage:
-        python run_dfm.py                          # Use defaults
-        python run_dfm.py dfm.threshold=1e-4       # Override threshold
-        python run_dfm.py model=us_full            # Use different model
-        python run_dfm.py data.vintage=2016-12-23  # Use different vintage
-        python run_dfm.py --multirun dfm.threshold=1e-5,1e-4,1e-3  # Sweep
+        python train_dfm.py                          # Use defaults
+        python train_dfm.py dfm.threshold=1e-4       # Override threshold
+        python train_dfm.py model=us_full            # Use different model
+        python train_dfm.py data.vintage=2016-12-23  # Use different vintage
+        python train_dfm.py --multirun dfm.threshold=1e-5,1e-4,1e-3  # Sweep
     """
     # Convert OmegaConf to Pydantic models for validation
     model_cfg = ModelConfig.from_dict(OmegaConf.to_container(cfg.model, resolve=True))

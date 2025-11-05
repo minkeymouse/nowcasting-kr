@@ -1,2 +1,2 @@
-"""Test suite for FRBNY Nowcasting Framework Python implementation."""
+"""Test suite for DFM nowcasting module (DFM estimation, Kalman filter, news decomposition)."""
 
