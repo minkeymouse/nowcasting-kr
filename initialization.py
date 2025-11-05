@@ -299,8 +299,8 @@ def main() -> None:
     parser.add_argument(
         '--csv-file',
         type=str,
-        default='migrations/001_initial_spec.csv',
-        help='Path to CSV specification file (default: migrations/001_initial_spec.csv)'
+        default='src/spec/001_initial_spec.csv',
+        help='Path to CSV specification file (default: src/spec/001_initial_spec.csv)'
     )
     parser.add_argument(
         '--vintage-date',
