@@ -186,6 +186,7 @@ def fetch_series_data(
             rows = data_result['StatisticSearch'].get('row', [])
         if not rows:
             logger.warning(f"Empty data for {series_id}")
+            print(f"   ⚠️  Empty data for {series_id}")
             return pd.DataFrame()
         
         # Parse into DataFrame
@@ -251,16 +252,24 @@ def fetch_series_data(
                 })
             except Exception as e:
                 logger.warning(f"Failed to parse date {time_str} for {series_id}: {e}")
+                print(f"   ⚠️  Failed to parse date {time_str}: {e}")
                 continue
         
         if not data_list:
+            logger.warning(f"No valid data points after parsing for {series_id}")
+            print(f"   ⚠️  No valid data points after parsing")
             return pd.DataFrame()
         
         df = pd.DataFrame(data_list)
+        logger.info(f"Parsed {len(df)} valid observations for {series_id}")
+        print(f"   ✅ Parsed {len(df)} valid observations")
         return df
         
     except Exception as e:
         logger.error(f"Error fetching data for {series_id}: {e}")
+        print(f"   ❌ Error fetching data: {str(e)[:100]}")
+        import traceback
+        logger.debug(traceback.format_exc())
         return pd.DataFrame()
 
 
