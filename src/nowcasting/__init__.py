@@ -1,7 +1,10 @@
 """Core nowcasting modules for DFM estimation and forecasting."""
 
 from .config import ModelConfig, DataConfig, DFMConfig, AppConfig
-from .data_loader import load_config, load_config_from_yaml, load_config_from_excel, load_data, transform_data
+from .data_loader import (
+    load_config, load_config_from_yaml, load_config_from_excel, load_data, transform_data,
+    load_data_from_db
+)
 from .dfm import DFMResult, dfm
 from .kalman import run_kf, skf, fis, miss_data
 from .news import update_nowcast, news_dfm, para_const
@@ -14,6 +17,7 @@ __all__ = [
     'ModelConfig', 'DataConfig', 'DFMConfig', 'AppConfig',
     'load_config', 'load_config_from_yaml', 'load_config_from_excel',
     'load_data', 'transform_data',
+    'load_data_from_db',
     'DFMResult', 'dfm',
     'run_kf', 'skf', 'fis', 'miss_data',
     'update_nowcast', 'news_dfm', 'para_const',

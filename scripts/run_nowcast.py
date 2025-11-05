@@ -1,0 +1,152 @@
+"""Main entry point for nowcasting (GitHub Actions).
+
+This script runs nowcasting using the latest data vintage and generates forecasts.
+"""
+
+import sys
+import os
+import logging
+import argparse
+from pathlib import Path
+import hydra
+from omegaconf import DictConfig, OmegaConf
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from src.nowcasting import load_config, load_data, dfm, update_nowcast, load_data_from_db
+from src.nowcasting.config import ModelConfig, DataConfig, DFMConfig
+import pickle
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+@hydra.main(version_base=None, config_path="../config", config_name="defaults")
+def main(cfg: DictConfig) -> None:
+    """Run nowcasting with Hydra configuration.
+    
+    This script is designed for GitHub Actions automation.
+    It loads the latest data vintage and generates nowcasts.
+    
+    Usage:
+        python run_nowcast.py
+        python run_nowcast.py data.vintage_old=2016-12-16 data.vintage_new=2016-12-23
+        python run_nowcast.py series=GDPC1 period=2016q4
+    """
+    # GitHub Actions context
+    github_run_id = os.getenv('GITHUB_RUN_ID')
+    github_run_url = os.getenv('GITHUB_RUN_URL') or (
+        f"{os.getenv('GITHUB_SERVER_URL', '')}/{os.getenv('GITHUB_REPOSITORY', '')}/actions/runs/{github_run_id}"
+        if github_run_id else None
+    )
+    
+    if github_run_id:
+        logger.info(f"GitHub Actions Run ID: {github_run_id}")
+        if github_run_url:
+            logger.info(f"Workflow URL: {github_run_url}")
+    
+    try:
+        # Convert OmegaConf to Pydantic models
+        model_cfg = ModelConfig.from_dict(OmegaConf.to_container(cfg.model, resolve=True))
+        data_cfg = DataConfig(**OmegaConf.to_container(cfg.data, resolve=True))
+        dfm_cfg = DFMConfig(**OmegaConf.to_container(cfg.dfm, resolve=True))
+        
+        # Nowcast parameters (can be overridden via CLI)
+        series = cfg.get('series', 'GDPC1')
+        period = cfg.get('period', '2016q4')
+        vintage_old = cfg.get('vintage_old', data_cfg.vintage)
+        vintage_new = cfg.get('vintage_new', data_cfg.vintage)
+        
+        logger.info("=" * 80)
+        logger.info(f"Nowcasting - Series: {series}, Period: {period}")
+        logger.info(f"Vintage (old): {vintage_old}, Vintage (new): {vintage_new}")
+        logger.info("=" * 80)
+        
+        # Load DFM results or estimate
+        base_dir = Path(__file__).parent.parent
+        res_file = base_dir / 'ResDFM.pkl'
+        
+        try:
+            logger.info(f"Loading DFM results from {res_file}")
+            with open(res_file, 'rb') as f:
+                data = pickle.load(f)
+                # Check config consistency
+                saved_config = data.get('Config', data.get('Spec'))
+                if saved_config and 'Res' in data:
+                    if hasattr(saved_config, 'SeriesID') and saved_config.SeriesID != model_cfg.SeriesID:
+                        logger.warning('Configuration mismatch. Re-estimating...')
+                        raise FileNotFoundError
+                    Res = data
+                else:
+                    Res = data.get('Res', data)
+            logger.info("DFM results loaded successfully")
+        except FileNotFoundError:
+            # Re-estimate if file not found or config mismatch
+            logger.info('Estimating DFM model...')
+            if data_cfg.use_database:
+                # Load from database
+                X, Time, Z = load_data_from_db(
+                    vintage_date=vintage_new,
+                    config=model_cfg,
+                    config_id=data_cfg.config_id,
+                    strict_mode=data_cfg.strict_mode
+                )
+            else:
+                # Load from file
+                data_file = base_dir / 'data' / data_cfg.country / f'{vintage_new}.xls'
+                X, Time, Z = load_data(data_file, model_cfg, load_excel=data_cfg.load_excel)
+            Res = dfm(X, model_cfg, threshold=dfm_cfg.threshold)
+            with open(res_file, 'wb') as f:
+                pickle.dump({'Res': Res, 'Config': model_cfg}, f)
+            logger.info(f"DFM model estimated and saved to {res_file}")
+        
+        # Load datasets for each vintage
+        if data_cfg.use_database:
+            logger.info("Loading vintages from database...")
+            # Load old vintage
+            X_old, Time_old, _ = load_data_from_db(
+                vintage_date=vintage_old,
+                config=model_cfg,
+                config_id=data_cfg.config_id,
+                strict_mode=data_cfg.strict_mode
+            )
+            # Load new vintage
+            X_new, Time, _ = load_data_from_db(
+                vintage_date=vintage_new,
+                config=model_cfg,
+                config_id=data_cfg.config_id,
+                strict_mode=data_cfg.strict_mode
+            )
+            logger.info("Vintages loaded successfully from database")
+        else:
+            # Load from files
+            datafile_old = base_dir / 'data' / data_cfg.country / f'{vintage_old}.xls'
+            datafile_new = base_dir / 'data' / data_cfg.country / f'{vintage_new}.xls'
+            
+            logger.info(f"Loading data from {datafile_old} and {datafile_new}")
+            X_old, Time_old, _ = load_data(datafile_old, model_cfg, load_excel=data_cfg.load_excel)
+            X_new, Time, _ = load_data(datafile_new, model_cfg, load_excel=data_cfg.load_excel)
+        
+        # Update nowcast
+        logger.info(f"Running nowcast for {series}, period {period}")
+        update_nowcast(X_old, X_new, Time, model_cfg, Res, series, period,
+                       vintage_old, vintage_new)
+        
+        logger.info("=" * 80)
+        logger.info("Nowcasting completed successfully")
+        logger.info("=" * 80)
+        
+    except Exception as e:
+        logger.error(f"Fatal error in nowcasting: {e}", exc_info=True)
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
+

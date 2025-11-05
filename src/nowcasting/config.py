@@ -217,6 +217,14 @@ if PYDANTIC_AVAILABLE:
         sample_start: Optional[str] = Field(None, description="Sample start date (YYYY-MM-DD)")
         data_path: Optional[str] = Field(None, description="Custom data file path")
         load_excel: bool = Field(False, description="Force loading from Excel even if cache exists")
+        # Database-related fields
+        use_database: bool = Field(False, description="Use database instead of files")
+        vintage_id: Optional[int] = Field(None, description="Vintage ID (alternative to vintage date)")
+        config_name: Optional[str] = Field(None, description="Model config name in database")
+        config_id: Optional[int] = Field(None, description="Model config ID in database")
+        start_date: Optional[str] = Field(None, description="Start date for data filtering (YYYY-MM-DD)")
+        end_date: Optional[str] = Field(None, description="End date for data filtering (YYYY-MM-DD)")
+        strict_mode: bool = Field(False, description="Strict mode for missing series")
 
 
     class DFMConfig(BaseModel):
@@ -263,6 +271,14 @@ else:
         sample_start: Optional[str] = None
         data_path: Optional[str] = None
         load_excel: bool = False
+        # Database-related fields
+        use_database: bool = False
+        vintage_id: Optional[int] = None
+        config_name: Optional[str] = None
+        config_id: Optional[int] = None
+        start_date: Optional[str] = None
+        end_date: Optional[str] = None
+        strict_mode: bool = False
     
     @dataclass
     class DFMConfig:
