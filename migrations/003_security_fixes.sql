@@ -128,7 +128,9 @@ ALTER TABLE public.data_sources ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (for idempotency)
 DROP POLICY IF EXISTS data_sources_public_read ON public.data_sources;
-DROP POLICY IF EXISTS data_sources_service_write ON public.data_sources;
+DROP POLICY IF EXISTS data_sources_insert_service ON public.data_sources;
+DROP POLICY IF EXISTS data_sources_update_service ON public.data_sources;
+DROP POLICY IF EXISTS data_sources_delete_service ON public.data_sources;
 
 -- Policy: Allow public read access to data sources
 CREATE POLICY data_sources_public_read ON public.data_sources
@@ -136,20 +138,34 @@ CREATE POLICY data_sources_public_read ON public.data_sources
     TO PUBLIC
     USING (true);
 
--- Policy: Allow authenticated service users to write data sources
+-- Policy: Allow authenticated service users to insert data sources
 -- Note: Separated from SELECT to avoid multiple permissive policies warning
-CREATE POLICY data_sources_service_write ON public.data_sources
-    FOR INSERT, UPDATE, DELETE
+CREATE POLICY data_sources_insert_service ON public.data_sources
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+
+-- Policy: Allow authenticated service users to update data sources
+CREATE POLICY data_sources_update_service ON public.data_sources
+    FOR UPDATE
     TO authenticated
     USING (true)
     WITH CHECK (true);
+
+-- Policy: Allow authenticated service users to delete data sources
+CREATE POLICY data_sources_delete_service ON public.data_sources
+    FOR DELETE
+    TO authenticated
+    USING (true);
 
 -- Enable RLS on statistics_metadata table
 ALTER TABLE public.statistics_metadata ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (for idempotency)
 DROP POLICY IF EXISTS statistics_metadata_public_read ON public.statistics_metadata;
-DROP POLICY IF EXISTS statistics_metadata_service_write ON public.statistics_metadata;
+DROP POLICY IF EXISTS statistics_metadata_insert_service ON public.statistics_metadata;
+DROP POLICY IF EXISTS statistics_metadata_update_service ON public.statistics_metadata;
+DROP POLICY IF EXISTS statistics_metadata_delete_service ON public.statistics_metadata;
 
 -- Policy: Allow public read access to statistics metadata
 CREATE POLICY statistics_metadata_public_read ON public.statistics_metadata
@@ -157,20 +173,34 @@ CREATE POLICY statistics_metadata_public_read ON public.statistics_metadata
     TO PUBLIC
     USING (true);
 
--- Policy: Allow authenticated service users to write statistics metadata
+-- Policy: Allow authenticated service users to insert statistics metadata
 -- Note: Separated from SELECT to avoid multiple permissive policies warning
-CREATE POLICY statistics_metadata_service_write ON public.statistics_metadata
-    FOR INSERT, UPDATE, DELETE
+CREATE POLICY statistics_metadata_insert_service ON public.statistics_metadata
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+
+-- Policy: Allow authenticated service users to update statistics metadata
+CREATE POLICY statistics_metadata_update_service ON public.statistics_metadata
+    FOR UPDATE
     TO authenticated
     USING (true)
     WITH CHECK (true);
+
+-- Policy: Allow authenticated service users to delete statistics metadata
+CREATE POLICY statistics_metadata_delete_service ON public.statistics_metadata
+    FOR DELETE
+    TO authenticated
+    USING (true);
 
 -- Enable RLS on statistics_items table
 ALTER TABLE public.statistics_items ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (for idempotency)
 DROP POLICY IF EXISTS statistics_items_public_read ON public.statistics_items;
-DROP POLICY IF EXISTS statistics_items_service_write ON public.statistics_items;
+DROP POLICY IF EXISTS statistics_items_insert_service ON public.statistics_items;
+DROP POLICY IF EXISTS statistics_items_update_service ON public.statistics_items;
+DROP POLICY IF EXISTS statistics_items_delete_service ON public.statistics_items;
 
 -- Policy: Allow public read access to statistics items
 CREATE POLICY statistics_items_public_read ON public.statistics_items
@@ -178,20 +208,34 @@ CREATE POLICY statistics_items_public_read ON public.statistics_items
     TO PUBLIC
     USING (true);
 
--- Policy: Allow authenticated service users to write statistics items
+-- Policy: Allow authenticated service users to insert statistics items
 -- Note: Separated from SELECT to avoid multiple permissive policies warning
-CREATE POLICY statistics_items_service_write ON public.statistics_items
-    FOR INSERT, UPDATE, DELETE
+CREATE POLICY statistics_items_insert_service ON public.statistics_items
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+
+-- Policy: Allow authenticated service users to update statistics items
+CREATE POLICY statistics_items_update_service ON public.statistics_items
+    FOR UPDATE
     TO authenticated
     USING (true)
     WITH CHECK (true);
+
+-- Policy: Allow authenticated service users to delete statistics items
+CREATE POLICY statistics_items_delete_service ON public.statistics_items
+    FOR DELETE
+    TO authenticated
+    USING (true);
 
 -- Enable RLS on ingestion_jobs table
 ALTER TABLE public.ingestion_jobs ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (for idempotency)
 DROP POLICY IF EXISTS ingestion_jobs_public_read ON public.ingestion_jobs;
-DROP POLICY IF EXISTS ingestion_jobs_service_write ON public.ingestion_jobs;
+DROP POLICY IF EXISTS ingestion_jobs_insert_service ON public.ingestion_jobs;
+DROP POLICY IF EXISTS ingestion_jobs_update_service ON public.ingestion_jobs;
+DROP POLICY IF EXISTS ingestion_jobs_delete_service ON public.ingestion_jobs;
 
 -- Policy: Allow public read access to ingestion jobs
 CREATE POLICY ingestion_jobs_public_read ON public.ingestion_jobs
@@ -199,20 +243,34 @@ CREATE POLICY ingestion_jobs_public_read ON public.ingestion_jobs
     TO PUBLIC
     USING (true);
 
--- Policy: Allow authenticated service users to write ingestion jobs
+-- Policy: Allow authenticated service users to insert ingestion jobs
 -- Note: Separated from SELECT to avoid multiple permissive policies warning
-CREATE POLICY ingestion_jobs_service_write ON public.ingestion_jobs
-    FOR INSERT, UPDATE, DELETE
+CREATE POLICY ingestion_jobs_insert_service ON public.ingestion_jobs
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+
+-- Policy: Allow authenticated service users to update ingestion jobs
+CREATE POLICY ingestion_jobs_update_service ON public.ingestion_jobs
+    FOR UPDATE
     TO authenticated
     USING (true)
     WITH CHECK (true);
+
+-- Policy: Allow authenticated service users to delete ingestion jobs
+CREATE POLICY ingestion_jobs_delete_service ON public.ingestion_jobs
+    FOR DELETE
+    TO authenticated
+    USING (true);
 
 -- Enable RLS on api_fetches table
 ALTER TABLE public.api_fetches ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (for idempotency)
 DROP POLICY IF EXISTS api_fetches_public_read ON public.api_fetches;
-DROP POLICY IF EXISTS api_fetches_service_write ON public.api_fetches;
+DROP POLICY IF EXISTS api_fetches_insert_service ON public.api_fetches;
+DROP POLICY IF EXISTS api_fetches_update_service ON public.api_fetches;
+DROP POLICY IF EXISTS api_fetches_delete_service ON public.api_fetches;
 
 -- Policy: Allow public read access to API fetches
 CREATE POLICY api_fetches_public_read ON public.api_fetches
@@ -220,20 +278,34 @@ CREATE POLICY api_fetches_public_read ON public.api_fetches
     TO PUBLIC
     USING (true);
 
--- Policy: Allow authenticated service users to write API fetches
+-- Policy: Allow authenticated service users to insert API fetches
 -- Note: Separated from SELECT to avoid multiple permissive policies warning
-CREATE POLICY api_fetches_service_write ON public.api_fetches
-    FOR INSERT, UPDATE, DELETE
+CREATE POLICY api_fetches_insert_service ON public.api_fetches
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+
+-- Policy: Allow authenticated service users to update API fetches
+CREATE POLICY api_fetches_update_service ON public.api_fetches
+    FOR UPDATE
     TO authenticated
     USING (true)
     WITH CHECK (true);
+
+-- Policy: Allow authenticated service users to delete API fetches
+CREATE POLICY api_fetches_delete_service ON public.api_fetches
+    FOR DELETE
+    TO authenticated
+    USING (true);
 
 -- Enable RLS on model_block_assignments table
 ALTER TABLE public.model_block_assignments ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (for idempotency)
 DROP POLICY IF EXISTS model_block_assignments_public_read ON public.model_block_assignments;
-DROP POLICY IF EXISTS model_block_assignments_service_write ON public.model_block_assignments;
+DROP POLICY IF EXISTS model_block_assignments_insert_service ON public.model_block_assignments;
+DROP POLICY IF EXISTS model_block_assignments_update_service ON public.model_block_assignments;
+DROP POLICY IF EXISTS model_block_assignments_delete_service ON public.model_block_assignments;
 
 -- Policy: Allow public read access to model block assignments
 CREATE POLICY model_block_assignments_public_read ON public.model_block_assignments
@@ -241,13 +313,25 @@ CREATE POLICY model_block_assignments_public_read ON public.model_block_assignme
     TO PUBLIC
     USING (true);
 
--- Policy: Allow authenticated service users to write model block assignments
+-- Policy: Allow authenticated service users to insert model block assignments
 -- Note: Separated from SELECT to avoid multiple permissive policies warning
-CREATE POLICY model_block_assignments_service_write ON public.model_block_assignments
-    FOR INSERT, UPDATE, DELETE
+CREATE POLICY model_block_assignments_insert_service ON public.model_block_assignments
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+
+-- Policy: Allow authenticated service users to update model block assignments
+CREATE POLICY model_block_assignments_update_service ON public.model_block_assignments
+    FOR UPDATE
     TO authenticated
     USING (true)
     WITH CHECK (true);
+
+-- Policy: Allow authenticated service users to delete model block assignments
+CREATE POLICY model_block_assignments_delete_service ON public.model_block_assignments
+    FOR DELETE
+    TO authenticated
+    USING (true);
 
 -- ============================================================================
 -- 3. Fix Function Search Path
@@ -278,8 +362,9 @@ $$;
 --    - All public tables now have RLS enabled
 --    - Public read access allows data to be publicly viewable (appropriate for forecasting)
 --    - Write access restricted to authenticated users
---    - Policies are separated by operation (SELECT vs INSERT/UPDATE/DELETE) to avoid
+--    - Policies are separated by operation (SELECT, INSERT, UPDATE, DELETE) to avoid
 --      multiple permissive policies warning for authenticated users
+--    - Each table has: 1 SELECT policy (PUBLIC) + 3 write policies (authenticated)
 --    - Service operations use service_role key which bypasses RLS (as intended)
 --
 -- 3. Function Search Path:
