@@ -336,7 +336,7 @@ def main() -> None:
     if bok_key:
         print("   ✅ BOK_API_KEY found")
         print("   🔌 Initializing BOK API client...")
-        bok_config = BOKAPIConfig(api_key=bok_key)
+        bok_config = BOKAPIConfig(auth_key=bok_key)
         bok_client = BOKAPIClient(bok_config)
         print("   ✅ BOK API client initialized")
         logger.info("✓ BOK API client initialized")
