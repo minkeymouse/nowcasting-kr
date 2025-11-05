@@ -8,10 +8,23 @@ import sys
 import argparse
 import logging
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Load environment variables - check multiple locations
+env_paths = [
+    project_root / '.env.local',
+    project_root.parent / '.env.local',
+    Path.home() / 'Nowcasting' / '.env.local',
+]
+
+for env_path in env_paths:
+    if env_path.exists():
+        load_dotenv(env_path)
+        break
 
 from services.ingestion.bok import BOKIngestion
 from services.ingestion.kosis import KOSISIngestion

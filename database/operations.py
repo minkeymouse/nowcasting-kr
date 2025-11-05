@@ -3,12 +3,20 @@
 import logging
 import pandas as pd
 import numpy as np
-from typing import Optional, List, Dict, Any, Callable
+from typing import Optional, List, Dict, Any, Callable, Tuple, Union
 from datetime import date, datetime
 from functools import wraps
 from supabase import Client
 
 from .client import get_client
+from .helpers import (
+    batch_query_in,
+    batch_insert,
+    build_query,
+    DatabaseError,
+    NotFoundError,
+    ValidationError,
+)
 
 logger = logging.getLogger(__name__)
 from .models import (
@@ -32,6 +40,127 @@ def _ensure_client(func: Callable) -> Callable:
             kwargs['client'] = get_client()
         return func(*args, **kwargs)
     return wrapper
+
+
+# ============================================================================
+# Transformation Helpers (for DFM data loading)
+# ============================================================================
+
+def _transform_series(z: np.ndarray, formula: str, freq: str, step: int) -> np.ndarray:
+    """
+    Apply transformation to a single series.
+    
+    This is a port of the transformation logic from src/nowcasting/data_loader.py
+    to work with database-loaded data.
+    
+    Parameters
+    ----------
+    z : np.ndarray
+        Raw series data (1D array)
+    formula : str
+        Transformation code: 'lin', 'chg', 'ch1', 'pch', 'pc1', 'pca', 'log'
+    freq : str
+        Frequency code: 'q', 'm', 'd', etc.
+    step : int
+        Step size for transformations (3 for quarterly, 1 for monthly/daily)
+        
+    Returns
+    -------
+    np.ndarray
+        Transformed series
+    """
+    T = len(z)
+    X = np.full(T, np.nan)
+    t1 = step
+    n = step / 12
+    
+    if formula == 'lin':
+        X[:] = z
+    elif formula == 'chg':
+        idx = np.arange(t1, T, step)
+        if len(idx) > 1:
+            X[idx[0]] = np.nan
+            X[idx[1:]] = z[idx[1:]] - z[idx[:-1]]
+    elif formula == 'ch1':
+        idx = np.arange(12 + t1, T, step)
+        if len(idx) > 0:
+            X[idx] = z[idx] - z[idx - 12]
+    elif formula == 'pch':
+        idx = np.arange(t1, T, step)
+        if len(idx) > 1:
+            X[idx[0]] = np.nan
+            X[idx[1:]] = 100 * (z[idx[1:]] / z[idx[:-1]] - 1)
+    elif formula == 'pc1':
+        idx = np.arange(12 + t1, T, step)
+        if len(idx) > 0:
+            with np.errstate(divide='ignore', invalid='ignore'):
+                X[idx] = 100 * (z[idx] / z[idx - 12] - 1)
+            X[np.isinf(X)] = np.nan
+    elif formula == 'pca':
+        idx = np.arange(t1, T, step)
+        if len(idx) > 1:
+            X[idx[0]] = np.nan
+            with np.errstate(divide='ignore', invalid='ignore'):
+                X[idx[1:]] = 100 * ((z[idx[1:]] / z[idx[:-1]]) ** (1/n) - 1)
+            X[np.isinf(X)] = np.nan
+    elif formula == 'log':
+        with np.errstate(invalid='ignore'):
+            X[:] = np.log(z)
+    else:
+        # Default to linear if unknown transformation
+        X[:] = z
+    
+    return X
+
+
+def _apply_transformations(
+    Z: pd.DataFrame,
+    series_metadata: pd.DataFrame,
+    drop_initial: int = 4
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Apply transformations to data based on series metadata.
+    
+    Parameters
+    ----------
+    Z : pd.DataFrame
+        Raw data (T x N) with series as columns
+    series_metadata : pd.DataFrame
+        Metadata with columns: series_id, transformation, frequency
+    drop_initial : int
+        Number of initial observations to drop (default: 4)
+        
+    Returns
+    -------
+    Tuple[pd.DataFrame, pd.DataFrame]
+        (X, Z) where X is transformed data and Z is raw data (after dropping)
+    """
+    X = pd.DataFrame(index=Z.index, columns=Z.columns, dtype=float)
+    
+    for series_id in Z.columns:
+        if series_id not in series_metadata['series_id'].values:
+            # If metadata missing, use linear transformation
+            X[series_id] = Z[series_id]
+            continue
+        
+        meta = series_metadata[series_metadata['series_id'] == series_id].iloc[0]
+        transformation = meta.get('transformation', 'lin')
+        frequency = meta.get('frequency', 'm')
+        
+        # Determine step size
+        step = 3 if frequency == 'q' else 1
+        
+        # Apply transformation
+        z_values = Z[series_id].values
+        x_values = _transform_series(z_values, transformation, frequency, step)
+        X[series_id] = x_values
+    
+    # Drop initial observations (as per DFM convention)
+    if len(X) > drop_initial:
+        X = X.iloc[drop_initial:]
+        Z = Z.iloc[drop_initial:]
+    
+    return X, Z
 
 
 
@@ -59,13 +188,21 @@ def get_source_id(source_code: str, client: Optional[Client] = None) -> int:
         
     Raises
     ------
-    ValueError
+    NotFoundError
         If source_code not found
     """
-    result = client.table('data_sources').select('id').eq('source_code', source_code).execute()
+    query = build_query(
+        client=client,
+        table_name='data_sources',
+        filters={'source_code': source_code},
+        select='id',
+        limit=1
+    )
+    
+    result = query.execute()
     if result.data:
         return result.data[0]['id']
-    raise ValueError(f"Data source '{source_code}' not found in database")
+    raise NotFoundError(f"Data source '{source_code}' not found in database")
 
 
 @_ensure_client
@@ -90,10 +227,18 @@ def get_source_code(source_id: int, client: Optional[Client] = None) -> str:
     ValueError
         If source_id not found
     """
-    result = client.table('data_sources').select('source_code').eq('id', source_id).execute()
+    query = build_query(
+        client=client,
+        table_name='data_sources',
+        filters={'id': source_id},
+        select='source_code',
+        limit=1
+    )
+    
+    result = query.execute()
     if result.data:
         return result.data[0]['source_code']
-    raise ValueError(f"Data source with ID {source_id} not found in database")
+    raise NotFoundError(f"Data source with id {source_id} not found in database")
 
 
 # ============================================================================
@@ -135,6 +280,53 @@ def list_series(client: Optional[Client] = None, api_source: Optional[str] = Non
         query = query.eq('api_source', api_source)
     result = query.execute()
     return result.data
+
+
+@_ensure_client
+def get_series_metadata_bulk(
+    series_ids: List[str],
+    client: Optional[Client] = None
+) -> pd.DataFrame:
+    """
+    Get metadata for multiple series.
+    
+    Parameters
+    ----------
+    series_ids : List[str]
+        List of series IDs to get metadata for
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns: series_id, transformation, frequency, units, category, etc.
+    """
+    if not series_ids:
+        return pd.DataFrame(columns=['series_id', 'transformation', 'frequency', 'units', 'category'])
+    
+    # Use batch query helper
+    all_data = batch_query_in(
+        client=client,
+        table_name=TABLES['series'],
+        column='series_id',
+        values=series_ids,
+        batch_size=100,
+        select='series_id, series_name, transformation, frequency, units, category, api_source, api_code'
+    )
+    
+    if not all_data:
+        return pd.DataFrame(columns=['series_id', 'transformation', 'frequency', 'units', 'category'])
+    
+    df = pd.DataFrame(all_data)
+    
+    # Ensure required columns exist
+    required_cols = ['series_id', 'transformation', 'frequency']
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = None
+    
+    return df
 
 
 # ============================================================================
@@ -190,6 +382,56 @@ def get_latest_vintage(client: Optional[Client] = None) -> Optional[Dict[str, An
         .execute()
     )
     return result.data[0] if result.data else None
+
+
+@_ensure_client
+def get_latest_vintage_id(
+    vintage_date: Optional[date] = None,
+    country: str = 'KR',
+    status: Optional[str] = 'completed',
+    client: Optional[Client] = None
+) -> Optional[int]:
+    """
+    Get latest vintage ID by date and country.
+    
+    Parameters
+    ----------
+    vintage_date : date, optional
+        Get latest vintage on or before this date. If None, gets latest overall.
+    country : str
+        Country code (default: 'KR')
+    status : str, optional
+        Filter by fetch_status (default: 'completed'). If None, any status.
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    int, optional
+        Vintage ID if found, None otherwise
+    """
+    query = (
+        client.table(TABLES['vintages'])
+        .select('vintage_id')
+        .eq('country', country)
+    )
+    
+    if status:
+        query = query.eq('fetch_status', status)
+    
+    if vintage_date:
+        query = query.lte('vintage_date', vintage_date.isoformat())
+    
+    result = (
+        query
+        .order('vintage_date', desc=True)
+        .limit(1)
+        .execute()
+    )
+    
+    if result.data:
+        return result.data[0]['vintage_id']
+    return None
 
 
 @_ensure_client
@@ -371,20 +613,14 @@ def insert_observations_from_dataframe(
     # Convert to records
     records = df_clean.to_dict('records')
     
-    # Batch insert with upsert (handle duplicates)
-    total_inserted = 0
-    for i in range(0, len(records), batch_size):
-        batch = records[i:i + batch_size]
-        try:
-            result = (
-                client.table(TABLES['observations'])
-                .upsert(batch, on_conflict='series_id,vintage_id,date')
-                .execute()
-            )
-            total_inserted += len(batch)
-        except Exception as e:
-            logger.error(f"Error inserting batch {i//batch_size + 1}: {e}", exc_info=True)
-            raise
+    # Use batch insert helper
+    total_inserted = batch_insert(
+        client=client,
+        table_name=TABLES['observations'],
+        records=records,
+        batch_size=batch_size,
+        on_conflict='series_id,vintage_id,date'
+    )
     
     return total_inserted
 
@@ -426,29 +662,116 @@ def get_observations(
 def get_vintage_data(
     vintage_id: int,
     config_series_ids: Optional[List[str]] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    strict_mode: bool = False,
+    ensure_series_order: bool = False,
     client: Optional[Client] = None
-) -> tuple[pd.DataFrame, pd.DatetimeIndex]:
+) -> Tuple[pd.DataFrame, pd.DatetimeIndex, pd.DataFrame, pd.DataFrame]:
     """
-    Get all data for a vintage, formatted for DFM input.
+    Get all data for a vintage, formatted for DFM input with transformations.
     
+    Parameters
+    ----------
+    vintage_id : int
+        Vintage ID
+    config_series_ids : List[str], optional
+        List of series IDs to include (if None, gets all series in vintage)
+    start_date : date, optional
+        Start date filter
+    end_date : date, optional
+        End date filter
+    strict_mode : bool
+        If True, raise error for missing series. If False, fill with NaN and warn.
+    ensure_series_order : bool
+        If True, ensure series order matches config_series_ids order
+    client : Client, optional
+        Supabase client instance
+        
     Returns
     -------
-    tuple
-        (Z, Time) where Z is (T x N) array and Time is DatetimeIndex
+    Tuple[pd.DataFrame, pd.DatetimeIndex, pd.DataFrame, pd.DataFrame]
+        (X, Time, Z, series_metadata) where:
+        - X: Transformed data (T x N) DataFrame
+        - Time: DatetimeIndex
+        - Z: Raw untransformed data (T x N) DataFrame
+        - series_metadata: DataFrame with series metadata
     """
     
     # Get observations
-    df = get_observations(client=client, vintage_id=vintage_id)
+    df = get_observations(
+        client=client,
+        vintage_id=vintage_id,
+        start_date=start_date,
+        end_date=end_date
+    )
     
     if df.empty:
-        return pd.DataFrame(), pd.DatetimeIndex([])
+        empty_df = pd.DataFrame()
+        empty_time = pd.DatetimeIndex([])
+        empty_metadata = pd.DataFrame(columns=['series_id', 'transformation', 'frequency'])
+        return empty_df, empty_time, empty_df, empty_metadata
     
-    # Filter by config series if provided
+    # Determine which series to fetch
+    available_series = df['series_id'].unique().tolist()
+    
     if config_series_ids:
-        df = df[df['series_id'].isin(config_series_ids)]
+        requested_series = config_series_ids
+        missing_series = set(requested_series) - set(available_series)
+        
+        if missing_series:
+            if strict_mode:
+                raise ValueError(
+                    f"Missing series in vintage {vintage_id}: {missing_series}"
+                )
+            else:
+                logger.warning(
+                    f"Series not found in vintage {vintage_id}: {missing_series}. "
+                    "Filling with NaN."
+                )
+        
+        # Filter to requested series (may include missing ones)
+        df = df[df['series_id'].isin(requested_series)]
+    else:
+        requested_series = available_series
+    
+    # Get series metadata
+    series_metadata = get_series_metadata_bulk(requested_series, client=client)
+    
+    # Ensure all requested series have metadata entries (fill missing with defaults)
+    if config_series_ids:
+        missing_metadata = set(requested_series) - set(series_metadata['series_id'].values)
+        if missing_metadata:
+            default_metadata = pd.DataFrame({
+                'series_id': list(missing_metadata),
+                'transformation': 'lin',
+                'frequency': 'm',
+                'units': None,
+                'category': None,
+                'series_name': None,
+                'api_source': None,
+                'api_code': None
+            })
+            series_metadata = pd.concat([series_metadata, default_metadata], ignore_index=True)
+            
+            if strict_mode:
+                logger.warning(f"Series missing metadata, defaulting to 'lin': {missing_metadata}")
     
     # Pivot to wide format: rows = dates, columns = series
     df_pivot = df.pivot(index='date', columns='series_id', values='value')
+    
+    # Ensure all requested series are present as columns (fill missing with NaN)
+    if config_series_ids:
+        for series_id in requested_series:
+            if series_id not in df_pivot.columns:
+                df_pivot[series_id] = np.nan
+    
+    # Order columns if requested
+    if ensure_series_order and config_series_ids:
+        # Order columns to match config_series_ids
+        existing_cols = [s for s in config_series_ids if s in df_pivot.columns]
+        missing_cols = [s for s in config_series_ids if s not in df_pivot.columns]
+        df_pivot = df_pivot[existing_cols + missing_cols]
     
     # Sort by date
     df_pivot = df_pivot.sort_index()
@@ -456,10 +779,109 @@ def get_vintage_data(
     # Get Time index
     Time = df_pivot.index
     
-    # Convert to numpy array (Z matrix)
-    Z = df_pivot.values
+    # Get raw data (Z) - before transformations
+    Z_raw = df_pivot.copy()
     
-    return Z, Time
+    # Apply transformations to get X
+    X, Z = _apply_transformations(Z_raw, series_metadata)
+    
+    # Update Time index after dropping initial observations
+    # _apply_transformations drops initial rows, so Time needs to match
+    if len(Time) > len(X):
+        Time = Time[len(Time) - len(X):]
+    
+    return X, Time, Z, series_metadata
+
+
+@_ensure_client
+def get_model_config_series_ids(
+    config_id: int,
+    client: Optional[Client] = None
+) -> List[str]:
+    """
+    Get ordered list of series IDs for a model configuration.
+    
+    Orders by model_block_assignments.block_index.
+    
+    Parameters
+    ----------
+    config_id : int
+        Model configuration ID
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    List[str]
+        Ordered list of series IDs
+    """
+    result = (
+        client.table(TABLES['model_block_assignments'])
+        .select('series_id')
+        .eq('config_id', config_id)
+        .order('block_index', desc=False)
+        .execute()
+    )
+    
+    if not result.data:
+        return []
+    
+    return [row['series_id'] for row in result.data]
+
+
+@_ensure_client
+def get_vintage_data_for_config(
+    config_id: int,
+    vintage_id: int,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    strict_mode: bool = False,
+    client: Optional[Client] = None
+) -> Tuple[pd.DataFrame, pd.DatetimeIndex, pd.DataFrame, pd.DataFrame]:
+    """
+    Get vintage data ordered by model configuration block assignments.
+    
+    This function uses model_block_assignments.block_index to order series,
+    ensuring proper block structure for DFM.
+    
+    Parameters
+    ----------
+    config_id : int
+        Model configuration ID
+    vintage_id : int
+        Vintage ID
+    start_date : date, optional
+        Start date filter
+    end_date : date, optional
+        End date filter
+    strict_mode : bool
+        If True, raise error for missing series. If False, fill with NaN and warn.
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    Tuple[pd.DataFrame, pd.DatetimeIndex, pd.DataFrame, pd.DataFrame]
+        (X, Time, Z, series_metadata) ordered by block_index
+    """
+    # Get ordered series IDs from block assignments
+    config_series_ids = get_model_config_series_ids(config_id, client=client)
+    
+    if not config_series_ids:
+        raise ValueError(f"No series assigned to config_id {config_id}")
+    
+    # Get data with ordering
+    X, Time, Z, series_metadata = get_vintage_data(
+        vintage_id=vintage_id,
+        config_series_ids=config_series_ids,
+        start_date=start_date,
+        end_date=end_date,
+        strict_mode=strict_mode,
+        ensure_series_order=True,
+        client=client
+    )
+    
+    return X, Time, Z, series_metadata
 
 
 # ============================================================================
@@ -782,3 +1204,96 @@ def get_active_items_for_statistic(
 ) -> List[Dict[str, Any]]:
     """Get active items for data collection."""
     return get_statistics_items(statistics_metadata_id, client, cycle, is_active=True)
+
+
+# ============================================================================
+# DFM Data Loading Wrapper (load_data_from_db)
+# ============================================================================
+
+@_ensure_client
+def load_data_from_db(
+    vintage_id: Optional[int] = None,
+    vintage_date: Optional[date] = None,
+    config_series_ids: Optional[List[str]] = None,
+    config_id: Optional[int] = None,
+    sample_start: Optional[Union[date, str, pd.Timestamp]] = None,
+    strict_mode: bool = False,
+    client: Optional[Client] = None
+) -> Tuple[np.ndarray, pd.DatetimeIndex, np.ndarray]:
+    """
+    Load data from database for DFM, matching load_data() signature from Excel.
+    
+    This is the main entry point for loading data from database instead of Excel files.
+    It returns data in the same format as load_data() for compatibility.
+    
+    Parameters
+    ----------
+    vintage_id : int, optional
+        Vintage ID (if None, uses latest vintage or vintage_date)
+    vintage_date : date, optional
+        Vintage date (alternative to vintage_id)
+    config_series_ids : List[str], optional
+        List of series IDs to include (if None and config_id provided, uses config)
+    config_id : int, optional
+        Model configuration ID (uses block assignments for ordering)
+    sample_start : date, str, or Timestamp, optional
+        Start date for estimation sample
+    strict_mode : bool
+        If True, raise error for missing series. If False, fill with NaN and warn.
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    Tuple[np.ndarray, pd.DatetimeIndex, np.ndarray]
+        (X, Time, Z) where:
+        - X: Transformed data (T x N) numpy array
+        - Time: DatetimeIndex
+        - Z: Raw untransformed data (T x N) numpy array
+    """
+    # Resolve vintage_id
+    if vintage_id is None:
+        if vintage_date:
+            vintage_id = get_latest_vintage_id(vintage_date=vintage_date, client=client)
+        else:
+            vintage_id = get_latest_vintage_id(client=client)
+        
+        if vintage_id is None:
+            raise ValueError("No vintage found. Create a vintage first or specify vintage_id/vintage_date.")
+    
+    # Convert sample_start to date if needed
+    start_date = None
+    if sample_start:
+        if isinstance(sample_start, str):
+            start_date = pd.to_datetime(sample_start).date()
+        elif isinstance(sample_start, pd.Timestamp):
+            start_date = sample_start.date()
+        elif isinstance(sample_start, date):
+            start_date = sample_start
+    
+    # Get data
+    if config_id:
+        # Use block-ordered data
+        X, Time, Z, _ = get_vintage_data_for_config(
+            config_id=config_id,
+            vintage_id=vintage_id,
+            start_date=start_date,
+            strict_mode=strict_mode,
+            client=client
+        )
+    else:
+        # Use config_series_ids ordering
+        X, Time, Z, _ = get_vintage_data(
+            vintage_id=vintage_id,
+            config_series_ids=config_series_ids,
+            start_date=start_date,
+            strict_mode=strict_mode,
+            ensure_series_order=bool(config_series_ids),
+            client=client
+        )
+    
+    # Convert to numpy arrays (matching load_data() return format)
+    X_array = X.values if isinstance(X, pd.DataFrame) else X
+    Z_array = Z.values if isinstance(Z, pd.DataFrame) else Z
+    
+    return X_array, Time, Z_array

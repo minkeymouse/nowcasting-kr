@@ -1,6 +1,7 @@
 """Database module for Supabase integration with DFM nowcasting system."""
 
 from .client import get_client, get_supabase_client
+from .helpers import DatabaseError, NotFoundError, ValidationError
 from .operations import (
     # Data source operations
     get_source_id,
@@ -22,6 +23,11 @@ from .operations import (
     insert_observations_from_dataframe,
     get_observations,
     get_vintage_data,
+    get_vintage_data_for_config,
+    get_latest_vintage_id,
+    get_series_metadata_bulk,
+    get_model_config_series_ids,
+    load_data_from_db,
     # Statistics metadata operations
     upsert_statistics_metadata,
     get_statistics_metadata,
@@ -48,6 +54,11 @@ from .models import (
     ObservationModel,
 )
 from .series import SeriesManager
+from .spec_manager import (
+    export_config_to_csv,
+    get_latest_spec_from_db,
+    sync_csv_from_db,
+)
 
 __all__ = [
     'get_client',
@@ -67,6 +78,11 @@ __all__ = [
     'insert_observations_from_dataframe',
     'get_observations',
     'get_vintage_data',
+    'get_vintage_data_for_config',
+    'get_latest_vintage_id',
+    'get_series_metadata_bulk',
+    'get_model_config_series_ids',
+    'load_data_from_db',
     'upsert_statistics_metadata',
     'get_statistics_metadata',
     'list_dfm_selected_statistics',
@@ -86,5 +102,11 @@ __all__ = [
     'StatisticsItemModel',
     'ObservationModel',
     'SeriesManager',
+    'DatabaseError',
+    'NotFoundError',
+    'ValidationError',
+    'export_config_to_csv',
+    'get_latest_spec_from_db',
+    'sync_csv_from_db',
 ]
 

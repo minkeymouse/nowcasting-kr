@@ -18,13 +18,17 @@ import os
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Load environment variables
-env_path = project_root / '.env.local'
-if env_path.exists():
-    load_dotenv(env_path)
+# Load environment variables - check multiple locations
+env_paths = [
+    project_root / '.env.local',
+    project_root.parent / '.env.local',
+    Path.home() / 'Nowcasting' / '.env.local',
+]
 
-# Import APIError from services (after path setup)
-from services.api.bok_client import BOKAPIError
+for env_path in env_paths:
+    if env_path.exists():
+        load_dotenv(env_path)
+        break
 
 # Configure logging
 logging.basicConfig(
@@ -32,6 +36,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Import APIError from services (after path setup)
+from services.api.bok_client import BOKAPIError
 
 
 def parse_statistic_table_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
