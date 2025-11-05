@@ -15,12 +15,12 @@
 -- SECURITY INVOKER uses the permissions of the user executing the query,
 -- which is safer and aligns with RLS policies
 --
--- Note: We drop and recreate instead of CREATE OR REPLACE to ensure
--- the SECURITY DEFINER property is removed
+-- Note: Using CASCADE to ensure all dependencies are dropped cleanly,
+-- then recreating views with default SECURITY INVOKER behavior
 
 -- Fix dfm_selected_statistics view
--- Drop and recreate without SECURITY DEFINER (defaults to SECURITY INVOKER)
-DROP VIEW IF EXISTS dfm_selected_statistics;
+-- Drop with CASCADE to remove all dependencies, then recreate cleanly
+DROP VIEW IF EXISTS dfm_selected_statistics CASCADE;
 CREATE VIEW dfm_selected_statistics AS
 SELECT 
     sm.id,
@@ -49,7 +49,8 @@ ORDER BY sm.dfm_priority NULLS LAST, sm.source_stat_code;
 COMMENT ON VIEW dfm_selected_statistics IS 'View of all DFM-selected statistics with source information';
 
 -- Fix active_statistics_by_source view
-DROP VIEW IF EXISTS active_statistics_by_source;
+-- Drop with CASCADE to remove all dependencies, then recreate cleanly
+DROP VIEW IF EXISTS active_statistics_by_source CASCADE;
 CREATE VIEW active_statistics_by_source AS
 SELECT 
     ds.source_code,
@@ -66,7 +67,8 @@ GROUP BY ds.source_code, ds.source_name;
 COMMENT ON VIEW active_statistics_by_source IS 'Summary of statistics by data source';
 
 -- Fix latest_forecasts_view
-DROP VIEW IF EXISTS latest_forecasts_view;
+-- Drop with CASCADE to remove all dependencies, then recreate cleanly
+DROP VIEW IF EXISTS latest_forecasts_view CASCADE;
 CREATE VIEW latest_forecasts_view AS
 SELECT DISTINCT ON (f.series_id, f.forecast_date)
     f.forecast_id,
@@ -94,7 +96,8 @@ ORDER BY f.series_id, f.forecast_date, f.created_at DESC;
 COMMENT ON VIEW latest_forecasts_view IS 'Latest forecast for each series and date combination';
 
 -- Fix model_training_history view
-DROP VIEW IF EXISTS model_training_history;
+-- Drop with CASCADE to remove all dependencies, then recreate cleanly
+DROP VIEW IF EXISTS model_training_history CASCADE;
 CREATE VIEW model_training_history AS
 SELECT 
     tm.model_id,
