@@ -443,3 +443,247 @@ CREATE TRIGGER update_statistics_items_updated_at BEFORE UPDATE ON statistics_it
 
 CREATE TRIGGER update_series_last_updated BEFORE UPDATE ON series
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================================
+-- 12. Model Configurations Table
+-- ============================================================================
+-- Stores DFM model configurations (block structure, series selection, etc.)
+CREATE TABLE IF NOT EXISTS model_configs (
+    config_id SERIAL PRIMARY KEY,
+    config_name VARCHAR(100) NOT NULL UNIQUE,
+    country VARCHAR(10) DEFAULT 'KR',
+    description TEXT,
+    
+    -- Configuration as JSON
+    config_json JSONB NOT NULL,  -- Full ModelConfig as JSON
+    
+    -- Block structure
+    block_names TEXT[],  -- Array of block names
+    
+    -- Metadata
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    
+    CONSTRAINT unique_config_name UNIQUE (config_name)
+);
+
+CREATE INDEX idx_model_configs_config_name ON model_configs(config_name);
+CREATE INDEX idx_model_configs_country ON model_configs(country);
+CREATE INDEX idx_model_configs_config_json ON model_configs USING GIN (config_json);
+
+COMMENT ON TABLE model_configs IS 'DFM model configurations (block structure, series selection)';
+COMMENT ON COLUMN model_configs.config_json IS 'Full ModelConfig as JSON (SeriesID, Blocks, Frequency, etc.)';
+
+-- ============================================================================
+-- 13. Model Block Assignments Table
+-- ============================================================================
+-- Links series to blocks in a model configuration
+CREATE TABLE IF NOT EXISTS model_block_assignments (
+    id SERIAL PRIMARY KEY,
+    config_id INTEGER NOT NULL REFERENCES model_configs(config_id) ON DELETE CASCADE,
+    series_id VARCHAR(100) NOT NULL REFERENCES series(series_id) ON DELETE CASCADE,
+    block_name VARCHAR(100) NOT NULL,
+    block_index INTEGER NOT NULL,  -- Index of block in block_names array
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    
+    CONSTRAINT unique_config_series_block UNIQUE (config_id, series_id, block_name)
+);
+
+CREATE INDEX idx_model_block_assignments_config_id ON model_block_assignments(config_id);
+CREATE INDEX idx_model_block_assignments_series_id ON model_block_assignments(series_id);
+CREATE INDEX idx_model_block_assignments_block_name ON model_block_assignments(block_name);
+CREATE INDEX idx_model_block_assignments_config_block ON model_block_assignments(config_id, block_name);
+
+COMMENT ON TABLE model_block_assignments IS 'Series-to-block assignments for each model configuration';
+
+-- ============================================================================
+-- 14. Trained Models Table
+-- ============================================================================
+-- Stores trained DFM model weights and parameters
+CREATE TABLE IF NOT EXISTS trained_models (
+    model_id SERIAL PRIMARY KEY,
+    config_id INTEGER NOT NULL REFERENCES model_configs(config_id) ON DELETE CASCADE,
+    vintage_id INTEGER NOT NULL REFERENCES data_vintages(vintage_id) ON DELETE CASCADE,
+    
+    -- Training parameters
+    threshold FLOAT,  -- Convergence threshold used
+    convergence_iter INTEGER,  -- Number of iterations to converge
+    log_likelihood FLOAT,  -- Final log-likelihood
+    
+    -- Model parameters as JSON (serialized numpy arrays)
+    parameters_json JSONB NOT NULL,  -- {C, A, Q, R, Z_0, V_0, etc.}
+    
+    -- Metadata
+    trained_at TIMESTAMP DEFAULT NOW(),
+    training_duration_seconds FLOAT,
+    notes TEXT,
+    
+    CONSTRAINT unique_config_vintage UNIQUE (config_id, vintage_id)
+);
+
+CREATE INDEX idx_trained_models_config_id ON trained_models(config_id);
+CREATE INDEX idx_trained_models_vintage_id ON trained_models(vintage_id);
+CREATE INDEX idx_trained_models_trained_at ON trained_models(trained_at DESC);
+CREATE INDEX idx_trained_models_config_vintage ON trained_models(config_id, vintage_id);
+
+COMMENT ON TABLE trained_models IS 'Trained DFM model weights and parameters';
+COMMENT ON COLUMN trained_models.parameters_json IS 'Serialized DFM parameters (C, A, Q, R, Z_0, V_0, etc.) as JSON';
+
+-- ============================================================================
+-- 15. Forecast Runs Table
+-- ============================================================================
+-- Tracks forecast runs (nowcast updates, batch forecasts)
+CREATE TABLE IF NOT EXISTS forecast_runs (
+    run_id SERIAL PRIMARY KEY,
+    model_id INTEGER NOT NULL REFERENCES trained_models(model_id) ON DELETE CASCADE,
+    vintage_id_old INTEGER REFERENCES data_vintages(vintage_id) ON DELETE SET NULL,
+    vintage_id_new INTEGER NOT NULL REFERENCES data_vintages(vintage_id) ON DELETE CASCADE,
+    
+    -- Run metadata
+    run_type VARCHAR(50),  -- 'nowcast', 'forecast', 'batch'
+    target_series_id VARCHAR(100),  -- Series being forecasted
+    target_period VARCHAR(20),  -- Target period (e.g., '2016q4')
+    
+    -- GitHub Actions tracking
+    github_run_id VARCHAR(100),
+    github_workflow_run_url VARCHAR(500),
+    
+    -- Status
+    status VARCHAR(20) DEFAULT 'pending',  -- pending, running, completed, failed
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    error_message TEXT,
+    
+    -- Results summary
+    forecasts_generated INTEGER,
+    metadata_json JSONB,
+    
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_forecast_runs_model_id ON forecast_runs(model_id);
+CREATE INDEX idx_forecast_runs_vintage_id_new ON forecast_runs(vintage_id_new);
+CREATE INDEX idx_forecast_runs_vintage_id_old ON forecast_runs(vintage_id_old) WHERE vintage_id_old IS NOT NULL;
+CREATE INDEX idx_forecast_runs_target_series_id ON forecast_runs(target_series_id) WHERE target_series_id IS NOT NULL;
+CREATE INDEX idx_forecast_runs_status ON forecast_runs(status);
+CREATE INDEX idx_forecast_runs_github_run_id ON forecast_runs(github_run_id) WHERE github_run_id IS NOT NULL;
+CREATE INDEX idx_forecast_runs_created_at ON forecast_runs(created_at DESC);
+
+COMMENT ON TABLE forecast_runs IS 'Tracks forecast runs (nowcast updates, batch forecasts)';
+
+-- ============================================================================
+-- 16. Forecasts Table
+-- ============================================================================
+-- Stores individual forecasts
+CREATE TABLE IF NOT EXISTS forecasts (
+    forecast_id SERIAL PRIMARY KEY,
+    model_id INTEGER NOT NULL REFERENCES trained_models(model_id) ON DELETE CASCADE,
+    run_id INTEGER REFERENCES forecast_runs(run_id) ON DELETE SET NULL,
+    series_id VARCHAR(100) NOT NULL REFERENCES series(series_id) ON DELETE CASCADE,
+    
+    -- Forecast details
+    forecast_date DATE NOT NULL,  -- Target date for forecast
+    forecast_value DOUBLE PRECISION NOT NULL,
+    lower_bound DOUBLE PRECISION,
+    upper_bound DOUBLE PRECISION,
+    confidence_level FLOAT DEFAULT 0.95,
+    
+    -- Additional metadata
+    metadata_json JSONB,  -- Additional forecast metadata
+    
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_forecasts_model_id ON forecasts(model_id);
+CREATE INDEX idx_forecasts_run_id ON forecasts(run_id) WHERE run_id IS NOT NULL;
+CREATE INDEX idx_forecasts_series_id ON forecasts(series_id);
+CREATE INDEX idx_forecasts_forecast_date ON forecasts(forecast_date);
+CREATE INDEX idx_forecasts_model_series_date ON forecasts(model_id, series_id, forecast_date);
+CREATE INDEX idx_forecasts_created_at ON forecasts(created_at DESC);
+
+COMMENT ON TABLE forecasts IS 'Individual forecasts from DFM models';
+COMMENT ON COLUMN forecasts.forecast_date IS 'Target date for the forecast';
+
+-- ============================================================================
+-- 17. Additional Optimized Indexes for Forecasting Queries
+-- ============================================================================
+
+-- Composite index for efficient vintage data retrieval (most common query pattern)
+CREATE INDEX IF NOT EXISTS idx_observations_vintage_date_series 
+    ON observations(vintage_id, date, series_id);
+
+-- Composite index for series data retrieval across vintages
+CREATE INDEX IF NOT EXISTS idx_observations_series_date_vintage 
+    ON observations(series_id, date, vintage_id);
+
+-- Index for DFM-selected series filtering
+CREATE INDEX IF NOT EXISTS idx_series_dfm_compatible 
+    ON series(series_id, frequency, is_active) 
+    WHERE is_active = TRUE;
+
+-- Index for efficient vintage comparison queries
+CREATE INDEX IF NOT EXISTS idx_observations_series_vintage_date 
+    ON observations(series_id, vintage_id, date);
+
+-- ============================================================================
+-- 18. Helper Views for Forecasting
+-- ============================================================================
+
+-- View for latest forecasts per series
+CREATE OR REPLACE VIEW latest_forecasts_view AS
+SELECT DISTINCT ON (f.series_id, f.forecast_date)
+    f.forecast_id,
+    f.model_id,
+    f.run_id,
+    f.series_id,
+    s.series_name,
+    f.forecast_date,
+    f.forecast_value,
+    f.lower_bound,
+    f.upper_bound,
+    f.confidence_level,
+    f.created_at,
+    tm.config_id,
+    mc.config_name,
+    tm.vintage_id,
+    dv.vintage_date
+FROM forecasts f
+JOIN series s ON f.series_id = s.series_id
+JOIN trained_models tm ON f.model_id = tm.model_id
+JOIN model_configs mc ON tm.config_id = mc.config_id
+JOIN data_vintages dv ON tm.vintage_id = dv.vintage_id
+ORDER BY f.series_id, f.forecast_date, f.created_at DESC;
+
+COMMENT ON VIEW latest_forecasts_view IS 'Latest forecast for each series and date combination';
+
+-- View for model training history
+CREATE OR REPLACE VIEW model_training_history AS
+SELECT 
+    tm.model_id,
+    tm.config_id,
+    mc.config_name,
+    tm.vintage_id,
+    dv.vintage_date,
+    tm.convergence_iter,
+    tm.log_likelihood,
+    tm.threshold,
+    tm.trained_at,
+    tm.training_duration_seconds,
+    COUNT(DISTINCT f.forecast_id) as forecast_count
+FROM trained_models tm
+JOIN model_configs mc ON tm.config_id = mc.config_id
+JOIN data_vintages dv ON tm.vintage_id = dv.vintage_id
+LEFT JOIN forecasts f ON tm.model_id = f.model_id
+GROUP BY tm.model_id, tm.config_id, mc.config_name, tm.vintage_id, dv.vintage_date,
+         tm.convergence_iter, tm.log_likelihood, tm.threshold, tm.trained_at, tm.training_duration_seconds
+ORDER BY tm.trained_at DESC;
+
+COMMENT ON VIEW model_training_history IS 'Model training history with forecast counts';
+
+-- ============================================================================
+-- 19. Additional Triggers
+-- ============================================================================
+
+CREATE TRIGGER update_model_configs_updated_at BEFORE UPDATE ON model_configs
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
