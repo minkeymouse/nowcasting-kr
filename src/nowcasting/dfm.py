@@ -1986,8 +1986,8 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5) -> DFMResult:
     --------
     >>> from src.nowcasting import load_config, load_data, dfm
     >>> import pandas as pd
-    >>> # Load configuration
-    >>> config = load_config('config/model/kr_dfm_v1.yaml')
+    >>> # Load configuration (CSV or YAML both work)
+    >>> config = load_config('migrations/001_initial_spec.csv')  # or 'config/model/kr_dfm_v1.yaml'
     >>> # Load data from database
     >>> from src.nowcasting import load_data_from_db
     >>> X, Time, Z = load_data_from_db(config=config, vintage_date='2016-06-29',

@@ -406,7 +406,7 @@ def load_data(datafile: Union[str, Path], config: ModelConfig,
     """Load and transform data from CSV file.
     
     This function reads data from a CSV file, sorts it to match the model
-    configuration, and applies the specified transformations.
+    configuration (from CSV or YAML), and applies the specified transformations.
     
     Note: For production use, prefer `load_data_from_db()` which loads data
     directly from the database.
@@ -416,7 +416,7 @@ def load_data(datafile: Union[str, Path], config: ModelConfig,
     datafile : str or Path
         Path to CSV data file (.csv)
     config : ModelConfig
-        Model configuration object
+        Model configuration object (from CSV or YAML)
     sample_start : pd.Timestamp or str, optional
         Start date for sample (YYYY-MM-DD). If None, uses all available data.
         Data before this date will be dropped.
@@ -436,6 +436,9 @@ def load_data(datafile: Union[str, Path], config: ModelConfig,
     if datafile.suffix.lower() != '.csv':
         raise ValueError('Only CSV files supported. Use database for production data loading.')
     
+    if not datafile.exists():
+        raise FileNotFoundError(f"Data file not found: {datafile}")
+    
     # Create path for cached .mat file (matching MATLAB behavior)
     mat_dir = datafile.parent / 'mat'
     datafile_mat = mat_dir / f'{datafile.stem}.mat'
@@ -450,10 +453,11 @@ def load_data(datafile: Union[str, Path], config: ModelConfig,
     else:
         Z, Time, Mnem = cache_data
     
-    # Process data: sort, transform, filter
+    # Process data: sort to match config order, then transform
     Z, _ = sort_data(Z, Mnem, config)
     X, Time, Z = transform_data(Z, Time, config)
     
+    # Apply sample_start filtering
     if sample_start is not None:
         if isinstance(sample_start, str):
             sample_start = pd.to_datetime(sample_start)
@@ -523,11 +527,15 @@ def _apply_transformations_from_metadata(
     series_metadata_df: pd.DataFrame,
     config: Optional[ModelConfig] = None
 ) -> Tuple[np.ndarray, pd.DatetimeIndex]:
-    """Apply transformations using series metadata, falling back to config if needed."""
+    """Apply transformations using series metadata, falling back to config if needed.
+    
+    This function consolidates transformation logic to work with both database
+    metadata and ModelConfig objects (from CSV or YAML).
+    """
     T, N = Z.shape
     X = np.full((T, N), np.nan)
     
-    # Build metadata lookup
+    # Build metadata lookup from database
     metadata_dict = {}
     if not series_metadata_df.empty and 'series_id' in series_metadata_df.columns:
         for _, row in series_metadata_df.iterrows():
@@ -537,25 +545,38 @@ def _apply_transformations_from_metadata(
                 'frequency': row.get('frequency', 'm')
             }
     
-    # Apply transformations
-    for i, series_id in enumerate(data_df.columns):
-        if series_id in metadata_dict:
-            transform = metadata_dict[series_id]['transformation']
-            freq = metadata_dict[series_id]['frequency']
-        elif config is not None:
-            # Fallback to config
-            if i < len(config.Transformation):
-                transform = config.Transformation[i]
-                freq = config.Frequency[i]
+    # Apply transformations using metadata or config
+    if config is not None:
+        # Use config (works with CSV or YAML configs)
+        for i in range(N):
+            if i < len(config.SeriesID):
+                series_id = config.SeriesID[i]
+                # Prefer metadata if available, otherwise use config
+                if series_id in metadata_dict:
+                    transform = metadata_dict[series_id]['transformation']
+                    freq = metadata_dict[series_id]['frequency']
+                else:
+                    transform = config.Transformation[i]
+                    freq = config.Frequency[i]
+            else:
+                # Fallback for series not in config
+                transform = 'lin'
+                freq = 'm'
+            
+            step = 3 if freq == 'q' else 1
+            X[:, i] = _transform_series(Z[:, i], transform, freq, step)
+    else:
+        # Use metadata only (no config available)
+        for i, series_id in enumerate(data_df.columns):
+            if series_id in metadata_dict:
+                transform = metadata_dict[series_id]['transformation']
+                freq = metadata_dict[series_id]['frequency']
             else:
                 transform = 'lin'
                 freq = 'm'
-        else:
-            transform = 'lin'
-            freq = 'm'
-        
-        step = 3 if freq == 'q' else 1
-        X[:, i] = _transform_series(Z[:, i], transform, freq, step)
+            
+            step = 3 if freq == 'q' else 1
+            X[:, i] = _transform_series(Z[:, i], transform, freq, step)
     
     # Drop first 4 observations (transformations cause missing values)
     drop = 4
@@ -606,7 +627,10 @@ def _fetch_vintage_data(
     strict_mode: bool,
     client: object
 ) -> Tuple[pd.DataFrame, pd.DatetimeIndex, pd.DataFrame]:
-    """Fetch vintage data and metadata from database."""
+    """Fetch vintage data and metadata from database.
+    
+    Uses config-specific function if available, otherwise falls back to general function.
+    """
     try:
         from database import (
             get_vintage_data,
@@ -616,7 +640,7 @@ def _fetch_vintage_data(
     except ImportError:
         raise
     
-    # Use config-specific function if config_id provided
+    # Prefer config-specific function (uses model_block_assignments for ordering)
     if config_id is not None:
         try:
             return get_vintage_data_for_config(
@@ -627,19 +651,11 @@ def _fetch_vintage_data(
                 strict_mode=strict_mode,
                 client=client
             )
-        except (TypeError, AttributeError):
-            # Fallback to general function
-            logger.warning("get_vintage_data_for_config not available, using get_vintage_data")
-            if config_series_ids:
-                data_df, time_index = get_vintage_data(
-                    vintage_id=vintage_id,
-                    config_series_ids=config_series_ids,
-                    client=client
-                )
-                series_metadata_df = get_series_metadata_bulk(config_series_ids, client=client)
-                return data_df, time_index, series_metadata_df
+        except (TypeError, AttributeError) as e:
+            # Fallback if function signature differs or not available
+            logger.warning(f"get_vintage_data_for_config failed ({e}), using general function")
     
-    # Use general function
+    # Use general function with series IDs
     result = get_vintage_data(
         vintage_id=vintage_id,
         config_series_ids=config_series_ids,
@@ -648,11 +664,12 @@ def _fetch_vintage_data(
         client=client
     )
     
-    # Handle both old and new signatures
+    # Handle both return signatures (2-tuple or 3-tuple)
     if len(result) == 3:
         return result  # (data_df, time_index, series_metadata_df)
     else:
         data_df, time_index = result
+        # Fetch metadata separately if needed
         series_metadata_df = (
             get_series_metadata_bulk(config_series_ids, client=client)
             if config_series_ids else pd.DataFrame()
@@ -772,16 +789,18 @@ def load_data_from_db(
     # Convert to numpy array
     Z = data_df.values.astype(float)
     
-    # Apply transformations
-    if config is not None and not series_metadata_df.empty:
+    # Apply transformations using config (CSV or YAML) with metadata fallback
+    if config is not None:
         X, Time = _apply_transformations_from_metadata(
             Z, time_index, data_df, series_metadata_df, config
         )
-        # Adjust Z to match X length (drop first 4)
+        # Adjust Z to match X length (drop first 4 observations)
         drop = 4
         if len(Z) > drop:
             Z = Z[drop:]
     else:
+        # No config available - use raw data without transformations
+        logger.warning("No config provided - skipping transformations. Results may be incorrect.")
         X = Z.copy()
         Time = time_index
     
