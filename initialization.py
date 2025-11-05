@@ -1,4 +1,4 @@
-"""Consolidated initialization script for DFM database setup.
+"""Consolidated initialization script for macroeconomic forecasting database setup.
 
 This script:
 1. Loads CSV specification file (src/spec/001_initial_spec.csv) to get selected series
@@ -294,7 +294,7 @@ def fetch_series_data(
 def main() -> None:
     """Main initialization workflow."""
     parser = argparse.ArgumentParser(
-        description='Initialize DFM database with data from CSV specification'
+        description='Initialize macroeconomic forecasting database with data from CSV specification'
     )
     parser.add_argument(
         '--csv-file',
@@ -316,10 +316,10 @@ def main() -> None:
     args = parser.parse_args()
     
     print("\n" + "=" * 80)
-    print("🚀 DFM DATABASE INITIALIZATION")
+    print("🚀 MACROECONOMIC FORECASTING DATABASE INITIALIZATION")
     print("=" * 80)
     logger.info("=" * 80)
-    logger.info("DFM Database Initialization")
+    logger.info("Macroeconomic Forecasting Database Initialization")
     logger.info("=" * 80)
     print(f"📄 CSV file: {args.csv_file}")
     print(f"🧪 Dry run: {args.dry_run}")
@@ -403,7 +403,6 @@ def main() -> None:
     
     logger.info(f"Vintage date: {vintage_date}")
     print()
-    logger.info()
     
     # Create vintage and ingestion job
     print("\n📦 Creating vintage and ingestion job...")
@@ -424,7 +423,6 @@ def main() -> None:
         logger.info("Dry run: Skipping vintage/job creation")
     
     print()
-    logger.info()
     
     # Initialize API clients
     print("\n🔧 Initializing API clients...")
@@ -439,7 +437,6 @@ def main() -> None:
         print("   ⚠️  KOSIS API client not available")
     
     print()
-    logger.info()
     
     # Get source IDs
     print("\n📋 Getting source IDs from database...")
@@ -468,7 +465,6 @@ def main() -> None:
     print("=" * 80)
     logger.info(f"Processing {len(model_cfg.series)} series...")
     print()
-    logger.info()
     
     # Rate limiting
     rate_limiter = RateLimiter(bok_delay=0.6, kosis_delay=0.5)
@@ -590,7 +586,6 @@ def main() -> None:
             traceback.print_exc()
         
         print()
-        logger.info()
     
     # Insert all observations
     print("\n" + "=" * 80)
@@ -624,7 +619,6 @@ def main() -> None:
     print("=" * 80)
     if not dry_run:
         print("📋 Preparing model configuration...")
-        logger.info()
         logger.info("Saving model configuration to database...")
         
         # Use CSV filename as config name (without extension)
@@ -670,7 +664,7 @@ def main() -> None:
             config_name=config_name,
             config_json=config_json,
             block_names=block_names,
-            description=f"DFM model configuration loaded from CSV: {csv_path.name}",
+            description=f"Macroeconomic forecasting model configuration loaded from CSV: {csv_path.name}",
             country='KR',
             client=client
         )
@@ -736,7 +730,6 @@ def main() -> None:
     print("\n" + "=" * 80)
     print("✅ INITIALIZATION SUMMARY")
     print("=" * 80)
-    logger.info()
     logger.info("=" * 80)
     logger.info("Initialization Summary")
     logger.info("=" * 80)
