@@ -16,12 +16,16 @@
 -- which is safer and aligns with RLS policies
 --
 -- Note: Using CASCADE to ensure all dependencies are dropped cleanly,
--- then recreating views with default SECURITY INVOKER behavior
+-- then recreating views with explicit security_invoker = true (PostgreSQL 15+)
+-- This ensures views execute with the permissions of the querying user,
+-- not the view creator, which properly enforces RLS policies
 
 -- Fix dfm_selected_statistics view
 -- Drop with CASCADE to remove all dependencies, then recreate cleanly
+-- Explicitly set security_invoker = true (PostgreSQL 15+)
 DROP VIEW IF EXISTS dfm_selected_statistics CASCADE;
-CREATE VIEW dfm_selected_statistics AS
+CREATE VIEW dfm_selected_statistics
+WITH (security_invoker = true) AS
 SELECT 
     sm.id,
     ds.source_code,
@@ -50,8 +54,10 @@ COMMENT ON VIEW dfm_selected_statistics IS 'View of all DFM-selected statistics 
 
 -- Fix active_statistics_by_source view
 -- Drop with CASCADE to remove all dependencies, then recreate cleanly
+-- Explicitly set security_invoker = true (PostgreSQL 15+)
 DROP VIEW IF EXISTS active_statistics_by_source CASCADE;
-CREATE VIEW active_statistics_by_source AS
+CREATE VIEW active_statistics_by_source
+WITH (security_invoker = true) AS
 SELECT 
     ds.source_code,
     ds.source_name,
@@ -68,8 +74,10 @@ COMMENT ON VIEW active_statistics_by_source IS 'Summary of statistics by data so
 
 -- Fix latest_forecasts_view
 -- Drop with CASCADE to remove all dependencies, then recreate cleanly
+-- Explicitly set security_invoker = true (PostgreSQL 15+)
 DROP VIEW IF EXISTS latest_forecasts_view CASCADE;
-CREATE VIEW latest_forecasts_view AS
+CREATE VIEW latest_forecasts_view
+WITH (security_invoker = true) AS
 SELECT DISTINCT ON (f.series_id, f.forecast_date)
     f.forecast_id,
     f.model_id,
@@ -97,8 +105,10 @@ COMMENT ON VIEW latest_forecasts_view IS 'Latest forecast for each series and da
 
 -- Fix model_training_history view
 -- Drop with CASCADE to remove all dependencies, then recreate cleanly
+-- Explicitly set security_invoker = true (PostgreSQL 15+)
 DROP VIEW IF EXISTS model_training_history CASCADE;
-CREATE VIEW model_training_history AS
+CREATE VIEW model_training_history
+WITH (security_invoker = true) AS
 SELECT 
     tm.model_id,
     tm.config_id,
