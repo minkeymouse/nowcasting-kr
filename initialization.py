@@ -475,6 +475,12 @@ def main() -> None:
     print()
     logger.info()
     
+    # Rate limiting: BOK API allows 300 calls per 3 minutes
+    # Add delay between API calls to avoid rate limiting
+    import time
+    last_api_call_time = {}
+    min_delay_seconds = 0.6  # 600ms between calls = ~100 calls per minute = safe for 300/3min limit
+    
     all_observations = []
     stats = {
         'total': len(model_cfg.series),
