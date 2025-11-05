@@ -128,7 +128,7 @@ ALTER TABLE public.data_sources ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (for idempotency)
 DROP POLICY IF EXISTS data_sources_public_read ON public.data_sources;
-DROP POLICY IF EXISTS data_sources_service_all ON public.data_sources;
+DROP POLICY IF EXISTS data_sources_service_write ON public.data_sources;
 
 -- Policy: Allow public read access to data sources
 CREATE POLICY data_sources_public_read ON public.data_sources
@@ -136,9 +136,10 @@ CREATE POLICY data_sources_public_read ON public.data_sources
     TO PUBLIC
     USING (true);
 
--- Policy: Allow authenticated service users to manage data sources
-CREATE POLICY data_sources_service_all ON public.data_sources
-    FOR ALL
+-- Policy: Allow authenticated service users to write data sources
+-- Note: Separated from SELECT to avoid multiple permissive policies warning
+CREATE POLICY data_sources_service_write ON public.data_sources
+    FOR INSERT, UPDATE, DELETE
     TO authenticated
     USING (true)
     WITH CHECK (true);
@@ -148,7 +149,7 @@ ALTER TABLE public.statistics_metadata ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (for idempotency)
 DROP POLICY IF EXISTS statistics_metadata_public_read ON public.statistics_metadata;
-DROP POLICY IF EXISTS statistics_metadata_service_all ON public.statistics_metadata;
+DROP POLICY IF EXISTS statistics_metadata_service_write ON public.statistics_metadata;
 
 -- Policy: Allow public read access to statistics metadata
 CREATE POLICY statistics_metadata_public_read ON public.statistics_metadata
@@ -156,9 +157,10 @@ CREATE POLICY statistics_metadata_public_read ON public.statistics_metadata
     TO PUBLIC
     USING (true);
 
--- Policy: Allow authenticated service users to manage statistics metadata
-CREATE POLICY statistics_metadata_service_all ON public.statistics_metadata
-    FOR ALL
+-- Policy: Allow authenticated service users to write statistics metadata
+-- Note: Separated from SELECT to avoid multiple permissive policies warning
+CREATE POLICY statistics_metadata_service_write ON public.statistics_metadata
+    FOR INSERT, UPDATE, DELETE
     TO authenticated
     USING (true)
     WITH CHECK (true);
@@ -168,7 +170,7 @@ ALTER TABLE public.statistics_items ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (for idempotency)
 DROP POLICY IF EXISTS statistics_items_public_read ON public.statistics_items;
-DROP POLICY IF EXISTS statistics_items_service_all ON public.statistics_items;
+DROP POLICY IF EXISTS statistics_items_service_write ON public.statistics_items;
 
 -- Policy: Allow public read access to statistics items
 CREATE POLICY statistics_items_public_read ON public.statistics_items
@@ -176,9 +178,10 @@ CREATE POLICY statistics_items_public_read ON public.statistics_items
     TO PUBLIC
     USING (true);
 
--- Policy: Allow authenticated service users to manage statistics items
-CREATE POLICY statistics_items_service_all ON public.statistics_items
-    FOR ALL
+-- Policy: Allow authenticated service users to write statistics items
+-- Note: Separated from SELECT to avoid multiple permissive policies warning
+CREATE POLICY statistics_items_service_write ON public.statistics_items
+    FOR INSERT, UPDATE, DELETE
     TO authenticated
     USING (true)
     WITH CHECK (true);
@@ -188,7 +191,7 @@ ALTER TABLE public.ingestion_jobs ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (for idempotency)
 DROP POLICY IF EXISTS ingestion_jobs_public_read ON public.ingestion_jobs;
-DROP POLICY IF EXISTS ingestion_jobs_service_all ON public.ingestion_jobs;
+DROP POLICY IF EXISTS ingestion_jobs_service_write ON public.ingestion_jobs;
 
 -- Policy: Allow public read access to ingestion jobs
 CREATE POLICY ingestion_jobs_public_read ON public.ingestion_jobs
@@ -196,9 +199,10 @@ CREATE POLICY ingestion_jobs_public_read ON public.ingestion_jobs
     TO PUBLIC
     USING (true);
 
--- Policy: Allow authenticated service users to manage ingestion jobs
-CREATE POLICY ingestion_jobs_service_all ON public.ingestion_jobs
-    FOR ALL
+-- Policy: Allow authenticated service users to write ingestion jobs
+-- Note: Separated from SELECT to avoid multiple permissive policies warning
+CREATE POLICY ingestion_jobs_service_write ON public.ingestion_jobs
+    FOR INSERT, UPDATE, DELETE
     TO authenticated
     USING (true)
     WITH CHECK (true);
@@ -208,7 +212,7 @@ ALTER TABLE public.api_fetches ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (for idempotency)
 DROP POLICY IF EXISTS api_fetches_public_read ON public.api_fetches;
-DROP POLICY IF EXISTS api_fetches_service_all ON public.api_fetches;
+DROP POLICY IF EXISTS api_fetches_service_write ON public.api_fetches;
 
 -- Policy: Allow public read access to API fetches
 CREATE POLICY api_fetches_public_read ON public.api_fetches
@@ -216,9 +220,10 @@ CREATE POLICY api_fetches_public_read ON public.api_fetches
     TO PUBLIC
     USING (true);
 
--- Policy: Allow authenticated service users to manage API fetches
-CREATE POLICY api_fetches_service_all ON public.api_fetches
-    FOR ALL
+-- Policy: Allow authenticated service users to write API fetches
+-- Note: Separated from SELECT to avoid multiple permissive policies warning
+CREATE POLICY api_fetches_service_write ON public.api_fetches
+    FOR INSERT, UPDATE, DELETE
     TO authenticated
     USING (true)
     WITH CHECK (true);
@@ -228,7 +233,7 @@ ALTER TABLE public.model_block_assignments ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (for idempotency)
 DROP POLICY IF EXISTS model_block_assignments_public_read ON public.model_block_assignments;
-DROP POLICY IF EXISTS model_block_assignments_service_all ON public.model_block_assignments;
+DROP POLICY IF EXISTS model_block_assignments_service_write ON public.model_block_assignments;
 
 -- Policy: Allow public read access to model block assignments
 CREATE POLICY model_block_assignments_public_read ON public.model_block_assignments
@@ -236,9 +241,10 @@ CREATE POLICY model_block_assignments_public_read ON public.model_block_assignme
     TO PUBLIC
     USING (true);
 
--- Policy: Allow authenticated service users to manage model block assignments
-CREATE POLICY model_block_assignments_service_all ON public.model_block_assignments
-    FOR ALL
+-- Policy: Allow authenticated service users to write model block assignments
+-- Note: Separated from SELECT to avoid multiple permissive policies warning
+CREATE POLICY model_block_assignments_service_write ON public.model_block_assignments
+    FOR INSERT, UPDATE, DELETE
     TO authenticated
     USING (true)
     WITH CHECK (true);
@@ -272,6 +278,8 @@ $$;
 --    - All public tables now have RLS enabled
 --    - Public read access allows data to be publicly viewable (appropriate for forecasting)
 --    - Write access restricted to authenticated users
+--    - Policies are separated by operation (SELECT vs INSERT/UPDATE/DELETE) to avoid
+--      multiple permissive policies warning for authenticated users
 --    - Service operations use service_role key which bypasses RLS (as intended)
 --
 -- 3. Function Search Path:
