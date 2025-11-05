@@ -15,8 +15,9 @@
 -- ============================================================================
 
 -- ============================================================================
--- PART 1: DROP ALL EXISTING OBJECTS
+-- PART 1: DROP ALL EXISTING OBJECTS (COMPLETE CLEANUP)
 -- ============================================================================
+-- This ensures a complete restart by dropping everything in the correct order
 
 -- Drop all views first (they depend on tables)
 DROP VIEW IF EXISTS active_statistics_by_source CASCADE;
@@ -24,7 +25,14 @@ DROP VIEW IF EXISTS dfm_selected_statistics CASCADE;
 DROP VIEW IF EXISTS latest_forecasts_view CASCADE;
 DROP VIEW IF EXISTS model_training_history CASCADE;
 
--- Drop all tables (CASCADE handles dependencies)
+-- Drop all triggers (must be dropped before tables)
+DROP TRIGGER IF EXISTS update_data_sources_updated_at ON data_sources CASCADE;
+DROP TRIGGER IF EXISTS update_statistics_metadata_updated_at ON statistics_metadata CASCADE;
+DROP TRIGGER IF EXISTS update_statistics_items_updated_at ON statistics_items CASCADE;
+DROP TRIGGER IF EXISTS update_series_last_updated ON series CASCADE;
+DROP TRIGGER IF EXISTS update_model_configs_updated_at ON model_configs CASCADE;
+
+-- Drop all tables (CASCADE handles all dependencies: constraints, indexes, triggers, etc.)
 DROP TABLE IF EXISTS forecasts CASCADE;
 DROP TABLE IF EXISTS forecast_runs CASCADE;
 DROP TABLE IF EXISTS trained_models CASCADE;
@@ -39,7 +47,7 @@ DROP TABLE IF EXISTS statistics_items CASCADE;
 DROP TABLE IF EXISTS statistics_metadata CASCADE;
 DROP TABLE IF EXISTS data_sources CASCADE;
 
--- Drop function
+-- Drop function (will be recreated with proper security)
 DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE;
 
 -- ============================================================================
@@ -1070,6 +1078,9 @@ CREATE TRIGGER update_statistics_items_updated_at BEFORE UPDATE ON statistics_it
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_series_last_updated BEFORE UPDATE ON series
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_model_configs_updated_at BEFORE UPDATE ON model_configs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================================================
