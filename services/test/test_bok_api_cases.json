@@ -1,0 +1,32 @@
+[
+  {
+    "stat_code": "200Y105",
+    "stat_name": "2.1.2.1.3. 경제활동별 GDP 및 GNI(원계열, 명목, 분기 및 연간)",
+    "cycle": "Q",
+    "srch_yn": "Y"
+  },
+  {
+    "stat_code": "404Y014",
+    "stat_name": "4.1.1.1. 생산자물가지수(기본분류)",
+    "cycle": "M",
+    "srch_yn": "Y"
+  },
+  {
+    "stat_code": "102Y002",
+    "stat_name": "1.1.1.1.2. 본원통화 구성내역(평잔, 원계열)",
+    "cycle": "M",
+    "srch_yn": "Y"
+  },
+  {
+    "stat_code": "731Y001",
+    "stat_name": "3.1.1.1. 주요국 통화의 대원화환율",
+    "cycle": "D",
+    "srch_yn": "Y"
+  },
+  {
+    "stat_code": "901Y033",
+    "stat_name": "8.1.4. 전산업생산지수(농림어업제외)",
+    "cycle": "M",
+    "srch_yn": "Y"
+  }
+]
