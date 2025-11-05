@@ -663,6 +663,69 @@ def get_observations(
 
 
 @_ensure_client
+def get_latest_observation_date(
+    series_id: str,
+    vintage_id: Optional[int] = None,
+    client: Optional[Client] = None
+) -> Optional[date]:
+    """
+    Get the latest observation date for a series.
+    
+    Parameters
+    ----------
+    series_id : str
+        Series ID
+    vintage_id : int, optional
+        Vintage ID (if None, checks all vintages)
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    date or None
+        Latest observation date, or None if no observations exist
+    """
+    query = client.table(TABLES['observations']).select('date').eq('series_id', series_id).order('date', desc=True).limit(1)
+    
+    if vintage_id:
+        query = query.eq('vintage_id', vintage_id)
+    
+    result = query.execute()
+    
+    if not result.data:
+        return None
+    
+    latest_date = result.data[0]['date']
+    if isinstance(latest_date, str):
+        return datetime.fromisoformat(latest_date).date()
+    return latest_date
+
+
+@_ensure_client
+def check_series_exists(
+    series_id: str,
+    client: Optional[Client] = None
+) -> bool:
+    """
+    Check if a series exists in the database.
+    
+    Parameters
+    ----------
+    series_id : str
+        Series ID to check
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    bool
+        True if series exists, False otherwise
+    """
+    series = get_series(series_id, client)
+    return series is not None
+
+
+@_ensure_client
 def get_vintage_data(
     vintage_id: int,
     config_series_ids: Optional[List[str]] = None,

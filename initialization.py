@@ -1,7 +1,7 @@
 """Consolidated initialization script for DFM database setup.
 
 This script:
-1. Loads CSV specification file (migrations/001_initial_spec.csv) to get selected series
+1. Loads CSV specification file (src/spec/001_initial_spec.csv) to get selected series
 2. Fetches data from APIs (BOK/KOSIS) for those series
 3. Updates Supabase database with:
    - Series metadata
@@ -10,8 +10,8 @@ This script:
    - Creates a vintage
 
 Usage:
-    python scripts/setup/initialization.py
-    python scripts/setup/initialization.py --csv-file migrations/001_initial_spec.csv
+    python initialization.py
+    python initialization.py --csv-file src/spec/001_initial_spec.csv
 """
 
 import sys
@@ -58,9 +58,12 @@ from database import (
     get_latest_vintage_id,
 )
 from database.models import SeriesModel
-from database.settings import BOKAPIConfig, KOSISAPIConfig
-from services.api.bok_client import BOKAPIClient
-from services.api.kosis_client import KOSISAPIClient
+from scripts.db_utils import (
+    RateLimiter,
+    initialize_api_clients,
+    ensure_vintage_and_job,
+    finalize_ingestion_job,
+)
 # Import load_config_from_csv inside main to avoid Hydra initialization issues
 
 
@@ -368,46 +371,19 @@ def main() -> None:
     print()
     logger.info()
     
-    # Check if vintage already exists
-    print("🔍 Checking for existing vintage...")
-    client = get_client()
-    existing_vintage_id = get_latest_vintage_id(vintage_date=vintage_date, client=client)
-    if existing_vintage_id:
-        print(f"⚠️  Vintage {vintage_date} already exists (ID: {existing_vintage_id})")
-        logger.warning(f"Vintage {vintage_date} already exists (ID: {existing_vintage_id})")
-        if not dry_run:
-            response = input("   Continue anyway? (y/n): ")
-            if response.lower() != 'y':
-                print("❌ Aborted by user")
-                logger.info("Aborted")
-                sys.exit(0)
-    else:
-        print(f"   ✅ No existing vintage found for {vintage_date}")
-    
-    # Create vintage
+    # Create vintage and ingestion job
     print("\n📦 Creating vintage and ingestion job...")
-    if not dry_run:
-        print("   📅 Creating vintage...")
-        vintage = create_vintage(
-            vintage_date=vintage_date,
-            country='KR',
-            client=client
-        )
-        vintage_id = vintage['vintage_id']
-        print(f"   ✅ Created vintage: {vintage_id}")
-        logger.info(f"Created vintage: {vintage_id}")
-        
-        # Create ingestion job
-        print("   📋 Creating ingestion job...")
-        job = create_ingestion_job(
-            vintage_id=vintage_id,
-            github_run_id=None,
-            client=client
-        )
-        job_id = job['job_id']
-        print(f"   ✅ Created ingestion job: {job_id}")
-        logger.info(f"Created ingestion job: {job_id}")
-    else:
+    client = get_client()
+    vintage_id, job_id = ensure_vintage_and_job(
+        vintage_date=vintage_date,
+        client=client,
+        dry_run=dry_run
+    )
+    if vintage_id:
+        print(f"   ✅ Vintage: {vintage_id}")
+    if job_id:
+        print(f"   ✅ Ingestion job: {job_id}")
+    if not dry_run and not vintage_id:
         vintage_id = None
         job_id = None
         print("   🧪 Dry run: Skipping vintage/job creation")
@@ -418,30 +394,15 @@ def main() -> None:
     
     # Initialize API clients
     print("\n🔧 Initializing API clients...")
-    bok_key = os.getenv('BOK_API_KEY')
-    kosis_key = os.getenv('KOSIS_API_KEY')
-    
-    bok_client = None
-    if bok_key:
-        print("   ✅ BOK_API_KEY found")
-        print("   🔌 Initializing BOK API client...")
-        bok_config = BOKAPIConfig(auth_key=bok_key)
-        bok_client = BOKAPIClient(bok_config)
+    bok_client, kosis_client = initialize_api_clients()
+    if bok_client:
         print("   ✅ BOK API client initialized")
-        logger.info("✓ BOK API client initialized")
     else:
-        print("   ⚠️  BOK_API_KEY not found")
-    
-    kosis_client = None
-    if kosis_key:
-        print("   ✅ KOSIS_API_KEY found")
-        print("   🔌 Initializing KOSIS API client...")
-        kosis_config = KOSISAPIConfig(api_key=kosis_key)
-        kosis_client = KOSISAPIClient(kosis_config)
+        print("   ⚠️  BOK API client not available")
+    if kosis_client:
         print("   ✅ KOSIS API client initialized")
-        logger.info("✓ KOSIS API client initialized")
     else:
-        print("   ⚠️  KOSIS_API_KEY not found")
+        print("   ⚠️  KOSIS API client not available")
     
     print()
     logger.info()
@@ -475,11 +436,8 @@ def main() -> None:
     print()
     logger.info()
     
-    # Rate limiting: BOK API allows 300 calls per 3 minutes
-    # Add delay between API calls to avoid rate limiting
-    import time
-    last_api_call_time = {}
-    min_delay_seconds = 0.6  # 600ms between calls = ~100 calls per minute = safe for 300/3min limit
+    # Rate limiting
+    rate_limiter = RateLimiter(bok_delay=0.6, kosis_delay=0.5)
     
     all_observations = []
     stats = {
@@ -529,27 +487,11 @@ def main() -> None:
             if api_source == 'BOK' and bok_client:
                 api_client = bok_client
                 source_id = bok_source_id
-                # Rate limiting for BOK API (300 calls per 3 minutes)
-                current_time = time.time()
-                if api_source in last_api_call_time:
-                    time_since_last = current_time - last_api_call_time[api_source]
-                    if time_since_last < min_delay_seconds:
-                        sleep_time = min_delay_seconds - time_since_last
-                        logger.debug(f"Rate limiting: sleeping {sleep_time:.2f}s before {api_source} API call")
-                        time.sleep(sleep_time)
-                last_api_call_time[api_source] = time.time()
+                rate_limiter.wait_if_needed(api_source)
             elif api_source == 'KOSIS' and kosis_client:
                 api_client = kosis_client
                 source_id = kosis_source_id
-                # Rate limiting for KOSIS API (add small delay)
-                current_time = time.time()
-                if api_source in last_api_call_time:
-                    time_since_last = current_time - last_api_call_time[api_source]
-                    if time_since_last < 0.5:  # 500ms for KOSIS
-                        sleep_time = 0.5 - time_since_last
-                        logger.debug(f"Rate limiting: sleeping {sleep_time:.2f}s before {api_source} API call")
-                        time.sleep(sleep_time)
-                last_api_call_time[api_source] = time.time()
+                rate_limiter.wait_if_needed(api_source)
             else:
                 logger.warning(f"  ⚠ No API client available for {api_source}")
                 stats['skipped'] += 1
@@ -744,7 +686,7 @@ def main() -> None:
         print("   ✅ Vintage status updated")
         
         print("   📋 Updating ingestion job status...")
-        update_ingestion_job(
+        finalize_ingestion_job(
             job_id=job_id,
             status='completed',
             successful_series=stats['successful'],
