@@ -107,7 +107,30 @@ def load_model_config_from_hydra(
                 f"Researchers should update: src/spec/001_initial_spec.csv"
             )
         
-        return load_config(config_file)
+        # Load config from file
+        model_config = load_config(config_file)
+        
+        # If loading from CSV and use_db is enabled, save blocks to database
+        if use_db and config_file.suffix.lower() == '.csv':
+            try:
+                from adapters.database import save_blocks_to_db
+                
+                # Derive config_name from CSV filename
+                # Example: '001_initial_spec.csv' → '001-initial-spec'
+                config_name = config_file.stem.replace('_', '-')
+                
+                # Save blocks to database
+                save_blocks_to_db(model_config, config_name)
+            except (ImportError, Exception) as e:
+                # Log warning but don't fail - block saving is optional
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    f"Could not save blocks to database for {config_file.name}: {e}. "
+                    f"Continuing without saving blocks."
+                )
+        
+        return model_config
     else:
         # Fallback to YAML config (convert DictConfig to dict, then to ModelConfig)
         return ModelConfig.from_dict(OmegaConf.to_container(cfg_model, resolve=True))

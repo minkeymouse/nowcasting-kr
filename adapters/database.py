@@ -545,3 +545,89 @@ def save_nowcast_to_db(
             f"Continuing execution."
         )
 
+
+
+def save_blocks_to_db(
+    config: ModelConfig,
+    config_name: str,
+    client: Optional[object] = None
+) -> None:
+    """Save block assignments from ModelConfig to database blocks table.
+    
+    This function extracts block information from a ModelConfig object and saves it
+    to the blocks table. The config_name should be derived from the CSV filename
+    (e.g., '001_initial_spec.csv' → '001-initial-spec').
+    
+    Parameters
+    ----------
+    config : ModelConfig
+        Model configuration with series and block information
+    config_name : str
+        Configuration name identifier (e.g., '001-initial-spec')
+        Derived from CSV filename by replacing underscores with hyphens and removing .csv
+    client : object, optional
+        Database client. If None, will attempt to get from database module.
+    
+    Notes
+    -----
+    - Deletes existing blocks for this config_name before inserting new ones
+    - Only saves blocks where the value is 1 (series loads on that block)
+    - series_order is the index of the series in the config.series list
+    """
+    try:
+        db_client = _get_db_client(client)
+        
+        if not config.block_names:
+            logger.warning(f"No block_names in config. Skipping block save for {config_name}.")
+            return
+        
+        # Prepare block records
+        block_records = []
+        for series_order, series_cfg in enumerate(config.series):
+            # Get blocks array (list of 0/1 values)
+            blocks = getattr(series_cfg, 'blocks', [])
+            if not blocks:
+                continue
+            
+            # Save each block where value is 1
+            for block_idx, block_name in enumerate(config.block_names):
+                if block_idx < len(blocks) and blocks[block_idx] == 1:
+                    block_records.append({
+                        'config_name': config_name,
+                        'series_id': series_cfg.series_id,
+                        'block_name': block_name,
+                        'series_order': series_order
+                    })
+        
+        if not block_records:
+            logger.warning(f"No block assignments found in config. Skipping block save for {config_name}.")
+            return
+        
+        # Delete existing blocks for this config_name
+        try:
+            db_client.table('blocks').delete().eq('config_name', config_name).execute()
+            logger.debug(f"Deleted existing blocks for config_name={config_name}")
+        except Exception as e:
+            logger.warning(f"Could not delete existing blocks for {config_name}: {e}")
+        
+        # Insert new blocks in batches
+        batch_size = 100
+        total_inserted = 0
+        for i in range(0, len(block_records), batch_size):
+            batch = block_records[i:i + batch_size]
+            try:
+                db_client.table('blocks').insert(batch).execute()
+                total_inserted += len(batch)
+            except Exception as e:
+                logger.error(f"Failed to insert block batch {i//batch_size + 1}: {e}")
+                raise
+        
+        logger.info(
+            f"Saved {total_inserted} block assignments to database for config_name={config_name}"
+        )
+        
+    except ImportError:
+        logger.warning("Database module not available. Cannot save blocks to database.")
+    except Exception as e:
+        logger.error(f"Failed to save blocks to database for config_name={config_name}: {e}")
+        raise
