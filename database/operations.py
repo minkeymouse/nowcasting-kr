@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any, Tuple, Union, Callable
 from datetime import date, datetime
 from supabase import Client
 
-from .client import get_client
+from .client import get_client  # Only used for ensure_client fallback
 from .helpers import (
     batch_query_in,
     batch_insert,
@@ -225,8 +225,7 @@ def create_or_get_series(
     Dict[str, Any]
         Series record from database
     """
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     series_id = generate_series_id(source_code, stat_code, item_code)
     
@@ -294,8 +293,7 @@ def create_series_from_item(
     Dict[str, Any]
         Series record
     """
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     from .helpers import map_frequency_to_code
     
@@ -330,8 +328,7 @@ def create_series_from_item(
 
 
 def get_series(series_id: str, client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     if not series_id:
         return None
     result = client.table(TABLES['series']).select('*').eq('series_id', series_id).execute()
@@ -345,8 +342,7 @@ def upsert_series(
     item_code: Optional[str] = None
 ) -> Dict[str, Any]:
     """Insert or update a series."""
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     data = series.model_dump(exclude_none=True)
     # Remove any fields that don't exist in the database table
     # (updated_at and created_at are managed by triggers)
@@ -362,8 +358,7 @@ def upsert_series(
 
 
 def list_series(client: Optional[Client] = None, api_source: Optional[str] = None) -> List[Dict[str, Any]]:
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     query = client.table(TABLES['series']).select('*')
     if api_source:
         query = query.eq('api_source', api_source)
@@ -390,8 +385,7 @@ def get_series_metadata_bulk(
     pd.DataFrame
         DataFrame with columns: series_id, transformation, frequency, units, category, etc.
     """
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     if not series_ids:
         return pd.DataFrame(columns=['series_id', 'transformation', 'frequency', 'units', 'category'])
     
@@ -431,8 +425,7 @@ def create_vintage(
     github_workflow_run_url: Optional[str] = None
 ) -> Dict[str, Any]:
     """Create a new data vintage."""
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     data = {
         'vintage_date': vintage_date.isoformat(),
         'country': country,
@@ -451,8 +444,7 @@ def get_vintage(
     vintage_id: Optional[int] = None
 ) -> Optional[Dict[str, Any]]:
     """Get a vintage by date or ID."""
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     if vintage_date:
         result = client.table(TABLES['vintages']).select('*').eq('vintage_date', vintage_date.isoformat()).execute()
         return result.data[0] if result.data else None
@@ -594,8 +586,7 @@ def insert_observations_from_dataframe(
     Exception
         If database insertion fails
     """
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     # Prepare data
     df = df.copy()
@@ -1200,8 +1191,7 @@ def ensure_vintage_and_job(
     if dry_run:
         return None
     
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     if vintage_date is None:
         vintage_date = date.today()
@@ -1293,8 +1283,7 @@ def finalize_ingestion_job(
     if vintage_id is None:
         return
     
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     try:
         update_data = {
@@ -1408,8 +1397,7 @@ def get_statistics_metadata_bulk(
     Dict[str, Dict[str, Any]]
         Dictionary mapping source_stat_code to metadata dict
     """
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     if not source_stat_codes:
         return {}
@@ -1590,6 +1578,8 @@ def load_data_from_db(
         - Time: DatetimeIndex
         - Z: Raw untransformed data (T x N) numpy array
     """
+    client = ensure_client(client)
+    
     # Resolve vintage_id
     if vintage_id is None:
         if vintage_date:

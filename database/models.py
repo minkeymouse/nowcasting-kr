@@ -32,22 +32,6 @@ class VintageModel(BaseModel):
     error_message: Optional[str] = None
 
 
-class IngestionJobModel(BaseModel):
-    """Ingestion job model for GitHub Actions tracking."""
-    job_id: Optional[int] = None
-    github_run_id: str = Field(..., description="GitHub Actions run ID")
-    github_workflow_run_url: Optional[str] = None
-    vintage_date: date = Field(..., description="Vintage date for this job")
-    status: str = Field("pending", description="Status: pending, running, completed, failed, cancelled")
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    total_series: Optional[int] = None
-    successful_series: Optional[int] = None
-    failed_series: Optional[int] = None
-    error_message: Optional[str] = None
-    logs_json: Optional[Dict[str, Any]] = None
-
-
 class ObservationModel(BaseModel):
     """Observation model for time-series data."""
     series_id: str = Field(..., description="Series identifier")
@@ -138,14 +122,12 @@ class StatisticsItemModel(BaseModel):
 TABLES = {
     'series': 'series',
     'vintages': 'data_vintages',
-    'api_fetches': 'api_fetches',
     'observations': 'observations',
-    'model_configs': 'model_configs',
-    'model_block_assignments': 'model_block_assignments',
-    'trained_models': 'trained_models',
     'forecasts': 'forecasts',
-    'forecast_runs': 'forecast_runs',
     'statistics_metadata': 'statistics_metadata',
     'statistics_items': 'statistics_items',
+    'factors': 'factors',
+    'factor_values': 'factor_values',
+    'factor_loadings': 'factor_loadings',
 }
 
