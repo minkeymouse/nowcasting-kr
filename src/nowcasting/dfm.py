@@ -442,6 +442,7 @@ def init_conditions(x: np.ndarray, r: np.ndarray, p: int, blocks: np.ndarray,
     --------
     >>> from src.nowcasting import load_config, load_data
     >>> config = load_config('config/model/kr_dfm_v1.yaml')
+    >>> from adapters.database import load_data_from_db
     >>> X, Time, Z = load_data_from_db(config=config, vintage_date='2024-01-01')
     >>> # Standardize data
     >>> x = (X - np.nanmean(X, axis=0)) / np.nanstd(X, axis=0)
@@ -1989,7 +1990,7 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5) -> DFMResult:
     >>> # Load configuration (CSV or YAML both work)
     >>> config = load_config('src/spec/001_initial_spec.csv')  # or 'config/model/kr_dfm_v1.yaml'
     >>> # Load data from database
-    >>> from src.nowcasting import load_data_from_db
+    >>> from adapters.database import load_data_from_db
     >>> X, Time, Z = load_data_from_db(config=config, vintage_date='2016-06-29',
     ...                                 sample_start=pd.Timestamp('2000-01-01'))
     >>> # Estimate DFM
