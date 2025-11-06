@@ -8,6 +8,7 @@
 -- 
 -- This is an incremental migration that only adds the blocks table.
 -- It does NOT drop or modify existing tables.
+-- This migration is idempotent and can be run multiple times safely.
 -- ============================================================================
 
 -- ============================================================================
@@ -16,7 +17,11 @@
 -- Stores block assignments from spec CSV files
 -- Source of truth: spec CSV files (e.g., 001_initial_spec.csv, 002_updated_spec.csv)
 -- Each spec version has its own block structure stored independently
-CREATE TABLE IF NOT EXISTS blocks (
+
+-- Drop blocks table if exists (for idempotency)
+DROP TABLE IF EXISTS blocks CASCADE;
+
+CREATE TABLE blocks (
     config_name VARCHAR(200) NOT NULL,  -- Spec version identifier (e.g., '001-initial-spec', '002-updated-spec')
     series_id VARCHAR(100) NOT NULL REFERENCES series(series_id) ON DELETE CASCADE,
     block_name VARCHAR(50) NOT NULL,    -- Block name (e.g., 'Global', 'Invest', 'Extern')
@@ -37,19 +42,27 @@ COMMENT ON COLUMN blocks.series_id IS 'Series identifier';
 COMMENT ON COLUMN blocks.block_name IS 'Block name (e.g., Global, Invest, Extern)';
 COMMENT ON COLUMN blocks.series_order IS 'Series order in the spec CSV (row index, important for DFM training)';
 
--- Blocks RLS Policies
+-- Blocks RLS Policies (idempotent: drop if exists, then create)
 ALTER TABLE blocks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read access to blocks" ON blocks;
 CREATE POLICY "Allow public read access to blocks"
     ON blocks FOR SELECT
     USING (true);
+
+DROP POLICY IF EXISTS "Allow authenticated insert to blocks" ON blocks;
 CREATE POLICY "Allow authenticated insert to blocks"
     ON blocks FOR INSERT
     TO authenticated
     WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow authenticated update to blocks" ON blocks;
 CREATE POLICY "Allow authenticated update to blocks"
     ON blocks FOR UPDATE
     TO authenticated
     USING (true);
+
+DROP POLICY IF EXISTS "Allow authenticated delete from blocks" ON blocks;
 CREATE POLICY "Allow authenticated delete from blocks"
     ON blocks FOR DELETE
     TO authenticated
@@ -61,9 +74,13 @@ CREATE POLICY "Allow authenticated delete from blocks"
 -- DFM factors are organized by blocks:
 -- - Global factor: block_name = NULL or 'Global' (applies to all series)
 -- - Inner block factors: block_name = 'Invest', 'Extern', etc. (applies only to series in that block)
+
+-- Add block_name column if not exists (idempotent)
 ALTER TABLE factors ADD COLUMN IF NOT EXISTS block_name VARCHAR(50) NULL;
 
+-- Create indexes if not exists (idempotent)
 CREATE INDEX IF NOT EXISTS idx_factors_block_name ON factors(block_name);
 CREATE INDEX IF NOT EXISTS idx_factors_model_block ON factors(model_id, block_name);
 
+-- Update comment (idempotent - COMMENT ON COLUMN can be run multiple times)
 COMMENT ON COLUMN factors.block_name IS 'Block name for inner block factors (NULL or Global for global factors)';
