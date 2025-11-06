@@ -966,7 +966,12 @@ def save_model_config(
     country: str = 'KR',
     client: Optional[Client] = None
 ) -> Dict[str, Any]:
-    """Save a model configuration."""
+    """Save a model configuration.
+    
+    Note: model_configs table may not exist in all database schemas.
+    If the table doesn't exist, this function will log a warning and return None.
+    """
+    client = ensure_client(client)
     
     data = {
         'config_name': config_name,
@@ -976,8 +981,17 @@ def save_model_config(
         'country': country,
     }
     
-    result = client.table(TABLES['model_configs']).upsert(data, on_conflict='config_name').execute()
-    return result.data[0] if result.data else None
+    try:
+        result = client.table('model_configs').upsert(data, on_conflict='config_name').execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        error_str = str(e).lower()
+        if 'not found' in error_str or 'pgrst205' in error_str.lower():
+            logger.warning(f"model_configs table not found in database. Skipping config save. Error: {e}")
+            logger.info("Model configuration will be stored in blocks table only.")
+            return None
+        else:
+            raise
 
 
 def load_model_config(

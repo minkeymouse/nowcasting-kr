@@ -34,8 +34,9 @@ from .operations import (
     upsert_statistics_items,
     get_statistics_items,
     get_active_items_for_statistic,
-    # Model operations (deprecated - model_configs table removed)
+    # Model operations
     load_model_config,
+    save_model_config,
     save_model_weights,
     load_model_weights,
     # Forecast operations
@@ -87,6 +88,7 @@ __all__ = [
     'get_statistics_items',
     'get_active_items_for_statistic',
     'load_model_config',
+    'save_model_config',
     'save_model_weights',
     'load_model_weights',
     'save_forecast',

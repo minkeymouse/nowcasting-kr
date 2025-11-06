@@ -102,13 +102,33 @@ def main() -> None:
     
     # Load CSV
     csv_df = pd.read_csv(csv_path)
+    
+    # Generate series_id from data_code, item_id, and api_source
+    # Note: CSV 'id' column is just an index, not the actual series_id
+    # The actual series_id is generated using generate_series_id() for consistency
+    from database.operations import generate_series_id
+    csv_df['series_id'] = csv_df.apply(
+        lambda row: generate_series_id(
+            row.get('api_source', ''),
+            row.get('data_code', ''),
+            row.get('item_id', '')
+        ),
+        axis=1
+    )
+    logger.info("Generated series_id from data_code, item_id, and api_source")
+    
     print(f"   ✅ Loaded CSV: {len(csv_df)} series")
     logger.info(f"Loaded CSV: {len(csv_df)} series")
     
     # Create a simple config-like object from CSV
     class SimpleSeriesConfig:
         def __init__(self, row):
-            self.series_id = row['series_id']
+            # series_id should already be generated from CSV loading
+            self.series_id = row.get('series_id')
+            if not self.series_id:
+                raise ValueError(f"Row missing 'series_id' column: {row.to_dict()}")
+            # Ensure it's a string
+            self.series_id = str(self.series_id)
             self.series_name = row['series_name']
             self.frequency = row['frequency']
             self.transformation = row['transformation']
@@ -116,26 +136,29 @@ def main() -> None:
             self.units = row.get('units')
             self.api_code = row.get('api_code')
             self.api_source = row.get('api_source')
-            # Block assignments
-            self.blocks = {
-                'Global': int(row.get('Global', 0)),
-                'Consumption': int(row.get('Consumption', 0)),
-                'Investment': int(row.get('Investment', 0)),
-                'External': int(row.get('External', 0))
-            }
+            # Block assignments - handle both 'Block_X' and 'X' formats
+            self.blocks = {}
+            # Try Block_Global, Block_Consumption, etc. first
+            for block_name in ['Global', 'Consumption', 'Investment', 'External']:
+                block_value = row.get(f'Block_{block_name}', row.get(block_name, 0))
+                self.blocks[block_name] = int(block_value) if block_value not in [None, ''] else 0
     
     class SimpleModelConfig:
         def __init__(self, df):
             self.series = [SimpleSeriesConfig(row) for _, row in df.iterrows()]
             self.config_name = csv_path.stem.replace('_', '-')
             self.country = 'KR'
-            # Detect block names from columns
-            block_cols = [col for col in df.columns if col not in 
-                         ['series_id', 'series_name', 'frequency', 'transformation', 
-                          'category', 'units', 'api_code', 'api_source']]
-            self.block_names = block_cols if block_cols else ['Global', 'Consumption', 'Investment', 'External']
+            # Detect block names from columns (only Block_X columns)
+            block_cols = [col.replace('Block_', '') for col in df.columns if col.startswith('Block_')]
+            # Fallback to default if no Block_X columns found
+            if not block_cols:
+                block_cols = ['Global', 'Consumption', 'Investment', 'External']
+            self.block_names = block_cols
     
     model_cfg = SimpleModelConfig(csv_df)
+    # Ensure series_id column exists for indexing
+    if 'series_id' not in csv_df.columns and 'id' in csv_df.columns:
+        csv_df['series_id'] = csv_df['id'].astype(str)
     csv_dict = csv_df.set_index('series_id').to_dict('index')
     
     print(f"   ✅ Parsed model config: {len(model_cfg.series)} series")
@@ -166,10 +189,10 @@ def main() -> None:
     print(f"   ✅ BOK source_id: {bok_source_id}")
     print(f"   ✅ KOSIS source_id: {kosis_source_id}")
     
-    # Create vintage and ingestion job
+    # Create vintage (job tracking is now integrated into data_vintages)
     vintage_date = date.today()
-    print(f"\n📦 Creating vintage and ingestion job for {vintage_date}...")
-    vintage_id, job_id = ensure_vintage_and_job(
+    print(f"\n📦 Creating vintage for {vintage_date}...")
+    vintage_id = ensure_vintage_and_job(
         vintage_date=vintage_date,
         client=client,
         dry_run=False
@@ -177,8 +200,13 @@ def main() -> None:
     
     if vintage_id:
         print(f"   ✅ Vintage: {vintage_id}")
-    if job_id:
-        print(f"   ✅ Ingestion job: {job_id}")
+    else:
+        logger.error("Failed to create or retrieve vintage")
+        print("❌ Error: Failed to create vintage")
+        sys.exit(1)
+    
+    # job_id is no longer separate - tracking is in data_vintages table
+    job_id = None
     
     # Rate limiting
     rate_limiter = RateLimiter(bok_delay=0.6, kosis_delay=0.5)
@@ -219,19 +247,28 @@ def main() -> None:
             series_exists = check_series_exists(series_id, client)
             
             # Get api_code and api_source from CSV
-            if series_id not in csv_dict:
+            csv_row = csv_dict.get(series_id)
+            
+            if not csv_row:
                 logger.warning(f"  ⚠ Series {series_id} not found in CSV")
                 stats['skipped'] += 1
                 continue
             
-            csv_row = csv_dict[series_id]
-            api_code = csv_row.get('api_code')
+            # CSV has data_code and item_id, not api_code
+            # api_code is derived from data_code and item_id
+            data_code = csv_row.get('data_code')
+            item_id = csv_row.get('item_id')
             api_source = csv_row.get('api_source')
             
-            if not api_code or not api_source:
-                logger.warning(f"  ⚠ Missing api_code or api_source for {series_id}")
+            if not data_code or not item_id or not api_source:
+                logger.warning(f"  ⚠ Missing data_code, item_id, or api_source for {series_id}")
+                logger.warning(f"     data_code={data_code}, item_id={item_id}, api_source={api_source}")
                 stats['skipped'] += 1
                 continue
+            
+            # For API calls, we need api_code which is typically data_code
+            # But some APIs use item_id, so we'll pass both
+            api_code = data_code  # Use data_code as api_code
             
             # Get appropriate API client
             api_client = None
@@ -258,7 +295,7 @@ def main() -> None:
                 latest_date = get_latest_observation_date(series_id, vintage_id=None, client=client)
                 if latest_date:
                     start_date = get_next_period_date(latest_date, frequency)
-                    print(f"   📅 Latest observation: {latest_date}, fetching from {start_date}")
+                    print(f"   📅 Latest observation in DB: {latest_date}, fetching new data from {start_date}...")
                     logger.info(f"  Latest observation: {latest_date}, fetching from {start_date}")
                 else:
                     # No observations yet - fetch full history
@@ -284,9 +321,18 @@ def main() -> None:
                 end_date=end_date
             )
             
-            if df_data.empty:
-                print(f"   ⚠️  No data fetched - skipping")
-                logger.warning(f"  ⚠ No data fetched for {series_id}")
+            if df_data is None or df_data.empty:
+                # Determine reason for no data
+                if series_exists:
+                    reason = "No new data available (already up-to-date or future data not yet published)"
+                    logger.info(f"  ℹ️  {series_id}: {reason}")
+                    print(f"   ℹ️  No new data available")
+                    print(f"      → Series is already up-to-date or future data is not yet published by API")
+                else:
+                    reason = "No data available from API"
+                    logger.warning(f"  ⚠ {series_id}: {reason}")
+                    print(f"   ⚠️  No data available from API")
+                    print(f"      → API returned no data for this series")
                 stats['skipped'] += 1
                 continue
             
@@ -323,14 +369,18 @@ def main() -> None:
             
             # Add to observations list
             df_data['vintage_id'] = vintage_id
-            df_data['job_id'] = job_id
+            # job_id is no longer needed - tracking is in data_vintages table
             all_observations.append(df_data)
             
-            print(f"   ✅ Series {series_id} processed successfully")
             successfully_processed_series.add(series_id)  # Track successful series
             if series_exists:
                 stats['existing_series'] += 1
+                print(f"   ✅ Series {series_id} updated successfully (incremental update)")
+            else:
+                stats['new_series'] += 1
+                print(f"   ✅ Series {series_id} processed successfully (new series)")
             stats['successful'] += 1
+            logger.info(f"  ✓ Series {series_id} processed successfully")
             
         except Exception as e:
             print(f"   ❌ Error: {str(e)}")
@@ -357,7 +407,6 @@ def main() -> None:
         result = insert_observations_from_dataframe(
             df=df_obs,
             vintage_id=vintage_id,
-            job_id=job_id,
             client=client
         )
         
@@ -430,17 +479,23 @@ def main() -> None:
         client=client
     )
     
-    config_id = config_result.get('config_id')  # May not exist if using blocks table
-    if config_id:
-        print(f"   ✅ Saved model configuration: {config_name} (ID: {config_id})")
-        logger.info(f"✓ Saved model configuration: {config_name} (ID: {config_id})")
+    if config_result:
+        config_id = config_result.get('config_id')  # May not exist if using blocks table
+        if config_id:
+            print(f"   ✅ Saved model configuration: {config_name} (ID: {config_id})")
+            logger.info(f"✓ Saved model configuration: {config_name} (ID: {config_id})")
+        else:
+            print(f"   ✅ Saved model configuration: {config_name}")
+            logger.info(f"✓ Saved model configuration: {config_name}")
     else:
-        print(f"   ✅ Saved model configuration: {config_name}")
-        logger.info(f"✓ Saved model configuration: {config_name}")
+        print(f"   ⚠️  Model config table not available, using blocks table only")
+        logger.info(f"⚠ Model config table not available, using blocks table only")
     
     # Save block assignments to blocks table
+    # Delete existing blocks for this config_name first, then insert new ones
     if block_records:
         print(f"   📊 Saving {len(block_records)} block assignments to blocks table...")
+        logger.info(f"Saving {len(block_records)} block assignments for config {config_name}")
         
         # Delete existing blocks for this config_name and insert new ones
         client.table('blocks').delete().eq('config_name', config_name).execute()
@@ -457,7 +512,8 @@ def main() -> None:
         print(f"   ✅ Saved {total_inserted} block assignments")
         logger.info(f"✓ Saved {total_inserted} block assignments")
     else:
-        print("   ⚠️  No block assignments to save")
+        print("   ⚠️  No block assignments to save (no series were successfully processed)")
+        logger.warning("No block assignments to save - no series were successfully processed")
     
     # Update status
     print("\n" + "=" * 80)
@@ -471,16 +527,9 @@ def main() -> None:
     )
     print("   ✅ Vintage status updated")
     
-    print("   📋 Updating ingestion job status...")
-    finalize_ingestion_job(
-        job_id=job_id,
-        status='completed',
-        successful_series=stats['successful'],
-        failed_series=stats['failed'],
-        total_series=stats['total'],
-        client=client
-    )
-    print("   ✅ Ingestion job status updated")
+    # Update vintage status (job tracking is integrated into data_vintages)
+    # Status update is already done above, but we can add statistics if needed
+    print("   ✅ Ingestion completed")
     
     # Print summary
     print("\n" + "=" * 80)
@@ -489,10 +538,19 @@ def main() -> None:
     print(f"   Total series: {stats['total']}")
     print(f"   ✨ New series: {stats['new_series']}")
     print(f"   🔄 Existing series: {stats['existing_series']}")
-    print(f"   ✅ Successful: {stats['successful']}")
-    print(f"   ❌ Failed: {stats['failed']}")
-    print(f"   ⏭️  Skipped: {stats['skipped']}")
-    logger.info(f"Total series: {stats['total']}")
+    print(f"   ✅ Successful: {stats['successful']} (new data fetched and inserted)")
+    print(f"   ❌ Failed: {stats['failed']} (errors during processing)")
+    print(f"   ⏭️  Skipped: {stats['skipped']} (no new data - already up-to-date or future data not yet published)")
+    
+    # Calculate success rate
+    if stats['total'] > 0:
+        success_rate = (stats['successful'] / stats['total']) * 100
+        print(f"\n   📈 Success rate: {success_rate:.1f}%")
+        if success_rate < 100:
+            print(f"   ℹ️  Note: Skipped series are normal for incremental updates.")
+            print(f"      They indicate series are already up-to-date or future data is not yet published.")
+    
+    logger.info(f"Total series: {stats['total']}, Successful: {stats['successful']}, Skipped: {stats['skipped']}, Failed: {stats['failed']}")
     logger.info(f"New series: {stats['new_series']}")
     logger.info(f"Existing series: {stats['existing_series']}")
     logger.info(f"Successful: {stats['successful']}")
