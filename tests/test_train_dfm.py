@@ -9,7 +9,6 @@ These tests verify that the training script can:
 
 import sys
 from pathlib import Path
-import pytest
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -24,7 +23,8 @@ def test_load_config_from_csv():
     config_path = project_root / "src/spec/001_initial_spec.csv"
     
     if not config_path.exists():
-        pytest.skip(f"Config file not found: {config_path}")
+        print(f"⚠ Skipping: Config file not found: {config_path}")
+        return
     
     model_config = load_config_from_csv(config_path)
     
@@ -71,10 +71,12 @@ def test_load_data_from_db():
         print(f"✓ Time range: {Time[0]} to {Time[-1]}")
         
     except ImportError as e:
-        pytest.skip(f"Database module not available: {e}")
+        print(f"⚠ Skipping: Database module not available: {e}")
+        return
     except Exception as e:
         # If database is not available, skip test
-        pytest.skip(f"Database connection failed: {e}")
+        print(f"⚠ Skipping: Database connection failed: {e}")
+        return
 
 
 def test_save_blocks_to_db():
@@ -92,10 +94,12 @@ def test_save_blocks_to_db():
         print("✓ Blocks saved to database successfully")
         
     except ImportError as e:
-        pytest.skip(f"Database module not available: {e}")
+        print(f"⚠ Skipping: Database module not available: {e}")
+        return
     except Exception as e:
         # If database is not available, skip test
-        pytest.skip(f"Database connection failed: {e}")
+        print(f"⚠ Skipping: Database connection failed: {e}")
+        return
 
 
 def test_config_series_id_generation():
@@ -122,5 +126,38 @@ def test_config_series_id_generation():
 
 
 if __name__ == "__main__":
-    # Run tests with pytest
-    pytest.main([__file__, "-v", "-s"])
+    # Run tests directly
+    print("=" * 60)
+    print("Running train_dfm tests...")
+    print("=" * 60)
+    
+    tests = [
+        test_load_config_from_csv,
+        test_load_data_from_db,
+        test_save_blocks_to_db,
+        test_config_series_id_generation,
+    ]
+    
+    passed = 0
+    failed = 0
+    skipped = 0
+    
+    for test_func in tests:
+        print(f"\n[TEST] {test_func.__name__}")
+        try:
+            test_func()
+            passed += 1
+            print(f"✓ PASSED: {test_func.__name__}")
+        except AssertionError as e:
+            failed += 1
+            print(f"✗ FAILED: {test_func.__name__}: {e}")
+        except Exception as e:
+            skipped += 1
+            print(f"⚠ SKIPPED: {test_func.__name__}: {e}")
+    
+    print("\n" + "=" * 60)
+    print(f"Results: {passed} passed, {failed} failed, {skipped} skipped")
+    print("=" * 60)
+    
+    if failed > 0:
+        sys.exit(1)

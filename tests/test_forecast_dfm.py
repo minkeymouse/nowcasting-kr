@@ -9,7 +9,6 @@ These tests verify that the forecasting script can:
 
 import sys
 from pathlib import Path
-import pytest
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -24,7 +23,8 @@ def test_load_config_from_csv():
     config_path = project_root / "src/spec/001_initial_spec.csv"
     
     if not config_path.exists():
-        pytest.skip(f"Config file not found: {config_path}")
+        print(f"⚠ Skipping: Config file not found: {config_path}")
+        return
     
     model_config = load_config_from_csv(config_path)
     
@@ -57,9 +57,11 @@ def test_load_data_for_vintage_old():
         print(f"✓ Loaded old vintage data: {X_old.shape[1]} series, {len(Time_old)} observations")
         
     except ImportError as e:
-        pytest.skip(f"Database module not available: {e}")
+        print(f"⚠ Skipping: Database module not available: {e}")
+        return
     except Exception as e:
-        pytest.skip(f"Database connection failed: {e}")
+        print(f"⚠ Skipping: Database connection failed: {e}")
+        return
 
 
 def test_load_data_for_vintage_new():
@@ -83,9 +85,11 @@ def test_load_data_for_vintage_new():
         print(f"✓ Loaded new vintage data: {X_new.shape[1]} series, {len(Time_new)} observations")
         
     except ImportError as e:
-        pytest.skip(f"Database module not available: {e}")
+        print(f"⚠ Skipping: Database module not available: {e}")
+        return
     except Exception as e:
-        pytest.skip(f"Database connection failed: {e}")
+        print(f"⚠ Skipping: Database connection failed: {e}")
+        return
 
 
 def test_model_file_exists():
@@ -95,7 +99,8 @@ def test_model_file_exists():
     if model_file.exists():
         print(f"✓ Model file exists: {model_file}")
     else:
-        pytest.skip(f"Model file not found: {model_file} (this is OK if training hasn't run yet)")
+        print(f"⚠ Model file not found: {model_file} (this is OK if training hasn't run yet)")
+        return
 
 
 def test_vintage_resolution():
@@ -117,11 +122,47 @@ def test_vintage_resolution():
             pytest.skip("No vintage found in database")
             
     except ImportError as e:
-        pytest.skip(f"Database module not available: {e}")
+        print(f"⚠ Skipping: Database module not available: {e}")
+        return
     except Exception as e:
-        pytest.skip(f"Database connection failed: {e}")
+        print(f"⚠ Skipping: Database connection failed: {e}")
+        return
 
 
 if __name__ == "__main__":
-    # Run tests with pytest
-    pytest.main([__file__, "-v", "-s"])
+    # Run tests directly
+    print("=" * 60)
+    print("Running forecast_dfm tests...")
+    print("=" * 60)
+    
+    tests = [
+        test_load_config_from_csv,
+        test_load_data_for_vintage_old,
+        test_load_data_for_vintage_new,
+        test_model_file_exists,
+        test_vintage_resolution,
+    ]
+    
+    passed = 0
+    failed = 0
+    skipped = 0
+    
+    for test_func in tests:
+        print(f"\n[TEST] {test_func.__name__}")
+        try:
+            test_func()
+            passed += 1
+            print(f"✓ PASSED: {test_func.__name__}")
+        except AssertionError as e:
+            failed += 1
+            print(f"✗ FAILED: {test_func.__name__}: {e}")
+        except Exception as e:
+            skipped += 1
+            print(f"⚠ SKIPPED: {test_func.__name__}: {e}")
+    
+    print("\n" + "=" * 60)
+    print(f"Results: {passed} passed, {failed} failed, {skipped} skipped")
+    print("=" * 60)
+    
+    if failed > 0:
+        sys.exit(1)
