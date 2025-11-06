@@ -106,3 +106,4 @@ def load_model_config_from_hydra(
         # Fallback to YAML config (convert DictConfig to dict, then to ModelConfig)
         return ModelConfig.from_dict(OmegaConf.to_container(cfg_model, resolve=True))
 
+
