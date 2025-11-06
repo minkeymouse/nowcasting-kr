@@ -3,9 +3,6 @@
 from .client import get_client, get_supabase_client
 from .helpers import DatabaseError, NotFoundError, ValidationError
 from .operations import (
-    # Data source operations
-    get_source_id,
-    get_source_code,
     # Series operations
     get_series,
     upsert_series,
@@ -56,7 +53,7 @@ from .models import (
     StatisticsItemModel,
     ObservationModel,
 )
-from .operations import generate_series_id, create_or_get_series, create_series_from_item
+from .operations import generate_series_id, create_or_get_series, create_series_from_item, delete_old_vintages
 from .spec_manager import (
     export_config_to_csv,
     get_latest_spec_from_db,
@@ -66,8 +63,6 @@ from .spec_manager import (
 __all__ = [
     'get_client',
     'get_supabase_client',
-    'get_source_id',
-    'get_source_code',
     'get_series',
     'upsert_series',
     'list_series',
@@ -118,5 +113,6 @@ __all__ = [
     'export_config_to_csv',
     'get_latest_spec_from_db',
     'sync_csv_from_db',
+    'delete_old_vintages',
 ]
 
