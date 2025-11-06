@@ -4,7 +4,7 @@ This script performs nowcasting (vintage comparison) using trained DFM models.
 It matches MATLAB functionality: compares old vs new vintage forecasts for the current period,
 and decomposes changes into news components.
 
-This is NOT forward forecasting - it only nowcasts the current period (t=now).
+This is NOT forward nowcasting - it only nowcasts the current period (t=now).
 """
 
 import sys
@@ -160,13 +160,13 @@ def main(cfg: DictConfig) -> None:
     4. Compares old vs new vintage forecasts for current period
     5. Decomposes changes into news components (MATLAB news_dfm functionality)
     
-    This matches MATLAB functionality - no forward forecasting, only nowcasting.
+    This matches MATLAB functionality - no forward nowcasting, only nowcasting.
     
     Usage:
-        python forecast_dfm.py                                    # Use defaults
-        python forecast_dfm.py data.vintage_old=2016-12-16        # Specify old vintage
-        python forecast_dfm.py data.vintage_new=2016-12-23        # Specify new vintage
-        python forecast_dfm.py series=GDPC1 period=2016q4         # Specific series and period
+        python nowcast_dfm.py                                    # Use defaults
+        python nowcast_dfm.py data.vintage_old=2016-12-16        # Specify old vintage
+        python nowcast_dfm.py data.vintage_new=2016-12-23        # Specify new vintage
+        python nowcast_dfm.py series=GDPC1 period=2016q4         # Specific series and period
     """
     # GitHub Actions context
     github_run_id = os.getenv('GITHUB_RUN_ID')
@@ -310,12 +310,15 @@ def main(cfg: DictConfig) -> None:
             logger.info('Estimating DFM model...')
             
             if use_database:
-                X, Time, Z = load_data_from_db(
+                data_df, Time, Z_df, _ = load_data_from_db(
                     vintage_date=vintage_new,
                     config=model_cfg,
                     config_id=config_id,
                     strict_mode=strict_mode
                 )
+                # Convert DataFrame to numpy array for DFM
+                X = data_df.values
+                Z = Z_df.values if Z_df is not None else None
             else:
                 data_file = base_dir / 'data' / data_cfg_dict.get('country', 'KR') / f'{vintage_new}.csv'
                 if not data_file.exists():
@@ -364,14 +367,15 @@ def main(cfg: DictConfig) -> None:
         
         if use_database:
             # Load old vintage
-            X_old, Time_old, _ = load_data_from_db(
+            data_df_old, Time_old, _, _ = load_data_from_db(
                 vintage_date=vintage_old,
                 config=model_cfg,
                 config_id=config_id,
                 strict_mode=strict_mode
             )
+            X_old = data_df_old.values
             # Load new vintage
-            X_new, Time, _ = load_data_from_db(
+            data_df_new, Time, _, _ = load_data_from_db(
                 vintage_date=vintage_new,
                 config=model_cfg,
                 config_id=config_id,

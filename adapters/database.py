@@ -21,6 +21,36 @@ from src.nowcasting.data_loader import _transform_series
 logger = logging.getLogger(__name__)
 
 
+def _convert_to_dataframes(
+    X: np.ndarray,
+    Time: pd.DatetimeIndex,
+    Z: Optional[np.ndarray],
+    series_metadata_df: pd.DataFrame
+) -> Tuple[pd.DataFrame, pd.DatetimeIndex, Optional[pd.DataFrame], pd.DataFrame]:
+    """
+    Convert numpy arrays to DataFrames for consistent return format.
+    
+    Parameters
+    ----------
+    X : np.ndarray
+        Transformed data array
+    Time : pd.DatetimeIndex
+        Time index
+    Z : np.ndarray, optional
+        Raw data array
+    series_metadata_df : pd.DataFrame
+        Series metadata DataFrame
+    
+    Returns
+    -------
+    Tuple[pd.DataFrame, pd.DatetimeIndex, Optional[pd.DataFrame], pd.DataFrame]
+        (data_df, Time, Z_df, series_metadata_df)
+    """
+    data_df = pd.DataFrame(X, index=Time, columns=None)
+    Z_df = pd.DataFrame(Z, index=Time, columns=None) if Z is not None and len(Z) == len(Time) else None
+    return data_df, Time, Z_df, series_metadata_df
+
+
 def _get_db_client(client: Optional[object] = None):
     """Get database client, raising ImportError if database module unavailable."""
     if client is not None:
@@ -215,9 +245,7 @@ def _fetch_vintage_data(
                 strict_mode=strict_mode,
                 client=client
             )
-            # Convert to DataFrame for consistency
-            data_df = pd.DataFrame(X, index=Time, columns=None)
-            return data_df, Time, series_metadata_df
+            return _convert_to_dataframes(X, Time, Z, series_metadata_df)
         except (TypeError, AttributeError) as e:
             logger.warning(f"get_vintage_data_for_config failed ({e}), using general function")
     elif config_id is not None:
@@ -235,9 +263,7 @@ def _fetch_vintage_data(
                     strict_mode=strict_mode,
                     client=client
                 )
-                # Convert to DataFrame for consistency
-                data_df = pd.DataFrame(X, index=Time, columns=None)
-                return data_df, Time, series_metadata_df
+                return _convert_to_dataframes(X, Time, Z, series_metadata_df)
         except (TypeError, AttributeError, ImportError) as e:
             logger.warning(f"Could not resolve config_name from config_id ({e}), using general function")
     
@@ -251,7 +277,8 @@ def _fetch_vintage_data(
     )
     # Convert to DataFrame for consistency
     data_df = pd.DataFrame(X, index=Time, columns=config_series_ids)
-    return data_df, Time, series_metadata_df
+    Z_df = pd.DataFrame(Z, index=Time, columns=config_series_ids) if Z is not None else None
+    return data_df, Time, Z_df, series_metadata_df
 
 
 def export_data_to_csv(
@@ -364,7 +391,7 @@ def export_data_to_csv(
         raise ValueError("No series found in configuration")
     
     # Load data from database
-    data_df, Time, series_metadata_df = load_data_from_db(
+    data_df, Time, Z_df, series_metadata_df = load_data_from_db(
         vintage_id=vintage_id,
         config=config,
         config_name=config_name,
@@ -503,7 +530,7 @@ def load_data_from_db(
             pass  # Will fall back to config_id handling in _fetch_vintage_data
     
     # Fetch data from database
-    data_df, Time, series_metadata_df = _fetch_vintage_data(
+    data_df, Time, Z_df, series_metadata_df = _fetch_vintage_data(
         vintage_id=resolved_vintage_id,
         config_series_ids=config_series_ids,
         config=config,
@@ -548,7 +575,11 @@ def load_data_from_db(
         f"series={len(config_series_ids)}, observations={len(Time)}"
     )
     
-    return X, Time, Z
+    # Ensure Z and Time have matching lengths
+    if Z is not None and len(Z) != len(Time):
+        Z = Z[:len(Time)] if len(Z) > len(Time) else Z
+    series_metadata_df = pd.DataFrame()  # Empty metadata for CSV path
+    return _convert_to_dataframes(X, Time, Z, series_metadata_df)
 
 
 def save_nowcast_to_db(
