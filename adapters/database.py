@@ -254,6 +254,165 @@ def _fetch_vintage_data(
     return data_df, Time, series_metadata_df
 
 
+def export_data_to_csv(
+    output_path: Union[str, Path],
+    vintage_id: Optional[int] = None,
+    vintage_date: Optional[Union[date, str, pd.Timestamp]] = None,
+    config: Optional[ModelConfig] = None,
+    config_name: Optional[str] = None,
+    config_id: Optional[int] = None,
+    start_date: Optional[Union[date, str, pd.Timestamp]] = None,
+    end_date: Optional[Union[date, str, pd.Timestamp]] = None,
+    sample_start: Optional[Union[date, str, pd.Timestamp]] = None,
+    strict_mode: bool = False,
+    client: Optional[object] = None
+) -> Path:
+    """
+    Export data from database to CSV file for DFM training/forecasting.
+    
+    This function queries the database for a specific vintage and exports
+    the data to CSV format that can be used by the generic DFM module.
+    
+    Parameters
+    ----------
+    output_path : str or Path
+        Path where CSV file will be saved
+    vintage_id : int, optional
+        Specific vintage ID to load
+    vintage_date : date, str, or pd.Timestamp, optional
+        Specific vintage date to load (used if vintage_id not provided)
+    config : ModelConfig, optional
+        Model configuration object
+    config_name : str, optional
+        Configuration name (preferred over config_id)
+    config_id : int, optional
+        Configuration ID (deprecated, use config_name)
+    start_date : date, str, or pd.Timestamp, optional
+        Start date for data filtering
+    end_date : date, str, or pd.Timestamp, optional
+        End date for data filtering
+    sample_start : date, str, or pd.Timestamp, optional
+        Sample start date for filtering
+    strict_mode : bool, default False
+        If True, raise error if series are missing
+    client : object, optional
+        Database client (auto-created if not provided)
+    
+    Returns
+    -------
+    Path
+        Path to the created CSV file
+    
+    Examples
+    --------
+    >>> from adapters.database import export_data_to_csv
+    >>> csv_path = export_data_to_csv(
+    ...     output_path='data/vintage_1.csv',
+    ...     vintage_id=1,
+    ...     config_name='001-initial-spec'
+    ... )
+    """
+    try:
+        from database.operations import (
+            get_latest_vintage_id,
+            get_vintage,
+            _normalize_date as normalize_date
+        )
+        from database.helpers import (
+            get_model_config_series_ids,
+            resolve_config_name
+        )
+    except ImportError:
+        raise ImportError("Database module not available. Cannot export data to CSV.")
+    
+    logger = logging.getLogger(__name__)
+    
+    # Resolve vintage
+    if vintage_id is None:
+        if vintage_date is not None:
+            vintage_date_normalized = normalize_date(vintage_date)
+            vintage_info = get_vintage(vintage_date=vintage_date_normalized, client=client)
+            if vintage_info:
+                vintage_id = vintage_info['vintage_id']
+            else:
+                raise ValueError(f"Vintage not found for date: {vintage_date}")
+        else:
+            # Use latest vintage
+            vintage_id = get_latest_vintage_id(client=client)
+            if vintage_id is None:
+                raise ValueError("No vintage found in database")
+            logger.info(f"Using latest vintage_id: {vintage_id}")
+    
+    # Resolve config_name if needed
+    if config_name is None and config_id is not None:
+        try:
+            config_name = resolve_config_name(config_id=config_id, client=client)
+            if config_name:
+                logger.warning("config_id is deprecated. Use config_name instead.")
+        except ImportError:
+            pass
+    
+    # Get series IDs from config
+    if config_name:
+        config_series_ids = get_model_config_series_ids(config_name, client=client)
+    elif config and config.series:
+        config_series_ids = [s.series_id for s in config.series]
+    else:
+        raise ValueError("Either config_name or config must be provided")
+    
+    if not config_series_ids:
+        raise ValueError("No series found in configuration")
+    
+    # Load data from database
+    data_df, Time, series_metadata_df = load_data_from_db(
+        vintage_id=vintage_id,
+        config=config,
+        config_name=config_name,
+        config_id=config_id,
+        start_date=start_date,
+        end_date=end_date,
+        sample_start=sample_start,
+        strict_mode=strict_mode,
+        client=client
+    )
+    
+    # Prepare CSV data: combine data with series metadata
+    # Create DataFrame with series_id as index, dates as columns
+    csv_data = data_df.T.copy()  # Transpose: series as rows, dates as columns
+    csv_data.index.name = 'series_id'
+    csv_data.reset_index(inplace=True)
+    
+    # Add series metadata columns
+    if not series_metadata_df.empty:
+        # Merge with series metadata
+        csv_data = csv_data.merge(
+            series_metadata_df[['series_id', 'series_name', 'frequency', 'transformation', 'category', 'units']],
+            on='series_id',
+            how='left'
+        )
+        # Reorder columns: metadata first, then date columns
+        metadata_cols = ['series_id', 'series_name', 'frequency', 'transformation', 'category', 'units']
+        date_cols = [col for col in csv_data.columns if col not in metadata_cols]
+        csv_data = csv_data[metadata_cols + date_cols]
+    else:
+        # No metadata, just use series_id
+        cols = ['series_id'] + [col for col in csv_data.columns if col != 'series_id']
+        csv_data = csv_data[cols]
+    
+    # Save to CSV
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    csv_data.to_csv(output_path, index=False)
+    
+    logger.info(
+        f"Exported data to CSV: {output_path}, "
+        f"vintage_id={vintage_id}, series={len(config_series_ids)}, "
+        f"observations={len(Time)}"
+    )
+    
+    return output_path
+
+
 def load_data_from_db(
     vintage_id: Optional[int] = None,
     vintage_date: Optional[Union[date, str, pd.Timestamp]] = None,

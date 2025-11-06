@@ -117,19 +117,11 @@ def load_config_from_csv(configfile: Union[str, Path]) -> ModelConfig:
     except Exception as e:
         raise ValueError(f"Failed to read CSV file {configfile}: {e}")
     
-    # Handle 'id' as alias for 'series_id'
-    # Generate series_id from data_code, item_id, api_source if available (generic, no DB dependency)
+    # Handle 'id' as alias for 'series_id' (for backward compatibility)
+    # CSV should already have series_id from DB query - use it as-is
     if 'id' in df.columns and 'series_id' not in df.columns:
-        # Try to generate series_id from data_code, item_id, api_source (generic pattern)
-        if all(col in df.columns for col in ['data_code', 'item_id', 'api_source']):
-            # Generic series_id generation: {api_source}_{data_code}_{item_id}
-            df['series_id'] = df.apply(
-                lambda row: f"{row.get('api_source', '')}_{row.get('data_code', '')}_{row.get('item_id', '')}",
-                axis=1
-            )
-        else:
-            # No data_code/item_id/api_source, use 'id' as series_id
-            df['series_id'] = df['id'].astype(str)
+        # Fallback: use 'id' as series_id if series_id column doesn't exist
+        df['series_id'] = df['id'].astype(str)
     elif 'id' in df.columns and 'series_id' in df.columns:
         # Both exist - prefer series_id, but if it's empty, use id
         df['series_id'] = df['series_id'].fillna(df['id'].astype(str))
