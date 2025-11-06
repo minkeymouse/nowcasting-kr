@@ -321,9 +321,18 @@ def main() -> None:
                 end_date=end_date
             )
             
-            if df_data.empty:
-                print(f"   ⚠️  No data fetched - skipping")
-                logger.warning(f"  ⚠ No data fetched for {series_id}")
+            if df_data is None or df_data.empty:
+                # Determine reason for no data
+                if series_exists:
+                    reason = "No new data available (already up-to-date or future data not yet published)"
+                    logger.info(f"  ℹ️  {series_id}: {reason}")
+                    print(f"   ℹ️  No new data available")
+                    print(f"      → Series is already up-to-date or future data is not yet published by API")
+                else:
+                    reason = "No data available from API"
+                    logger.warning(f"  ⚠ {series_id}: {reason}")
+                    print(f"   ⚠️  No data available from API")
+                    print(f"      → API returned no data for this series")
                 stats['skipped'] += 1
                 continue
             
