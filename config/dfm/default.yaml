@@ -1,4 +1,9 @@
 # DFM estimation parameters
+# Extends base_dfm_config schema for validation
+
+defaults:
+  - base_dfm_config  # Schema validation from ConfigStore
+  - _self_
 
 # EM algorithm convergence
 threshold: 1e-5  # Convergence threshold (typical: 1e-5 to 1e-3)

@@ -35,22 +35,17 @@ def get_supabase_client(
     """
     url = url or os.getenv('SUPABASE_URL')
     # Check multiple possible environment variable names for the Supabase key
-    key = key or os.getenv('SUPABASE_KEY') or os.getenv('SUPABASE_SERVICE_ROLE_KEY') or os.getenv('SUPABASE_SECRET_KEY')
-    
+    key = key or os.getenv('SUPABASE_SECRET_KEY')
+
     if not url:
         raise ValueError("Supabase URL must be provided or set in SUPABASE_URL environment variable")
     if not key:
-        raise ValueError(
-            "Supabase key must be provided or set in one of these environment variables: "
-            "SUPABASE_KEY, SUPABASE_SERVICE_ROLE_KEY, or SUPABASE_SECRET_KEY"
-        )
+        raise ValueError("Supabase key must be provided or set in SUPABASE_SECRET_KEY environment variable")
     
     return create_client(url, key, options=options)
 
-
 # Global client instance (lazy initialization)
 _client: Optional[Client] = None
-
 
 def get_client(url: Optional[str] = None, key: Optional[str] = None) -> Client:
     """

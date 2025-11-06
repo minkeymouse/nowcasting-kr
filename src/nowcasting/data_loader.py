@@ -42,7 +42,7 @@ def load_config_from_yaml(configfile: Union[str, Path]) -> ModelConfig:
     Returns
     -------
     ModelConfig
-        Model configuration (Pydantic model with validation)
+        Model configuration (dataclass with validation)
         
     Raises
     ------
@@ -182,7 +182,7 @@ def load_config(configfile: Union[str, Path]) -> ModelConfig:
     Returns
     -------
     ModelConfig
-        Model configuration (Pydantic model with validation)
+        Model configuration (dataclass with validation)
         
     Raises
     ------

@@ -1,18 +1,10 @@
-"""Configuration models for DFM nowcasting using Pydantic and Hydra."""
+"""Configuration models for DFM nowcasting using OmegaConf and Hydra."""
 
 import numpy as np
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 import warnings
-
-try:
-    from pydantic import BaseModel, Field, field_validator, model_validator
-    from pydantic import ConfigDict
-    PYDANTIC_AVAILABLE = True
-except ImportError:
-    PYDANTIC_AVAILABLE = False
-    from dataclasses import dataclass
-    BaseModel = None
+from dataclasses import dataclass, field
 
 try:
     from hydra.core.config_store import ConfigStore
@@ -47,265 +39,304 @@ _TRANSFORM_UNITS_MAP = {
 }
 
 
-if PYDANTIC_AVAILABLE:
-    class SeriesConfig(BaseModel):
-        """Configuration for a single time series."""
-        series_id: str = Field(..., description="Unique identifier for the series")
-        series_name: str = Field(..., description="Human-readable name")
-        frequency: str = Field(..., description="Frequency code: d, w, m, q, sa, a")
-        units: str = Field(..., description="Original units of measurement")
-        transformation: str = Field(..., description="Transformation code")
-        category: str = Field(..., description="Category classification")
-        blocks: List[int] = Field(..., description="Block loading structure (binary list)")
-        api_code: Optional[str] = Field(None, description="API code for database agent to fetch data (e.g., BOK API code, FRED series ID)")
-        api_source: Optional[str] = Field(None, description="API source name (e.g., 'BOK', 'FRED', 'ECOS')")
-        
-        @field_validator('frequency')
-        @classmethod
-        def validate_frequency(cls, v):
-            if v not in _VALID_FREQUENCIES:
-                raise ValueError(f"Invalid frequency: {v}. Must be one of {_VALID_FREQUENCIES}")
-            return v
-        
-        @field_validator('transformation')
-        @classmethod
-        def validate_transformation(cls, v):
-            if v not in _VALID_TRANSFORMATIONS:
-                warnings.warn(f"Unknown transformation code: {v}. Will use untransformed data.")
-            return v
+def validate_frequency(frequency: str) -> str:
+    """Validate frequency code."""
+    if frequency not in _VALID_FREQUENCIES:
+        raise ValueError(f"Invalid frequency: {frequency}. Must be one of {_VALID_FREQUENCIES}")
+    return frequency
 
 
-    class ModelConfig(BaseModel):
-        """Model specification structure with validation.
+def validate_transformation(transformation: str) -> str:
+    """Validate transformation code."""
+    if transformation not in _VALID_TRANSFORMATIONS:
+        warnings.warn(f"Unknown transformation code: {transformation}. Will use untransformed data.")
+    return transformation
+
+
+@dataclass
+class SeriesConfig:
+    """Configuration for a single time series."""
+    series_id: str
+    series_name: str
+    frequency: str
+    units: str
+    transformation: str
+    category: str
+    blocks: List[int]
+    api_code: Optional[str] = None
+    api_source: Optional[str] = None
+    
+    def __post_init__(self):
+        """Validate fields after initialization."""
+        self.frequency = validate_frequency(self.frequency)
+        self.transformation = validate_transformation(self.transformation)
+
+
+@dataclass
+class ModelConfig:
+    """Model specification structure for DFM models."""
+    series: List[SeriesConfig]
+    block_names: List[str]
+    _cached_blocks: Optional[np.ndarray] = field(default=None, init=False, repr=False)
+    
+    def __post_init__(self):
+        """Validate blocks structure and consistency."""
+        if not self.series:
+            raise ValueError("At least one series must be specified")
         
-        This class defines the complete schema for DFM model specifications,
-        including runtime validation of all fields.
-        """
-        model_config = ConfigDict(
-            arbitrary_types_allowed=True,
-            validate_assignment=True,
-        )
+        # Extract blocks matrix
+        n_series = len(self.series)
+        n_blocks = len(self.block_names)
         
-        series: List[SeriesConfig] = Field(..., description="List of time series configurations")
-        block_names: List[str] = Field(..., description="Names of factor blocks")
-        
-        @model_validator(mode='after')
-        def validate_blocks(self):
-            """Validate blocks structure and consistency."""
-            if not self.series:
-                raise ValueError("At least one series must be specified")
-            
-            # Extract blocks matrix
-            n_series = len(self.series)
-            n_blocks = len(self.block_names)
-            
-            # Check all series have same number of blocks
-            for i, s in enumerate(self.series):
-                if len(s.blocks) != n_blocks:
-                    raise ValueError(
-                        f"Series {i} ({s.series_id}) has {len(s.blocks)} blocks, "
-                        f"but expected {n_blocks} (from block_names)"
-                    )
-            
-            # Check first column (global block) is all 1s
-            for i, s in enumerate(self.series):
-                if s.blocks[0] != 1:
-                    raise ValueError(
-                        f"Series {i} ({s.series_id}) must load on global block "
-                        f"(first block must be 1)"
-                    )
-            
-            return self
-        
-        # Convenience properties for backward compatibility
-        @property
-        def SeriesID(self) -> List[str]:
-            """Backward compatibility: SeriesID property."""
-            return [s.series_id for s in self.series]
-        
-        @property
-        def SeriesName(self) -> List[str]:
-            """Backward compatibility: SeriesName property."""
-            return [s.series_name for s in self.series]
-        
-        @property
-        def Frequency(self) -> List[str]:
-            """Backward compatibility: Frequency property."""
-            return [s.frequency for s in self.series]
-        
-        @property
-        def Units(self) -> List[str]:
-            """Backward compatibility: Units property."""
-            return [s.units for s in self.series]
-        
-        @property
-        def Transformation(self) -> List[str]:
-            """Backward compatibility: Transformation property."""
-            return [s.transformation for s in self.series]
-        
-        @property
-        def Category(self) -> List[str]:
-            """Backward compatibility: Category property."""
-            return [s.category for s in self.series]
-        
-        @property
-        def Blocks(self) -> np.ndarray:
-            """Backward compatibility: Blocks property as numpy array."""
-            blocks_list = [s.blocks for s in self.series]
-            return np.array(blocks_list, dtype=int)
-        
-        @property
-        def BlockNames(self) -> List[str]:
-            """Backward compatibility: BlockNames property."""
-            return self.block_names
-        
-        @property
-        def UnitsTransformed(self) -> List[str]:
-            """Backward compatibility: UnitsTransformed property."""
-            return [_TRANSFORM_UNITS_MAP.get(t, t) for t in self.Transformation]
-        
-        @classmethod
-        def from_dict(cls, data: Dict[str, Any]) -> 'ModelConfig':
-            """Create ModelConfig from dictionary (legacy format).
-            
-            Handles both legacy format (separate lists) and new format (series list).
-            """
-            # Handle legacy format with separate lists
-            if 'SeriesID' in data or 'series_id' in data:
-                # Legacy format - convert to new format
-                series_list = []
-                n = len(data.get('SeriesID', data.get('series_id', [])))
-                
-                # Handle Blocks - can be numpy array or list of lists
-                blocks_data = data.get('Blocks', data.get('blocks', []))
-                if isinstance(blocks_data, np.ndarray):
-                    blocks_data = blocks_data.tolist()
-                elif not isinstance(blocks_data, list):
-                    blocks_data = []
-                
-                for i in range(n):
-                    # Extract blocks for this series
-                    if blocks_data and i < len(blocks_data):
-                        if isinstance(blocks_data[i], (list, np.ndarray)):
-                            series_blocks = list(blocks_data[i]) if isinstance(blocks_data[i], np.ndarray) else blocks_data[i]
-                        else:
-                            series_blocks = [blocks_data[i]]
-                    else:
-                        series_blocks = []
-                    
-                    series_list.append(SeriesConfig(
-                        series_id=data.get('SeriesID', data.get('series_id', []))[i],
-                        series_name=data.get('SeriesName', data.get('series_name', []))[i],
-                        frequency=data.get('Frequency', data.get('frequency', []))[i],
-                        units=data.get('Units', data.get('units', []))[i],
-                        transformation=data.get('Transformation', data.get('transformation', []))[i],
-                        category=data.get('Category', data.get('category', []))[i],
-                        blocks=series_blocks
-                    ))
-                
-                return cls(
-                    series=series_list,
-                    block_names=data.get('BlockNames', data.get('block_names', []))
+        # Check all series have same number of blocks
+        for i, s in enumerate(self.series):
+            if len(s.blocks) != n_blocks:
+                raise ValueError(
+                    f"Series {i} ({s.series_id}) has {len(s.blocks)} blocks, "
+                    f"but expected {n_blocks} (from block_names)"
                 )
-            else:
-                # New format with series list
-                return cls(**data)
-
-
-    class DataConfig(BaseModel):
-        """Data loading configuration."""
-        vintage: Optional[str] = Field(None, description="Data vintage date (YYYY-MM-DD)")
-        country: str = Field("US", description="Country code")
-        sample_start: Optional[str] = Field(None, description="Sample start date (YYYY-MM-DD)")
-        data_path: Optional[str] = Field(None, description="Custom data file path (CSV format)")
-        # Database-related fields
-        use_database: bool = Field(False, description="Use database instead of files")
-        vintage_id: Optional[int] = Field(None, description="Vintage ID (alternative to vintage date)")
-        config_name: Optional[str] = Field(None, description="Model config name in database")
-        config_id: Optional[int] = Field(None, description="Model config ID in database")
-        start_date: Optional[str] = Field(None, description="Start date for data filtering (YYYY-MM-DD)")
-        end_date: Optional[str] = Field(None, description="End date for data filtering (YYYY-MM-DD)")
-        strict_mode: bool = Field(False, description="Strict mode for missing series")
-
-
-    class DFMConfig(BaseModel):
-        """DFM estimation configuration."""
-        threshold: float = Field(1e-5, description="EM convergence threshold")
-        max_iter: int = Field(5000, description="Maximum EM iterations")
-        nan_method: int = Field(2, description="NaN handling method (1-5)")
-        nan_k: int = Field(3, description="NaN filter parameter")
-
-
-    class AppConfig(BaseModel):
-        """Root application configuration combining all sub-configs."""
-        model: ModelConfig = Field(..., description="Model specification")
-        data: DataConfig = Field(..., description="Data loading configuration")
-        dfm: DFMConfig = Field(default_factory=DFMConfig, description="DFM estimation configuration")
         
-        # Optional: experiment metadata
-        experiment_name: Optional[str] = Field(None, description="Experiment name")
-        output_dir: Optional[str] = Field(None, description="Output directory for results")
+        # Check first column (global block) is all 1s
+        for i, s in enumerate(self.series):
+            if s.blocks[0] != 1:
+                raise ValueError(
+                    f"Series {i} ({s.series_id}) must load on global block "
+                    f"(first block must be 1)"
+                )
+    
+    # Convenience properties for backward compatibility
+    @property
+    def SeriesID(self) -> List[str]:
+        """Backward compatibility: SeriesID property."""
+        return [s.series_id for s in self.series]
+    
+    @property
+    def SeriesName(self) -> List[str]:
+        """Backward compatibility: SeriesName property."""
+        return [s.series_name for s in self.series]
+    
+    @property
+    def Frequency(self) -> List[str]:
+        """Backward compatibility: Frequency property."""
+        return [s.frequency for s in self.series]
+    
+    @property
+    def Units(self) -> List[str]:
+        """Backward compatibility: Units property."""
+        return [s.units for s in self.series]
+    
+    @property
+    def Transformation(self) -> List[str]:
+        """Backward compatibility: Transformation property."""
+        return [s.transformation for s in self.series]
+    
+    @property
+    def Category(self) -> List[str]:
+        """Backward compatibility: Category property."""
+        return [s.category for s in self.series]
+    
+    @property
+    def Blocks(self) -> np.ndarray:
+        """Backward compatibility: Blocks property as numpy array (cached)."""
+        if self._cached_blocks is None:
+            blocks_list = [s.blocks for s in self.series]
+            self._cached_blocks = np.array(blocks_list, dtype=int)
+        return self._cached_blocks
+    
+    @property
+    def BlockNames(self) -> List[str]:
+        """Backward compatibility: BlockNames property (alias for block_names)."""
+        return self.block_names
+    
+    @property
+    def UnitsTransformed(self) -> List[str]:
+        """Backward compatibility: UnitsTransformed property."""
+        return [_TRANSFORM_UNITS_MAP.get(t, t) for t in self.Transformation]
+    
+    @classmethod
+    def _from_legacy_dict(cls, data: Dict[str, Any]) -> 'ModelConfig':
+        """Convert legacy format (separate lists) to new format (series list)."""
+        series_list = []
+        n = len(data.get('SeriesID', data.get('series_id', [])))
+        
+        # Handle Blocks - can be numpy array or list of lists
+        blocks_data = data.get('Blocks', data.get('blocks', []))
+        if isinstance(blocks_data, np.ndarray):
+            blocks_data = blocks_data.tolist()
+        elif not isinstance(blocks_data, list):
+            blocks_data = []
+        
+        # Helper to get list value with index fallback
+        def get_list_value(key: str, index: int, default=None):
+            """Get value from list, handling both camelCase and snake_case keys."""
+            val = data.get(key, data.get(key.lower(), default))
+            if isinstance(val, list) and index < len(val):
+                return val[index]
+            return default
+        
+        for i in range(n):
+            # Extract blocks for this series
+            if blocks_data and i < len(blocks_data):
+                if isinstance(blocks_data[i], (list, np.ndarray)):
+                    series_blocks = list(blocks_data[i]) if isinstance(blocks_data[i], np.ndarray) else blocks_data[i]
+                else:
+                    series_blocks = [blocks_data[i]]
+            else:
+                series_blocks = []
+            
+            series_list.append(SeriesConfig(
+                series_id=get_list_value('SeriesID', i, ''),
+                series_name=get_list_value('SeriesName', i, ''),
+                frequency=get_list_value('Frequency', i, 'm'),
+                units=get_list_value('Units', i, ''),
+                transformation=get_list_value('Transformation', i, 'lin'),
+                category=get_list_value('Category', i, ''),
+                blocks=series_blocks,
+                api_code=get_list_value('api_code', i),
+                api_source=get_list_value('api_source', i)
+            ))
+        
+        return cls(
+            series=series_list,
+            block_names=data.get('BlockNames', data.get('block_names', []))
+        )
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ModelConfig':
+        """Create ModelConfig from dictionary.
+        
+        Handles both legacy format (separate lists) and new format (series list).
+        
+        Legacy format: {'SeriesID': [...], 'Frequency': [...], 'Blocks': [[...]], ...}
+        New format: {'series': [{'series_id': ..., ...}], 'block_names': [...]}
+        """
+        # Detect legacy format (has SeriesID or series_id as lists)
+        if 'SeriesID' in data or 'series_id' in data:
+            return cls._from_legacy_dict(data)
+        
+        # New format with series list
+        if 'series' in data:
+            series_list = [
+                SeriesConfig(**s) if isinstance(s, dict) else s 
+                for s in data['series']
+            ]
+            return cls(
+                series=series_list,
+                block_names=data.get('block_names', [])
+            )
+        
+        # Direct instantiation (shouldn't happen often, but handle it)
+        return cls(**data)
 
-else:
-    # Fallback to dataclass if pydantic not available
-    from dataclasses import dataclass
-    
-    @dataclass
-    class SeriesConfig:
-        series_id: str
-        series_name: str
-        frequency: str
-        units: str
-        transformation: str
-        category: str
-        blocks: List[int]
-        api_code: Optional[str] = None
-        api_source: Optional[str] = None
-    
-    @dataclass
-    class ModelConfig:
-        series: List[SeriesConfig]
-        block_names: List[str]
-    
-    @dataclass
-    class DataConfig:
-        vintage: Optional[str] = None
-        country: str = "US"
-        sample_start: Optional[str] = None
-        data_path: Optional[str] = None  # CSV file path
-        # Database-related fields
-        use_database: bool = False
-        vintage_id: Optional[int] = None
-        config_name: Optional[str] = None
-        config_id: Optional[int] = None
-        start_date: Optional[str] = None
-        end_date: Optional[str] = None
-        strict_mode: bool = False
-    
-    @dataclass
-    class DFMConfig:
-        threshold: float = 1e-5
-        max_iter: int = 5000
-        nan_method: int = 2
-        nan_k: int = 3
-    
-    @dataclass
-    class AppConfig:
-        model: ModelConfig
-        data: DataConfig
-        dfm: DFMConfig = None
+
+@dataclass
+class DataConfig:
+    """Data loading configuration."""
+    vintage: Optional[str] = None
+    country: str = "US"
+    sample_start: Optional[str] = None
+    data_path: Optional[str] = None  # CSV file path
+    # Database-related fields
+    use_database: bool = False
+    vintage_id: Optional[int] = None
+    config_name: Optional[str] = None
+    config_id: Optional[int] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    strict_mode: bool = False
 
 
-# Register with Hydra ConfigStore if available
-if HYDRA_AVAILABLE and PYDANTIC_AVAILABLE:
+@dataclass
+class DFMConfig:
+    """DFM estimation configuration."""
+    threshold: float = 1e-5
+    max_iter: int = 5000
+    nan_method: int = 2
+    nan_k: int = 3
+
+
+@dataclass
+class AppConfig:
+    """Root application configuration combining all sub-configs."""
+    model: ModelConfig
+    data: DataConfig
+    dfm: DFMConfig = field(default_factory=DFMConfig)
+
+
+# Register with Hydra ConfigStore following the Structured Config schema pattern
+# This enables validation of YAML config files while keeping our full dataclass
+# with @property methods for runtime use.
+# 
+# Pattern: Schema validation (from Hydra docs)
+# - YAML files extend schemas via defaults list
+# - Schemas provide type checking and validation
+# - Runtime uses full ModelConfig with @property methods
+if HYDRA_AVAILABLE:
     cs = ConfigStore.instance()
     
-    # Register individual configs
-    cs.store(name="model_config", node=ModelConfig)
-    cs.store(name="data_config", node=DataConfig)
-    cs.store(name="dfm_config", node=DFMConfig)
-    cs.store(name="app_config", node=AppConfig)
-    
-    # Register SeriesConfig for nested usage
-    cs.store(name="series_config", node=SeriesConfig)
-
+    try:
+        # Create schema versions without @property methods for Hydra validation
+        # These match our dataclass structure exactly for schema validation.
+        # We'll still use the full ModelConfig/DataConfig/DFMConfig classes with
+        # @property methods at runtime via from_dict() conversion.
+        from dataclasses import dataclass as schema_dataclass
+        
+        @schema_dataclass
+        class SeriesConfigSchema:
+            """Schema for SeriesConfig validation in Hydra."""
+            series_id: str
+            series_name: str
+            frequency: str
+            units: str
+            transformation: str
+            category: str
+            blocks: List[int]
+            api_code: Optional[str] = None
+            api_source: Optional[str] = None
+        
+        @schema_dataclass
+        class ModelConfigSchema:
+            """Schema for ModelConfig validation in Hydra."""
+            series: List[SeriesConfigSchema]
+            block_names: List[str]
+        
+        @schema_dataclass
+        class DataConfigSchema:
+            """Schema for DataConfig validation in Hydra."""
+            vintage: Optional[str] = None
+            country: str = "US"
+            sample_start: Optional[str] = None
+            data_path: Optional[str] = None
+            use_database: bool = False
+            vintage_id: Optional[int] = None
+            config_name: Optional[str] = None
+            config_id: Optional[int] = None
+            start_date: Optional[str] = None
+            end_date: Optional[str] = None
+            strict_mode: bool = False
+        
+        @schema_dataclass
+        class DFMConfigSchema:
+            """Schema for DFMConfig validation in Hydra."""
+            threshold: float = 1e-5
+            max_iter: int = 5000
+            nan_method: int = 2
+            nan_k: int = 3
+        
+        # Register schemas in config groups (following Hydra docs pattern)
+        # These can be referenced in YAML defaults lists for validation
+        # Format: defaults: [base_model_config, _self_]
+        cs.store(group="model", name="base_model_config", node=ModelConfigSchema)
+        cs.store(group="data", name="base_data_config", node=DataConfigSchema)
+        cs.store(group="dfm", name="base_dfm_config", node=DFMConfigSchema)
+        
+        # Also register standalone for direct use
+        cs.store(name="model_config_schema", node=ModelConfigSchema)
+        cs.store(name="data_config_schema", node=DataConfigSchema)
+        cs.store(name="dfm_config_schema", node=DFMConfigSchema)
+        
+    except Exception as e:
+        # If registration fails, continue without schema validation
+        # Configs will still work via from_dict() in config_loader.py
+        warnings.warn(f"Could not register Hydra structured config schemas: {e}. "
+                     f"Configs will still work via from_dict() but without schema validation.")
