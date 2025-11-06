@@ -79,14 +79,17 @@ def load_config_from_csv(configfile: Union[str, Path]) -> ModelConfig:
     """Load model configuration from CSV file.
     
     CSV format should have columns:
-    - series_id, series_name, frequency, transformation, category, units
-    - Block columns (named after block names, e.g., Global, Consumption, Investment, External)
+    - series_id (or 'id' as alias), series_name, frequency, transformation, category, units
+    - Block columns (named after block names, e.g., Global, Consumption, Investment, External, or Block_Global, Block_Consumption, etc.)
     - Block columns contain 0 or 1 (1 = series loads on that block)
     
+    Note: API/database-specific columns (data_code, item_id, api_source, country, is_kpi, etc.)
+    are ignored by the generic DFM module. They should be handled by adapters.database module.
+    
     Example:
-        series_id,series_name,frequency,transformation,category,units,Global,Consumption,Investment,External
-        BOK_200Y001,GDP Growth Rate,q,pch,GDP,PCT,1,0,0,0
-        BOK_200Y002,Consumption,q,pch,Consumption,PCT,1,1,0,0
+        id,series_name,frequency,transformation,category,units,Block_Global,Block_Consumption,Block_Invest,Block_Extern
+        0,Real GDP (Quarterly),q,pca,GDP,Billion Won,1,1,0,0
+        1,Nominal GDP (Quarterly),q,pca,GDP,Billion Won,1,1,0,0
     
     Parameters
     ----------
@@ -114,17 +117,29 @@ def load_config_from_csv(configfile: Union[str, Path]) -> ModelConfig:
     except Exception as e:
         raise ValueError(f"Failed to read CSV file {configfile}: {e}")
     
-    # Required fields
+    # Handle 'id' as alias for 'series_id'
+    if 'id' in df.columns and 'series_id' not in df.columns:
+        df['series_id'] = df['id'].astype(str)
+    elif 'id' in df.columns and 'series_id' in df.columns:
+        # Both exist - prefer series_id, but if it's empty, use id
+        df['series_id'] = df['series_id'].fillna(df['id'].astype(str))
+    
+    # Required fields (DFM-relevant only - no API/database fields)
     required_fields = ['series_id', 'series_name', 'frequency', 'transformation', 'category', 'units']
-    optional_fields = ['api_code', 'api_source']  # Optional but useful for database agent
+    optional_fields = []  # No optional fields in generic DFM module
     
     missing = [f for f in required_fields if f not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns: {', '.join(missing)}")
     
     # Detect block columns (all columns that are not in required_fields or optional_fields)
+    # Also exclude 'id' (if it was used as alias, we already created series_id from it)
+    # and other non-DFM metadata columns (API/database fields are ignored by generic DFM module)
     all_columns = set(df.columns)
-    excluded_fields = set(required_fields) | set(optional_fields)
+    excluded_fields = set(required_fields) | set(optional_fields) | {
+        'id', 'country', 'data_code', 'item_id', 'api_source', 'api_code', 
+        'api_group_id', 'is_kpi', 'description', 'priority', 'is_active', 'metadata'
+    }
     block_columns = sorted([col for col in all_columns if col not in excluded_fields])
     
     if not block_columns:
@@ -153,16 +168,16 @@ def load_config_from_csv(configfile: Union[str, Path]) -> ModelConfig:
         # Build block array from block columns
         blocks = [int(row[col]) for col in block_columns]
         
+        # Create SeriesConfig with only DFM-relevant fields
+        # API/database fields (data_code, item_id, api_source, etc.) are ignored by generic DFM module
         series_list.append(SeriesConfig(
-            series_id=row['series_id'],
+            series_id=str(row['series_id']),  # Ensure string type
             series_name=row['series_name'],
             frequency=row['frequency'],
             transformation=row['transformation'],
             category=row['category'],
             units=row['units'],
-            blocks=blocks,
-            api_code=row.get('api_code'),  # Optional field
-            api_source=row.get('api_source')  # Optional field
+            blocks=blocks
         ))
     
     return ModelConfig(series=series_list, block_names=block_columns)

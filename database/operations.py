@@ -1109,10 +1109,44 @@ def save_forecast(
     lower_bound: Optional[float] = None,
     upper_bound: Optional[float] = None,
     confidence_level: float = 0.95,
+    run_type: Optional[str] = None,
+    vintage_id_old: Optional[int] = None,
+    vintage_id_new: Optional[int] = None,
+    github_run_id: Optional[str] = None,
+    metadata_json: Optional[Dict[str, Any]] = None,
     client: Optional[Client] = None
 ) -> Dict[str, Any]:
-    """Save a forecast."""
+    """Save a forecast to forecasts table.
     
+    Parameters
+    ----------
+    model_id : int
+        Model ID (models stored as pkl files, not in DB)
+    series_id : str
+        Series ID for the forecast
+    forecast_date : date
+        Target date for forecast
+    forecast_value : float
+        Forecast value
+    lower_bound : float, optional
+        Lower confidence bound
+    upper_bound : float, optional
+        Upper confidence bound
+    confidence_level : float, default=0.95
+        Confidence level
+    run_type : str, optional
+        Type of forecast run ('nowcast', 'forecast', 'batch')
+    vintage_id_old : int, optional
+        Old vintage ID (for nowcasting)
+    vintage_id_new : int, optional
+        New vintage ID (for nowcasting)
+    github_run_id : str, optional
+        GitHub Actions run ID
+    metadata_json : dict, optional
+        Additional metadata as JSON
+    client : Client, optional
+        Database client
+    """
     data = {
         'model_id': model_id,
         'series_id': series_id,
@@ -1122,6 +1156,18 @@ def save_forecast(
         'upper_bound': upper_bound,
         'confidence_level': confidence_level,
     }
+    
+    # Add optional fields if provided
+    if run_type is not None:
+        data['run_type'] = run_type
+    if vintage_id_old is not None:
+        data['vintage_id_old'] = vintage_id_old
+    if vintage_id_new is not None:
+        data['vintage_id_new'] = vintage_id_new
+    if github_run_id is not None:
+        data['github_run_id'] = github_run_id
+    if metadata_json is not None:
+        data['metadata_json'] = metadata_json
     
     result = client.table(TABLES['forecasts']).insert(data).execute()
     return result.data[0] if result.data else None

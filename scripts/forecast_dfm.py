@@ -22,12 +22,9 @@ import numpy as np
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.nowcasting import (
-    load_config, load_data, dfm, update_nowcast,
-    ModelConfig
-)
+from src.nowcasting import load_data, dfm, update_nowcast
 from adapters.database import load_data_from_db, save_nowcast_to_db
-from omegaconf import OmegaConf
+from scripts.utils import load_model_config_from_hydra
 import pickle
 
 # Configure logging
@@ -36,58 +33,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-
-def load_model_config_from_hydra(cfg_model: DictConfig, use_db: bool = True) -> ModelConfig:
-    """Load model configuration from database (latest) or CSV/YAML file.
-    
-    Application-specific config loader for Hydra workflows.
-    Priority: Database → CSV → YAML
-    
-    This function is kept in scripts (not in DFM module) to keep DFM generic.
-    """
-    # Try database first (if enabled)
-    if use_db:
-        try:
-            from database import get_client, load_model_config
-            
-            client = get_client()
-            config_name = cfg_model.get('config_name', '001-initial-spec')
-            
-            db_config = load_model_config(config_name, client=client)
-            if db_config and 'config_json' in db_config:
-                config_dict = db_config['config_json']
-                if 'block_names' not in config_dict and 'block_names' in db_config:
-                    config_dict['block_names'] = db_config['block_names']
-                return ModelConfig.from_dict(config_dict)
-        except (ImportError, Exception):
-            pass  # Fall back to file
-    
-    # Load from CSV or YAML file
-    model_config_path = cfg_model.get('config_path')
-    if model_config_path:
-        config_file = Path(model_config_path)
-        if not config_file.is_absolute():
-            # Resolve relative path
-            current = Path.cwd()
-            for parent in [current] + list(current.parents):
-                candidate = parent / model_config_path
-                if candidate.exists():
-                    config_file = candidate
-                    break
-            else:
-                config_file = Path(__file__).parent.parent / model_config_path
-        
-        if not config_file.exists():
-            raise FileNotFoundError(
-                f"Model config file not found: {config_file}\n"
-                f"Researchers should update: src/spec/001_initial_spec.csv"
-            )
-        
-        return load_config(config_file)
-    else:
-        # Fallback to YAML config (convert DictConfig to dict, then to ModelConfig)
-        return ModelConfig.from_dict(OmegaConf.to_container(cfg_model, resolve=True))
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="defaults")
@@ -118,7 +63,11 @@ def main(cfg: DictConfig) -> None:
         # Load model configuration - try DB first, then CSV/YAML
         # Researchers update spec in DB or src/spec/001_initial_spec.csv
         use_db_for_config = cfg.get('model', {}).get('use_db', True)
-        model_cfg = load_model_config_from_hydra(cfg.model, use_db=use_db_for_config)
+        model_cfg = load_model_config_from_hydra(
+            cfg.model,
+            use_db=use_db_for_config,
+            script_path=Path(__file__)
+        )
         
         # Load data and DFM configs from Hydra
         data_cfg_dict = OmegaConf.to_container(cfg.data, resolve=True)
@@ -151,6 +100,11 @@ def main(cfg: DictConfig) -> None:
         model_dir = base_dir / 'model'
         model_dir.mkdir(parents=True, exist_ok=True)
         
+        # Fallback to ResDFM.pkl if model file not found
+        res_file = base_dir / 'ResDFM.pkl'
+        Res = None
+        model_id = None
+        
         # Try to load model weights from model/ directory
         model_file = None
         if vintage_new:
@@ -162,11 +116,6 @@ def main(cfg: DictConfig) -> None:
             # Fallback to vintage-only file
             if model_file is None or not model_file.exists():
                 model_file = model_dir / f"dfm_{vintage_new}.pkl"
-        
-        # Fallback to ResDFM.pkl if model file not found
-        res_file = base_dir / 'ResDFM.pkl'
-        Res = None
-        model_id = None
         
         # Try loading from model/ directory first
         if model_file and model_file.exists():
@@ -180,7 +129,22 @@ def main(cfg: DictConfig) -> None:
                 # But we can skip if we have ResDFM.pkl with full results
                 logger.info("Model weights loaded, but full DFM estimation needed for nowcasting")
                 logger.info("Checking for full DFM results in ResDFM.pkl...")
-                model_id = model_weights.get('config_id')
+            except Exception as e:
+                logger.warning(f"Failed to load model weights from {model_file}: {e}")
+                model_file = None
+        
+        # Try loading from model/ directory first
+        if model_file and model_file.exists():
+            try:
+                logger.info(f"Loading model weights from {model_file}")
+                with open(model_file, 'rb') as f:
+                    model_weights = pickle.load(f)
+                
+                # Reconstruct DFMResult from weights (need to estimate full model)
+                # For nowcasting, we need full Res object, so we'll still need to estimate
+                # But we can skip if we have ResDFM.pkl with full results
+                logger.info("Model weights loaded, but full DFM estimation needed for nowcasting")
+                logger.info("Checking for full DFM results in ResDFM.pkl...")
             except Exception as e:
                 logger.warning(f"Failed to load model weights from {model_file}: {e}")
                 model_file = None
@@ -198,8 +162,6 @@ def main(cfg: DictConfig) -> None:
                             logger.warning('Configuration mismatch. Re-estimating...')
                             raise FileNotFoundError
                         Res = data.get('Res', data)
-                        # Try to get model_id from saved data
-                        model_id = data.get('model_id')
                     else:
                         Res = data.get('Res', data)
                 logger.info("DFM results loaded successfully from ResDFM.pkl")
@@ -302,6 +264,8 @@ def main(cfg: DictConfig) -> None:
         logger.info("This compares old vs new vintage forecasts for the current period (nowcasting)")
         
         # Create save callback if database saving is enabled
+        # Note: model_id is not stored in DB (models are pkl files only)
+        # For forecasts table, model_id can be None or a reference ID
         save_callback = None
         if use_database:
             save_callback = lambda **kwargs: save_nowcast_to_db(**kwargs)
@@ -309,7 +273,7 @@ def main(cfg: DictConfig) -> None:
         update_nowcast(
             X_old, X_new, Time, model_cfg, Res, series, period,
             vintage_old, vintage_new,
-            model_id=model_id,
+            model_id=None,  # Models are pkl files, not in DB
             save_callback=save_callback
         )
         

@@ -404,54 +404,10 @@ def save_nowcast_to_db(
     client : Client, optional
         Supabase client instance
     """
-    # Validate inputs - try multiple methods to get model_id
-    if model_id is None:
-        # Method 1: Try to extract model_id from Res
-        if Res is not None:
-            if isinstance(Res, dict):
-                model_id = Res.get('model_id')
-            elif hasattr(Res, 'model_id'):
-                model_id = Res.model_id
-        
-        # Method 2: Try to look up model_id from database using config_id and vintage
-        if model_id is None:
-            try:
-                from database import get_client, get_latest_vintage_id
-                
-                # Try to get model_id from trained_models table
-                # Note: This will only work if models have been saved to DB
-                # Since we're not saving to trained_models yet, this might not work
-                # But we'll try anyway for robustness
-                db_client = client or get_client()
-                if vintage_new:
-                    vintage_id = get_latest_vintage_id(vintage_date=vintage_new, client=db_client)
-                    if vintage_id:
-                        # Query trained_models for matching vintage_id
-                        # This is a fallback - may not work if models aren't saved yet
-                        try:
-                            from database import TABLES
-                            result = (db_client.table(TABLES.get('trained_models', 'trained_models'))
-                                     .select('model_id')
-                                     .eq('vintage_id', vintage_id)
-                                     .limit(1)
-                                     .execute())
-                            if result.data:
-                                model_id = result.data[0]['model_id']
-                        except Exception:
-                            pass  # If lookup fails, continue
-                client = db_client
-            except (ImportError, Exception):
-                pass  # If database lookup fails, continue
-    
-    # Validate forecast_value
-    if model_id is None:
-        logger.warning(
-            "Cannot save nowcast to database: model_id not provided, "
-            "not found in Res, and not found in database. "
-            "Skipping database save. Note: Model weights must be saved to "
-            "database first using save_model_weights() to enable nowcast saving."
-        )
-        return
+    # Note: model_id is required by forecasts table schema (NOT NULL)
+    # But models are stored as pkl files, not in database
+    # If model_id is None, we'll use 0 as placeholder
+    # (This is acceptable since model_id has no FK constraint)
     
     if not np.isfinite(forecast_value):
         logger.warning(
@@ -475,18 +431,64 @@ def save_nowcast_to_db(
     
     # Attempt to save to database with comprehensive error handling
     try:
-        from database import get_client, save_forecast
+        from database import get_client, save_forecast, get_latest_vintage_id
+        import os
         db_client = client or get_client()
+        
+        # Note: model_id is required by forecasts table schema, but models are pkl files
+        # Use 0 as placeholder if model_id is None (models not in DB)
+        effective_model_id = model_id if model_id is not None else 0
+        
+        # Resolve vintage IDs from vintage dates
+        vintage_id_old_resolved = None
+        vintage_id_new_resolved = None
+        
+        if vintage_old:
+            try:
+                vintage_id_old_resolved = get_latest_vintage_id(
+                    vintage_date=_normalize_date(vintage_old),
+                    client=db_client
+                )
+            except Exception as e:
+                logger.debug(f"Could not resolve vintage_id_old from {vintage_old}: {e}")
+        
+        if vintage_new:
+            try:
+                vintage_id_new_resolved = get_latest_vintage_id(
+                    vintage_date=_normalize_date(vintage_new),
+                    client=db_client
+                )
+            except Exception as e:
+                logger.debug(f"Could not resolve vintage_id_new from {vintage_new}: {e}")
+        
+        # Prepare metadata JSON with news decomposition info
+        metadata = {}
+        if old_forecast_value is not None:
+            metadata['old_forecast_value'] = old_forecast_value
+        if impact_revisions is not None:
+            metadata['impact_revisions'] = impact_revisions
+        if impact_releases is not None:
+            metadata['impact_releases'] = impact_releases
+        if total_impact is not None:
+            metadata['total_impact'] = total_impact
+        
+        # Get GitHub run ID if available
+        github_run_id = os.getenv('GITHUB_RUN_ID')
         
         # Save forecast with all metadata
         save_forecast(
-            model_id=model_id,
+            model_id=effective_model_id,
             series_id=series,
             forecast_date=forecast_date.date(),
             forecast_value=forecast_value,
             lower_bound=None,  # TODO: Compute confidence intervals
             upper_bound=None,
             confidence_level=confidence_level,
+            run_type='nowcast',
+            vintage_id_old=vintage_id_old_resolved,
+            vintage_id_new=vintage_id_new_resolved,
+            github_run_id=github_run_id,
+            metadata_json=metadata if metadata else None,
             client=db_client
         )
         
