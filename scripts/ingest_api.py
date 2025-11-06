@@ -63,7 +63,6 @@ from database import (
     get_series,
     insert_observations_from_dataframe,
     save_model_config,
-    get_source_id,
     update_vintage_status,
 )
 from database.operations import (
@@ -78,7 +77,7 @@ from database.db_utils import (
     fetch_series_data,
     get_next_period_date,
 )
-from database import ensure_vintage_and_job, finalize_ingestion_job
+from database import ensure_vintage_and_job, finalize_ingestion_job, delete_old_vintages
 
 
 def main() -> None:
@@ -160,8 +159,9 @@ def main() -> None:
         sys.exit(1)
     
     # Get source IDs
-    bok_source_id = get_source_id('BOK', client) if bok_client else None
-    kosis_source_id = get_source_id('KOSIS', client) if kosis_client else None
+    # data_sources removed, source_id no longer needed
+    bok_source_id = 'BOK' if bok_client else None
+    kosis_source_id = 'KOSIS' if kosis_client else None
     
     print(f"   ✅ BOK source_id: {bok_source_id}")
     print(f"   ✅ KOSIS source_id: {kosis_source_id}")
@@ -510,6 +510,21 @@ def main() -> None:
         print("\n🎉 All series processed successfully!")
     elif stats['failed'] > 0:
         print(f"\n⚠️  {stats['failed']} series failed to process")
+    
+    print("=" * 80)
+    
+    # Cleanup old vintages (6 months or older)
+    print("\n🧹 Cleaning up old vintages (6 months or older)...")
+    try:
+        cleanup_result = delete_old_vintages(months=6, dry_run=False, client=client)
+        if cleanup_result['deleted_count'] > 0:
+            print(f"   ✅ Deleted {cleanup_result['deleted_count']} old vintages (cutoff: {cleanup_result['cutoff_date']})")
+            logger.info(f"Cleaned up {cleanup_result['deleted_count']} old vintages")
+        else:
+            print(f"   ℹ️  No old vintages to delete (cutoff: {cleanup_result['cutoff_date']})")
+    except Exception as e:
+        logger.warning(f"Failed to cleanup old vintages: {e}", exc_info=True)
+        print(f"   ⚠️  Cleanup failed: {e}")
     
     print("=" * 80)
     

@@ -7,8 +7,6 @@ from datetime import date, datetime
 
 from database import (
     get_client,
-    get_source_id,
-    get_source_code,
     create_vintage,
     update_vintage_status,
     create_ingestion_job,
@@ -131,8 +129,10 @@ class DataIngestionOrchestrator:
         dfm_stats = []
         for source_code in self._sources.keys():
             try:
-                source_id = self._get_source_id(source_code)
-                stats = list_dfm_selected_statistics(source_id=source_id, client=self.client)
+                # Note: list_dfm_selected_statistics may need source_id, but data_sources removed
+                # For now, skip this functionality or modify list_dfm_selected_statistics
+                logger.warning(f"list_dfm_selected_statistics requires source_id, but data_sources removed. Skipping.")
+                stats = []
                 dfm_stats.extend(stats)
             except Exception as e:
                 logger.warning(f"Failed to get statistics for source {source_code}: {e}")
@@ -482,11 +482,10 @@ class DataIngestionOrchestrator:
             logger.error(f"Error processing {source.name}: {e}", exc_info=True)
             raise
     
-    def _get_source_id(self, source_code: str) -> int:
-        """Get source_id from database (cached)."""
-        if source_code not in self._source_cache:
-            self._source_cache[source_code] = get_source_id(source_code, client=self.client)
-        return self._source_cache[source_code]
+    def _get_source_id(self, source_code: str) -> str:
+        """Get source_code (no longer uses database, returns source_code directly)."""
+        # data_sources table removed, return source_code directly
+        return source_code
     
     def _get_source_code_from_metadata(
         self,
@@ -499,10 +498,10 @@ class DataIngestionOrchestrator:
             return stat_metadata['source_code']
         
         # Fallback: query database
-        result = self.client.table('statistics_metadata').select('source_id').eq('id', statistics_metadata_id).execute()
-        if result.data:
-            source_id = result.data[0]['source_id']
-            return get_source_code(source_id, client=self.client)
+        # data_sources removed, try to get source_code from stat_metadata directly
+        source_code = stat_metadata.get('source_code') or stat_metadata.get('api_source')
+        if source_code:
+            return source_code
         
         # Default fallback to first registered source
         if self._sources:

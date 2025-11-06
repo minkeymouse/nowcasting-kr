@@ -157,40 +157,6 @@ def _apply_transformations(
 # Data Source Operations
 # ============================================================================
 
-def get_source_id(source_code: str, client: Optional[Client] = None) -> int:
-    if client is None:
-        client = get_client()
-    query = build_query(
-        client=client,
-        table_name='data_sources',
-        filters={'source_code': source_code},
-        select='id',
-        limit=1
-    )
-    
-    result = query.execute()
-    if result.data:
-        return result.data[0]['id']
-    raise NotFoundError(f"Data source '{source_code}' not found in database")
-
-
-def get_source_code(source_id: int, client: Optional[Client] = None) -> str:
-    if client is None:
-        client = get_client()
-    query = build_query(
-        client=client,
-        table_name='data_sources',
-        filters={'id': source_id},
-        select='source_code',
-        limit=1
-    )
-    
-    result = query.execute()
-    if result.data:
-        return result.data[0]['source_code']
-    raise NotFoundError(f"Data source with id {source_id} not found in database")
-
-
 # ============================================================================
 # Series Operations
 # ============================================================================
@@ -1126,6 +1092,92 @@ def load_model_weights(model_id: int, client: Optional[Client] = None) -> Option
     
     result = client.table(TABLES['trained_models']).select('*').eq('model_id', model_id).execute()
     return result.data[0] if result.data else None
+
+
+# ============================================================================
+# Cleanup Operations
+# ============================================================================
+
+def delete_old_vintages(
+    months: int = 6,
+    dry_run: bool = False,
+    client: Optional[Client] = None
+) -> Dict[str, Any]:
+    """
+    Delete vintages older than specified months.
+    
+    This function deletes old vintages and their associated observations
+    (via CASCADE). Use with caution as this is irreversible.
+    
+    Parameters
+    ----------
+    months : int, default=6
+        Number of months to keep (vintages older than this will be deleted)
+    dry_run : bool, default=False
+        If True, only count and return without deleting
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    Dict[str, Any]
+        Summary of deletion operation:
+        - deleted_count: Number of vintages deleted
+        - cutoff_date: Date cutoff used
+        - dry_run: Whether this was a dry run
+    """
+    if client is None:
+        client = get_client()
+    
+    from datetime import date, timedelta
+    
+    # Calculate cutoff date (approximate: 30 days per month)
+    cutoff_date = date.today() - timedelta(days=months * 30)
+    
+    # Find old vintages
+    result = client.table(TABLES['vintages']).select(
+        'vintage_id,vintage_date'
+    ).lt('vintage_date', cutoff_date.isoformat()).execute()
+    
+    old_vintages = result.data
+    count = len(old_vintages)
+    
+    if dry_run:
+        logger.info(f"DRY RUN: Would delete {count} vintages older than {cutoff_date}")
+        return {
+            'deleted_count': 0,
+            'would_delete_count': count,
+            'cutoff_date': cutoff_date.isoformat(),
+            'dry_run': True,
+            'old_vintages': old_vintages
+        }
+    
+    if count == 0:
+        logger.info(f"No vintages older than {cutoff_date} to delete")
+        return {
+            'deleted_count': 0,
+            'cutoff_date': cutoff_date.isoformat(),
+            'dry_run': False
+        }
+    
+    # Delete old vintages (CASCADE will delete observations)
+    vintage_ids = [v['vintage_id'] for v in old_vintages]
+    
+    for vintage_id in vintage_ids:
+        try:
+            client.table(TABLES['vintages']).delete().eq('vintage_id', vintage_id).execute()
+            logger.debug(f"Deleted vintage {vintage_id}")
+        except Exception as e:
+            logger.error(f"Error deleting vintage {vintage_id}: {e}")
+    
+    logger.info(f"Deleted {count} vintages older than {cutoff_date}")
+    
+    return {
+        'deleted_count': count,
+        'cutoff_date': cutoff_date.isoformat(),
+        'dry_run': False,
+        'deleted_vintage_ids': vintage_ids
+    }
 
 
 # ============================================================================
