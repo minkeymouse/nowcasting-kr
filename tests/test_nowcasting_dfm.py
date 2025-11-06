@@ -24,31 +24,44 @@ logger = logging.getLogger(__name__)
 def test_nowcasting_workflow():
     """Run minimal nowcasting workflow to populate database."""
     try:
-        from scripts.nowcast_dfm import main
-        import hydra
-        from omegaconf import DictConfig
+        import subprocess
+        import sys
         
         logger.info("=" * 60)
         logger.info("Running test nowcasting workflow")
         logger.info("=" * 60)
         
-        # Run with minimal config
-        with hydra.initialize(config_path="../configs", version_base=None):
-            cfg = hydra.compose(
-                config_name="config",
-                overrides=[
-                    "model.config_path=src/spec/001_initial_spec.csv",
-                    "data.use_database=true",
-                    "data.strict_mode=false",
-                ]
-            )
-            main(cfg)
+        # Run nowcast_dfm.py directly with command line arguments
+        script_path = project_root / "scripts" / "nowcast_dfm.py"
         
-        logger.info("=" * 60)
-        logger.info("Test nowcasting workflow completed")
-        logger.info("=" * 60)
-        return True
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                "model.config_path=src/spec/001_initial_spec.csv",
+                "data.use_database=true",
+                "data.strict_mode=false",
+            ],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 minutes
+        )
         
+        if result.returncode == 0:
+            logger.info("=" * 60)
+            logger.info("Test nowcasting workflow completed successfully")
+            logger.info("=" * 60)
+            return True
+        else:
+            logger.error(f"Script failed with return code {result.returncode}")
+            logger.error(f"Stdout: {result.stdout[-500:]}")
+            logger.error(f"Stderr: {result.stderr[-500:]}")
+            return False
+        
+    except subprocess.TimeoutExpired:
+        logger.error("Test timed out after 10 minutes")
+        return False
     except Exception as e:
         logger.error(f"Test failed: {e}", exc_info=True)
         return False
