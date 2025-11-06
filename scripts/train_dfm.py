@@ -7,6 +7,7 @@ For regular data ingestion (GitHub Actions), use scripts/ingest_data.py instead.
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from pathlib import Path
+from typing import Optional
 import sys
 import pandas as pd
 import pickle
@@ -14,12 +15,128 @@ import pickle
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.nowcasting import load_data, dfm
+from src.nowcasting import load_data, dfm, load_config, ModelConfig
 from src.utils import summarize
-from scripts.utils import load_model_config_from_hydra
 
 
-@hydra.main(version_base=None, config_path="../../config", config_name="defaults")
+def load_model_config_from_hydra(
+    cfg_model: DictConfig,
+    use_db: bool = True,
+    script_path: Optional[Path] = None
+) -> ModelConfig:
+    """Load model configuration from database (latest) or CSV/YAML file.
+    
+    Application-specific config loader for Hydra workflows.
+    Priority: Database → CSV → YAML
+    
+    Parameters
+    ----------
+    cfg_model : DictConfig
+        Hydra model configuration dict
+    use_db : bool, default=True
+        Whether to try loading from database first
+    script_path : Path, optional
+        Path to the calling script (for relative path resolution)
+        If None, uses current working directory
+    
+    Returns
+    -------
+    ModelConfig
+        Loaded model configuration
+    
+    Raises
+    ------
+    FileNotFoundError
+        If config file is specified but not found
+    """
+    # Try database first (if enabled)
+    if use_db:
+        try:
+            from database import get_client, load_model_config
+            
+            client = get_client()
+            config_name = cfg_model.get('config_name', '001-initial-spec')
+            
+            db_config = load_model_config(config_name, client=client)
+            if db_config and 'config_json' in db_config:
+                config_dict = db_config['config_json']
+                if 'block_names' not in config_dict and 'block_names' in db_config:
+                    config_dict['block_names'] = db_config['block_names']
+                return ModelConfig.from_dict(config_dict)
+        except (ImportError, Exception):
+            pass  # Fall back to file
+    
+    # Load from CSV or YAML file
+    model_config_path = cfg_model.get('config_path')
+    if model_config_path:
+        config_file = Path(model_config_path)
+        
+        # Resolve relative paths
+        if not config_file.is_absolute():
+            # Start from script location or current directory
+            if script_path:
+                base_dir = script_path.parent.parent
+            else:
+                base_dir = Path.cwd()
+            
+            # Try multiple possible locations
+            search_paths = [
+                base_dir / model_config_path,  # Relative to project root
+                Path.cwd() / model_config_path,  # Relative to current dir
+            ]
+            
+            # Also try parent directories
+            for parent in [base_dir] + list(base_dir.parents):
+                search_paths.append(parent / model_config_path)
+            
+            # Find first existing path
+            for candidate in search_paths:
+                if candidate.exists():
+                    config_file = candidate
+                    break
+            else:
+                # If not found, use default location relative to script
+                if script_path:
+                    config_file = script_path.parent.parent / model_config_path
+                else:
+                    config_file = Path(model_config_path)
+        
+        if not config_file.exists():
+            raise FileNotFoundError(
+                f"Model config file not found: {config_file}\n"
+                f"Researchers should update: src/spec/001_initial_spec.csv"
+            )
+        
+        # Load config from file
+        model_config = load_config(config_file)
+        
+        # If loading from CSV and use_db is enabled, save blocks to database
+        if use_db and config_file.suffix.lower() == '.csv':
+            try:
+                from adapters.database import save_blocks_to_db
+                
+                # Derive config_name from CSV filename
+                # Example: '001_initial_spec.csv' → '001-initial-spec'
+                config_name = config_file.stem.replace('_', '-')
+                
+                # Save blocks to database
+                save_blocks_to_db(model_config, config_name)
+            except (ImportError, Exception) as e:
+                # Log warning but don't fail - block saving is optional
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    f"Could not save blocks to database for {config_file.name}: {e}. "
+                    f"Continuing without saving blocks."
+                )
+        
+        return model_config
+    else:
+        # Fallback to YAML config (convert DictConfig to dict, then to ModelConfig)
+        return ModelConfig.from_dict(OmegaConf.to_container(cfg_model, resolve=True))
+
+
+@hydra.main(version_base=None, config_path="../config", config_name="defaults")
 def main(cfg: DictConfig) -> None:
     """Run DFM estimation with Hydra configuration.
     
@@ -56,9 +173,47 @@ def main(cfg: DictConfig) -> None:
     if use_database:
         from adapters.database import load_data_from_db
         sample_start_dt = pd.to_datetime(sample_start) if sample_start else None
+        
+        # Use latest vintage if not specified
+        if vintage is None:
+            try:
+                from database import get_latest_vintage_id
+                from adapters.database import _get_db_client
+                client = _get_db_client()
+                latest_vintage_id = get_latest_vintage_id(client=client)
+                if latest_vintage_id:
+                    print(f"   Using latest vintage_id: {latest_vintage_id}")
+                    vintage = latest_vintage_id  # Use vintage_id instead
+                else:
+                    raise ValueError("No vintage available in database")
+            except Exception as e:
+                raise ValueError(f"Must specify vintage_date or ensure database has vintages: {e}")
+        
+        # Derive config_name from CSV filename if available
+        # But only use it if blocks table has data for this config
+        config_name = None
+        if hasattr(cfg.model, 'config_path') and cfg.model.config_path:
+            config_file = Path(cfg.model.config_path)
+            if config_file.suffix.lower() == '.csv':
+                config_name = config_file.stem.replace('_', '-')
+                # Check if blocks table has data for this config_name
+                try:
+                    from adapters.database import _get_db_client
+                    from database.helpers import get_series_ids_for_config
+                    client = _get_db_client()
+                    series_ids = get_series_ids_for_config(config_name, client=client)
+                    if not series_ids:
+                        # No blocks data, don't use config_name
+                        config_name = None
+                except Exception:
+                    # If check fails, don't use config_name
+                    config_name = None
+        
         X, Time, Z = load_data_from_db(
-            vintage_date=vintage,
+            vintage_id=vintage if isinstance(vintage, int) else None,
+            vintage_date=vintage if not isinstance(vintage, int) else None,
             config=model_cfg,
+            config_name=config_name,
             config_id=config_id,
             sample_start=sample_start_dt,
             strict_mode=strict_mode

@@ -117,8 +117,10 @@ def load_config_from_csv(configfile: Union[str, Path]) -> ModelConfig:
     except Exception as e:
         raise ValueError(f"Failed to read CSV file {configfile}: {e}")
     
-    # Handle 'id' as alias for 'series_id'
+    # Handle 'id' as alias for 'series_id' (for backward compatibility)
+    # CSV should already have series_id from DB query - use it as-is
     if 'id' in df.columns and 'series_id' not in df.columns:
+        # Fallback: use 'id' as series_id if series_id column doesn't exist
         df['series_id'] = df['id'].astype(str)
     elif 'id' in df.columns and 'series_id' in df.columns:
         # Both exist - prefer series_id, but if it's empty, use id
@@ -135,12 +137,13 @@ def load_config_from_csv(configfile: Union[str, Path]) -> ModelConfig:
     # Detect block columns (all columns that are not in required_fields or optional_fields)
     # Also exclude 'id' (if it was used as alias, we already created series_id from it)
     # and other non-DFM metadata columns (API/database fields are ignored by generic DFM module)
-    all_columns = set(df.columns)
+    # Preserve original column order from DataFrame - first block should be Global
     excluded_fields = set(required_fields) | set(optional_fields) | {
         'id', 'country', 'data_code', 'item_id', 'api_source', 'api_code', 
         'api_group_id', 'is_kpi', 'description', 'priority', 'is_active', 'metadata'
     }
-    block_columns = sorted([col for col in all_columns if col not in excluded_fields])
+    # Use DataFrame column order (not sorted) to preserve CSV structure
+    block_columns = [col for col in df.columns if col not in excluded_fields]
     
     if not block_columns:
         raise ValueError("No block columns found. Expected columns like 'Global', 'Consumption', etc.")

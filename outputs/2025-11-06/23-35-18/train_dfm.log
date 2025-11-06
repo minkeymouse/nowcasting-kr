@@ -1,0 +1,2 @@
+[2025-11-06 23:35:18,609][adapters.database][ERROR] - Failed to save blocks to database for config_name=001-initial-spec: Supabase URL must be provided or set in SUPABASE_URL environment variable
+[2025-11-06 23:35:18,609][__main__][WARNING] - Could not save blocks to database for 001_initial_spec.csv: Supabase URL must be provided or set in SUPABASE_URL environment variable. Continuing without saving blocks.

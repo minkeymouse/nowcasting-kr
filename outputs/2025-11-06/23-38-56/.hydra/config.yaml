@@ -1,0 +1,22 @@
+model:
+  config_path: src/spec/001_initial_spec.csv
+  fallback: kr_dfm_v1
+data:
+  vintage: null
+  country: KR
+  sample_start: '2000-01-01'
+  data_path: null
+  use_database: true
+  vintage_id: null
+  config_name: null
+  config_id: null
+  start_date: null
+  end_date: null
+  strict_mode: false
+dfm:
+  threshold: 1.0e-05
+  max_iter: 5000
+  nan_method: 2
+  nan_k: 3
+experiment_name: dfm_training
+output_dir: outputs
