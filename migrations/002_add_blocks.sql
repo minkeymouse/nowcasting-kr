@@ -89,9 +89,14 @@ COMMENT ON COLUMN factors.block_name IS 'Block name for inner block factors (NUL
 -- Update views to include block information
 -- ============================================================================
 
+-- Drop existing views before recreating (for idempotency and column changes)
+DROP VIEW IF EXISTS latest_forecasts_view CASCADE;
+DROP VIEW IF EXISTS series_with_blocks CASCADE;
+DROP VIEW IF EXISTS variables_view CASCADE;
+
 -- Update latest_forecasts_view to include block information
 -- Uses the most recent config_name for each series
-CREATE OR REPLACE VIEW latest_forecasts_view
+CREATE VIEW latest_forecasts_view
 WITH (security_invoker=true) AS
 SELECT DISTINCT ON (f.series_id, f.forecast_date)
     f.forecast_id,
@@ -117,7 +122,7 @@ ORDER BY f.series_id, f.forecast_date, f.created_at DESC;
 COMMENT ON VIEW latest_forecasts_view IS 'Latest forecast for each series and date combination with block information';
 
 -- Create series_with_blocks view for easy access to block information
-CREATE OR REPLACE VIEW series_with_blocks
+CREATE VIEW series_with_blocks
 WITH (security_invoker=true) AS
 SELECT 
     s.series_id,
@@ -148,7 +153,7 @@ WHERE s.is_active = TRUE;
 COMMENT ON VIEW series_with_blocks IS 'Active series with their block information from the most recent config';
 
 -- Update variables_view to include block information
-CREATE OR REPLACE VIEW variables_view
+CREATE VIEW variables_view
 WITH (security_invoker=true) AS
 SELECT 
     s.series_id AS id,
