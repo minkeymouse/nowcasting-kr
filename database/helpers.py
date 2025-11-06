@@ -10,9 +10,36 @@ from typing import List, Dict, Any, Optional, Callable, TypeVar
 from functools import wraps
 from supabase import Client
 
+from .client import get_client
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
+
+# ============================================================================
+# Client Management
+# ============================================================================
+
+def ensure_client(client: Optional[Client] = None) -> Client:
+    """
+    Ensure a client is available, creating one if needed.
+    
+    This helper reduces repetitive `if client is None: client = get_client()` patterns.
+    
+    Parameters
+    ----------
+    client : Optional[Client]
+        Existing client instance or None
+        
+    Returns
+    -------
+    Client
+        Client instance (existing or newly created)
+    """
+    if client is None:
+        return get_client()
+    return client
+
 
 # ============================================================================
 # Batch Operations

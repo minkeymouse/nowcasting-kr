@@ -9,13 +9,12 @@ from database import (
     get_client,
     create_vintage,
     update_vintage_status,
-    create_ingestion_job,
-    update_ingestion_job,
     insert_observations_from_dataframe,
     get_statistics_metadata,
     get_active_items_for_statistic,
     update_statistics_metadata_status,
     list_dfm_selected_statistics,
+    finalize_ingestion_job,
 )
 from database.operations import create_series_from_item, create_or_get_series
 from services.ingestion.bok import BOKIngestion
@@ -108,7 +107,7 @@ class DataIngestionOrchestrator:
             except Exception as e:
                 logger.warning(f"Metadata update failed: {e}")
         
-        # Step 1: Create vintage
+        # Step 1: Create vintage (ingestion job tracking integrated into data_vintages)
         vintage = create_vintage(
             vintage_date=vintage_date,
             github_run_id=self.github_run_id,
@@ -116,14 +115,6 @@ class DataIngestionOrchestrator:
             client=self.client
         )
         vintage_id = vintage['vintage_id']
-        
-        # Step 2: Create ingestion job
-        job = create_ingestion_job(
-            github_run_id=self.github_run_id or '',
-            vintage_date=vintage_date,
-            client=self.client
-        )
-        job_id = job['job_id']
         
         # Step 3: Get DFM-selected statistics
         dfm_stats = []
@@ -162,7 +153,7 @@ class DataIngestionOrchestrator:
             for idx, source in enumerate(enabled_sources, 1):
                 logger.info(f"[{idx}/{total_series}] Processing: {source.name} ({source.api_code})")
                 try:
-                    success = self._process_source_legacy(source, vintage_id, job_id, vintage_date)
+                    success = self._process_source_legacy(source, vintage_id, vintage_date)
                     if success:
                         stats['successful'] += 1
                     else:
@@ -179,7 +170,7 @@ class DataIngestionOrchestrator:
                 stat_name = stat.get('source_stat_name', stat_code)
                 logger.info(f"[{idx}/{total_series}] Processing: {stat_name} ({stat_code})")
                 try:
-                    success = self._process_statistic(stat, vintage_id, job_id, vintage_date)
+                    success = self._process_statistic(stat, vintage_id, vintage_date)
                     if success:
                         stats['successful'] += 1
                     else:
@@ -190,24 +181,20 @@ class DataIngestionOrchestrator:
                     stats['errors'].append(error_msg)
                     logger.error(error_msg, exc_info=True)
                 
-                # Update job progress
-                update_ingestion_job(
-                    job_id=job_id,
-                    total_series=total_series,
-                    successful_series=stats['successful'],
-                    failed_series=stats['failed'],
-                    logs_json={
-                        'current_series': idx,
-                        'total_series': total_series,
-                        'progress': f"{idx}/{total_series}",
-                        'timestamp': datetime.now().isoformat()
-                    },
-                    client=self.client
-                )
+                # Update vintage progress (ingestion job tracking integrated)
+                if idx % 10 == 0:  # Update every 10 series to reduce DB calls
+                    finalize_ingestion_job(
+                        vintage_id=vintage_id,
+                        status='in_progress',
+                        total_series=total_series,
+                        successful_series=stats['successful'],
+                        failed_series=stats['failed'],
+                        client=self.client
+                    )
         
-        # Step 5: Finalize
-        update_ingestion_job(
-            job_id=job_id,
+        # Step 5: Finalize vintage
+        finalize_ingestion_job(
+            vintage_id=vintage_id,
             status='completed' if stats['failed'] == 0 else 'completed_with_errors',
             completed_at=datetime.now(),
             client=self.client
@@ -223,7 +210,6 @@ class DataIngestionOrchestrator:
         
         return {
             'vintage_id': vintage_id,
-            'job_id': job_id,
             'stats': stats
         }
     
@@ -231,7 +217,6 @@ class DataIngestionOrchestrator:
         self,
         stat_metadata: Dict[str, Any],
         vintage_id: int,
-        job_id: int,
         vintage_date: date
     ) -> bool:
         """
@@ -243,8 +228,6 @@ class DataIngestionOrchestrator:
             Statistics metadata dictionary
         vintage_id : int
             Vintage ID
-        job_id : int
-            Ingestion job ID
         vintage_date : date
             Vintage date
             
@@ -281,7 +264,6 @@ class DataIngestionOrchestrator:
                     statistics_metadata_id=statistics_metadata_id,
                     item=item,
                     vintage_id=vintage_id,
-                    job_id=job_id,
                     source_code=source_code
                 )
                 if success:
@@ -311,7 +293,6 @@ class DataIngestionOrchestrator:
         statistics_metadata_id: int,
         item: Dict[str, Any],
         vintage_id: int,
-        job_id: int,
         source_code: str
     ) -> int:
         """
@@ -329,8 +310,6 @@ class DataIngestionOrchestrator:
             Item dictionary
         vintage_id : int
             Vintage ID
-        job_id : int
-            Job ID
         source_code : str
             Source code (e.g., 'BOK')
             
@@ -385,7 +364,7 @@ class DataIngestionOrchestrator:
             inserted = insert_observations_from_dataframe(
                 df=df,
                 vintage_id=vintage_id,
-                job_id=job_id,
+                github_run_id=self.github_run_id,
                 api_source=source_code,
                 client=self.client
             )
@@ -401,7 +380,6 @@ class DataIngestionOrchestrator:
         self,
         source: DataSourceConfig,
         vintage_id: int,
-        job_id: int,
         vintage_date: date
     ) -> bool:
         """
@@ -459,7 +437,7 @@ class DataIngestionOrchestrator:
             inserted = insert_observations_from_dataframe(
                 df=df,
                 vintage_id=vintage_id,
-                job_id=job_id,
+                github_run_id=self.github_run_id,
                 api_source=source_code,
                 client=self.client
             )

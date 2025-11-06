@@ -14,7 +14,8 @@ class SeriesModel(BaseModel):
     transformation: Optional[str] = Field(None, description="Transformation code")
     category: Optional[str] = Field(None, description="Category classification")
     api_source: Optional[str] = Field(None, description="API source identifier (e.g., BOK, KOSIS, MANUAL)")
-    api_code: Optional[str] = Field(None, description="API-specific series code")
+    data_code: Optional[str] = Field(None, description="API-specific series code (e.g., BOK: 200Y106, KOSIS: 101_DT_1DA7002S)")
+    item_id: Optional[str] = Field(None, description="Item identifier (e.g., BOK: 1400, KOSIS: T80)")
 
 
 class VintageModel(BaseModel):
@@ -53,7 +54,7 @@ class ObservationModel(BaseModel):
     vintage_id: int = Field(..., description="Vintage identifier")
     observation_date: date = Field(..., description="Observation date", alias="date")
     value: float = Field(..., description="Observation value")
-    job_id: Optional[int] = None
+    github_run_id: Optional[str] = Field(None, description="GitHub Actions run ID")
     is_forecast: bool = Field(False, description="Whether this is a forecast")
     api_source: Optional[str] = None
     item_code1: Optional[str] = Field(None, description="First level item code")
@@ -137,7 +138,6 @@ class StatisticsItemModel(BaseModel):
 TABLES = {
     'series': 'series',
     'vintages': 'data_vintages',
-    'ingestion_jobs': 'ingestion_jobs',
     'api_fetches': 'api_fetches',
     'observations': 'observations',
     'model_configs': 'model_configs',
