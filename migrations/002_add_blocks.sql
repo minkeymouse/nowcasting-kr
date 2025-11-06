@@ -84,3 +84,91 @@ CREATE INDEX IF NOT EXISTS idx_factors_model_block ON factors(model_id, block_na
 
 -- Update comment (idempotent - COMMENT ON COLUMN can be run multiple times)
 COMMENT ON COLUMN factors.block_name IS 'Block name for inner block factors (NULL or Global for global factors)';
+
+-- ============================================================================
+-- Update views to include block information
+-- ============================================================================
+
+-- Update latest_forecasts_view to include block information
+-- Uses the most recent config_name for each series
+CREATE OR REPLACE VIEW latest_forecasts_view
+WITH (security_invoker=true) AS
+SELECT DISTINCT ON (f.series_id, f.forecast_date)
+    f.forecast_id,
+    f.model_id,
+    f.series_id,
+    s.series_name,
+    f.forecast_date,
+    f.forecast_value,
+    f.lower_bound,
+    f.upper_bound,
+    f.confidence_level,
+    -- Block information from most recent config
+    (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
+     FROM blocks b
+     WHERE b.series_id = f.series_id
+     AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = f.series_id)
+    ) AS block_names,
+    f.created_at
+FROM forecasts f
+JOIN series s ON f.series_id = s.series_id
+ORDER BY f.series_id, f.forecast_date, f.created_at DESC;
+
+COMMENT ON VIEW latest_forecasts_view IS 'Latest forecast for each series and date combination with block information';
+
+-- Create series_with_blocks view for easy access to block information
+CREATE OR REPLACE VIEW series_with_blocks
+WITH (security_invoker=true) AS
+SELECT 
+    s.series_id,
+    s.series_name,
+    s.api_source,
+    s.data_code,
+    s.item_id,
+    s.api_group_id,
+    s.frequency,
+    s.transformation,
+    s.category,
+    s.units,
+    s.country,
+    s.is_active,
+    s.is_kpi,
+    -- Block information from most recent config
+    (SELECT MAX(config_name) FROM blocks WHERE series_id = s.series_id) AS latest_config_name,
+    (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
+     FROM blocks b
+     WHERE b.series_id = s.series_id
+     AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = s.series_id)
+    ) AS block_names,
+    s.created_at,
+    s.updated_at
+FROM series s
+WHERE s.is_active = TRUE;
+
+COMMENT ON VIEW series_with_blocks IS 'Active series with their block information from the most recent config';
+
+-- Update variables_view to include block information
+CREATE OR REPLACE VIEW variables_view
+WITH (security_invoker=true) AS
+SELECT 
+    s.series_id AS id,
+    s.series_name AS name,
+    s.units AS unit,
+    s.is_kpi,
+    s.frequency,
+    s.transformation,
+    s.category,
+    s.country,
+    s.is_active,
+    -- Block information from most recent config
+    (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
+     FROM blocks b
+     WHERE b.series_id = s.series_id
+     AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = s.series_id)
+    ) AS block_names,
+    s.created_at,
+    s.updated_at
+FROM series s
+WHERE s.is_active = TRUE;
+
+COMMENT ON VIEW variables_view IS 'Variables view for frontend visualization with block information';
