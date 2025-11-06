@@ -519,10 +519,58 @@ def process_series(
             
             existing_series = get_series(series_id, client=client)
             if not existing_series:
-                data = series_model.model_dump(exclude_none=True)
-                data.pop('updated_at', None)
-                data.pop('created_at', None)
-                client.table('series').insert(data).execute()
+                # Build data dict directly to ensure data_code and item_id are included
+                # data_code is required (NOT NULL in DB), so it must be present
+                if not data_code:
+                    logger.error(f"data_code is None for {series_id}, cannot insert")
+                    return None, False, f"data_code is required but was None"
+                
+                data = {
+                    'series_id': series_id,
+                    'series_name': series_cfg['series_name'],
+                    'frequency': series_cfg['frequency'],
+                    'transformation': series_cfg.get('transformation'),
+                    'units': series_cfg.get('units'),
+                    'category': series_cfg.get('category'),
+                    'api_source': api_source,
+                    'data_code': data_code,  # Required, should not be None
+                    'item_id': item_id,  # Optional, can be None
+                    'is_active': True,
+                    'is_kpi': series_cfg.get('is_kpi', False)
+                }
+                # Remove None values for optional fields only, but ALWAYS keep data_code and item_id
+                # Build filtered dict explicitly to ensure data_code is never removed
+                filtered_data = {}
+                for k, v in data.items():
+                    if v is not None:
+                        filtered_data[k] = v
+                    elif k in ('data_code', 'item_id'):
+                        # Keep data_code and item_id even if None (though data_code should never be None)
+                        filtered_data[k] = v
+                data = filtered_data
+                
+                # Log the data before insertion for debugging
+                logger.info(f"About to insert series {series_id}: data_code={data.get('data_code')}, item_id={data.get('item_id')}")
+                logger.info(f"Data keys: {list(data.keys())}")
+                
+                # Double-check data_code is present and not None
+                if 'data_code' not in data:
+                    logger.error(f"data_code key missing from data dict for {series_id}")
+                    return None, False, f"data_code key missing from data dict"
+                if data['data_code'] is None:
+                    logger.error(f"data_code is None for {series_id}, cannot insert")
+                    return None, False, f"data_code is None"
+                
+                # Debug: Log what we're about to insert
+                logger.debug(f"Inserting series {series_id} with data_code={data.get('data_code')}, item_id={data.get('item_id')}")
+                logger.debug(f"Full data dict keys: {list(data.keys())}")
+                
+                try:
+                    client.table('series').insert(data).execute()
+                except Exception as e:
+                    logger.error(f"Failed to insert series {series_id}: {e}")
+                    logger.error(f"Data dict was: {data}")
+                    raise
         
         # Add vintage_id
         df_data['vintage_id'] = vintage_id

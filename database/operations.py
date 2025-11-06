@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any, Tuple, Union, Callable
 from datetime import date, datetime
 from supabase import Client
 
-from .client import get_client
+from .client import get_client  # Only used for ensure_client fallback
 from .helpers import (
     batch_query_in,
     batch_insert,
@@ -15,13 +15,13 @@ from .helpers import (
     DatabaseError,
     NotFoundError,
     ValidationError,
+    ensure_client,
 )
 
 logger = logging.getLogger(__name__)
 from .models import (
     SeriesModel,
     VintageModel,
-    IngestionJobModel,
     ObservationModel,
     ForecastModel,
     StatisticsMetadataModel,
@@ -225,8 +225,7 @@ def create_or_get_series(
     Dict[str, Any]
         Series record from database
     """
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     series_id = generate_series_id(source_code, stat_code, item_code)
     
@@ -294,8 +293,7 @@ def create_series_from_item(
     Dict[str, Any]
         Series record
     """
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     from .helpers import map_frequency_to_code
     
@@ -330,8 +328,7 @@ def create_series_from_item(
 
 
 def get_series(series_id: str, client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     if not series_id:
         return None
     result = client.table(TABLES['series']).select('*').eq('series_id', series_id).execute()
@@ -345,8 +342,7 @@ def upsert_series(
     item_code: Optional[str] = None
 ) -> Dict[str, Any]:
     """Insert or update a series."""
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     data = series.model_dump(exclude_none=True)
     # Remove any fields that don't exist in the database table
     # (updated_at and created_at are managed by triggers)
@@ -362,8 +358,7 @@ def upsert_series(
 
 
 def list_series(client: Optional[Client] = None, api_source: Optional[str] = None) -> List[Dict[str, Any]]:
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     query = client.table(TABLES['series']).select('*')
     if api_source:
         query = query.eq('api_source', api_source)
@@ -390,8 +385,7 @@ def get_series_metadata_bulk(
     pd.DataFrame
         DataFrame with columns: series_id, transformation, frequency, units, category, etc.
     """
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     if not series_ids:
         return pd.DataFrame(columns=['series_id', 'transformation', 'frequency', 'units', 'category'])
     
@@ -431,8 +425,7 @@ def create_vintage(
     github_workflow_run_url: Optional[str] = None
 ) -> Dict[str, Any]:
     """Create a new data vintage."""
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     data = {
         'vintage_date': vintage_date.isoformat(),
         'country': country,
@@ -451,8 +444,7 @@ def get_vintage(
     vintage_id: Optional[int] = None
 ) -> Optional[Dict[str, Any]]:
     """Get a vintage by date or ID."""
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     if vintage_date:
         result = client.table(TABLES['vintages']).select('*').eq('vintage_date', vintage_date.isoformat()).execute()
         return result.data[0] if result.data else None
@@ -549,86 +541,13 @@ def update_vintage_status(
 
 
 # ============================================================================
-# Ingestion Job Operations
-# ============================================================================
-
-def create_ingestion_job(
-    github_run_id: str,
-    vintage_date: date,
-    github_workflow_run_url: Optional[str] = None,
-    client: Optional[Client] = None
-) -> Dict[str, Any]:
-    """Create a new ingestion job for GitHub Actions tracking."""
-    
-    data = {
-        'github_run_id': github_run_id,
-        'vintage_date': vintage_date.isoformat(),
-        'status': 'running',
-        'github_workflow_run_url': github_workflow_run_url,
-    }
-    
-    result = client.table(TABLES['ingestion_jobs']).insert(data).execute()
-    return result.data[0] if result.data else None
-
-
-def update_ingestion_job(
-    job_id: int,
-    status: Optional[str] = None,
-    total_series: Optional[int] = None,
-    successful_series: Optional[int] = None,
-    failed_series: Optional[int] = None,
-    error_message: Optional[str] = None,
-    logs_json: Optional[Dict[str, Any]] = None,
-    client: Optional[Client] = None
-) -> Dict[str, Any]:
-    """Update an ingestion job."""
-    
-    update_data = {}
-    if status:
-        update_data['status'] = status
-        if status in ('completed', 'failed', 'cancelled'):
-            update_data['completed_at'] = datetime.now().isoformat()
-    if total_series is not None:
-        update_data['total_series'] = total_series
-    if successful_series is not None:
-        update_data['successful_series'] = successful_series
-    if failed_series is not None:
-        update_data['failed_series'] = failed_series
-    if error_message:
-        update_data['error_message'] = error_message
-    if logs_json:
-        update_data['logs_json'] = logs_json
-    
-    result = (
-        client.table(TABLES['ingestion_jobs'])
-        .update(update_data)
-        .eq('job_id', job_id)
-        .execute()
-    )
-    return result.data[0] if result.data else None
-
-
-def get_ingestion_job(client: Optional[Client] = None, github_run_id: Optional[str] = None, job_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    if client is None:
-        client = get_client()
-    
-    if github_run_id:
-        result = client.table(TABLES['ingestion_jobs']).select('*').eq('github_run_id', github_run_id).execute()
-        return result.data[0] if result.data else None
-    elif job_id:
-        result = client.table(TABLES['ingestion_jobs']).select('*').eq('job_id', job_id).execute()
-        return result.data[0] if result.data else None
-    return None
-
-
-# ============================================================================
 # Observation Operations (Pandas-Optimized)
 # ============================================================================
 
 def insert_observations_from_dataframe(
     df: pd.DataFrame,
     vintage_id: int,
-    job_id: Optional[int] = None,
+    github_run_id: Optional[str] = None,
     api_source: Optional[str] = None,
     batch_size: int = 1000,
     client: Optional[Client] = None
@@ -643,11 +562,11 @@ def insert_observations_from_dataframe(
         - series_id: str
         - date: date/pd.Timestamp
         - value: float
-        - Optional: item_code1-4, item_name1-4, weight, job_id, api_source
+        - Optional: item_code1-4, item_name1-4, weight, github_run_id, api_source
     vintage_id : int
         Vintage ID for the observations
-    job_id : int, optional
-        Ingestion job ID
+    github_run_id : str, optional
+        GitHub Actions run ID
     api_source : str, optional
         API source identifier
     batch_size : int
@@ -667,14 +586,13 @@ def insert_observations_from_dataframe(
     Exception
         If database insertion fails
     """
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     # Prepare data
     df = df.copy()
     df['vintage_id'] = vintage_id
-    if job_id:
-        df['job_id'] = job_id
+    if github_run_id:
+        df['github_run_id'] = github_run_id
     if api_source:
         df['api_source'] = api_source
     
@@ -684,7 +602,7 @@ def insert_observations_from_dataframe(
     
     # Select columns - required + optional
     required_cols = ['series_id', 'date', 'value', 'vintage_id']  # vintage_id is required
-    optional_cols = ['job_id', 'api_source', 'weight'] + \
+    optional_cols = ['github_run_id', 'api_source', 'weight', 'is_forecast'] + \
                    [f'item_code{i}' for i in range(1, 5)] + \
                    [f'item_name{i}' for i in range(1, 5)]
     
@@ -1126,8 +1044,7 @@ def delete_old_vintages(
         - cutoff_date: Date cutoff used
         - dry_run: Whether this was a dry run
     """
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     from datetime import date, timedelta
     
@@ -1247,11 +1164,12 @@ def ensure_vintage_and_job(
     client: Optional[Client] = None,
     dry_run: bool = False,
     github_run_id: Optional[str] = None
-) -> Tuple[Optional[int], Optional[int]]:
+) -> Optional[int]:
     """
-    Ensure a vintage and ingestion job exist for the given date.
+    Ensure a vintage exists for the given date.
     
-    This is a convenience function that creates or retrieves a vintage and ingestion job.
+    This is a convenience function that creates or retrieves a vintage.
+    Ingestion job tracking is now integrated into data_vintages table.
     Used by scripts that need to set up ingestion tracking without using the full orchestrator.
     
     Parameters
@@ -1267,17 +1185,20 @@ def ensure_vintage_and_job(
         
     Returns
     -------
-    Tuple[Optional[int], Optional[int]]
-        Tuple of (vintage_id, job_id)
+    Optional[int]
+        Vintage ID, or None if dry_run
     """
     if dry_run:
-        return None, None
+        return None
     
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     if vintage_date is None:
         vintage_date = date.today()
+    
+    # Use provided run_id or default
+    import os
+    run_id = github_run_id or os.getenv('GITHUB_RUN_ID', f'manual-{vintage_date.isoformat()}')
     
     # Create or get vintage
     vintage_id = None
@@ -1285,88 +1206,104 @@ def ensure_vintage_and_job(
         vintage_result = create_vintage(
             vintage_date=vintage_date,
             country='KR',
-            github_run_id=github_run_id,
+            github_run_id=run_id,
             client=client
         )
         vintage_id = vintage_result['vintage_id']
         logger.info(f"Created vintage {vintage_id} for {vintage_date}")
     except Exception as e:
         # Vintage might already exist
-        if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
+        error_str = str(e).lower()
+        if 'already exists' in error_str or 'duplicate' in error_str or '23505' in error_str:
             logger.info(f"Vintage for {vintage_date} already exists, retrieving...")
-            vintage_id = get_latest_vintage_id(vintage_date=vintage_date, client=client)
-            if vintage_id:
-                logger.info(f"Retrieved existing vintage {vintage_id}")
+            # Try to get existing vintage directly from DB
+            try:
+                result = client.table(TABLES['vintages']).select('vintage_id').eq('vintage_date', vintage_date.isoformat()).eq('country', 'KR').execute()
+                if result.data and len(result.data) > 0:
+                    vintage_id = result.data[0]['vintage_id']
+                    logger.info(f"Retrieved existing vintage {vintage_id}")
+                    # Update github_run_id if provided
+                    if run_id:
+                        try:
+                            client.table(TABLES['vintages']).update({
+                                'github_run_id': run_id
+                            }).eq('vintage_id', vintage_id).execute()
+                        except Exception as update_err:
+                            logger.warning(f"Could not update github_run_id for vintage {vintage_id}: {update_err}")
+                else:
+                    # Fallback to get_latest_vintage_id
+                    vintage_id = get_latest_vintage_id(vintage_date=vintage_date, client=client)
+                    if vintage_id:
+                        logger.info(f"Retrieved existing vintage {vintage_id} via get_latest_vintage_id")
+            except Exception as retrieve_err:
+                logger.warning(f"Failed to retrieve existing vintage: {retrieve_err}")
+                # Fallback to get_latest_vintage_id
+                vintage_id = get_latest_vintage_id(vintage_date=vintage_date, client=client)
+                if vintage_id:
+                    logger.info(f"Retrieved existing vintage {vintage_id} via get_latest_vintage_id")
         else:
             logger.error(f"Failed to create vintage: {e}")
             raise
     
-    # Create ingestion job
-    job_id = None
-    if vintage_id:
-        try:
-            # Use provided run_id or default
-            import os
-            run_id = github_run_id or os.getenv('GITHUB_RUN_ID', f'manual-{vintage_date.isoformat()}')
-            job_result = create_ingestion_job(
-                vintage_date=vintage_date,
-                github_run_id=run_id,
-                client=client
-            )
-            job_id = job_result['job_id']
-            logger.info(f"Created ingestion job {job_id}")
-        except Exception as e:
-            logger.warning(f"Could not create ingestion job: {e}")
-    
-    return vintage_id, job_id
+    return vintage_id
 
 
 def finalize_ingestion_job(
-    job_id: Optional[int],
+    vintage_id: Optional[int],
     status: str = 'completed',
     successful_series: Optional[int] = None,
     failed_series: Optional[int] = None,
     total_series: Optional[int] = None,
+    error_message: Optional[str] = None,
     client: Optional[Client] = None
 ) -> None:
     """
-    Finalize an ingestion job by updating its status and statistics.
+    Finalize an ingestion by updating vintage status and statistics.
     
-    This is a convenience function for scripts to update job status.
+    This is a convenience function for scripts to update vintage status.
+    Ingestion job tracking is now integrated into data_vintages table.
     
     Parameters
     ----------
-    job_id : int, optional
-        Job ID to finalize
+    vintage_id : int, optional
+        Vintage ID to finalize
     status : str
-        Final status of the job (e.g., 'completed', 'failed'). Defaults to 'completed'.
+        Final status of the vintage (e.g., 'completed', 'failed'). Defaults to 'completed'.
     successful_series : int, optional
         Number of series successfully processed.
     failed_series : int, optional
         Number of series that failed to process.
     total_series : int, optional
         Total number of series attempted.
+    error_message : str, optional
+        Error message if status is 'failed'.
     client : Client, optional
         Supabase client (default: get_client())
     """
-    if job_id is None:
+    if vintage_id is None:
         return
     
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     try:
-        update_ingestion_job(
-            job_id=job_id,
-            status=status,
-            successful_series=successful_series,
-            failed_series=failed_series,
-            total_series=total_series,
-            client=client
-        )
-        logger.info(f"Updated ingestion job {job_id} to {status}")
+        update_data = {
+            'fetch_status': status,
+            'fetch_completed_at': datetime.now().isoformat(),
+        }
+        
+        if successful_series is not None:
+            update_data['successful_series'] = successful_series
+        if failed_series is not None:
+            update_data['failed_series'] = failed_series
+        if total_series is not None:
+            update_data['total_series'] = total_series
+        if error_message is not None:
+            update_data['error_message'] = error_message
+        
+        client.table(TABLES['vintages']).update(update_data).eq('vintage_id', vintage_id).execute()
+        logger.info(f"Updated vintage {vintage_id} to {status}")
     except Exception as e:
-        logger.warning(f"Could not update ingestion job {job_id}: {e}")
+        logger.warning(f"Could not update vintage {vintage_id}: {e}")
 
 
 def get_latest_forecasts(client: Optional[Client] = None, limit: int = 100) -> pd.DataFrame:
@@ -1460,8 +1397,7 @@ def get_statistics_metadata_bulk(
     Dict[str, Dict[str, Any]]
         Dictionary mapping source_stat_code to metadata dict
     """
-    if client is None:
-        client = get_client()
+    client = ensure_client(client)
     
     if not source_stat_codes:
         return {}
@@ -1642,6 +1578,8 @@ def load_data_from_db(
         - Time: DatetimeIndex
         - Z: Raw untransformed data (T x N) numpy array
     """
+    client = ensure_client(client)
+    
     # Resolve vintage_id
     if vintage_id is None:
         if vintage_date:

@@ -12,10 +12,7 @@ from .operations import (
     get_vintage,
     get_latest_vintage,
     update_vintage_status,
-    # Ingestion job operations
-    create_ingestion_job,
-    update_ingestion_job,
-    get_ingestion_job,
+    # Vintage/job operations (integrated into data_vintages)
     ensure_vintage_and_job,
     finalize_ingestion_job,
     # Observation operations
@@ -37,8 +34,7 @@ from .operations import (
     upsert_statistics_items,
     get_statistics_items,
     get_active_items_for_statistic,
-    # Model operations
-    save_model_config,
+    # Model operations (deprecated - model_configs table removed)
     load_model_config,
     save_model_weights,
     load_model_weights,
@@ -70,9 +66,6 @@ __all__ = [
     'get_vintage',
     'get_latest_vintage',
     'update_vintage_status',
-    'create_ingestion_job',
-    'update_ingestion_job',
-    'get_ingestion_job',
     'ensure_vintage_and_job',
     'finalize_ingestion_job',
     'insert_observations_from_dataframe',
@@ -93,7 +86,6 @@ __all__ = [
     'upsert_statistics_items',
     'get_statistics_items',
     'get_active_items_for_statistic',
-    'save_model_config',
     'load_model_config',
     'save_model_weights',
     'load_model_weights',
