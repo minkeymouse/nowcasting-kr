@@ -425,3 +425,175 @@ def map_frequency_to_code(frequency: str) -> str:
     }
     return mapping.get(frequency.upper(), frequency.lower())
 
+
+# ============================================================================
+# Blocks Table Helpers
+# ============================================================================
+
+def get_series_ids_for_config(
+    config_name: str,
+    client: Optional[Client] = None
+) -> List[str]:
+    """
+    Get ordered list of series IDs for a configuration.
+    
+    Orders by blocks.series_order to maintain DFM block structure.
+    
+    Parameters
+    ----------
+    config_name : str
+        Configuration name (e.g., '001-initial-spec')
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    List[str]
+        Ordered list of series IDs
+    """
+    client = ensure_client(client)
+    
+    result = (
+        client.table('blocks')
+        .select('series_id')
+        .eq('config_name', config_name)
+        .order('series_order', desc=False)
+        .execute()
+    )
+    
+    if not result.data:
+        return []
+    
+    # Return distinct series IDs in order
+    seen = set()
+    series_ids = []
+    for row in result.data:
+        series_id = row['series_id']
+        if series_id not in seen:
+            seen.add(series_id)
+            series_ids.append(series_id)
+    
+    return series_ids
+
+
+def get_block_assignments_for_config(
+    config_name: str,
+    client: Optional[Client] = None
+) -> Dict[str, List[str]]:
+    """
+    Get block assignments for a configuration.
+    
+    Returns a dictionary mapping series_id to list of block names.
+    
+    Parameters
+    ----------
+    config_name : str
+        Configuration name (e.g., '001-initial-spec')
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    Dict[str, List[str]]
+        Dictionary mapping series_id to list of block names
+    """
+    client = ensure_client(client)
+    
+    result = (
+        client.table('blocks')
+        .select('series_id, block_name')
+        .eq('config_name', config_name)
+        .execute()
+    )
+    
+    assignments: Dict[str, List[str]] = {}
+    for row in result.data:
+        series_id = row['series_id']
+        block_name = row['block_name']
+        if series_id not in assignments:
+            assignments[series_id] = []
+        assignments[series_id].append(block_name)
+    
+    return assignments
+
+
+def get_block_names_for_config(
+    config_name: str,
+    client: Optional[Client] = None
+) -> List[str]:
+    """
+    Get unique block names for a configuration.
+    
+    Parameters
+    ----------
+    config_name : str
+        Configuration name (e.g., '001-initial-spec')
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    List[str]
+        Sorted list of unique block names
+    """
+    client = ensure_client(client)
+    
+    result = (
+        client.table('blocks')
+        .select('block_name')
+        .eq('config_name', config_name)
+        .execute()
+    )
+    
+    block_names = sorted(set(row['block_name'] for row in result.data))
+    return block_names
+
+
+def resolve_config_name(
+    config_id: Optional[int] = None,
+    config_name: Optional[str] = None,
+    client: Optional[Client] = None
+) -> Optional[str]:
+    """
+    Resolve config_name from config_id if needed.
+    
+    If config_name is provided, returns it. If only config_id is provided,
+    looks up the config_name from the database.
+    
+    Parameters
+    ----------
+    config_id : int, optional
+        Configuration ID
+    config_name : str, optional
+        Configuration name
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    Optional[str]
+        Configuration name, or None if not found
+    """
+    if config_name:
+        return config_name
+    
+    if config_id is None:
+        return None
+    
+    client = ensure_client(client)
+    
+    try:
+        result = (
+            client.table('model_configs')
+            .select('config_name')
+            .eq('config_id', config_id)
+            .execute()
+        )
+        
+        if result.data:
+            return result.data[0]['config_name']
+    except Exception as e:
+        logger.warning(f"Could not resolve config_name from config_id {config_id}: {e}")
+    
+    return None
+

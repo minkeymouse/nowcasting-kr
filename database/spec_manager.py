@@ -14,6 +14,11 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from .client import get_client
+from .helpers import (
+    ensure_client,
+    get_block_assignments_for_config,
+    get_block_names_for_config,
+)
 from .operations import (
     load_model_config,
     get_model_config_series_ids,
@@ -54,18 +59,16 @@ def export_config_to_csv(
     ValueError
         If config_name not found in database
     """
-    if client is None:
-        from .client import get_client
-        client = get_client()
+    client = ensure_client(client)
     
     # Load model config from database
     config = load_model_config(config_name, client=client)
     if not config:
         raise ValueError(f"Model configuration '{config_name}' not found in database")
     
-    config_id = config['config_id']
     config_json = config.get('config_json', {})
-    block_names = config.get('block_names', [])
+    # Get block names from blocks table
+    block_names = get_block_names_for_config(config_name, client=client)
     
     # Get series list from config
     series_list = config_json.get('series', [])
@@ -109,25 +112,17 @@ def export_config_to_csv(
         # Get block assignments
         blocks = series_item.get('blocks', [])
         if not blocks and len(block_names) > 0:
-            # Try to get from model_block_assignments
+            # Get block assignments from blocks table using helper
             try:
-                # Get block assignments for this series
-                result = (
-                    client.table(TABLES['model_block_assignments'])
-                    .select('block_name, block_index')
-                    .eq('config_id', config_id)
-                    .eq('series_id', series_id)
-                    .execute()
-                )
+                block_assignments = get_block_assignments_for_config(config_name, client=client)
+                series_blocks = block_assignments.get(series_id, [])
                 
-                if result.data:
-                    # Build blocks array from assignments
-                    blocks = [0] * len(block_names)
-                    for assignment in result.data:
-                        block_name = assignment['block_name']
-                        block_index = assignment['block_index']
-                        if block_name in block_names and 0 <= block_index < len(blocks):
-                            blocks[block_index] = 1
+                # Build blocks array (1 if series is in block, 0 otherwise)
+                blocks = [0] * len(block_names)
+                for block_name in series_blocks:
+                    if block_name in block_names:
+                        idx = block_names.index(block_name)
+                        blocks[idx] = 1
             except Exception as e:
                 logger.warning(f"Could not get block assignments for {series_id}: {e}")
                 blocks = [0] * len(block_names)
@@ -207,18 +202,16 @@ def get_latest_spec_from_db(
     ValueError
         If config_name not found in database
     """
-    if client is None:
-        from .client import get_client
-        client = get_client()
+    client = ensure_client(client)
     
     # Load model config from database
     config = load_model_config(config_name, client=client)
     if not config:
         raise ValueError(f"Model configuration '{config_name}' not found in database")
     
-    config_id = config['config_id']
     config_json = config.get('config_json', {})
-    block_names = config.get('block_names', [])
+    # Get block names from blocks table
+    block_names = get_block_names_for_config(config_name, client=client)
     
     # Get series list from config
     series_list = config_json.get('series', [])
@@ -232,29 +225,18 @@ def get_latest_spec_from_db(
     series_metadata_df = get_series_metadata_bulk(series_ids, client=client)
     metadata_dict = series_metadata_df.set_index('series_id').to_dict('index')
     
-    # Get block assignments
-    result = (
-        client.table(TABLES['model_block_assignments'])
-        .select('series_id, block_name, block_index')
-        .eq('config_id', config_id)
-        .order('series_id, block_index')
-        .execute()
-    )
+    # Get block assignments from blocks table using helper
+    block_assignments_dict = get_block_assignments_for_config(config_name, client=client)
     
-    # Build block assignments map
+    # Convert to block index format for compatibility (series_id -> list of 0/1)
     block_assignments = {}
-    for assignment in result.data:
-        series_id = assignment['series_id']
-        block_name = assignment['block_name']
-        block_index = assignment['block_index']
-        
-        if series_id not in block_assignments:
-            block_assignments[series_id] = [0] * len(block_names)
-        
-        if block_name in block_names:
-            idx = block_names.index(block_name)
-            if 0 <= idx < len(block_assignments[series_id]):
-                block_assignments[series_id][idx] = 1
+    for series_id, block_names_list in block_assignments_dict.items():
+        blocks = [0] * len(block_names)
+        for block_name in block_names_list:
+            if block_name in block_names:
+                idx = block_names.index(block_name)
+                blocks[idx] = 1
+        block_assignments[series_id] = blocks
     
     # Build DataFrame rows
     csv_rows = []
