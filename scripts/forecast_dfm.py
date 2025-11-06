@@ -310,7 +310,7 @@ def main(cfg: DictConfig) -> None:
             logger.info('Estimating DFM model...')
             
             if use_database:
-                X, Time, Z = load_data_from_db(
+                X, Time, Z, _ = load_data_from_db(
                     vintage_date=vintage_new,
                     config=model_cfg,
                     config_id=config_id,
@@ -364,14 +364,14 @@ def main(cfg: DictConfig) -> None:
         
         if use_database:
             # Load old vintage
-            X_old, Time_old, _ = load_data_from_db(
+            X_old, Time_old, _, _ = load_data_from_db(
                 vintage_date=vintage_old,
                 config=model_cfg,
                 config_id=config_id,
                 strict_mode=strict_mode
             )
             # Load new vintage
-            X_new, Time, _ = load_data_from_db(
+            X_new, Time, _, _ = load_data_from_db(
                 vintage_date=vintage_new,
                 config=model_cfg,
                 config_id=config_id,
