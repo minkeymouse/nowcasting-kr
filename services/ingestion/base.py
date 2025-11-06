@@ -13,7 +13,6 @@ import pandas as pd
 
 from database import (
     get_client,
-    get_source_id,
     upsert_statistics_metadata,
     upsert_statistics_items,
     get_statistics_metadata,
@@ -55,7 +54,8 @@ class BaseIngestion(ABC):
     def source_id(self) -> int:
         """Get source_id from database (cached)."""
         if self.source_code not in self._source_cache:
-            self._source_cache[self.source_code] = get_source_id(self.source_code, client=self.client)
+            # data_sources removed, source_id is just source_code
+            self._source_cache[self.source_code] = self.source_code
         return self._source_cache[self.source_code]
     
     # Parsing methods (abstract)

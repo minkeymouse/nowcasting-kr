@@ -21,7 +21,6 @@ DROP TABLE IF EXISTS model_configs CASCADE;
 DROP TABLE IF EXISTS observations CASCADE;
 DROP TABLE IF EXISTS data_vintages CASCADE;
 DROP TABLE IF EXISTS series CASCADE;
-DROP TABLE IF EXISTS data_sources CASCADE;
 DROP TABLE IF EXISTS factors CASCADE;
 DROP TABLE IF EXISTS factor_values CASCADE;
 DROP TABLE IF EXISTS factor_loadings CASCADE;
@@ -53,31 +52,7 @@ DROP VIEW IF EXISTS variable_values_view CASCADE;
 DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE;
 
 -- ============================================================================
--- 1. Data Sources Table
--- ============================================================================
--- Stores metadata about data sources (BOK, KOSIS, etc.)
-CREATE TABLE IF NOT EXISTS data_sources (
-    id SERIAL PRIMARY KEY,
-    source_code VARCHAR(20) NOT NULL UNIQUE,  -- BOK, KOSIS, etc.
-    source_name VARCHAR(100) NOT NULL,  -- 한국은행, 통계청 등
-    source_name_eng VARCHAR(100),  -- Bank of Korea, Statistics Korea
-    api_base_url VARCHAR(500),  -- API base URL
-    api_documentation_url VARCHAR(500),  -- API documentation URL
-    is_active BOOLEAN DEFAULT TRUE,
-    description TEXT,
-    metadata JSONB,  -- Flexible metadata storage
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    
-    CONSTRAINT idx_source_code UNIQUE (source_code)
-);
-
-COMMENT ON TABLE data_sources IS 'Data source metadata (BOK, KOSIS, etc.)';
-COMMENT ON COLUMN data_sources.source_code IS 'Source identifier: BOK, KOSIS, etc.';
-COMMENT ON COLUMN data_sources.metadata IS 'Flexible JSON storage for source-specific metadata';
-
--- ============================================================================
--- 2. Series Table (Core - CSV-driven, simplified)
+-- 1. Series Table
 -- ============================================================================
 -- Primary table for time-series definitions from CSV
 CREATE TABLE IF NOT EXISTS series (
@@ -109,10 +84,6 @@ CREATE TABLE IF NOT EXISTS series (
     -- Timestamps
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
-    
-    -- Foreign keys
-    CONSTRAINT fk_series_source FOREIGN KEY (api_source) 
-        REFERENCES data_sources(source_code) ON DELETE CASCADE,
     
     -- Constraints
     CONSTRAINT unique_series_identifier UNIQUE (api_source, data_code, item_id)
@@ -222,75 +193,12 @@ COMMENT ON TABLE observations IS 'Time-series observations data';
 COMMENT ON COLUMN observations.metadata IS 'Additional metadata (item codes, names, weights, etc.) as JSON';
 
 -- ============================================================================
--- 5. Model Configurations Table (with block assignments in config_json)
--- ============================================================================
--- Stores DFM model configurations (block structure, series selection, etc.)
-CREATE TABLE IF NOT EXISTS model_configs (
-    config_id SERIAL PRIMARY KEY,
-    config_name VARCHAR(100) NOT NULL UNIQUE,
-    country VARCHAR(10) DEFAULT 'KR',
-    description TEXT,
-    
-    -- Configuration as JSON
-    config_json JSONB NOT NULL,  -- Full ModelConfig as JSON
-    
-    -- Block structure
-    block_names TEXT[],  -- Array of block names
-    
-    -- Metadata
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    
-    CONSTRAINT unique_config_name UNIQUE (config_name)
-);
-
-CREATE INDEX idx_model_configs_config_name ON model_configs(config_name);
-CREATE INDEX idx_model_configs_country ON model_configs(country);
-CREATE INDEX idx_model_configs_config_json ON model_configs USING GIN (config_json);
-
-COMMENT ON TABLE model_configs IS 'DFM model configurations (block structure, series selection)';
-COMMENT ON COLUMN model_configs.config_json IS 'Full ModelConfig as JSON (SeriesID, Blocks, Frequency, etc. - includes block assignments)';
-
--- ============================================================================
--- 6. Trained Models Table
--- ============================================================================
--- Stores trained DFM model weights and parameters
-CREATE TABLE IF NOT EXISTS trained_models (
-    model_id SERIAL PRIMARY KEY,
-    config_id INTEGER NOT NULL REFERENCES model_configs(config_id) ON DELETE CASCADE,
-    vintage_id INTEGER NOT NULL REFERENCES data_vintages(vintage_id) ON DELETE CASCADE,
-    
-    -- Training parameters
-    threshold FLOAT,  -- Convergence threshold used
-    convergence_iter INTEGER,  -- Number of iterations to converge
-    log_likelihood FLOAT,  -- Final log-likelihood
-    
-    -- Model parameters as JSON (serialized numpy arrays)
-    parameters_json JSONB NOT NULL,  -- {C, A, Q, R, Z_0, V_0, etc.}
-    
-    -- Metadata
-    trained_at TIMESTAMP DEFAULT NOW(),
-    training_duration_seconds FLOAT,
-    notes TEXT,
-    
-    CONSTRAINT unique_config_vintage UNIQUE (config_id, vintage_id)
-);
-
-CREATE INDEX idx_trained_models_config_id ON trained_models(config_id);
-CREATE INDEX idx_trained_models_vintage_id ON trained_models(vintage_id);
-CREATE INDEX idx_trained_models_trained_at ON trained_models(trained_at DESC);
-CREATE INDEX idx_trained_models_config_vintage ON trained_models(config_id, vintage_id);
-
-COMMENT ON TABLE trained_models IS 'Trained DFM model weights and parameters';
-COMMENT ON COLUMN trained_models.parameters_json IS 'Serialized DFM parameters (C, A, Q, R, Z_0, V_0, etc.) as JSON';
-
--- ============================================================================
--- 7. Forecasts Table (with run info integrated)
+-- 5. Forecasts Table (with run info integrated)
 -- ============================================================================
 -- Stores individual forecasts
 CREATE TABLE IF NOT EXISTS forecasts (
     forecast_id SERIAL PRIMARY KEY,
-    model_id INTEGER NOT NULL REFERENCES trained_models(model_id) ON DELETE CASCADE,
+    model_id INTEGER NOT NULL,  -- Model ID (no FK, stored locally as pickle)
     series_id VARCHAR(100) NOT NULL REFERENCES series(series_id) ON DELETE CASCADE,
     
     -- Forecast details
@@ -329,7 +237,7 @@ COMMENT ON COLUMN forecasts.forecast_date IS 'Target date for the forecast';
 -- Stores DFM factor metadata
 CREATE TABLE IF NOT EXISTS factors (
     id SERIAL PRIMARY KEY,
-    model_id INTEGER NOT NULL REFERENCES trained_models(model_id) ON DELETE CASCADE,
+    model_id INTEGER NOT NULL,  -- Model ID (no FK, stored locally as pickle)
     name VARCHAR(100) NOT NULL,  -- Factor name (e.g., "Factor 1", "Global Factor")
     description TEXT,  -- Factor description
     factor_index INTEGER NOT NULL,  -- Index/order of factor in the model
@@ -392,16 +300,8 @@ COMMENT ON TABLE factor_loadings IS 'Factor loading matrix: how each variable (s
 COMMENT ON COLUMN factor_loadings.loading IS 'Loading coefficient (positive or negative)';
 
 -- ============================================================================
--- 11. Initial Data: Insert Data Sources
 -- ============================================================================
-INSERT INTO data_sources (source_code, source_name, source_name_eng, api_base_url, is_active)
-VALUES 
-    ('BOK', '한국은행', 'Bank of Korea', 'https://ecos.bok.or.kr/api/', TRUE),
-    ('KOSIS', '통계청', 'Statistics Korea', 'https://kosis.kr/openapi/', TRUE)
-ON CONFLICT (source_code) DO NOTHING;
-
--- ============================================================================
--- 12. Helper Views
+-- 11. Helper Views
 -- ============================================================================
 
 -- View for series with group information (simplified: no series_groups join)
@@ -441,44 +341,12 @@ SELECT DISTINCT ON (f.series_id, f.forecast_date)
     f.lower_bound,
     f.upper_bound,
     f.confidence_level,
-    f.created_at,
-    tm.config_id,
-    mc.config_name,
-    tm.vintage_id,
-    dv.vintage_date
+    f.created_at
 FROM forecasts f
 JOIN series s ON f.series_id = s.series_id
-JOIN trained_models tm ON f.model_id = tm.model_id
-JOIN model_configs mc ON tm.config_id = mc.config_id
-JOIN data_vintages dv ON tm.vintage_id = dv.vintage_id
 ORDER BY f.series_id, f.forecast_date, f.created_at DESC;
 
 COMMENT ON VIEW latest_forecasts_view IS 'Latest forecast for each series and date combination';
-
--- View for model training history
-CREATE OR REPLACE VIEW model_training_history
-WITH (security_invoker=true) AS
-SELECT 
-    tm.model_id,
-    tm.config_id,
-    mc.config_name,
-    tm.vintage_id,
-    dv.vintage_date,
-    tm.convergence_iter,
-    tm.log_likelihood,
-    tm.threshold,
-    tm.trained_at,
-    tm.training_duration_seconds,
-    COUNT(DISTINCT f.forecast_id) as forecast_count
-FROM trained_models tm
-JOIN model_configs mc ON tm.config_id = mc.config_id
-JOIN data_vintages dv ON tm.vintage_id = dv.vintage_id
-LEFT JOIN forecasts f ON tm.model_id = f.model_id
-GROUP BY tm.model_id, tm.config_id, mc.config_name, tm.vintage_id, dv.vintage_date,
-         tm.convergence_iter, tm.log_likelihood, tm.threshold, tm.trained_at, tm.training_duration_seconds
-ORDER BY tm.trained_at DESC;
-
-COMMENT ON VIEW model_training_history IS 'Model training history with forecast counts';
 
 -- View for variables (frontend visualization - based on series)
 CREATE OR REPLACE VIEW variables_view
@@ -530,25 +398,15 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER update_data_sources_updated_at BEFORE UPDATE ON data_sources
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_series_updated_at BEFORE UPDATE ON series
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_model_configs_updated_at BEFORE UPDATE ON model_configs
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================================================
 -- 14. Row Level Security (RLS) Policies
 -- ============================================================================
 -- Enable RLS on all tables for security
-
--- Data Sources
-ALTER TABLE data_sources ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow public read access to data_sources"
-    ON data_sources FOR SELECT
-    USING (true);
 
 -- Series
 ALTER TABLE series ENABLE ROW LEVEL SECURITY;
@@ -592,33 +450,6 @@ CREATE POLICY "Allow authenticated update to observations"
     TO authenticated
     USING (true);
 
--- Model Configs
-ALTER TABLE model_configs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow public read access to model_configs"
-    ON model_configs FOR SELECT
-    USING (true);
-CREATE POLICY "Allow authenticated insert to model_configs"
-    ON model_configs FOR INSERT
-    TO authenticated
-    WITH CHECK (true);
-CREATE POLICY "Allow authenticated update to model_configs"
-    ON model_configs FOR UPDATE
-    TO authenticated
-    USING (true);
-
--- Trained Models
-ALTER TABLE trained_models ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow public read access to trained_models"
-    ON trained_models FOR SELECT
-    USING (true);
-CREATE POLICY "Allow authenticated insert to trained_models"
-    ON trained_models FOR INSERT
-    TO authenticated
-    WITH CHECK (true);
-CREATE POLICY "Allow authenticated update to trained_models"
-    ON trained_models FOR UPDATE
-    TO authenticated
-    USING (true);
 
 -- Forecasts
 ALTER TABLE forecasts ENABLE ROW LEVEL SECURITY;
