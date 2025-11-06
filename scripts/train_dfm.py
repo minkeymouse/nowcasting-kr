@@ -209,7 +209,7 @@ def main(cfg: DictConfig) -> None:
                     # If check fails, don't use config_name
                     config_name = None
         
-        X, Time, Z = load_data_from_db(
+        X, Time, Z, series_metadata = load_data_from_db(
             vintage_id=vintage if isinstance(vintage, int) else None,
             vintage_date=vintage if not isinstance(vintage, int) else None,
             config=model_cfg,

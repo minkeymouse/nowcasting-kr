@@ -217,7 +217,8 @@ def _fetch_vintage_data(
             )
             # Convert to DataFrame for consistency
             data_df = pd.DataFrame(X, index=Time, columns=None)
-            return data_df, Time, series_metadata_df
+            Z_df = pd.DataFrame(Z, index=Time, columns=None) if Z is not None else None
+            return data_df, Time, Z_df, series_metadata_df
         except (TypeError, AttributeError) as e:
             logger.warning(f"get_vintage_data_for_config failed ({e}), using general function")
     elif config_id is not None:
@@ -503,7 +504,7 @@ def load_data_from_db(
             pass  # Will fall back to config_id handling in _fetch_vintage_data
     
     # Fetch data from database
-    data_df, Time, series_metadata_df = _fetch_vintage_data(
+    data_df, Time, Z_df, series_metadata_df = _fetch_vintage_data(
         vintage_id=resolved_vintage_id,
         config_series_ids=config_series_ids,
         config=config,
