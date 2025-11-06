@@ -1,18 +1,18 @@
 """Shared utilities for database initialization and updates.
 
 This module provides common functions to eliminate code duplication between
-initialization.py and ingest_api.py.
+initialization.py, test_initialization.py, and ingest_api.py.
 """
 
 import os
 import time
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import date, datetime, timedelta
 from pathlib import Path
 import pandas as pd
 
-from database import get_client
+from database import get_client, generate_series_id
 from database.operations import (
     ensure_vintage_and_job,
     finalize_ingestion_job,
@@ -355,4 +355,231 @@ def fetch_series_data(
         import traceback
         logger.debug(traceback.format_exc())
         return pd.DataFrame()
+
+
+# ============================================================================
+# CSV Loading and Parsing Utilities
+# ============================================================================
+
+def load_series_from_csv(csv_path: Path) -> List[Dict[str, Any]]:
+    """
+    Load and parse series from CSV specification file.
+    
+    Parameters
+    ----------
+    csv_path : Path
+        Path to CSV file
+        
+    Returns
+    -------
+    List[Dict[str, Any]]
+        List of series dictionaries with all required fields
+    """
+    df = pd.read_csv(csv_path)
+    series_list = []
+    
+    for _, row in df.iterrows():
+        api_source = row.get('api_source', '')
+        data_code = row.get('data_code', '')
+        item_id = row.get('item_id', '')
+        series_id = generate_series_id(api_source, data_code, item_id)
+        
+        # Extract block assignments
+        block_cols = [col for col in df.columns if col.startswith('Block_')]
+        blocks = {}
+        for col in block_cols:
+            block_name = col.replace('Block_', '')
+            blocks[block_name] = int(row.get(col, 0))
+        
+        series_list.append({
+            'series_id': series_id,
+            'series_name': row['series_name'],
+            'frequency': row['frequency'],
+            'transformation': row['transformation'],
+            'category': row.get('category'),
+            'units': row.get('units'),
+            'data_code': data_code,
+            'item_id': item_id,
+            'api_source': api_source,
+            'blocks': blocks
+        })
+    
+    return series_list
+
+
+def get_block_names_from_csv(csv_path: Path) -> List[str]:
+    """
+    Extract block names from CSV columns.
+    
+    Parameters
+    ----------
+    csv_path : Path
+        Path to CSV file
+        
+    Returns
+    -------
+    List[str]
+        List of block names
+    """
+    df = pd.read_csv(csv_path)
+    block_cols = [col for col in df.columns if col.startswith('Block_')]
+    block_names = [col.replace('Block_', '') for col in block_cols]
+    return block_names if block_names else ['Global', 'Consumption', 'Investment', 'External']
+
+
+# ============================================================================
+# Series Processing Utilities
+# ============================================================================
+
+def process_series(
+    series_cfg: Dict[str, Any],
+    bok_client: Optional[BOKAPIClient],
+    kosis_client: Optional[KOSISAPIClient],
+    rate_limiter: 'RateLimiter',
+    vintage_id: Optional[int],
+    client: Optional[Any] = None,
+    dry_run: bool = False,
+    github_run_id: Optional[str] = None
+) -> Tuple[Optional[pd.DataFrame], bool, Optional[str]]:
+    """
+    Process a single series: fetch data and save metadata.
+    
+    Parameters
+    ----------
+    series_cfg : Dict[str, Any]
+        Series configuration dictionary
+    bok_client : Optional[BOKAPIClient]
+        BOK API client
+    kosis_client : Optional[KOSISAPIClient]
+        KOSIS API client
+    rate_limiter : RateLimiter
+        Rate limiter instance
+    vintage_id : Optional[int]
+        Vintage ID for observations
+    client : Optional[Any]
+        Database client
+    dry_run : bool
+        If True, don't save to database
+    github_run_id : Optional[str]
+        GitHub run ID
+        
+    Returns
+    -------
+    Tuple[Optional[pd.DataFrame], bool, Optional[str]]
+        (dataframe, success, error_message)
+    """
+    series_id = series_cfg['series_id']
+    data_code = series_cfg.get('data_code')
+    item_id = series_cfg.get('item_id')
+    api_source = series_cfg.get('api_source')
+    
+    if not data_code or not api_source:
+        return None, False, f"Missing data_code or api_source"
+    
+    # Get appropriate API client
+    api_client = None
+    if api_source == 'BOK' and bok_client:
+        api_client = bok_client
+        rate_limiter.wait_if_needed(api_source)
+    elif api_source == 'KOSIS' and kosis_client:
+        api_client = kosis_client
+        rate_limiter.wait_if_needed(api_source)
+    else:
+        return None, False, f"No API client available for {api_source}"
+    
+    # Fetch data
+    try:
+        df_data = fetch_series_data(
+            series_id=series_id,
+            api_code=data_code,
+            api_client=api_client,
+            source=api_source,
+            frequency=series_cfg['frequency']
+        )
+        
+        if df_data.empty:
+            return None, False, "No data fetched"
+        
+        # Save series metadata if not dry run
+        if not dry_run and client:
+            from database.models import SeriesModel
+            from database.operations import get_series
+            
+            series_model = SeriesModel(
+                series_id=series_id,
+                series_name=series_cfg['series_name'],
+                frequency=series_cfg['frequency'],
+                transformation=series_cfg['transformation'],
+                units=series_cfg.get('units'),
+                category=series_cfg.get('category'),
+                api_source=api_source,
+                data_code=data_code,
+                item_id=item_id
+            )
+            
+            existing_series = get_series(series_id, client=client)
+            if not existing_series:
+                data = series_model.model_dump(exclude_none=True)
+                data.pop('updated_at', None)
+                data.pop('created_at', None)
+                client.table('series').insert(data).execute()
+        
+        # Add vintage_id
+        df_data['vintage_id'] = vintage_id
+        return df_data, True, None
+        
+    except Exception as e:
+        return None, False, str(e)
+
+
+# ============================================================================
+# Statistics and Reporting Utilities
+# ============================================================================
+
+def print_statistics_summary(stats: Dict[str, Any], vintage_id: Optional[int] = None) -> None:
+    """
+    Print formatted statistics summary.
+    
+    Parameters
+    ----------
+    stats : Dict[str, Any]
+        Statistics dictionary
+    vintage_id : Optional[int]
+        Vintage ID to include in summary
+    """
+    print("\n" + "=" * 80)
+    print("📊 STATISTICS SUMMARY")
+    print("=" * 80)
+    
+    if vintage_id:
+        print(f"📦 Vintage ID: {vintage_id}")
+    
+    print(f"\nProcessing Results:")
+    print(f"   Total series: {stats['total']}")
+    print(f"   ✅ Successful: {stats['successful']}")
+    print(f"   ❌ Failed: {stats['failed']}")
+    print(f"   ⏭️  Skipped: {stats['skipped']}")
+    
+    if 'observations_inserted' in stats:
+        print(f"   📈 Observations inserted: {stats['observations_inserted']}")
+    
+    if stats.get('errors'):
+        print(f"\n⚠️  Errors ({len(stats['errors'])}):")
+        for error in stats['errors'][:10]:
+            if isinstance(error, dict):
+                print(f"   - {error.get('series_id', 'unknown')}: {error.get('error', 'unknown error')[:80]}")
+            else:
+                print(f"   - {error[:80]}")
+        if len(stats['errors']) > 10:
+            print(f"   ... and {len(stats['errors']) - 10} more")
+    
+    success_rate = (stats['successful'] / stats['total'] * 100) if stats['total'] > 0 else 0
+    print(f"\n📈 Success rate: {success_rate:.1f}%")
+    
+    if stats['failed'] == 0 and stats['successful'] == stats['total']:
+        print("\n🎉 All series processed successfully!")
+    elif stats['failed'] > 0:
+        print(f"\n⚠️  {stats['failed']} series failed to process")
+    
+    print("=" * 80)
 
