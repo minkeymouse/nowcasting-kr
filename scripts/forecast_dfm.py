@@ -310,12 +310,15 @@ def main(cfg: DictConfig) -> None:
             logger.info('Estimating DFM model...')
             
             if use_database:
-                X, Time, Z, _ = load_data_from_db(
+                data_df, Time, Z_df, _ = load_data_from_db(
                     vintage_date=vintage_new,
                     config=model_cfg,
                     config_id=config_id,
                     strict_mode=strict_mode
                 )
+                # Convert DataFrame to numpy array for DFM
+                X = data_df.values
+                Z = Z_df.values if Z_df is not None else None
             else:
                 data_file = base_dir / 'data' / data_cfg_dict.get('country', 'KR') / f'{vintage_new}.csv'
                 if not data_file.exists():
@@ -364,14 +367,15 @@ def main(cfg: DictConfig) -> None:
         
         if use_database:
             # Load old vintage
-            X_old, Time_old, _, _ = load_data_from_db(
+            data_df_old, Time_old, _, _ = load_data_from_db(
                 vintage_date=vintage_old,
                 config=model_cfg,
                 config_id=config_id,
                 strict_mode=strict_mode
             )
+            X_old = data_df_old.values
             # Load new vintage
-            X_new, Time, _, _ = load_data_from_db(
+            data_df_new, Time, _, _ = load_data_from_db(
                 vintage_date=vintage_new,
                 config=model_cfg,
                 config_id=config_id,
