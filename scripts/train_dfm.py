@@ -218,6 +218,9 @@ def main(cfg: DictConfig) -> None:
             sample_start=sample_start_dt,
             strict_mode=strict_mode
         )
+        # Convert DataFrame to numpy array for DFM
+        X = data_df.values
+        Z = Z_df.values if Z_df is not None else None
     else:
         # File-based loading
         if data_path:

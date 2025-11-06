@@ -21,6 +21,36 @@ from src.nowcasting.data_loader import _transform_series
 logger = logging.getLogger(__name__)
 
 
+def _convert_to_dataframes(
+    X: np.ndarray,
+    Time: pd.DatetimeIndex,
+    Z: Optional[np.ndarray],
+    series_metadata_df: pd.DataFrame
+) -> Tuple[pd.DataFrame, pd.DatetimeIndex, Optional[pd.DataFrame], pd.DataFrame]:
+    """
+    Convert numpy arrays to DataFrames for consistent return format.
+    
+    Parameters
+    ----------
+    X : np.ndarray
+        Transformed data array
+    Time : pd.DatetimeIndex
+        Time index
+    Z : np.ndarray, optional
+        Raw data array
+    series_metadata_df : pd.DataFrame
+        Series metadata DataFrame
+    
+    Returns
+    -------
+    Tuple[pd.DataFrame, pd.DatetimeIndex, Optional[pd.DataFrame], pd.DataFrame]
+        (data_df, Time, Z_df, series_metadata_df)
+    """
+    data_df = pd.DataFrame(X, index=Time, columns=None)
+    Z_df = pd.DataFrame(Z, index=Time, columns=None) if Z is not None and len(Z) == len(Time) else None
+    return data_df, Time, Z_df, series_metadata_df
+
+
 def _get_db_client(client: Optional[object] = None):
     """Get database client, raising ImportError if database module unavailable."""
     if client is not None:
