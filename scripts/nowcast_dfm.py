@@ -4,7 +4,7 @@ This script performs nowcasting (vintage comparison) using trained DFM models.
 It matches MATLAB functionality: compares old vs new vintage forecasts for the current period,
 and decomposes changes into news components.
 
-This is NOT forward forecasting - it only nowcasts the current period (t=now).
+This is NOT forward nowcasting - it only nowcasts the current period (t=now).
 """
 
 import sys
@@ -160,13 +160,13 @@ def main(cfg: DictConfig) -> None:
     4. Compares old vs new vintage forecasts for current period
     5. Decomposes changes into news components (MATLAB news_dfm functionality)
     
-    This matches MATLAB functionality - no forward forecasting, only nowcasting.
+    This matches MATLAB functionality - no forward nowcasting, only nowcasting.
     
     Usage:
-        python forecast_dfm.py                                    # Use defaults
-        python forecast_dfm.py data.vintage_old=2016-12-16        # Specify old vintage
-        python forecast_dfm.py data.vintage_new=2016-12-23        # Specify new vintage
-        python forecast_dfm.py series=GDPC1 period=2016q4         # Specific series and period
+        python nowcast_dfm.py                                    # Use defaults
+        python nowcast_dfm.py data.vintage_old=2016-12-16        # Specify old vintage
+        python nowcast_dfm.py data.vintage_new=2016-12-23        # Specify new vintage
+        python nowcast_dfm.py series=GDPC1 period=2016q4         # Specific series and period
     """
     # GitHub Actions context
     github_run_id = os.getenv('GITHUB_RUN_ID')
