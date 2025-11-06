@@ -215,10 +215,7 @@ def _fetch_vintage_data(
                 strict_mode=strict_mode,
                 client=client
             )
-            # Convert to DataFrame for consistency
-            data_df = pd.DataFrame(X, index=Time, columns=None)
-            Z_df = pd.DataFrame(Z, index=Time, columns=None) if Z is not None else None
-            return data_df, Time, Z_df, series_metadata_df
+            return _convert_to_dataframes(X, Time, Z, series_metadata_df)
         except (TypeError, AttributeError) as e:
             logger.warning(f"get_vintage_data_for_config failed ({e}), using general function")
     elif config_id is not None:
@@ -236,10 +233,7 @@ def _fetch_vintage_data(
                     strict_mode=strict_mode,
                     client=client
                 )
-                # Convert to DataFrame for consistency
-                data_df = pd.DataFrame(X, index=Time, columns=None)
-                Z_df = pd.DataFrame(Z, index=Time, columns=None) if Z is not None else None
-                return data_df, Time, Z_df, series_metadata_df
+                return _convert_to_dataframes(X, Time, Z, series_metadata_df)
         except (TypeError, AttributeError, ImportError) as e:
             logger.warning(f"Could not resolve config_name from config_id ({e}), using general function")
     
@@ -551,15 +545,11 @@ def load_data_from_db(
         f"series={len(config_series_ids)}, observations={len(Time)}"
     )
     
-    # Convert to DataFrame for consistency
     # Ensure Z and Time have matching lengths
     if Z is not None and len(Z) != len(Time):
-        # Align Z to Time length (take first len(Time) rows)
         Z = Z[:len(Time)] if len(Z) > len(Time) else Z
-    data_df = pd.DataFrame(X, index=Time, columns=None)
-    Z_df = pd.DataFrame(Z, index=Time, columns=None) if Z is not None and len(Z) == len(Time) else None
     series_metadata_df = pd.DataFrame()  # Empty metadata for CSV path
-    return data_df, Time, Z_df, series_metadata_df
+    return _convert_to_dataframes(X, Time, Z, series_metadata_df)
 
 
 def save_nowcast_to_db(
