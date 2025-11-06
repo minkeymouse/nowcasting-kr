@@ -1,23 +1,23 @@
 id,series_name,country,frequency,transformation,category,units,data_code,item_id,api_source,Block_Global,Block_Consumption,Block_Invest,Block_Extern
-0,"국내총생산에 대한 지출 (원계열, 명목, 분기 및 연간)",Korea,q,pch,GDP,Billion Won,200Y109,10601,BOK,1,0,0,0
-1,"총고정자본형성 (자본재형태별 총자본형성(원계열, 명목, 분기 및 연간))",Korea,q,pch,Investment,Billion Won,200Y129,10101,BOK,1,0,1,0
-2,"총고정자본형성 (주체별 총자본형성(원계열, 명목, 분기 및 연간))",Korea,q,pch,Investment,Billion Won,200Y131,10101,BOK,1,0,1,0
-3,"국내 소비지출 (가계의 목적별 최종소비지출(원계열, 명목, 분기 및 연간))",Korea,q,pch,Consumption,Billion Won,200Y142,10113,BOK,1,1,0,0
-4,"국내 소비지출 (가계의 형태별 최종소비지출(원계열, 명목, 분기 및 연간))",Korea,q,pch,Consumption,Billion Won,200Y146,11101,BOK,1,1,0,0
-5,"원계열, 명목, 분기 및 연간",Korea,q,pch,Investment,Billion Won,200Y156,11101,BOK,1,0,1,0
-6,"명목 국내총생산 (부가가치 항목별 명목 GDP(원계열, 명목, 분기 및 연간))",Korea,q,pch,GDP,Billion Won,200Y161,6014,BOK,1,0,0,0
+0,"국내총생산에 대한 지출 (원계열, 명목, 분기 및 연간)",Korea,q,pca,GDP,Billion Won,200Y109,10601,BOK,1,0,0,0
+1,"총고정자본형성 (자본재형태별 총자본형성(원계열, 명목, 분기 및 연간))",Korea,q,pca,Investment,Billion Won,200Y129,10101,BOK,1,0,1,0
+2,"총고정자본형성 (주체별 총자본형성(원계열, 명목, 분기 및 연간))",Korea,q,pca,Investment,Billion Won,200Y131,10101,BOK,1,0,1,0
+3,"국내 소비지출 (가계의 목적별 최종소비지출(원계열, 명목, 분기 및 연간))",Korea,q,pca,Consumption,Billion Won,200Y142,10113,BOK,1,1,0,0
+4,"국내 소비지출 (가계의 형태별 최종소비지출(원계열, 명목, 분기 및 연간))",Korea,q,pca,Consumption,Billion Won,200Y146,11101,BOK,1,1,0,0
+5,"원계열, 명목, 분기 및 연간",Korea,q,pca,Investment,Billion Won,200Y156,11101,BOK,1,0,1,0
+6,"명목 국내총생산 (부가가치 항목별 명목 GDP(원계열, 명목, 분기 및 연간))",Korea,q,pca,GDP,Billion Won,200Y161,6014,BOK,1,0,0,0
 7,"M2(평잔, 원계열) (M2 상품별 구성내역(평잔, 원계열))",Korea,m,pch,Financial,Billion Won,101Y004,BBHA00,BOK,1,0,0,0
 8,"M1(평잔, 원계열) (M1 상품별 구성내역(평잔, 원계열))",Korea,m,pch,Financial,Billion Won,101Y019,BBLA00,BOK,1,0,0,0
-9,Employment Rate,Korea,m,none,Labor,Percent,101_DT_1DA7002S,T90,KOSIS,1,0,0,0
+9,Employment Rate,Korea,m,lin,Labor,Percent,101_DT_1DA7002S,T90,KOSIS,1,0,0,0
 10,Consumer Price Index,Korea,m,pch,Consumption,Percent,101_DT_1J22003,T,KOSIS,1,1,0,0
 11,All-industry Production Index,Korea,m,pch,Investment,Percent,101_DT_1JH20201,T,KOSIS,1,0,1,0
 12,"본원통화(평잔, 원계열) (본원통화 구성내역(평잔, 원계열))",Korea,m,pch,Financial,Billion Won,102Y002,ABA1,BOK,1,0,0,0
 13,총대출금 (예금은행 대출금(말잔)),Korea,m,pch,Financial,Billion Won,104Y016,BDCA1,BOK,1,0,0,0
 14,"Lf(금융기관유동성) : 상품별(평잔,원계열) (Lf 상품별 구성내역(평잔, 원계열))",Korea,m,pch,Financial,Billion Won,111Y004,LA00000,BOK,1,0,0,0
-15,국제수지,Korea,m,diff,External,Index,301Y013,100000,BOK,1,0,0,1
+15,국제수지,Korea,m,chg,External,Index,301Y013,100000,BOK,1,0,0,1
 16,총지수 (생산자물가지수(기본분류)),Korea,m,pch,Investment,Index,404Y014,*AA,BOK,1,0,1,0
 17,생산자물가지수-총지수(1910~1964),Korea,m,pch,Investment,Percent,404Y017,*AA,BOK,1,0,1,0
-18,"무담보콜금리(1일) (시장금리(월,분기,년))",Korea,m,diff,Financial,Percent,721Y001,1010000,BOK,1,0,0,0
+18,"무담보콜금리(1일) (시장금리(월,분기,년))",Korea,m,pch,Financial,Percent,721Y001,1010000,BOK,1,0,0,0
 19,국별수출(관세청) (국가별 수출),Korea,m,pch,External,Index,901Y011,FIEE,BOK,1,0,0,1
 20,국별수입(관세청) (국가별 수입),Korea,m,pch,External,Index,901Y012,FIEF,BOK,1,0,0,1
 21,국내건설수주액,Korea,m,pch,Investment,Ten Thousand Won,901Y020,I42A,BOK,1,0,1,0
