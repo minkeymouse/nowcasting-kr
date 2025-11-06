@@ -1223,19 +1223,34 @@ def ensure_vintage_and_job(
         logger.info(f"Created vintage {vintage_id} for {vintage_date}")
     except Exception as e:
         # Vintage might already exist
-        if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
+        error_str = str(e).lower()
+        if 'already exists' in error_str or 'duplicate' in error_str or '23505' in error_str:
             logger.info(f"Vintage for {vintage_date} already exists, retrieving...")
-            vintage_id = get_latest_vintage_id(vintage_date=vintage_date, client=client)
-            if vintage_id:
-                logger.info(f"Retrieved existing vintage {vintage_id}")
-                # Update github_run_id if provided
-                if run_id:
-                    try:
-                        client.table(TABLES['vintages']).update({
-                            'github_run_id': run_id
-                        }).eq('vintage_id', vintage_id).execute()
-                    except Exception as update_err:
-                        logger.warning(f"Could not update github_run_id for vintage {vintage_id}: {update_err}")
+            # Try to get existing vintage directly from DB
+            try:
+                result = client.table(TABLES['vintages']).select('vintage_id').eq('vintage_date', vintage_date.isoformat()).eq('country', 'KR').execute()
+                if result.data and len(result.data) > 0:
+                    vintage_id = result.data[0]['vintage_id']
+                    logger.info(f"Retrieved existing vintage {vintage_id}")
+                    # Update github_run_id if provided
+                    if run_id:
+                        try:
+                            client.table(TABLES['vintages']).update({
+                                'github_run_id': run_id
+                            }).eq('vintage_id', vintage_id).execute()
+                        except Exception as update_err:
+                            logger.warning(f"Could not update github_run_id for vintage {vintage_id}: {update_err}")
+                else:
+                    # Fallback to get_latest_vintage_id
+                    vintage_id = get_latest_vintage_id(vintage_date=vintage_date, client=client)
+                    if vintage_id:
+                        logger.info(f"Retrieved existing vintage {vintage_id} via get_latest_vintage_id")
+            except Exception as retrieve_err:
+                logger.warning(f"Failed to retrieve existing vintage: {retrieve_err}")
+                # Fallback to get_latest_vintage_id
+                vintage_id = get_latest_vintage_id(vintage_date=vintage_date, client=client)
+                if vintage_id:
+                    logger.info(f"Retrieved existing vintage {vintage_id} via get_latest_vintage_id")
         else:
             logger.error(f"Failed to create vintage: {e}")
             raise

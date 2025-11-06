@@ -166,12 +166,14 @@ try:
     # Handle tuple return (legacy compatibility)
     if isinstance(vintage_id, tuple):
         vintage_id = vintage_id[0] if vintage_id[0] else None
-    if vintage_id:
-        print(f"   ✅ Vintage ID: {vintage_id}")
-        logger.info(f"   ✅ Vintage ID: {vintage_id}")
-    else:
-        print(f"   ⚠️  Failed to create vintage")
-        logger.warning(f"   ⚠️  Failed to create vintage")
+    
+    if not vintage_id:
+        print(f"   ❌ Failed to create vintage - cannot continue")
+        logger.error(f"   ❌ Failed to create vintage - cannot continue")
+        sys.exit(1)
+    
+    print(f"   ✅ Vintage ID: {vintage_id}")
+    logger.info(f"   ✅ Vintage ID: {vintage_id}")
     
     # Rate limiting
     rate_limiter = RateLimiter(bok_delay=0.6, kosis_delay=0.5)
@@ -192,12 +194,22 @@ try:
         logger.info(f"[{idx}/{len(test_series)}] {series_id}: {series_name}")
         
         try:
+            # Ensure vintage_id is an integer, not tuple
+            actual_vintage_id = vintage_id
+            if isinstance(vintage_id, tuple):
+                actual_vintage_id = vintage_id[0] if vintage_id[0] else None
+            
+            if actual_vintage_id is None:
+                logger.warning(f"⚠️  Skipping {series_id} - vintage_id is None")
+                stats['skipped'] += 1
+                continue
+            
             df_data, success, error_msg = process_series(
                 series_cfg=series_cfg,
                 bok_client=bok_client,
                 kosis_client=kosis_client,
                 rate_limiter=rate_limiter,
-                vintage_id=vintage_id,
+                vintage_id=actual_vintage_id,
                 client=client,
                 dry_run=False,
                 github_run_id=github_run_id
