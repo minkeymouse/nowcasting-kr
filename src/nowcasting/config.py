@@ -55,7 +55,11 @@ def validate_transformation(transformation: str) -> str:
 
 @dataclass
 class SeriesConfig:
-    """Configuration for a single time series."""
+    """Configuration for a single time series.
+    
+    This is a generic DFM configuration - no API or database-specific fields.
+    For API/database integration, see adapters.database module.
+    """
     series_id: str
     series_name: str
     frequency: str
@@ -63,8 +67,6 @@ class SeriesConfig:
     transformation: str
     category: str
     blocks: List[int]
-    api_code: Optional[str] = None
-    api_source: Optional[str] = None
     
     def __post_init__(self):
         """Validate fields after initialization."""
@@ -191,9 +193,7 @@ class ModelConfig:
                 units=get_list_value('Units', i, ''),
                 transformation=get_list_value('Transformation', i, 'lin'),
                 category=get_list_value('Category', i, ''),
-                blocks=series_blocks,
-                api_code=get_list_value('api_code', i),
-                api_source=get_list_value('api_source', i)
+                blocks=series_blocks
             ))
         
         return cls(
@@ -291,8 +291,6 @@ if HYDRA_AVAILABLE:
             transformation: str
             category: str
             blocks: List[int]
-            api_code: Optional[str] = None
-            api_source: Optional[str] = None
         
         @schema_dataclass
         class ModelConfigSchema:
