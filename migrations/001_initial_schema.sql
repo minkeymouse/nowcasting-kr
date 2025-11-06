@@ -32,6 +32,7 @@ DROP TABLE IF EXISTS forecast_runs CASCADE;
 DROP TABLE IF EXISTS ingestion_jobs CASCADE;
 
 -- Drop optional/legacy tables (not in current schema)
+DROP TABLE IF EXISTS data_sources CASCADE;
 DROP TABLE IF EXISTS api_fetches CASCADE;
 DROP TABLE IF EXISTS statistics_items CASCADE;
 DROP TABLE IF EXISTS statistics_metadata CASCADE;
