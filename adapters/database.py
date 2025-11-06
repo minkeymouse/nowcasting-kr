@@ -238,7 +238,8 @@ def _fetch_vintage_data(
                 )
                 # Convert to DataFrame for consistency
                 data_df = pd.DataFrame(X, index=Time, columns=None)
-                return data_df, Time, series_metadata_df
+                Z_df = pd.DataFrame(Z, index=Time, columns=None) if Z is not None else None
+                return data_df, Time, Z_df, series_metadata_df
         except (TypeError, AttributeError, ImportError) as e:
             logger.warning(f"Could not resolve config_name from config_id ({e}), using general function")
     
@@ -252,7 +253,8 @@ def _fetch_vintage_data(
     )
     # Convert to DataFrame for consistency
     data_df = pd.DataFrame(X, index=Time, columns=config_series_ids)
-    return data_df, Time, series_metadata_df
+    Z_df = pd.DataFrame(Z, index=Time, columns=config_series_ids) if Z is not None else None
+    return data_df, Time, Z_df, series_metadata_df
 
 
 def export_data_to_csv(
