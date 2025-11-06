@@ -10,8 +10,8 @@ from datetime import date
 from dotenv import load_dotenv
 import os
 
-# Add project root to path (script is at project root)
-project_root = Path(__file__).resolve().parent
+# Add project root to path (script is in assets/, but project root is parent)
+project_root = Path(__file__).resolve().parent.parent  # Go up from assets/ to project root
 # Ensure we use the correct path (worktree)
 import os
 os.chdir(str(project_root))
