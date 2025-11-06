@@ -27,4 +27,4 @@ matlab/**/*.xls
 *.txt
 *.pyc
 
-worktrees.json
+outputs/
