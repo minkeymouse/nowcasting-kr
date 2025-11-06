@@ -104,7 +104,8 @@ def main() -> None:
     csv_df = pd.read_csv(csv_path)
     
     # Generate series_id from data_code, item_id, and api_source
-    # CSV 'id' column is just an index, not the actual series_id
+    # Note: CSV 'id' column is just an index, not the actual series_id
+    # The actual series_id is generated using generate_series_id() for consistency
     from database.operations import generate_series_id
     csv_df['series_id'] = csv_df.apply(
         lambda row: generate_series_id(
@@ -293,6 +294,9 @@ def main() -> None:
                 # Incremental update: fetch from latest observation date forward
                 latest_date = get_latest_observation_date(series_id, vintage_id=None, client=client)
                 if latest_date:
+                    print(f"   📅 Latest observation in DB: {latest_date}, fetching new data from next period...")
+                    logger.info(f"  Latest observation: {latest_date}, fetching from next period")
+                if latest_date:
                     start_date = get_next_period_date(latest_date, frequency)
                     print(f"   📅 Latest observation: {latest_date}, fetching from {start_date}")
                     logger.info(f"  Latest observation: {latest_date}, fetching from {start_date}")
@@ -478,8 +482,10 @@ def main() -> None:
         logger.info(f"⚠ Model config table not available, using blocks table only")
     
     # Save block assignments to blocks table
+    # Delete existing blocks for this config_name first, then insert new ones
     if block_records:
         print(f"   📊 Saving {len(block_records)} block assignments to blocks table...")
+        logger.info(f"Saving {len(block_records)} block assignments for config {config_name}")
         
         # Delete existing blocks for this config_name and insert new ones
         client.table('blocks').delete().eq('config_name', config_name).execute()
@@ -521,10 +527,19 @@ def main() -> None:
     print(f"   Total series: {stats['total']}")
     print(f"   ✨ New series: {stats['new_series']}")
     print(f"   🔄 Existing series: {stats['existing_series']}")
-    print(f"   ✅ Successful: {stats['successful']}")
-    print(f"   ❌ Failed: {stats['failed']}")
-    print(f"   ⏭️  Skipped: {stats['skipped']}")
-    logger.info(f"Total series: {stats['total']}")
+    print(f"   ✅ Successful: {stats['successful']} (new data fetched and inserted)")
+    print(f"   ❌ Failed: {stats['failed']} (errors during processing)")
+    print(f"   ⏭️  Skipped: {stats['skipped']} (no new data - already up-to-date or future data not yet published)")
+    
+    # Calculate success rate
+    if stats['total'] > 0:
+        success_rate = (stats['successful'] / stats['total']) * 100
+        print(f"\n   📈 Success rate: {success_rate:.1f}%")
+        if success_rate < 100:
+            print(f"   ℹ️  Note: Skipped series are normal for incremental updates.")
+            print(f"      They indicate series are already up-to-date or future data is not yet published.")
+    
+    logger.info(f"Total series: {stats['total']}, Successful: {stats['successful']}, Skipped: {stats['skipped']}, Failed: {stats['failed']}")
     logger.info(f"New series: {stats['new_series']}")
     logger.info(f"Existing series: {stats['existing_series']}")
     logger.info(f"Successful: {stats['successful']}")
