@@ -294,11 +294,8 @@ def main() -> None:
                 # Incremental update: fetch from latest observation date forward
                 latest_date = get_latest_observation_date(series_id, vintage_id=None, client=client)
                 if latest_date:
-                    print(f"   📅 Latest observation in DB: {latest_date}, fetching new data from next period...")
-                    logger.info(f"  Latest observation: {latest_date}, fetching from next period")
-                if latest_date:
                     start_date = get_next_period_date(latest_date, frequency)
-                    print(f"   📅 Latest observation: {latest_date}, fetching from {start_date}")
+                    print(f"   📅 Latest observation in DB: {latest_date}, fetching new data from {start_date}...")
                     logger.info(f"  Latest observation: {latest_date}, fetching from {start_date}")
                 else:
                     # No observations yet - fetch full history
@@ -366,11 +363,15 @@ def main() -> None:
             # job_id is no longer needed - tracking is in data_vintages table
             all_observations.append(df_data)
             
-            print(f"   ✅ Series {series_id} processed successfully")
             successfully_processed_series.add(series_id)  # Track successful series
             if series_exists:
                 stats['existing_series'] += 1
+                print(f"   ✅ Series {series_id} updated successfully (incremental update)")
+            else:
+                stats['new_series'] += 1
+                print(f"   ✅ Series {series_id} processed successfully (new series)")
             stats['successful'] += 1
+            logger.info(f"  ✓ Series {series_id} processed successfully")
             
         except Exception as e:
             print(f"   ❌ Error: {str(e)}")
@@ -502,7 +503,8 @@ def main() -> None:
         print(f"   ✅ Saved {total_inserted} block assignments")
         logger.info(f"✓ Saved {total_inserted} block assignments")
     else:
-        print("   ⚠️  No block assignments to save")
+        print("   ⚠️  No block assignments to save (no series were successfully processed)")
+        logger.warning("No block assignments to save - no series were successfully processed")
     
     # Update status
     print("\n" + "=" * 80)
