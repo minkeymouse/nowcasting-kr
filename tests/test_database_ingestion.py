@@ -73,7 +73,7 @@ from database.operations import (
     get_latest_observation_date,
     list_series,
 )
-from scripts.db_utils import (
+from database.db_utils import (
     initialize_api_clients,
     ensure_vintage_and_job,
     fetch_series_data,

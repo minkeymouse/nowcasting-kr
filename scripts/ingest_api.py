@@ -72,14 +72,13 @@ from database.operations import (
 )
 from database.models import SeriesModel
 from database.operations import TABLES
-from scripts.db_utils import (
+from database.db_utils import (
     RateLimiter,
     initialize_api_clients,
-    ensure_vintage_and_job,
-    finalize_ingestion_job,
     fetch_series_data,
     get_next_period_date,
 )
+from database import ensure_vintage_and_job, finalize_ingestion_job
 
 
 def main() -> None:

@@ -292,31 +292,6 @@ class ValidationError(DatabaseError):
     pass
 
 
-def handle_db_error(func: Callable) -> Callable:
-    """
-    Decorator to handle common database errors.
-    
-    Parameters
-    ----------
-    func : Callable
-        Function to wrap
-        
-    Returns
-    -------
-    Callable
-        Wrapped function
-    """
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            logger.error(f"Database error in {func.__name__}: {e}", exc_info=True)
-            raise DatabaseError(f"Error in {func.__name__}: {str(e)}") from e
-    
-    return wrapper
-
-
 # ============================================================================
 # Serialization Utilities
 # ============================================================================

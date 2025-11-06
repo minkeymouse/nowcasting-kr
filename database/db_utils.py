@@ -12,12 +12,10 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 import pandas as pd
 
-from database import (
-    get_client,
-    create_vintage,
-    get_latest_vintage_id,
-    create_ingestion_job,
-    update_ingestion_job,
+from database import get_client
+from database.operations import (
+    ensure_vintage_and_job,
+    finalize_ingestion_job,
 )
 from database.settings import BOKAPIConfig, KOSISAPIConfig
 from services.api.bok_client import BOKAPIClient
@@ -105,119 +103,6 @@ def initialize_api_clients() -> tuple[Optional[BOKAPIClient], Optional[KOSISAPIC
         logger.warning("⚠️  KOSIS_API_KEY not set")
     
     return bok_client, kosis_client
-
-
-def ensure_vintage_and_job(
-    vintage_date: Optional[date] = None,
-    client: Optional[Any] = None,
-    dry_run: bool = False
-) -> tuple[Optional[int], Optional[int]]:
-    """
-    Ensure a vintage and ingestion job exist for the given date.
-    
-    Parameters
-    ----------
-    vintage_date : date, optional
-        Vintage date (default: today)
-    client : Any, optional
-        Supabase client (default: get_client())
-    dry_run : bool
-        If True, don't create (returns None)
-        
-    Returns
-    -------
-    tuple[int | None, int | None]
-        Tuple of (vintage_id, job_id)
-    """
-    if dry_run:
-        return None, None
-    
-    if client is None:
-        client = get_client()
-    
-    if vintage_date is None:
-        vintage_date = date.today()
-    
-    # Create or get vintage
-    vintage_id = None
-    try:
-        vintage_result = create_vintage(vintage_date=vintage_date, country='KR', client=client)
-        vintage_id = vintage_result['vintage_id']
-        logger.info(f"✅ Created vintage {vintage_id} for {vintage_date}")
-    except Exception as e:
-        # Vintage might already exist
-        if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
-            logger.info(f"Vintage for {vintage_date} already exists, retrieving...")
-            latest_vintage = get_latest_vintage_id(vintage_date=vintage_date, client=client)
-            if latest_vintage:
-                vintage_id = latest_vintage
-                logger.info(f"✅ Retrieved existing vintage {vintage_id}")
-        else:
-            logger.error(f"Failed to create vintage: {e}")
-            raise
-    
-    # Create ingestion job
-    job_id = None
-    try:
-        # Use a default run ID if not provided (for manual runs)
-        run_id = os.getenv('GITHUB_RUN_ID', f'manual-{vintage_date.isoformat()}')
-        job_result = create_ingestion_job(
-            vintage_date=vintage_date,
-            github_run_id=run_id,
-            client=client
-        )
-        job_id = job_result['job_id']
-        logger.info(f"✅ Created ingestion job {job_id}")
-    except Exception as e:
-        logger.warning(f"Could not create ingestion job: {e}")
-    
-    return vintage_id, job_id
-
-
-def finalize_ingestion_job(
-    job_id: Optional[int],
-    status: str = 'completed',
-    successful_series: Optional[int] = None,
-    failed_series: Optional[int] = None,
-    total_series: Optional[int] = None,
-    client: Optional[Any] = None
-) -> None:
-    """
-    Finalize an ingestion job by updating its status and statistics.
-    
-    Parameters
-    ----------
-    job_id : int, optional
-        Job ID to finalize
-    status : str
-        Final status of the job (e.g., 'completed', 'failed'). Defaults to 'completed'.
-    successful_series : int, optional
-        Number of series successfully processed.
-    failed_series : int, optional
-        Number of series that failed to process.
-    total_series : int, optional
-        Total number of series attempted.
-    client : Any, optional
-        Supabase client (default: get_client())
-    """
-    if job_id is None:
-        return
-    
-    if client is None:
-        client = get_client()
-    
-    try:
-        update_ingestion_job(
-            job_id=job_id,
-            status=status,
-            successful_series=successful_series,
-            failed_series=failed_series,
-            total_series=total_series,
-            client=client
-        )
-        logger.info(f"✅ Updated ingestion job {job_id} to {status}")
-    except Exception as e:
-        logger.warning(f"Could not update ingestion job {job_id}: {e}")
 
 
 def get_next_period_date(latest_date: date, frequency: str) -> str:

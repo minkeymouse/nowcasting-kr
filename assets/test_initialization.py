@@ -39,7 +39,7 @@ try:
     from database.settings import BOKAPIConfig, KOSISAPIConfig
     from services.api.bok_client import BOKAPIClient
     from services.api.kosis_client import KOSISAPIClient
-    from initialization import fetch_series_data  # Reuse to avoid duplication
+    from database.db_utils import fetch_series_data  # Reuse to avoid duplication
     
     logger.info("=" * 80)
     logger.info("Testing API Data Stream Initialization")
