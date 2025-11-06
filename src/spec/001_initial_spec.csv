@@ -6,7 +6,7 @@ id,series_name,country,frequency,transformation,category,units,data_code,item_id
 4,M1 Money Supply (Monthly),Korea,m,pch,Financial,Billion Won,101Y019,BBLA00,BOK,1,0,0,0
 5,M2 Money Supply (Monthly),Korea,m,pch,Financial,Billion Won,101Y004,BBHA00,BOK,1,0,0,0
 6,Employment Rate (Monthly),Korea,m,lin,Labor,Percent,101_DT_1DA7002S,T90,KOSIS,1,0,0,0
-7,Unemployment Rate (Monthly),Korea,m,lin,Labor,Percent,101_DT_1DA7002S,T40,KOSIS,1,0,0,0
+7,Unemployment Rate (Monthly),Korea,m,lin,Labor,Percent,101_DT_1DA7002S,T80,KOSIS,1,0,0,0
 8,Industrial Production Index (Monthly),Korea,m,pch,Investment,Index,901Y033,A00,BOK,1,0,1,0
 9,Total Bank Loans (Monthly),Korea,m,pch,Financial,Billion Won,104Y016,BDCA1,BOK,1,0,0,0
 10,Balance of Payments - Goods (Monthly),Korea,m,chg,External,Million Dollars,301Y013,100000,BOK,1,0,0,1
