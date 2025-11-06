@@ -382,7 +382,8 @@ def main() -> None:
     print(f"   Block names: {', '.join(block_names)}")
     block_records = []
     
-    for series_cfg in model_cfg.series:
+    # Create series_order mapping (CSV row order)
+    for series_order, series_cfg in enumerate(model_cfg.series):
         # Only create block assignments for series that were successfully saved
         if series_cfg.series_id not in successfully_processed_series:
             logger.debug(f"Skipping block assignment for {series_cfg.series_id} (not in database)")
@@ -390,13 +391,14 @@ def main() -> None:
         
         blocks = getattr(series_cfg, 'blocks', None)
         if blocks:
-            for block_idx, block_name in enumerate(block_names):
-                # blocks is a dict with block_name as key, not index
+            for block_name in block_names:
+                # blocks is a dict with block_name as key
                 if blocks.get(block_name, 0) == 1:
                     block_records.append({
+                        'config_name': config_name,
                         'series_id': series_cfg.series_id,
                         'block_name': block_name,
-                        'block_index': block_idx
+                        'series_order': series_order
                     })
     
     # Convert to config_json format
@@ -428,16 +430,20 @@ def main() -> None:
         client=client
     )
     
-    config_id = config_result['config_id']
-    print(f"   ✅ Saved model configuration: {config_name} (ID: {config_id})")
-    logger.info(f"✓ Saved model configuration: {config_name} (ID: {config_id})")
+    config_id = config_result.get('config_id')  # May not exist if using blocks table
+    if config_id:
+        print(f"   ✅ Saved model configuration: {config_name} (ID: {config_id})")
+        logger.info(f"✓ Saved model configuration: {config_name} (ID: {config_id})")
+    else:
+        print(f"   ✅ Saved model configuration: {config_name}")
+        logger.info(f"✓ Saved model configuration: {config_name}")
     
-    # Save block assignments
+    # Save block assignments to blocks table
     if block_records:
-        print(f"   📊 Saving {len(block_records)} block assignments...")
+        print(f"   📊 Saving {len(block_records)} block assignments to blocks table...")
         
-        # Delete existing assignments and insert new ones
-        client.table(TABLES['model_block_assignments']).delete().eq('config_id', config_id).execute()
+        # Delete existing blocks for this config_name and insert new ones
+        client.table('blocks').delete().eq('config_name', config_name).execute()
         
         # Insert in batches
         batch_size = 100
@@ -445,11 +451,8 @@ def main() -> None:
         for i in range(0, len(block_records), batch_size):
             batch_num = i // batch_size + 1
             print(f"      Inserting batch {batch_num}/{batches}...")
-            batch = [
-                {**rec, 'config_id': config_id}
-                for rec in block_records[i:i + batch_size]
-            ]
-            client.table(TABLES['model_block_assignments']).insert(batch).execute()
+            batch = block_records[i:i + batch_size]
+            client.table('blocks').insert(batch).execute()
         
         print(f"   ✅ Saved {len(block_records)} block assignments")
         logger.info(f"✓ Saved {len(block_records)} block assignments")
