@@ -136,7 +136,7 @@ def load_model_config_from_hydra(
         return ModelConfig.from_dict(OmegaConf.to_container(cfg_model, resolve=True))
 
 
-@hydra.main(version_base=None, config_path="../../config", config_name="defaults")
+@hydra.main(version_base=None, config_path="../config", config_name="defaults")
 def main(cfg: DictConfig) -> None:
     """Run DFM estimation with Hydra configuration.
     
@@ -173,9 +173,47 @@ def main(cfg: DictConfig) -> None:
     if use_database:
         from adapters.database import load_data_from_db
         sample_start_dt = pd.to_datetime(sample_start) if sample_start else None
+        
+        # Use latest vintage if not specified
+        if vintage is None:
+            try:
+                from database import get_latest_vintage_id
+                from adapters.database import _get_db_client
+                client = _get_db_client()
+                latest_vintage_id = get_latest_vintage_id(client=client)
+                if latest_vintage_id:
+                    print(f"   Using latest vintage_id: {latest_vintage_id}")
+                    vintage = latest_vintage_id  # Use vintage_id instead
+                else:
+                    raise ValueError("No vintage available in database")
+            except Exception as e:
+                raise ValueError(f"Must specify vintage_date or ensure database has vintages: {e}")
+        
+        # Derive config_name from CSV filename if available
+        # But only use it if blocks table has data for this config
+        config_name = None
+        if hasattr(cfg.model, 'config_path') and cfg.model.config_path:
+            config_file = Path(cfg.model.config_path)
+            if config_file.suffix.lower() == '.csv':
+                config_name = config_file.stem.replace('_', '-')
+                # Check if blocks table has data for this config_name
+                try:
+                    from adapters.database import _get_db_client
+                    from database.helpers import get_series_ids_for_config
+                    client = _get_db_client()
+                    series_ids = get_series_ids_for_config(config_name, client=client)
+                    if not series_ids:
+                        # No blocks data, don't use config_name
+                        config_name = None
+                except Exception:
+                    # If check fails, don't use config_name
+                    config_name = None
+        
         X, Time, Z = load_data_from_db(
-            vintage_date=vintage,
+            vintage_id=vintage if isinstance(vintage, int) else None,
+            vintage_date=vintage if not isinstance(vintage, int) else None,
             config=model_cfg,
+            config_name=config_name,
             config_id=config_id,
             sample_start=sample_start_dt,
             strict_mode=strict_mode

@@ -400,7 +400,7 @@ def get_series_metadata_bulk(
         column='series_id',
         values=series_ids,
         batch_size=100,
-        select='series_id, series_name, transformation, frequency, units, category, api_source, api_code'
+        select='series_id, series_name, transformation, frequency, units, category, api_source, data_code'
     )
     
     if not all_data:

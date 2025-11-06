@@ -207,7 +207,7 @@ def _fetch_vintage_data(
     # Try config_name first, then config_id (deprecated)
     if config_name is not None:
         try:
-            return get_vintage_data_for_config(
+            X, Time, Z, series_metadata_df = get_vintage_data_for_config(
                 config_name=config_name,
                 vintage_id=vintage_id,
                 start_date=start_date,
@@ -215,6 +215,9 @@ def _fetch_vintage_data(
                 strict_mode=strict_mode,
                 client=client
             )
+            # Convert to DataFrame for consistency
+            data_df = pd.DataFrame(X, index=Time, columns=None)
+            return data_df, Time, series_metadata_df
         except (TypeError, AttributeError) as e:
             logger.warning(f"get_vintage_data_for_config failed ({e}), using general function")
     elif config_id is not None:
@@ -224,7 +227,7 @@ def _fetch_vintage_data(
             resolved_config_name = resolve_config_name(config_id=config_id, client=client)
             if resolved_config_name:
                 logger.warning("config_id is deprecated. Use config_name instead.")
-                return get_vintage_data_for_config(
+                X, Time, Z, series_metadata_df = get_vintage_data_for_config(
                     config_name=resolved_config_name,
                     vintage_id=vintage_id,
                     start_date=start_date,
@@ -232,29 +235,23 @@ def _fetch_vintage_data(
                     strict_mode=strict_mode,
                     client=client
                 )
+                # Convert to DataFrame for consistency
+                data_df = pd.DataFrame(X, index=Time, columns=None)
+                return data_df, Time, series_metadata_df
         except (TypeError, AttributeError, ImportError) as e:
             logger.warning(f"Could not resolve config_name from config_id ({e}), using general function")
     
     # Use general function with series IDs
-    result = get_vintage_data(
+    X, Time, Z, series_metadata_df = get_vintage_data(
         vintage_id=vintage_id,
         config_series_ids=config_series_ids,
         start_date=start_date,
         end_date=end_date,
         client=client
     )
-    
-    # Handle both return signatures (2-tuple or 3-tuple)
-    if len(result) == 3:
-        return result  # (data_df, time_index, series_metadata_df)
-    else:
-        data_df, time_index = result
-        # Fetch metadata separately if needed
-        series_metadata_df = (
-            get_series_metadata_bulk(config_series_ids, client=client)
-            if config_series_ids else pd.DataFrame()
-        )
-        return data_df, time_index, series_metadata_df
+    # Convert to DataFrame for consistency
+    data_df = pd.DataFrame(X, index=Time, columns=config_series_ids)
+    return data_df, Time, series_metadata_df
 
 
 def load_data_from_db(
@@ -370,12 +367,7 @@ def load_data_from_db(
     # Convert to numpy array (raw data)
     Z = data_df.values.astype(float)
     
-    # Apply transformations
-    X, Time = _apply_transformations_from_metadata(
-        Z, Time, data_df, series_metadata_df, config
-    )
-    
-    # Apply sample_start filter if provided
+    # Apply sample_start filter BEFORE transformations (to avoid size mismatch)
     if sample_start is not None:
         if isinstance(sample_start, str):
             sample_start_dt = pd.to_datetime(sample_start)
@@ -383,9 +375,14 @@ def load_data_from_db(
             sample_start_dt = sample_start
         
         mask = Time >= sample_start_dt
-        X = X[mask]
+        data_df = data_df[mask]
         Time = Time[mask]
-        Z = Z[mask]
+        Z = data_df.values.astype(float)
+    
+    # Apply transformations
+    X, Time = _apply_transformations_from_metadata(
+        Z, Time, data_df, series_metadata_df, config
+    )
     
     logger.info(
         f"Loaded data from database: vintage_id={resolved_vintage_id}, "

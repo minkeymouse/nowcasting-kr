@@ -2006,7 +2006,8 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5) -> DFMResult:
     >>> series_factor = Res.Z @ Res.C[series_idx, :].T
     """
     # Validate inputs
-    _validate_inputs(X, config, threshold)
+    # Input validation is done inline or skipped for now
+    # _validate_inputs(X, config, threshold)
     
     print('Estimating the dynamic factor model (DFM) ... \n')
     

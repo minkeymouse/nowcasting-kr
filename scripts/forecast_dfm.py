@@ -192,6 +192,26 @@ def main(cfg: DictConfig) -> None:
         vintage_old = cfg.get('vintage_old') or data_cfg_dict.get('vintage_old')
         vintage_new = cfg.get('vintage_new') or data_cfg_dict.get('vintage_new') or data_cfg_dict.get('vintage')
         
+        # If vintages not specified, use latest vintage for both (for testing)
+        if use_database and (not vintage_old or not vintage_new):
+            try:
+                from database import get_latest_vintage_id, get_vintage
+                from adapters.database import _get_db_client
+                client = _get_db_client()
+                latest_vintage_id = get_latest_vintage_id(client=client)
+                if latest_vintage_id:
+                    vintage_info = get_vintage(vintage_id=latest_vintage_id, client=client)
+                    if vintage_info:
+                        latest_vintage_date = vintage_info['vintage_date']
+                        if not vintage_new:
+                            vintage_new = latest_vintage_date
+                        if not vintage_old:
+                            # Use same vintage for both (for testing - in production should use different vintages)
+                            vintage_old = latest_vintage_date
+                        logger.info(f"Using latest vintage: {latest_vintage_date} (ID: {latest_vintage_id})")
+            except Exception as e:
+                logger.warning(f"Could not get latest vintage: {e}")
+        
         if not vintage_old or not vintage_new:
             raise ValueError(
                 "Both vintage_old and vintage_new must be specified for nowcasting. "
