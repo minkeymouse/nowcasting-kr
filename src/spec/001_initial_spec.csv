@@ -1,54 +1,31 @@
-series_id,series_name,frequency,transformation,category,units,api_code,api_source,Global,Consumption,Investment,External
-BOK_200Y109,"23.1.2.2.. 국내총생산에 대한 지출(원계열, 명목, 분기 및 연간)",q,pch,GDP,PCT,200Y109,BOK,1,0,0,0
-BOK_200Y105,"2.1.2.1.3. 경제활동별 GDP 및 GNI(원계열, 명목, 분기 및 연간)",q,pch,GDP,PCT,200Y105,BOK,1,0,0,0
-BOK_200Y161,"2.1.2.3.2. 부가가치 항목별 명목 GDP(원계열, 명목, 분기 및 연간)",q,pch,GDP,PCT,200Y161,BOK,1,0,0,0
-BOK_404Y017,4.1.1.4. 생산자물가지수-총지수(1910~1964),m,pch,Investment,PCT,404Y017,BOK,1,0,1,0
-BOK_404Y014,4.1.1.1. 생산자물가지수(기본분류),m,pch,Investment,PCT,404Y014,BOK,1,0,1,0
-BOK_102Y002,"1.1.1.1.2. 본원통화 구성내역(평잔, 원계열)",m,pch,Financial,PCT,102Y002,BOK,1,0,0,0
-BOK_101Y019,"1.1.2.1.2. M1 상품별 구성내역(평잔, 원계열)",m,pch,Financial,PCT,101Y019,BOK,1,0,0,0
-BOK_101Y004,"1.1.3.1.2. M2 상품별 구성내역(평잔, 원계열)",m,pch,Financial,PCT,101Y004,BOK,1,0,0,0
-BOK_721Y001,"1.3.2.2. 시장금리(월,분기,년)",m,pch,Financial,PCT,721Y001,BOK,1,0,0,0
-BOK_121Y002,1.3.3.1.1. 예금은행 수신금리(신규취급액 기준),m,pch,Financial,PCT,121Y002,BOK,1,0,0,0
-BOK_901Y027,8.6.2. 경제활동인구,m,pch,Labor,PCT,901Y027,BOK,1,0,0,0
-BOK_901Y083,8.6.8. 고용보험가입현황,m,pch,Labor,PCT,901Y083,BOK,1,0,0,0
-BOK_901Y033,8.1.4. 전산업생산지수(농림어업제외),m,pch,Investment,PCT,901Y033,BOK,1,0,1,0
-BOK_901Y034,8.3.2. 재별 제조업생산지수,m,pch,Investment,PCT,901Y034,BOK,1,0,1,0
-BOK_901Y036,8.3.3. 설비용 기계류 생산지수,m,pch,Investment,PCT,901Y036,BOK,1,0,1,0
-BOK_301Y013,2.5.1.1. 국제수지,m,pch,External,PCT,301Y013,BOK,1,0,0,1
-BOK_901Y011,3.2.1.1. 국가별 수출,m,pch,External,PCT,901Y011,BOK,1,0,0,1
-BOK_901Y012,3.2.1.2. 국가별 수입,m,pch,External,PCT,901Y012,BOK,1,0,0,1
-BOK_901Y020,8.4.1. 국내건설수주액,m,pch,Investment,PCT,901Y020,BOK,1,0,1,0
-BOK_901Y104,8.4.2. 건설기성액,m,pch,Investment,PCT,901Y104,BOK,1,0,1,0
-BOK_901Y062,4.4.1.1. 주택매매가격지수(KB),m,pch,Other,PCT,901Y062,BOK,1,0,0,0
-BOK_901Y063,4.4.1.2. 주택전세가격지수(KB),m,pch,Other,PCT,901Y063,BOK,1,0,0,0
-BOK_731Y001,3.1.1.1. 주요국 통화의 대원화환율,d,pch,External,PCT,731Y001,BOK,1,0,0,1
-BOK_731Y002,3.1.1.2. 주요국 통화의 대미달러환율,d,pch,External,PCT,731Y002,BOK,1,0,0,1
-BOK_802Y001,1.5.1.1. 주식시장(일),d,pch,Financial,PCT,802Y001,BOK,1,0,0,0
-BOK_901Y100,8.5.2. 재별 및 상품군별 판매액지수,m,pch,Prices,PCT,901Y100,BOK,1,0,0,0
-BOK_901Y098,8.5.3. 소매업태별 판매액지수,m,pch,Other,PCT,901Y098,BOK,1,0,0,0
-BOK_512Y013,6.1.1.1. 기업경기조사(실적),m,pch,Other,PCT,512Y013,BOK,1,0,0,0
-BOK_104Y016,1.2.2.1. 예금은행 대출금(말잔),m,pch,Financial,PCT,104Y016,BOK,1,0,0,0
-BOK_141Y003,1.2.3.4.1. 예금은행 지역별 대출금(말잔),m,pch,Financial,PCT,141Y003,BOK,1,0,0,0
-BOK_101Y015,"1.1.3.2.2. M2 경제주체별 보유현황(평잔, 원계열)",m,pch,Financial,PCT,101Y015,BOK,1,0,0,0
-BOK_111Y004,"1.1.4.1.2. Lf 상품별 구성내역(평잔, 원계열)",m,pch,Financial,PCT,111Y004,BOK,1,0,0,0
-BOK_112Y002,"1.1.5.2. L(광의유동성) 구성내역(말잔, 원계열)",m,pch,Financial,PCT,112Y002,BOK,1,0,0,0
-BOK_104Y014,1.2.1.1.1. 예금은행 총수신(평잔),m,pch,Other,PCT,104Y014,BOK,1,0,0,0
-BOK_200Y129,"2.1.6.1.3. 자본재형태별 총자본형성(원계열, 명목, 분기 및 연간)",q,pch,Investment,PCT,200Y129,BOK,1,0,1,0
-BOK_200Y131,"2.1.6.2.1. 주체별 총자본형성(원계열, 명목, 분기 및 연간)",q,pch,Investment,PCT,200Y131,BOK,1,0,1,0
-BOK_200Y156,"2.1.9.2. 총저축과 총투자(원계열, 명목, 분기 및 연간)",q,pch,Investment,PCT,200Y156,BOK,1,0,1,0
-BOK_405Y007,4.1.3. 총산출물가지수,m,pch,Prices,PCT,405Y007,BOK,1,0,0,0
-BOK_101Y008,1.1.3.3.1. M2 기관별구성내역(평잔),m,pch,Financial,PCT,101Y008,BOK,1,0,0,0
-BOK_200Y124,"2.1.5.2. 경제활동별 성장기여도(원계열, 실질, 분기 및 연간)",q,pch,Other,PCT,200Y124,BOK,1,0,0,0
-BOK_200Y126,"2.1.5.4. 지출항목별 성장기여도(원계열, 실질, 분기 및 연간)",q,pch,Other,PCT,200Y126,BOK,1,0,0,0
-BOK_200Y146,"2.1.7.2.3. 가계의 형태별 최종소비지출(원계열, 명목, 분기 및 연간)",q,pch,Consumption,PCT,200Y146,BOK,1,1,0,0
-BOK_200Y147,"2.1.7.2.4. 가계의 형태별 최종소비지출(원계열, 실질, 분기 및 연간)",q,pch,Consumption,PCT,200Y147,BOK,1,1,0,0
-BOK_200Y148,"2.1.7.3.1. 가계에 봉사하는 비영리단체의 목적별 최종소비지출(원계열, 명목, 분기 및 연간)",q,pch,Consumption,PCT,200Y148,BOK,1,1,0,0
-BOK_200Y149,"2.1.7.3.2. 가계에 봉사하는 비영리단체의 목적별 최종소비지출(원계열, 실질, 분기 및 연간)",q,pch,Consumption,PCT,200Y149,BOK,1,1,0,0
-BOK_200Y158,"2.1.10.2. 정보통신산업(원계열, 실질, 분기 및 연간)",q,pch,Other,PCT,200Y158,BOK,1,0,0,0
-BOK_111Y006,1.1.4.2.1. Lf 기관별 구성내역(평잔),m,pch,Financial,PCT,111Y006,BOK,1,0,0,0
-BOK_104Y008,"1.2.1.1.3. 예금은행 원화예금(종별, 평잔)",m,pch,Other,PCT,104Y008,BOK,1,0,0,0
-BOK_111Y008,1.2.1.2.1. 비은행금융기관 수신(평잔),m,pch,Other,PCT,111Y008,BOK,1,0,0,0
-BOK_200Y142,"2.1.7.1.3. 가계의 목적별 최종소비지출(원계열, 명목, 분기 및 연간)",q,pch,Consumption,PCT,200Y142,BOK,1,1,0,0
-KOSIS_101_DT_1J22003,Consumer Price Index,m,pch,Consumption,PCT,101_DT_1J22003,KOSIS,1,1,0,0
-KOSIS_101_DT_1JH20201,All-industry Production Index,m,pch,Investment,PCT,101_DT_1JH20201,KOSIS,1,0,1,0
-KOSIS_101_DT_1DA7002S,Employment Rate,m,pch,Labor,PCT,101_DT_1DA7002S,KOSIS,1,0,0,0
+id,series_name,country,frequency,transformation,category,units,data_code,item_id,api_source,Block_Global,Block_Consumption,Block_Invest,Block_Extern
+0,"23.1.2.2.. 국내총생산에 대한 지출(원계열, 명목, 분기 및 연간)",Korea,q,pch,GDP,PCT,200Y109,10601,BOK,1,0,0,0
+1,"2.1.6.1.3. 자본재형태별 총자본형성(원계열, 명목, 분기 및 연간)",Korea,q,pch,Investment,PCT,200Y129,10101,BOK,1,0,1,0
+2,"2.1.6.2.1. 주체별 총자본형성(원계열, 명목, 분기 및 연간)",Korea,q,pch,Investment,PCT,200Y131,10101,BOK,1,0,1,0
+3,"2.1.7.1.3. 가계의 목적별 최종소비지출(원계열, 명목, 분기 및 연간)",Korea,q,pch,Consumption,PCT,200Y142,10113,BOK,1,1,0,0
+4,"2.1.7.2.3. 가계의 형태별 최종소비지출(원계열, 명목, 분기 및 연간)",Korea,q,pch,Consumption,PCT,200Y146,11101,BOK,1,1,0,0
+5,"2.1.9.2. 총저축과 총투자(원계열, 명목, 분기 및 연간)",Korea,q,pch,Investment,PCT,200Y156,11101,BOK,1,0,1,0
+6,"2.1.2.3.2. 부가가치 항목별 명목 GDP(원계열, 명목, 분기 및 연간)",Korea,q,pch,GDP,PCT,200Y161,6014,BOK,1,0,0,0
+7,"1.1.3.1.2. M2 상품별 구성내역(평잔, 원계열)",Korea,m,pch,Financial,PCT,101Y004,BBHA00,BOK,1,0,0,0
+8,"1.1.2.1.2. M1 상품별 구성내역(평잔, 원계열)",Korea,m,pch,Financial,PCT,101Y019,BBLA00,BOK,1,0,0,0
+9,Employment Rate,Korea,m,pch,Labor,PCT,101_DT_1DA7002S,T90,KOSIS,1,0,0,0
+10,Consumer Price Index,Korea,m,pch,Consumption,PCT,101_DT_1J22003,T,KOSIS,1,1,0,0
+11,All-industry Production Index,Korea,m,pch,Investment,PCT,101_DT_1JH20201,T,KOSIS,1,0,1,0
+12,"1.1.1.1.2. 본원통화 구성내역(평잔, 원계열)",Korea,m,pch,Financial,PCT,102Y002,ABA1,BOK,1,0,0,0
+13,1.2.2.1. 예금은행 대출금(말잔),Korea,m,pch,Financial,PCT,104Y016,BDCA1,BOK,1,0,0,0
+14,"1.1.4.1.2. Lf 상품별 구성내역(평잔, 원계열)",Korea,m,pch,Financial,PCT,111Y004,LA00000,BOK,1,0,0,0
+15,2.5.1.1. 국제수지,Korea,m,pch,External,PCT,301Y013,100000,BOK,1,0,0,1
+16,4.1.1.1. 생산자물가지수(기본분류),Korea,m,pch,Investment,PCT,404Y014,*AA,BOK,1,0,1,0
+17,4.1.1.4. 생산자물가지수-총지수(1910~1964),Korea,m,pch,Investment,PCT,404Y017,*AA,BOK,1,0,1,0
+18,"1.3.2.2. 시장금리(월,분기,년)",Korea,m,pch,Financial,PCT,721Y001,1010000,BOK,1,0,0,0
+19,3.2.1.1. 국가별 수출,Korea,m,pch,External,PCT,901Y011,FIEE,BOK,1,0,0,1
+20,3.2.1.2. 국가별 수입,Korea,m,pch,External,PCT,901Y012,FIEF,BOK,1,0,0,1
+21,8.4.1. 국내건설수주액,Korea,m,pch,Investment,PCT,901Y020,I42A,BOK,1,0,1,0
+22,8.6.2. 경제활동인구,Korea,m,pch,Labor,PCT,901Y027,I61A,BOK,1,0,0,0
+23,8.1.4. 전산업생산지수(농림어업제외),Korea,m,pch,Investment,PCT,901Y033,A00,BOK,1,0,1,0
+24,8.3.2. 재별 제조업생산지수,Korea,m,pch,Investment,PCT,901Y034,I31AA,BOK,1,0,1,0
+25,8.6.8. 고용보험가입현황,Korea,m,pch,Labor,PCT,901Y083,166AA,BOK,1,0,0,0
+26,8.4.2. 건설기성액,Korea,m,pch,Investment,PCT,901Y104,I48A,BOK,1,0,1,0
+27,3.1.1.1. 주요국 통화의 대원화환율,Korea,d,pch,External,PCT,731Y001,0000001,BOK,1,0,0,1
+28,3.1.1.2. 주요국 통화의 대미달러환율,Korea,d,pch,External,PCT,731Y002,0000002,BOK,1,0,0,1
+29,1.5.1.1. 주식시장(일),Korea,d,pch,Financial,PCT,802Y001,0001000,BOK,1,0,0,0

@@ -19,7 +19,7 @@ from database import (
     update_statistics_metadata_status,
     list_dfm_selected_statistics,
 )
-from database.series import SeriesManager
+from database.operations import create_series_from_item, create_or_get_series
 from services.ingestion.bok import BOKIngestion
 from services.ingestion.kosis import KOSISIngestion
 from database.settings import AppSettings, DataSourceConfig
@@ -37,7 +37,6 @@ class DataIngestionOrchestrator:
         self.settings = AppSettings.load()
         self.api_sources = AppSettings.load_api_sources()
         self.client = get_client()
-        self.series_manager = SeriesManager(client=self.client)
         
         # Initialize data sources
         self._sources = {}
@@ -345,13 +344,14 @@ class DataIngestionOrchestrator:
         
         try:
             # Ensure series exists
-            series = self.series_manager.create_series_from_item(
+            series = create_series_from_item(
                 source_code=source_code,
                 stat_code=stat_code,
                 stat_name=stat_name,
                 item=item,
                 statistics_metadata_id=statistics_metadata_id,
-                frequency_mapper=map_frequency_to_code
+                frequency_mapper=map_frequency_to_code,
+                client=self.client
             )
             
             # Get appropriate ingestion handler
@@ -445,13 +445,14 @@ class DataIngestionOrchestrator:
                 return False
             
             # Create series
-            series = self.series_manager.create_or_get_series(
+            series = create_or_get_series(
                 source_code=source_code,
                 stat_code=source.api_code,
                 series_name=source.name,
-                    frequency=map_frequency_to_code(source.frequency),
+                frequency=map_frequency_to_code(source.frequency),
                 item_code=source.item_code1,
-                api_source=source_code
+                api_source=source_code,
+                client=self.client
             )
             
             # Insert observations

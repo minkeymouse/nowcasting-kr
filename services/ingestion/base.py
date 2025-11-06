@@ -20,7 +20,7 @@ from database import (
     list_dfm_selected_statistics,
 )
 from database.models import StatisticsMetadataModel, StatisticsItemModel
-from database.series import SeriesManager
+from database.operations import create_series_from_item, create_or_get_series
 from database.helpers import map_frequency_to_code
 from services.api.base import BaseAPIClient
 
@@ -43,8 +43,8 @@ class BaseIngestion(ABC):
         """
         self.api_client = api_client
         self.client = get_client()
-        self.series_manager = SeriesManager(client=self.client) if create_series else None
-        self._source_id = None
+        self.create_series = create_series
+        self._source_cache = {}  # Cache for source_id lookups
     
     @property
     def source_code(self) -> str:
@@ -53,10 +53,10 @@ class BaseIngestion(ABC):
     
     @property
     def source_id(self) -> int:
-        """Get source_id from database."""
-        if self._source_id is None:
-            self._source_id = get_source_id(self.source_code, client=self.client)
-        return self._source_id
+        """Get source_id from database (cached)."""
+        if self.source_code not in self._source_cache:
+            self._source_cache[self.source_code] = get_source_id(self.source_code, client=self.client)
+        return self._source_cache[self.source_code]
     
     # Parsing methods (abstract)
     @abstractmethod
@@ -292,7 +292,7 @@ class BaseIngestion(ABC):
                 logger.info(f"Upserted {len(results)} items for {source_stat_code}")
                 
                 # Create series for each item if enabled
-                if self.series_manager:
+                if self.create_series:
                     metadata = get_statistics_metadata(
                         source_id=self.source_id,
                         source_stat_code=source_stat_code,
@@ -301,13 +301,14 @@ class BaseIngestion(ABC):
                     stat_name = metadata.get('source_stat_name', source_stat_code) if metadata else source_stat_code
                     for item_result in results:
                         try:
-                            self.series_manager.create_series_from_item(
+                            create_series_from_item(
                                 source_code=self.source_code,
                                 stat_code=source_stat_code,
                                 stat_name=stat_name,
                                 item=item_result,
                                 statistics_metadata_id=statistics_metadata_id,
-                                frequency_mapper=map_frequency_to_code
+                                frequency_mapper=map_frequency_to_code,
+                                client=self.client
                             )
                         except Exception as e:
                             logger.warning(f"Failed to create series for item {item_result.get('item_code')}: {e}")
@@ -345,8 +346,7 @@ class BaseIngestion(ABC):
         Dict[str, Any]
             Summary of all operations
         """
-        if create_series and not self.series_manager:
-            self.series_manager = SeriesManager(client=self.client)
+        # Series creation is handled via create_series flag
         
         summary = {
             'statistics_list': {},

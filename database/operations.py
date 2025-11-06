@@ -3,9 +3,8 @@
 import logging
 import pandas as pd
 import numpy as np
-from typing import Optional, List, Dict, Any, Callable, Tuple, Union
+from typing import Optional, List, Dict, Any, Tuple, Union, Callable
 from datetime import date, datetime
-from functools import wraps
 from supabase import Client
 
 from .client import get_client
@@ -29,17 +28,6 @@ from .models import (
     StatisticsItemModel,
     TABLES,
 )
-
-
-def _ensure_client(func: Callable) -> Callable:
-    """Decorator to ensure client is provided."""
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        # Check if client is None in kwargs or if client is a positional arg
-        if 'client' not in kwargs or kwargs['client'] is None:
-            kwargs['client'] = get_client()
-        return func(*args, **kwargs)
-    return wrapper
 
 
 # ============================================================================
@@ -169,28 +157,9 @@ def _apply_transformations(
 # Data Source Operations
 # ============================================================================
 
-@_ensure_client
 def get_source_id(source_code: str, client: Optional[Client] = None) -> int:
-    """
-    Get source_id from source_code.
-    
-    Parameters
-    ----------
-    source_code : str
-        Source code (e.g., 'BOK', 'KOSIS')
-    client : Client, optional
-        Supabase client instance
-        
-    Returns
-    -------
-    int
-        Source ID
-        
-    Raises
-    ------
-    NotFoundError
-        If source_code not found
-    """
+    if client is None:
+        client = get_client()
     query = build_query(
         client=client,
         table_name='data_sources',
@@ -205,28 +174,9 @@ def get_source_id(source_code: str, client: Optional[Client] = None) -> int:
     raise NotFoundError(f"Data source '{source_code}' not found in database")
 
 
-@_ensure_client
 def get_source_code(source_id: int, client: Optional[Client] = None) -> str:
-    """
-    Get source_code from source_id.
-    
-    Parameters
-    ----------
-    source_id : int
-        Source ID
-    client : Client, optional
-        Supabase client instance
-        
-    Returns
-    -------
-    str
-        Source code (e.g., 'BOK', 'KOSIS')
-        
-    Raises
-    ------
-    ValueError
-        If source_id not found
-    """
+    if client is None:
+        client = get_client()
     query = build_query(
         client=client,
         table_name='data_sources',
@@ -245,16 +195,183 @@ def get_source_code(source_id: int, client: Optional[Client] = None) -> str:
 # Series Operations
 # ============================================================================
 
-@_ensure_client
+def generate_series_id(
+    source_code: str,
+    stat_code: str,
+    item_code: Optional[str] = None
+) -> str:
+    """
+    Generate consistent series_id.
+    
+    Format: {SOURCE}_{STAT_CODE} or {SOURCE}_{STAT_CODE}_{ITEM_CODE}
+    Examples:
+      - BOK_200Y105
+      - BOK_200Y105_1101
+    """
+    if item_code:
+        return f"{source_code}_{stat_code}_{item_code}"
+    return f"{source_code}_{stat_code}"
+
+
+def create_or_get_series(
+    source_code: str,
+    stat_code: str,
+    series_name: str,
+    frequency: str,
+    client: Optional[Client] = None,
+    statistics_metadata_id: Optional[int] = None,
+    item_code: Optional[str] = None,
+    item_name: Optional[str] = None,
+    units: Optional[str] = None,
+    category: Optional[str] = None,
+    api_source: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Create or get existing series.
+    
+    Parameters
+    ----------
+    source_code : str
+        Source code (e.g., 'BOK', 'KOSIS')
+    stat_code : str
+        Statistic code (e.g., '200Y105')
+    series_name : str
+        Human-readable series name
+    frequency : str
+        Frequency code (d, w, m, q, sa, a)
+    client : Client, optional
+        Supabase client instance
+    statistics_metadata_id : int, optional
+        Reference to statistics_metadata
+    item_code : str, optional
+        Item code if this is an item-specific series
+    item_name : str, optional
+        Item name for display
+    units : str, optional
+        Units of measurement
+    category : str, optional
+        Category classification
+    api_source : str, optional
+        API source identifier (defaults to source_code if not provided)
+        
+    Returns
+    -------
+    Dict[str, Any]
+        Series record from database
+    """
+    if client is None:
+        client = get_client()
+    
+    series_id = generate_series_id(source_code, stat_code, item_code)
+    
+    # Check if exists
+    existing = get_series(series_id=series_id, client=client)
+    if existing:
+        return existing
+    
+    # Create new series
+    # Use source_code as api_source if not provided
+    api_source_value = api_source or source_code
+    
+    series_model = SeriesModel(
+        series_id=series_id,
+        series_name=series_name,
+        frequency=frequency,
+        api_source=api_source_value,
+        api_code=stat_code,
+        units=units,
+        category=category
+    )
+    
+    result = upsert_series(
+        series=series_model,
+        statistics_metadata_id=statistics_metadata_id,
+        item_code=item_code,
+        client=client
+    )
+    
+    logger.debug(f"Created series: {series_id}")
+    return result
+
+
+def create_series_from_item(
+    source_code: str,
+    stat_code: str,
+    stat_name: str,
+    item: Dict[str, Any],
+    client: Optional[Client] = None,
+    statistics_metadata_id: Optional[int] = None,
+    frequency_mapper: Optional[Callable[[str], str]] = None
+) -> Dict[str, Any]:
+    """
+    Create series from statistics item.
+    
+    Parameters
+    ----------
+    source_code : str
+        Source code (e.g., 'BOK')
+    stat_code : str
+        Statistic code
+    stat_name : str
+        Statistic name
+    item : Dict[str, Any]
+        Item dictionary with item_code, item_name, cycle, unit_name
+    client : Client, optional
+        Supabase client instance
+    statistics_metadata_id : int, optional
+        Reference to statistics_metadata
+    frequency_mapper : callable, optional
+        Function to map cycle to frequency code
+        
+    Returns
+    -------
+    Dict[str, Any]
+        Series record
+    """
+    if client is None:
+        client = get_client()
+    
+    from .helpers import map_frequency_to_code
+    
+    item_code = item.get('item_code')
+    item_name = item.get('item_name', '')
+    cycle = item.get('cycle', '')
+    unit_name = item.get('unit_name')
+    
+    # Map frequency
+    frequency = (frequency_mapper or map_frequency_to_code)(cycle) if cycle else 'm'
+    
+    # Build series name
+    if item_name:
+        series_name = f"{stat_name} - {item_name}"
+    elif item_code:
+        series_name = f"{stat_name} - {item_code}"
+    else:
+        series_name = stat_name
+    
+    return create_or_get_series(
+        source_code=source_code,
+        stat_code=stat_code,
+        series_name=series_name,
+        frequency=frequency,
+        statistics_metadata_id=statistics_metadata_id,
+        item_code=item_code,
+        item_name=item_name,
+        units=unit_name,
+        category=stat_name,
+        client=client
+    )
+
+
 def get_series(series_id: str, client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
-    """Get a single series by ID."""
+    if client is None:
+        client = get_client()
     if not series_id:
         return None
     result = client.table(TABLES['series']).select('*').eq('series_id', series_id).execute()
     return result.data[0] if result.data else None
 
 
-@_ensure_client
 def upsert_series(
     series: SeriesModel,
     client: Optional[Client] = None,
@@ -262,6 +379,8 @@ def upsert_series(
     item_code: Optional[str] = None
 ) -> Dict[str, Any]:
     """Insert or update a series."""
+    if client is None:
+        client = get_client()
     data = series.model_dump(exclude_none=True)
     # Remove any fields that don't exist in the database table
     # (updated_at and created_at are managed by triggers)
@@ -276,9 +395,9 @@ def upsert_series(
     return result.data[0] if result.data else None
 
 
-@_ensure_client
 def list_series(client: Optional[Client] = None, api_source: Optional[str] = None) -> List[Dict[str, Any]]:
-    """List all series, optionally filtered by API source."""
+    if client is None:
+        client = get_client()
     query = client.table(TABLES['series']).select('*')
     if api_source:
         query = query.eq('api_source', api_source)
@@ -286,7 +405,6 @@ def list_series(client: Optional[Client] = None, api_source: Optional[str] = Non
     return result.data
 
 
-@_ensure_client
 def get_series_metadata_bulk(
     series_ids: List[str],
     client: Optional[Client] = None
@@ -306,6 +424,8 @@ def get_series_metadata_bulk(
     pd.DataFrame
         DataFrame with columns: series_id, transformation, frequency, units, category, etc.
     """
+    if client is None:
+        client = get_client()
     if not series_ids:
         return pd.DataFrame(columns=['series_id', 'transformation', 'frequency', 'units', 'category'])
     
@@ -337,7 +457,6 @@ def get_series_metadata_bulk(
 # Vintage Operations
 # ============================================================================
 
-@_ensure_client
 def create_vintage(
     vintage_date: date,
     client: Optional[Client] = None,
@@ -346,6 +465,8 @@ def create_vintage(
     github_workflow_run_url: Optional[str] = None
 ) -> Dict[str, Any]:
     """Create a new data vintage."""
+    if client is None:
+        client = get_client()
     data = {
         'vintage_date': vintage_date.isoformat(),
         'country': country,
@@ -358,13 +479,14 @@ def create_vintage(
     return result.data[0] if result.data else None
 
 
-@_ensure_client
 def get_vintage(
     client: Optional[Client] = None,
     vintage_date: Optional[date] = None,
     vintage_id: Optional[int] = None
 ) -> Optional[Dict[str, Any]]:
     """Get a vintage by date or ID."""
+    if client is None:
+        client = get_client()
     if vintage_date:
         result = client.table(TABLES['vintages']).select('*').eq('vintage_date', vintage_date.isoformat()).execute()
         return result.data[0] if result.data else None
@@ -374,9 +496,7 @@ def get_vintage(
     return None
 
 
-@_ensure_client
 def get_latest_vintage(client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
-    """Get the latest completed vintage."""
     result = (
         client.table(TABLES['vintages'])
         .select('*')
@@ -388,7 +508,6 @@ def get_latest_vintage(client: Optional[Client] = None) -> Optional[Dict[str, An
     return result.data[0] if result.data else None
 
 
-@_ensure_client
 def get_latest_vintage_id(
     vintage_date: Optional[date] = None,
     country: str = 'KR',
@@ -438,7 +557,6 @@ def get_latest_vintage_id(
     return None
 
 
-@_ensure_client
 def update_vintage_status(
     vintage_id: int,
     status: str,
@@ -468,7 +586,6 @@ def update_vintage_status(
 # Ingestion Job Operations
 # ============================================================================
 
-@_ensure_client
 def create_ingestion_job(
     github_run_id: str,
     vintage_date: date,
@@ -488,7 +605,6 @@ def create_ingestion_job(
     return result.data[0] if result.data else None
 
 
-@_ensure_client
 def update_ingestion_job(
     job_id: int,
     status: Optional[str] = None,
@@ -527,7 +643,6 @@ def update_ingestion_job(
 
 
 def get_ingestion_job(client: Optional[Client] = None, github_run_id: Optional[str] = None, job_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    """Get an ingestion job by run ID or job ID."""
     if client is None:
         client = get_client()
     
@@ -629,7 +744,6 @@ def insert_observations_from_dataframe(
     return total_inserted
 
 
-@_ensure_client
 def get_observations(
     client: Optional[Client] = None,
     series_id: Optional[str] = None,
@@ -662,7 +776,6 @@ def get_observations(
     return df
 
 
-@_ensure_client
 def get_latest_observation_date(
     series_id: str,
     vintage_id: Optional[int] = None,
@@ -701,7 +814,6 @@ def get_latest_observation_date(
     return latest_date
 
 
-@_ensure_client
 def check_series_exists(
     series_id: str,
     client: Optional[Client] = None
@@ -725,7 +837,6 @@ def check_series_exists(
     return series is not None
 
 
-@_ensure_client
 def get_vintage_data(
     vintage_id: int,
     config_series_ids: Optional[List[str]] = None,
@@ -860,7 +971,6 @@ def get_vintage_data(
     return X, Time, Z, series_metadata
 
 
-@_ensure_client
 def get_model_config_series_ids(
     config_id: int,
     client: Optional[Client] = None
@@ -896,7 +1006,6 @@ def get_model_config_series_ids(
     return [row['series_id'] for row in result.data]
 
 
-@_ensure_client
 def get_vintage_data_for_config(
     config_id: int,
     vintage_id: int,
@@ -955,7 +1064,6 @@ def get_vintage_data_for_config(
 # Model Operations
 # ============================================================================
 
-@_ensure_client
 def save_model_config(
     config_name: str,
     config_json: Dict[str, Any],
@@ -978,15 +1086,12 @@ def save_model_config(
     return result.data[0] if result.data else None
 
 
-@_ensure_client
 def load_model_config(config_name: str, client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
-    """Load a model configuration."""
     
     result = client.table(TABLES['model_configs']).select('*').eq('config_name', config_name).execute()
     return result.data[0] if result.data else None
 
 
-@_ensure_client
 def save_model_weights(
     config_id: int,
     vintage_id: int,
@@ -1017,9 +1122,7 @@ def save_model_weights(
     return result.data[0] if result.data else None
 
 
-@_ensure_client
 def load_model_weights(model_id: int, client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
-    """Load trained model weights."""
     
     result = client.table(TABLES['trained_models']).select('*').eq('model_id', model_id).execute()
     return result.data[0] if result.data else None
@@ -1029,7 +1132,6 @@ def load_model_weights(model_id: int, client: Optional[Client] = None) -> Option
 # Forecast Operations
 # ============================================================================
 
-@_ensure_client
 def save_forecast(
     model_id: int,
     series_id: str,
@@ -1056,7 +1158,6 @@ def save_forecast(
     return result.data[0] if result.data else None
 
 
-@_ensure_client
 def get_forecast(
     client: Optional[Client] = None,
     model_id: Optional[int] = None,
@@ -1089,9 +1190,134 @@ def get_forecast(
     return df
 
 
-@_ensure_client
+def ensure_vintage_and_job(
+    vintage_date: Optional[date] = None,
+    client: Optional[Client] = None,
+    dry_run: bool = False,
+    github_run_id: Optional[str] = None
+) -> Tuple[Optional[int], Optional[int]]:
+    """
+    Ensure a vintage and ingestion job exist for the given date.
+    
+    This is a convenience function that creates or retrieves a vintage and ingestion job.
+    Used by scripts that need to set up ingestion tracking without using the full orchestrator.
+    
+    Parameters
+    ----------
+    vintage_date : date, optional
+        Vintage date (default: today)
+    client : Client, optional
+        Supabase client (default: get_client())
+    dry_run : bool
+        If True, don't create (returns None)
+    github_run_id : str, optional
+        GitHub Actions run ID (defaults to env var or manual run ID)
+        
+    Returns
+    -------
+    Tuple[Optional[int], Optional[int]]
+        Tuple of (vintage_id, job_id)
+    """
+    if dry_run:
+        return None, None
+    
+    if client is None:
+        client = get_client()
+    
+    if vintage_date is None:
+        vintage_date = date.today()
+    
+    # Create or get vintage
+    vintage_id = None
+    try:
+        vintage_result = create_vintage(
+            vintage_date=vintage_date,
+            country='KR',
+            github_run_id=github_run_id,
+            client=client
+        )
+        vintage_id = vintage_result['vintage_id']
+        logger.info(f"Created vintage {vintage_id} for {vintage_date}")
+    except Exception as e:
+        # Vintage might already exist
+        if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
+            logger.info(f"Vintage for {vintage_date} already exists, retrieving...")
+            vintage_id = get_latest_vintage_id(vintage_date=vintage_date, client=client)
+            if vintage_id:
+                logger.info(f"Retrieved existing vintage {vintage_id}")
+        else:
+            logger.error(f"Failed to create vintage: {e}")
+            raise
+    
+    # Create ingestion job
+    job_id = None
+    if vintage_id:
+        try:
+            # Use provided run_id or default
+            import os
+            run_id = github_run_id or os.getenv('GITHUB_RUN_ID', f'manual-{vintage_date.isoformat()}')
+            job_result = create_ingestion_job(
+                vintage_date=vintage_date,
+                github_run_id=run_id,
+                client=client
+            )
+            job_id = job_result['job_id']
+            logger.info(f"Created ingestion job {job_id}")
+        except Exception as e:
+            logger.warning(f"Could not create ingestion job: {e}")
+    
+    return vintage_id, job_id
+
+
+def finalize_ingestion_job(
+    job_id: Optional[int],
+    status: str = 'completed',
+    successful_series: Optional[int] = None,
+    failed_series: Optional[int] = None,
+    total_series: Optional[int] = None,
+    client: Optional[Client] = None
+) -> None:
+    """
+    Finalize an ingestion job by updating its status and statistics.
+    
+    This is a convenience function for scripts to update job status.
+    
+    Parameters
+    ----------
+    job_id : int, optional
+        Job ID to finalize
+    status : str
+        Final status of the job (e.g., 'completed', 'failed'). Defaults to 'completed'.
+    successful_series : int, optional
+        Number of series successfully processed.
+    failed_series : int, optional
+        Number of series that failed to process.
+    total_series : int, optional
+        Total number of series attempted.
+    client : Client, optional
+        Supabase client (default: get_client())
+    """
+    if job_id is None:
+        return
+    
+    if client is None:
+        client = get_client()
+    
+    try:
+        update_ingestion_job(
+            job_id=job_id,
+            status=status,
+            successful_series=successful_series,
+            failed_series=failed_series,
+            total_series=total_series,
+            client=client
+        )
+        logger.info(f"Updated ingestion job {job_id} to {status}")
+    except Exception as e:
+        logger.warning(f"Could not update ingestion job {job_id}: {e}")
+
+
 def get_latest_forecasts(client: Optional[Client] = None, limit: int = 100) -> pd.DataFrame:
-    """Get latest forecasts for dashboard (using view)."""
     
     result = (
         client.table('latest_forecasts_view')
@@ -1115,7 +1341,6 @@ def get_latest_forecasts(client: Optional[Client] = None, limit: int = 100) -> p
 # Statistics Metadata Operations
 # ============================================================================
 
-@_ensure_client
 def upsert_statistics_metadata(
     metadata: StatisticsMetadataModel,
     client: Optional[Client] = None
@@ -1139,7 +1364,6 @@ def upsert_statistics_metadata(
     return result.data[0] if result.data else None
 
 
-@_ensure_client
 def get_statistics_metadata(
     client: Optional[Client] = None,
     source_id: Optional[int] = None,
@@ -1159,7 +1383,60 @@ def get_statistics_metadata(
     return result.data if isinstance(result.data, list) else result.data
 
 
-@_ensure_client
+
+def get_statistics_metadata_bulk(
+    source_stat_codes: List[str],
+    source_id: int,
+    client: Optional[Client] = None
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Get statistics metadata for multiple statistics codes in a single query.
+    
+    This is more efficient than calling get_statistics_metadata() multiple times.
+    
+    Parameters
+    ----------
+    source_stat_codes : List[str]
+        List of source statistic codes to fetch
+    source_id : int
+        Source ID
+    client : Client, optional
+        Supabase client instance
+        
+    Returns
+    -------
+    Dict[str, Dict[str, Any]]
+        Dictionary mapping source_stat_code to metadata dict
+    """
+    if client is None:
+        client = get_client()
+    
+    if not source_stat_codes:
+        return {}
+    
+    # Use batch query helper
+    from .helpers import batch_query_in
+    
+    all_data = batch_query_in(
+        client=client,
+        table_name=TABLES['statistics_metadata'],
+        column='source_stat_code',
+        values=source_stat_codes,
+        batch_size=100,
+        select='*',
+        additional_filters={'source_id': source_id}
+    )
+    
+    # Build result dictionary
+    result = {}
+    for item in all_data:
+        stat_code = item.get('source_stat_code')
+        if stat_code:
+            result[stat_code] = item
+    
+    return result
+
+
 def list_dfm_selected_statistics(
     client: Optional[Client] = None,
     source_id: Optional[int] = None
@@ -1177,7 +1454,6 @@ def list_dfm_selected_statistics(
     return result.data
 
 
-@_ensure_client
 def update_statistics_metadata_status(
     source_id: int,
     source_stat_code: str,
@@ -1224,7 +1500,6 @@ def update_statistics_metadata_status(
 # Statistics Items Operations
 # ============================================================================
 
-@_ensure_client
 def upsert_statistics_items(
     items: List[StatisticsItemModel],
     client: Optional[Client] = None
@@ -1242,7 +1517,6 @@ def upsert_statistics_items(
     return result.data if result.data else []
 
 
-@_ensure_client
 def get_statistics_items(
     statistics_metadata_id: int,
     client: Optional[Client] = None,
@@ -1263,7 +1537,6 @@ def get_statistics_items(
     return result.data if result.data else []
 
 
-@_ensure_client
 def get_active_items_for_statistic(
     statistics_metadata_id: int,
     client: Optional[Client] = None,
@@ -1277,7 +1550,6 @@ def get_active_items_for_statistic(
 # DFM Data Loading Wrapper (load_data_from_db)
 # ============================================================================
 
-@_ensure_client
 def load_data_from_db(
     vintage_id: Optional[int] = None,
     vintage_date: Optional[date] = None,

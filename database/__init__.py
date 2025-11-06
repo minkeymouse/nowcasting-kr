@@ -19,6 +19,8 @@ from .operations import (
     create_ingestion_job,
     update_ingestion_job,
     get_ingestion_job,
+    ensure_vintage_and_job,
+    finalize_ingestion_job,
     # Observation operations
     insert_observations_from_dataframe,
     get_observations,
@@ -31,6 +33,7 @@ from .operations import (
     # Statistics metadata operations
     upsert_statistics_metadata,
     get_statistics_metadata,
+    get_statistics_metadata_bulk,
     list_dfm_selected_statistics,
     update_statistics_metadata_status,
     # Statistics items operations
@@ -53,7 +56,7 @@ from .models import (
     StatisticsItemModel,
     ObservationModel,
 )
-from .series import SeriesManager
+from .operations import generate_series_id, create_or_get_series, create_series_from_item
 from .spec_manager import (
     export_config_to_csv,
     get_latest_spec_from_db,
@@ -75,6 +78,8 @@ __all__ = [
     'create_ingestion_job',
     'update_ingestion_job',
     'get_ingestion_job',
+    'ensure_vintage_and_job',
+    'finalize_ingestion_job',
     'insert_observations_from_dataframe',
     'get_observations',
     'get_latest_observation_date',
@@ -87,6 +92,7 @@ __all__ = [
     'load_data_from_db',
     'upsert_statistics_metadata',
     'get_statistics_metadata',
+    'get_statistics_metadata_bulk',
     'list_dfm_selected_statistics',
     'update_statistics_metadata_status',
     'upsert_statistics_items',
@@ -103,7 +109,9 @@ __all__ = [
     'StatisticsMetadataModel',
     'StatisticsItemModel',
     'ObservationModel',
-    'SeriesManager',
+    'generate_series_id',
+    'create_or_get_series',
+    'create_series_from_item',
     'DatabaseError',
     'NotFoundError',
     'ValidationError',
