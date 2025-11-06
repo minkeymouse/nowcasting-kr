@@ -26,18 +26,52 @@ def test_nowcasting_workflow():
     try:
         import subprocess
         import sys
+        import os
         
         logger.info("=" * 60)
         logger.info("Running test nowcasting workflow")
         logger.info("=" * 60)
         
-        # Run nowcast_dfm.py directly with command line arguments
-        script_path = project_root / "scripts" / "nowcast_dfm.py"
+        # Step 1: Check if model exists, if not run train_dfm first
+        model_file = project_root / "ResDFM.pkl"
+        if not model_file.exists():
+            logger.info("Model file not found. Running train_dfm.py first...")
+            train_script = project_root / "scripts" / "train_dfm.py"
+            
+            train_result = subprocess.run(
+                [
+                    sys.executable,
+                    str(train_script),
+                    "model.config_path=src/spec/001_initial_spec.csv",
+                    "data.use_database=true",
+                    "data.strict_mode=false",
+                ],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                timeout=600  # 10 minutes
+            )
+            
+            if train_result.returncode != 0:
+                logger.error(f"train_dfm failed with return code {train_result.returncode}")
+                logger.error(f"Stdout: {train_result.stdout[-500:]}")
+                logger.error(f"Stderr: {train_result.stderr[-500:]}")
+                return False
+            
+            if not model_file.exists():
+                logger.error("train_dfm completed but model file still not found")
+                return False
+            
+            logger.info("✓ Model trained successfully")
+        
+        # Step 2: Run nowcast_dfm.py
+        logger.info("Running nowcast_dfm.py...")
+        nowcast_script = project_root / "scripts" / "nowcast_dfm.py"
         
         result = subprocess.run(
             [
                 sys.executable,
-                str(script_path),
+                str(nowcast_script),
                 "model.config_path=src/spec/001_initial_spec.csv",
                 "data.use_database=true",
                 "data.strict_mode=false",
