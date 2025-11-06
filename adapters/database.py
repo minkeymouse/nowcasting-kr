@@ -367,7 +367,7 @@ def export_data_to_csv(
         raise ValueError("No series found in configuration")
     
     # Load data from database
-    data_df, Time, series_metadata_df = load_data_from_db(
+    data_df, Time, Z_df, series_metadata_df = load_data_from_db(
         vintage_id=vintage_id,
         config=config,
         config_name=config_name,
@@ -552,8 +552,12 @@ def load_data_from_db(
     )
     
     # Convert to DataFrame for consistency
+    # Ensure Z and Time have matching lengths
+    if Z is not None and len(Z) != len(Time):
+        # Align Z to Time length (take first len(Time) rows)
+        Z = Z[:len(Time)] if len(Z) > len(Time) else Z
     data_df = pd.DataFrame(X, index=Time, columns=None)
-    Z_df = pd.DataFrame(Z, index=Time, columns=None) if Z is not None else None
+    Z_df = pd.DataFrame(Z, index=Time, columns=None) if Z is not None and len(Z) == len(Time) else None
     series_metadata_df = pd.DataFrame()  # Empty metadata for CSV path
     return data_df, Time, Z_df, series_metadata_df
 
