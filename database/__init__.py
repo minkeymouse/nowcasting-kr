@@ -1,7 +1,7 @@
 """Database module for Supabase integration with DFM nowcasting system."""
 
 from .client import get_client, get_supabase_client
-from .helpers import DatabaseError, NotFoundError, ValidationError
+from .helpers import DatabaseError, NotFoundError, ValidationError, ensure_client
 from .operations import (
     # Series operations
     get_series,
@@ -60,6 +60,7 @@ from .spec_manager import (
 __all__ = [
     'get_client',
     'get_supabase_client',
+    'ensure_client',
     'get_series',
     'upsert_series',
     'list_series',
