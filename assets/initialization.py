@@ -29,8 +29,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Add project root to path (script is at project root)
-project_root = Path(__file__).resolve().parent
+# Add project root to path (script is in assets/ directory)
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 # Load environment variables from project root
