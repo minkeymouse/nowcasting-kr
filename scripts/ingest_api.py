@@ -445,17 +445,17 @@ def main() -> None:
         # Delete existing blocks for this config_name and insert new ones
         client.table('blocks').delete().eq('config_name', config_name).execute()
         
-        # Insert in batches
-        batch_size = 100
-        batches = (len(block_records) + batch_size - 1) // batch_size
-        for i in range(0, len(block_records), batch_size):
-            batch_num = i // batch_size + 1
-            print(f"      Inserting batch {batch_num}/{batches}...")
-            batch = block_records[i:i + batch_size]
-            client.table('blocks').insert(batch).execute()
+        # Insert using batch_insert helper
+        from database.helpers import batch_insert
+        total_inserted = batch_insert(
+            client=client,
+            table_name='blocks',
+            records=block_records,
+            batch_size=100
+        )
         
-        print(f"   ✅ Saved {len(block_records)} block assignments")
-        logger.info(f"✓ Saved {len(block_records)} block assignments")
+        print(f"   ✅ Saved {total_inserted} block assignments")
+        logger.info(f"✓ Saved {total_inserted} block assignments")
     else:
         print("   ⚠️  No block assignments to save")
     
