@@ -12,6 +12,10 @@ import os
 
 # Add project root to path (script is at project root)
 project_root = Path(__file__).resolve().parent
+# Ensure we use the correct path (worktree)
+import os
+os.chdir(str(project_root))
+# Insert project root at the beginning, but keep other paths
 sys.path.insert(0, str(project_root))
 
 # Load environment variables from project root
@@ -159,6 +163,9 @@ try:
         dry_run=False,
         github_run_id=github_run_id
     )
+    # Handle tuple return (legacy compatibility)
+    if isinstance(vintage_id, tuple):
+        vintage_id = vintage_id[0] if vintage_id[0] else None
     if vintage_id:
         print(f"   ✅ Vintage ID: {vintage_id}")
         logger.info(f"   ✅ Vintage ID: {vintage_id}")
@@ -249,9 +256,14 @@ try:
         logger.info(f"Total observations: {len(df_obs)}")
         
         try:
+            # Handle tuple return (legacy compatibility)
+            actual_vintage_id = vintage_id
+            if isinstance(vintage_id, tuple):
+                actual_vintage_id = vintage_id[0] if vintage_id[0] else None
+            
             inserted_count = insert_observations_from_dataframe(
                 df=df_obs,
-                vintage_id=vintage_id,
+                vintage_id=actual_vintage_id,
                 github_run_id=github_run_id,
                 client=client
             )
