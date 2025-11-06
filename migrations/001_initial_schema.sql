@@ -2,11 +2,55 @@
 -- Migration: 001_initial_schema.sql
 -- Purpose: Initial database schema for DFM nowcasting system
 -- 
--- Note: Initial series specification is defined in migrations/001_initial_spec.csv
--- This CSV file contains the list of series, their transformations, and block assignments
--- that will be used for DFM initialization. The initialization script reads from this CSV
--- to fetch data and populate the database.
+-- This schema is designed around CSV-based series definition (001_initial_spec.csv)
+-- Key features:
+-- - CSV-driven series definition (series_id, api_group_id, etc.)
+-- - API optimization via series_groups (same data_code = same group)
+-- - Vintage system for data snapshots
+-- - DFM model training and forecasting support
 -- ============================================================================
+
+-- ============================================================================
+-- PART 0: DROP ALL EXISTING OBJECTS (CLEAN SLATE)
+-- ============================================================================
+-- Drop all existing tables, views, functions, and triggers in correct order
+
+DROP TABLE IF EXISTS forecasts CASCADE;
+DROP TABLE IF EXISTS trained_models CASCADE;
+DROP TABLE IF EXISTS model_configs CASCADE;
+DROP TABLE IF EXISTS observations CASCADE;
+DROP TABLE IF EXISTS data_vintages CASCADE;
+DROP TABLE IF EXISTS series CASCADE;
+DROP TABLE IF EXISTS data_sources CASCADE;
+DROP TABLE IF EXISTS factors CASCADE;
+DROP TABLE IF EXISTS factor_values CASCADE;
+DROP TABLE IF EXISTS factor_loadings CASCADE;
+
+-- Drop removed tables (simplified schema)
+DROP TABLE IF EXISTS series_groups CASCADE;
+DROP TABLE IF EXISTS model_block_assignments CASCADE;
+DROP TABLE IF EXISTS forecast_runs CASCADE;
+DROP TABLE IF EXISTS ingestion_jobs CASCADE;
+
+-- Drop optional/legacy tables (not in current schema)
+DROP TABLE IF EXISTS api_fetches CASCADE;
+DROP TABLE IF EXISTS statistics_items CASCADE;
+DROP TABLE IF EXISTS statistics_metadata CASCADE;
+-- Note: factors, factor_loadings, factor_values are now part of the schema
+-- They will be dropped and recreated
+DROP TABLE IF EXISTS factor_values CASCADE;
+DROP TABLE IF EXISTS factor_loadings CASCADE;
+DROP TABLE IF EXISTS factors CASCADE;
+
+-- Drop views
+DROP VIEW IF EXISTS latest_forecasts_view CASCADE;
+DROP VIEW IF EXISTS model_training_history CASCADE;
+DROP VIEW IF EXISTS series_with_groups CASCADE;
+DROP VIEW IF EXISTS variables_view CASCADE;
+DROP VIEW IF EXISTS variable_values_view CASCADE;
+
+-- Drop functions
+DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE;
 
 -- ============================================================================
 -- 1. Data Sources Table
@@ -33,188 +77,70 @@ COMMENT ON COLUMN data_sources.source_code IS 'Source identifier: BOK, KOSIS, et
 COMMENT ON COLUMN data_sources.metadata IS 'Flexible JSON storage for source-specific metadata';
 
 -- ============================================================================
--- 2. Statistics Metadata Table (Unified)
+-- 2. Series Table (Core - CSV-driven, simplified)
 -- ============================================================================
--- Unified table for all statistics metadata from different sources
-CREATE TABLE IF NOT EXISTS statistics_metadata (
-    id SERIAL PRIMARY KEY,
-    
-    -- Source reference
-    source_id INTEGER NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
-    
-    -- Source-specific identifiers
-    source_stat_code VARCHAR(100) NOT NULL,  -- BOK: stat_code, KOSIS: stat_code, etc.
-    source_stat_name VARCHAR(500),  -- Original name from source
-    source_stat_name_eng VARCHAR(500),  -- English name if available
-    
-    -- Standardized fields
-    cycle VARCHAR(10),  -- Frequency: A, S, Q, M, SM, D (BOK), Y, H, Q, M, D (KOSIS)
-    frequency_code VARCHAR(10),  -- Normalized: annual, semi_annual, quarterly, monthly, daily
-    
-    -- Source-specific metadata
-    org_name VARCHAR(200),  -- Organization name
-    is_searchable BOOLEAN DEFAULT FALSE,  -- Whether data can be fetched via API
-    
-    -- Hierarchy (for categorized statistics)
-    parent_stat_code VARCHAR(100),  -- Parent statistic code
-    parent_item_code VARCHAR(100),  -- Parent item code
-    hierarchy_level INTEGER,  -- Depth in hierarchy
-    
-    -- Source-specific raw metadata (JSONB for flexibility)
-    source_metadata JSONB,  -- Store source-specific fields (e.g., p_cycle, p_stat_code for BOK)
-    
-    -- DFM Selection
-    is_dfm_selected BOOLEAN DEFAULT FALSE,
-    dfm_priority INTEGER,  -- Priority/rank for DFM (1-50, NULL if not selected)
-    dfm_selected_at TIMESTAMP,
-    dfm_selection_reason TEXT,  -- Why this statistic was selected
-    
-    -- Data Collection Status
-    is_active BOOLEAN DEFAULT TRUE,  -- Whether to collect data for this statistic
-    last_data_fetch_date DATE,  -- Last successful data fetch
-    last_data_fetch_status VARCHAR(20),  -- success, failed, partial
-    data_start_date DATE,  -- Earliest available data date
-    data_end_date DATE,  -- Latest available data date
-    total_observations INTEGER,  -- Total number of observations collected
-    last_observation_date DATE,  -- Date of last observation
-    
-    -- Timestamps
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    
-    -- Constraints
-    CONSTRAINT unique_source_stat_code UNIQUE (source_id, source_stat_code)
-);
-
--- Indexes for statistics_metadata
-CREATE INDEX idx_statistics_metadata_source_id ON statistics_metadata(source_id);
-CREATE INDEX idx_statistics_metadata_source_stat_code ON statistics_metadata(source_stat_code);
-CREATE INDEX idx_statistics_metadata_cycle ON statistics_metadata(cycle);
-CREATE INDEX idx_statistics_metadata_frequency_code ON statistics_metadata(frequency_code);
-CREATE INDEX idx_statistics_metadata_dfm_selected ON statistics_metadata(is_dfm_selected) WHERE is_dfm_selected = TRUE;
-CREATE INDEX idx_statistics_metadata_active ON statistics_metadata(is_active) WHERE is_active = TRUE;
-CREATE INDEX idx_statistics_metadata_searchable ON statistics_metadata(is_searchable) WHERE is_searchable = TRUE;
-
--- JSONB indexes for source_metadata queries
-CREATE INDEX idx_statistics_metadata_source_metadata ON statistics_metadata USING GIN (source_metadata);
-
-COMMENT ON TABLE statistics_metadata IS 'Unified statistics metadata from all sources (BOK, KOSIS, etc.)';
-COMMENT ON COLUMN statistics_metadata.source_stat_code IS 'Source-specific statistic code (e.g., BOK stat_code, KOSIS stat_code)';
-COMMENT ON COLUMN statistics_metadata.frequency_code IS 'Normalized frequency: annual, semi_annual, quarterly, monthly, daily';
-COMMENT ON COLUMN statistics_metadata.source_metadata IS 'Source-specific fields stored as JSON (e.g., BOK p_cycle, p_stat_code)';
-COMMENT ON COLUMN statistics_metadata.is_dfm_selected IS 'Whether this statistic is selected for DFM nowcasting';
-COMMENT ON COLUMN statistics_metadata.dfm_priority IS 'Priority rank for DFM (1-50)';
-
--- ============================================================================
--- 3. Statistics Items Table
--- ============================================================================
--- Stores available items for each statistic from StatisticItemList API
-CREATE TABLE IF NOT EXISTS statistics_items (
-    id SERIAL PRIMARY KEY,
-    
-    -- Reference to statistics metadata
-    statistics_metadata_id INTEGER NOT NULL REFERENCES statistics_metadata(id) ON DELETE CASCADE,
-    
-    -- Item identification
-    item_code VARCHAR(50) NOT NULL,  -- Item code (e.g., "1101", "*AA")
-    item_name VARCHAR(500),  -- Item name in Korean
-    item_name_eng VARCHAR(500),  -- Item name in English
-    
-    -- Hierarchy
-    parent_item_code VARCHAR(50),  -- Parent item code for hierarchical structure
-    parent_item_name VARCHAR(500),  -- Parent item name
-    
-    -- Grouping
-    grp_code VARCHAR(50),  -- Group code (e.g., "Group1")
-    grp_name VARCHAR(200),  -- Group name (e.g., "계정항목")
-    
-    -- Frequency and date range
-    cycle VARCHAR(10) NOT NULL,  -- Frequency: A, S, Q, M, SM, D
-    start_time VARCHAR(20),  -- Start time as string (e.g., "1960Q1", "202401")
-    end_time VARCHAR(20),  -- End time as string (e.g., "2024Q4", "202412")
-    
-    -- Data information
-    data_count INTEGER,  -- Number of available data points
-    unit_name VARCHAR(50),  -- Unit name (e.g., "십억원", "2020=100")
-    weight VARCHAR(50),  -- Weight value if applicable
-    
-    -- Status
-    is_active BOOLEAN DEFAULT TRUE,  -- Whether this item is active for data collection
-    
-    -- Timestamps
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    
-    -- Constraints
-    CONSTRAINT unique_stat_item_cycle UNIQUE (statistics_metadata_id, item_code, cycle)
-);
-
--- Indexes for statistics_items
-CREATE INDEX idx_statistics_items_metadata_id ON statistics_items(statistics_metadata_id);
-CREATE INDEX idx_statistics_items_item_code ON statistics_items(item_code);
-CREATE INDEX idx_statistics_items_cycle ON statistics_items(cycle);
-CREATE INDEX idx_statistics_items_active ON statistics_items(is_active) WHERE is_active = TRUE;
-CREATE INDEX idx_statistics_items_parent ON statistics_items(parent_item_code) WHERE parent_item_code IS NOT NULL;
-
-COMMENT ON TABLE statistics_items IS 'Available items for each statistic from StatisticItemList API';
-COMMENT ON COLUMN statistics_items.item_code IS 'Item code (e.g., "1101" for GDP sectors, "*AA" for total index)';
-COMMENT ON COLUMN statistics_items.cycle IS 'Frequency for which this item is available (A, S, Q, M, SM, D)';
-COMMENT ON COLUMN statistics_items.start_time IS 'Start time as string matching cycle format (e.g., "2024Q1" for quarterly)';
-COMMENT ON COLUMN statistics_items.end_time IS 'End time as string matching cycle format';
-
--- ============================================================================
--- 4. Series Table (for actual time-series data)
--- ============================================================================
--- Links to statistics_metadata and stores additional series metadata
+-- Primary table for time-series definitions from CSV
 CREATE TABLE IF NOT EXISTS series (
-    series_id VARCHAR(100) PRIMARY KEY,  -- Unique identifier (e.g., BOK_200Y101, KOSIS_101Y001)
+    series_id VARCHAR(100) PRIMARY KEY,  -- Format: {api_source}_{data_code}_{item_id}
     series_name VARCHAR(500) NOT NULL,
     
-    -- Reference to statistics metadata
-    statistics_metadata_id INTEGER REFERENCES statistics_metadata(id) ON DELETE SET NULL,
+    -- API source and codes
+    api_source VARCHAR(20) NOT NULL,  -- BOK, KOSIS
+    data_code VARCHAR(100) NOT NULL,  -- Statistic code (BOK: 200Y106, KOSIS: 101_DT_1DA7002S)
+    item_id VARCHAR(50) NOT NULL,  -- Item identifier (BOK: 1400, KOSIS: T80)
     
-    -- Standardized fields
-    frequency VARCHAR(10) NOT NULL,  -- d, w, m, q, sa, a (for DFM compatibility)
-    units VARCHAR(50),  -- Original units (KRW_BIL, PCT, etc.)
-    transformation VARCHAR(50),  -- Transformation code (log, diff, etc.)
-    category VARCHAR(100),  -- Category classification
+    -- API optimization (simplified: group_id as string, no FK)
+    api_group_id VARCHAR(100),  -- Group identifier: {api_source}_{data_code} (nullable for non-grouped series)
     
-    -- Source information
-    api_source VARCHAR(20) NOT NULL,  -- BOK, KOSIS, MANUAL
-    api_code VARCHAR(100),  -- Source-specific code (matches source_stat_code)
+    -- Time-series properties
+    frequency VARCHAR(10) NOT NULL,  -- d, m, q, a (daily, monthly, quarterly, annual)
+    transformation VARCHAR(50) NOT NULL,  -- lin, pch, pca, chg, log, etc.
+    category VARCHAR(100),  -- GDP, Investment, Labor, Financial, External
+    units VARCHAR(50),  -- Billion Won, Percent, Index, etc.
+    country VARCHAR(10) DEFAULT 'KR',  -- Country code
     
-    -- Item code (for item-based series)
-    item_code VARCHAR(50),  -- Item code for this series (used when series represents a specific item from a statistic)
-    
-    -- Additional metadata
+    -- Metadata
     description TEXT,
+    priority INTEGER,  -- DFM priority/rank
+    is_active BOOLEAN DEFAULT TRUE,
+    is_kpi BOOLEAN DEFAULT FALSE,  -- KPI 여부 (프론트엔드 시각화용)
     metadata JSONB,  -- Additional flexible metadata
     
-    -- Status
-    is_active BOOLEAN DEFAULT TRUE,
-    last_updated TIMESTAMP DEFAULT NOW(),
+    -- Timestamps
     created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
     
-    CONSTRAINT fk_statistics_metadata FOREIGN KEY (statistics_metadata_id) 
-        REFERENCES statistics_metadata(id) ON DELETE SET NULL
+    -- Foreign keys
+    CONSTRAINT fk_series_source FOREIGN KEY (api_source) 
+        REFERENCES data_sources(source_code) ON DELETE CASCADE,
+    
+    -- Constraints
+    CONSTRAINT unique_series_identifier UNIQUE (api_source, data_code, item_id)
 );
 
-CREATE INDEX idx_series_statistics_metadata_id ON series(statistics_metadata_id);
 CREATE INDEX idx_series_api_source ON series(api_source);
-CREATE INDEX idx_series_api_code ON series(api_code);
+CREATE INDEX idx_series_data_code ON series(data_code);
+CREATE INDEX idx_series_item_id ON series(item_id);
+CREATE INDEX idx_series_api_group_id ON series(api_group_id) WHERE api_group_id IS NOT NULL;
 CREATE INDEX idx_series_frequency ON series(frequency);
+CREATE INDEX idx_series_transformation ON series(transformation);
+CREATE INDEX idx_series_category ON series(category);
 CREATE INDEX idx_series_active ON series(is_active) WHERE is_active = TRUE;
-CREATE INDEX idx_series_item_code ON series(item_code) WHERE item_code IS NOT NULL;
+CREATE INDEX idx_series_country ON series(country);
+CREATE INDEX idx_series_is_kpi ON series(is_kpi) WHERE is_kpi = TRUE;
 
-COMMENT ON TABLE series IS 'Time-series metadata for actual data collection';
-COMMENT ON COLUMN series.series_id IS 'Unique identifier (format: SOURCE_STATCODE)';
-COMMENT ON COLUMN series.statistics_metadata_id IS 'Reference to statistics_metadata table';
-COMMENT ON COLUMN series.api_code IS 'Source-specific code (links to statistics_metadata.source_stat_code)';
-COMMENT ON COLUMN series.item_code IS 'Item code for this series (used when series represents a specific item from a statistic)';
+COMMENT ON TABLE series IS 'Time-series definitions from CSV (001_initial_spec.csv)';
+COMMENT ON COLUMN series.is_kpi IS 'KPI flag for frontend visualization';
+COMMENT ON COLUMN series.series_id IS 'Unique identifier: {api_source}_{data_code}_{item_id}';
+COMMENT ON COLUMN series.api_group_id IS 'Group identifier: {api_source}_{data_code} (same data_code = same group, for API optimization)';
+COMMENT ON COLUMN series.data_code IS 'Statistic code from API (e.g., BOK: 200Y106, KOSIS: 101_DT_1DA7002S)';
+COMMENT ON COLUMN series.item_id IS 'Item identifier from API (e.g., BOK: 1400, KOSIS: T80)';
 
 -- ============================================================================
--- 5. Data Vintages Table
+-- 3. Data Vintages Table (with ingestion job info integrated)
 -- ============================================================================
+-- Data snapshots at specific points in time
+-- Includes ingestion job tracking (simplified: no separate ingestion_jobs table)
 CREATE TABLE IF NOT EXISTS data_vintages (
     vintage_id SERIAL PRIMARY KEY,
     vintage_date DATE NOT NULL,
@@ -226,12 +152,18 @@ CREATE TABLE IF NOT EXISTS data_vintages (
     fetch_started_at TIMESTAMP,
     fetch_completed_at TIMESTAMP,
     
-    -- GitHub Actions tracking
+    -- GitHub Actions tracking (from ingestion_jobs)
     github_run_id VARCHAR(100),
     github_workflow_run_url VARCHAR(500),
     
+    -- Ingestion statistics (from ingestion_jobs)
+    total_series INTEGER,
+    successful_series INTEGER,
+    failed_series INTEGER,
+    
     -- Error handling
     error_message TEXT,
+    logs_json JSONB,  -- Detailed logs (from ingestion_jobs)
     
     created_at TIMESTAMP DEFAULT NOW(),
     
@@ -242,47 +174,13 @@ CREATE INDEX idx_data_vintages_vintage_date ON data_vintages(vintage_date);
 CREATE INDEX idx_data_vintages_fetch_status ON data_vintages(fetch_status);
 CREATE INDEX idx_data_vintages_country ON data_vintages(country);
 
-COMMENT ON TABLE data_vintages IS 'Data vintage snapshots for weekly data collection';
+COMMENT ON TABLE data_vintages IS 'Data vintage snapshots for time-series data collection';
+COMMENT ON COLUMN data_vintages.vintage_date IS 'Date of the data snapshot';
 
 -- ============================================================================
--- 6. Ingestion Jobs Table
+-- 4. Observations Table
 -- ============================================================================
-CREATE TABLE IF NOT EXISTS ingestion_jobs (
-    job_id SERIAL PRIMARY KEY,
-    github_run_id VARCHAR(100) NOT NULL,
-    github_workflow_run_url VARCHAR(500),
-    vintage_date DATE NOT NULL,
-    country VARCHAR(10) DEFAULT 'KR',
-    
-    -- Job status
-    status VARCHAR(20) DEFAULT 'pending',  -- pending, running, completed, failed, cancelled
-    started_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    
-    -- Statistics
-    total_series INTEGER,
-    successful_series INTEGER,
-    failed_series INTEGER,
-    
-    -- Error handling
-    error_message TEXT,
-    logs_json JSONB,  -- Detailed logs
-    
-    created_at TIMESTAMP DEFAULT NOW(),
-    
-    CONSTRAINT fk_vintage_date FOREIGN KEY (vintage_date, country) 
-        REFERENCES data_vintages(vintage_date, country)
-);
-
-CREATE INDEX idx_ingestion_jobs_github_run_id ON ingestion_jobs(github_run_id);
-CREATE INDEX idx_ingestion_jobs_vintage_date ON ingestion_jobs(vintage_date);
-CREATE INDEX idx_ingestion_jobs_status ON ingestion_jobs(status);
-
-COMMENT ON TABLE ingestion_jobs IS 'GitHub Actions ingestion job tracking';
-
--- ============================================================================
--- 7. Observations Table
--- ============================================================================
+-- Time-series observations data
 CREATE TABLE IF NOT EXISTS observations (
     id SERIAL PRIMARY KEY,
     series_id VARCHAR(100) NOT NULL,
@@ -290,32 +188,25 @@ CREATE TABLE IF NOT EXISTS observations (
     date DATE NOT NULL,
     value DOUBLE PRECISION NOT NULL,
     
-    -- Job tracking
-    job_id INTEGER REFERENCES ingestion_jobs(job_id) ON DELETE SET NULL,
+    -- Job tracking (simplified: github_run_id from vintage)
+    github_run_id VARCHAR(100),
     
     -- Metadata
     is_forecast BOOLEAN DEFAULT FALSE,
     api_source VARCHAR(20),
     
-    -- Item codes (hierarchical structure from BOK API)
-    item_code1 VARCHAR(50),  -- First level item code from BOK API (ITEM_CODE1)
-    item_code2 VARCHAR(50),  -- Second level item code from BOK API (ITEM_CODE2)
-    item_code3 VARCHAR(50),  -- Third level item code from BOK API (ITEM_CODE3)
-    item_code4 VARCHAR(50),  -- Fourth level item code from BOK API (ITEM_CODE4)
-    
-    -- Item names (hierarchical structure from BOK API)
-    item_name1 VARCHAR(500),  -- First level item name from BOK API (ITEM_NAME1)
-    item_name2 VARCHAR(500),  -- Second level item name from BOK API (ITEM_NAME2)
-    item_name3 VARCHAR(500),  -- Third level item name from BOK API (ITEM_NAME3)
-    item_name4 VARCHAR(500),  -- Fourth level item name from BOK API (ITEM_NAME4)
-    
-    -- Weight
-    weight DOUBLE PRECISION,  -- Weight value from BOK API (WGT field)
+    -- Additional metadata (JSON for flexibility)
+    metadata JSONB,  -- Can store item codes, names, weights, etc.
     
     created_at TIMESTAMP DEFAULT NOW(),
     
-    CONSTRAINT fk_series FOREIGN KEY (series_id) REFERENCES series(series_id) ON DELETE CASCADE,
-    CONSTRAINT fk_vintage FOREIGN KEY (vintage_id) REFERENCES data_vintages(vintage_id) ON DELETE CASCADE,
+    -- Foreign keys
+    CONSTRAINT fk_series FOREIGN KEY (series_id) 
+        REFERENCES series(series_id) ON DELETE CASCADE,
+    CONSTRAINT fk_vintage FOREIGN KEY (vintage_id) 
+        REFERENCES data_vintages(vintage_id) ON DELETE CASCADE,
+    
+    -- Constraints
     CONSTRAINT unique_series_vintage_date UNIQUE (series_id, vintage_id, date)
 );
 
@@ -323,135 +214,15 @@ CREATE INDEX idx_observations_series_id ON observations(series_id);
 CREATE INDEX idx_observations_vintage_id ON observations(vintage_id);
 CREATE INDEX idx_observations_date ON observations(date);
 CREATE INDEX idx_observations_series_vintage ON observations(series_id, vintage_id);
-CREATE INDEX idx_observations_job_id ON observations(job_id);
-CREATE INDEX idx_observations_item_code1 ON observations(item_code1) WHERE item_code1 IS NOT NULL;
-CREATE INDEX idx_observations_item_code2 ON observations(item_code2) WHERE item_code2 IS NOT NULL;
-CREATE INDEX idx_observations_item_codes ON observations(item_code1, item_code2) WHERE item_code1 IS NOT NULL;
-CREATE INDEX idx_observations_item_name1 ON observations(item_name1) WHERE item_name1 IS NOT NULL;
-CREATE INDEX idx_observations_item_name2 ON observations(item_name2) WHERE item_name2 IS NOT NULL;
-CREATE INDEX idx_observations_weight ON observations(weight) WHERE weight IS NOT NULL;
-CREATE INDEX idx_observations_item_code_name ON observations(item_code1, item_name1) WHERE item_code1 IS NOT NULL AND item_name1 IS NOT NULL;
+CREATE INDEX idx_observations_github_run_id ON observations(github_run_id) WHERE github_run_id IS NOT NULL;
+CREATE INDEX idx_observations_series_vintage_date ON observations(series_id, vintage_id, date);
+CREATE INDEX idx_observations_vintage_date_series ON observations(vintage_id, date, series_id);
 
 COMMENT ON TABLE observations IS 'Time-series observations data';
-COMMENT ON COLUMN observations.item_code1 IS 'First level item code from BOK API (ITEM_CODE1)';
-COMMENT ON COLUMN observations.item_code2 IS 'Second level item code from BOK API (ITEM_CODE2)';
-COMMENT ON COLUMN observations.item_code3 IS 'Third level item code from BOK API (ITEM_CODE3)';
-COMMENT ON COLUMN observations.item_code4 IS 'Fourth level item code from BOK API (ITEM_CODE4)';
-COMMENT ON COLUMN observations.item_name1 IS 'First level item name from BOK API (ITEM_NAME1)';
-COMMENT ON COLUMN observations.item_name2 IS 'Second level item name from BOK API (ITEM_NAME2)';
-COMMENT ON COLUMN observations.item_name3 IS 'Third level item name from BOK API (ITEM_NAME3)';
-COMMENT ON COLUMN observations.item_name4 IS 'Fourth level item name from BOK API (ITEM_NAME4)';
-COMMENT ON COLUMN observations.weight IS 'Weight value from BOK API (WGT field)';
+COMMENT ON COLUMN observations.metadata IS 'Additional metadata (item codes, names, weights, etc.) as JSON';
 
 -- ============================================================================
--- 8. API Fetches Table (for tracking API calls)
--- ============================================================================
-CREATE TABLE IF NOT EXISTS api_fetches (
-    id SERIAL PRIMARY KEY,
-    source_id INTEGER NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
-    source_stat_code VARCHAR(100) NOT NULL,
-    fetch_date DATE NOT NULL,
-    fetch_status VARCHAR(20) DEFAULT 'pending',  -- pending, success, failed
-    fetch_started_at TIMESTAMP,
-    fetch_completed_at TIMESTAMP,
-    records_fetched INTEGER,
-    error_message TEXT,
-    metadata JSONB,
-    
-    created_at TIMESTAMP DEFAULT NOW(),
-    
-    CONSTRAINT fk_source_stat FOREIGN KEY (source_id, source_stat_code) 
-        REFERENCES statistics_metadata(source_id, source_stat_code) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_api_fetches_source_id ON api_fetches(source_id);
-CREATE INDEX idx_api_fetches_source_stat_code ON api_fetches(source_stat_code);
-CREATE INDEX idx_api_fetches_fetch_date ON api_fetches(fetch_date);
-CREATE INDEX idx_api_fetches_status ON api_fetches(fetch_status);
-
-COMMENT ON TABLE api_fetches IS 'API fetch tracking for each statistic';
-
--- ============================================================================
--- 9. Initial Data: Insert Data Sources
--- ============================================================================
-INSERT INTO data_sources (source_code, source_name, source_name_eng, api_base_url, is_active)
-VALUES 
-    ('BOK', '한국은행', 'Bank of Korea', 'https://ecos.bok.or.kr/api/', TRUE),
-    ('KOSIS', '통계청', 'Statistics Korea', 'https://kosis.kr/openapi/', TRUE)
-ON CONFLICT (source_code) DO NOTHING;
-
--- ============================================================================
--- 10. Helper Views
--- ============================================================================
--- View for DFM-selected statistics
-CREATE OR REPLACE VIEW dfm_selected_statistics AS
-SELECT 
-    sm.id,
-    ds.source_code,
-    ds.source_name,
-    sm.source_stat_code,
-    sm.source_stat_name,
-    sm.source_stat_name_eng,
-    sm.cycle,
-    sm.frequency_code,
-    sm.dfm_priority,
-    sm.is_active,
-    sm.last_data_fetch_date,
-    sm.last_data_fetch_status,
-    sm.data_start_date,
-    sm.data_end_date,
-    s.series_id,
-    sm.created_at,
-    sm.updated_at
-FROM statistics_metadata sm
-JOIN data_sources ds ON sm.source_id = ds.id
-LEFT JOIN series s ON s.statistics_metadata_id = sm.id
-WHERE sm.is_dfm_selected = TRUE
-ORDER BY sm.dfm_priority NULLS LAST, sm.source_stat_code;
-
-COMMENT ON VIEW dfm_selected_statistics IS 'View of all DFM-selected statistics with source information';
-
--- View for active statistics by source
-CREATE OR REPLACE VIEW active_statistics_by_source AS
-SELECT 
-    ds.source_code,
-    ds.source_name,
-    COUNT(*) FILTER (WHERE sm.is_active = TRUE) as active_count,
-    COUNT(*) FILTER (WHERE sm.is_dfm_selected = TRUE) as dfm_selected_count,
-    COUNT(*) FILTER (WHERE sm.is_searchable = TRUE) as searchable_count,
-    COUNT(*) as total_count
-FROM data_sources ds
-LEFT JOIN statistics_metadata sm ON ds.id = sm.source_id
-WHERE ds.is_active = TRUE
-GROUP BY ds.source_code, ds.source_name;
-
-COMMENT ON VIEW active_statistics_by_source IS 'Summary of statistics by data source';
-
--- ============================================================================
--- 11. Triggers for updated_at
--- ============================================================================
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
-
-CREATE TRIGGER update_data_sources_updated_at BEFORE UPDATE ON data_sources
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_statistics_metadata_updated_at BEFORE UPDATE ON statistics_metadata
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_statistics_items_updated_at BEFORE UPDATE ON statistics_items
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_series_last_updated BEFORE UPDATE ON series
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- ============================================================================
--- 12. Model Configurations Table
+-- 5. Model Configurations Table (with block assignments in config_json)
 -- ============================================================================
 -- Stores DFM model configurations (block structure, series selection, etc.)
 CREATE TABLE IF NOT EXISTS model_configs (
@@ -478,33 +249,10 @@ CREATE INDEX idx_model_configs_country ON model_configs(country);
 CREATE INDEX idx_model_configs_config_json ON model_configs USING GIN (config_json);
 
 COMMENT ON TABLE model_configs IS 'DFM model configurations (block structure, series selection)';
-COMMENT ON COLUMN model_configs.config_json IS 'Full ModelConfig as JSON (SeriesID, Blocks, Frequency, etc.)';
+COMMENT ON COLUMN model_configs.config_json IS 'Full ModelConfig as JSON (SeriesID, Blocks, Frequency, etc. - includes block assignments)';
 
 -- ============================================================================
--- 13. Model Block Assignments Table
--- ============================================================================
--- Links series to blocks in a model configuration
-CREATE TABLE IF NOT EXISTS model_block_assignments (
-    id SERIAL PRIMARY KEY,
-    config_id INTEGER NOT NULL REFERENCES model_configs(config_id) ON DELETE CASCADE,
-    series_id VARCHAR(100) NOT NULL REFERENCES series(series_id) ON DELETE CASCADE,
-    block_name VARCHAR(100) NOT NULL,
-    block_index INTEGER NOT NULL,  -- Index of block in block_names array
-    
-    created_at TIMESTAMP DEFAULT NOW(),
-    
-    CONSTRAINT unique_config_series_block UNIQUE (config_id, series_id, block_name)
-);
-
-CREATE INDEX idx_model_block_assignments_config_id ON model_block_assignments(config_id);
-CREATE INDEX idx_model_block_assignments_series_id ON model_block_assignments(series_id);
-CREATE INDEX idx_model_block_assignments_block_name ON model_block_assignments(block_name);
-CREATE INDEX idx_model_block_assignments_config_block ON model_block_assignments(config_id, block_name);
-
-COMMENT ON TABLE model_block_assignments IS 'Series-to-block assignments for each model configuration';
-
--- ============================================================================
--- 14. Trained Models Table
+-- 6. Trained Models Table
 -- ============================================================================
 -- Stores trained DFM model weights and parameters
 CREATE TABLE IF NOT EXISTS trained_models (
@@ -537,55 +285,12 @@ COMMENT ON TABLE trained_models IS 'Trained DFM model weights and parameters';
 COMMENT ON COLUMN trained_models.parameters_json IS 'Serialized DFM parameters (C, A, Q, R, Z_0, V_0, etc.) as JSON';
 
 -- ============================================================================
--- 15. Forecast Runs Table
--- ============================================================================
--- Tracks forecast runs (nowcast updates, batch forecasts)
-CREATE TABLE IF NOT EXISTS forecast_runs (
-    run_id SERIAL PRIMARY KEY,
-    model_id INTEGER NOT NULL REFERENCES trained_models(model_id) ON DELETE CASCADE,
-    vintage_id_old INTEGER REFERENCES data_vintages(vintage_id) ON DELETE SET NULL,
-    vintage_id_new INTEGER NOT NULL REFERENCES data_vintages(vintage_id) ON DELETE CASCADE,
-    
-    -- Run metadata
-    run_type VARCHAR(50),  -- 'nowcast', 'forecast', 'batch'
-    target_series_id VARCHAR(100),  -- Series being forecasted
-    target_period VARCHAR(20),  -- Target period (e.g., '2016q4')
-    
-    -- GitHub Actions tracking
-    github_run_id VARCHAR(100),
-    github_workflow_run_url VARCHAR(500),
-    
-    -- Status
-    status VARCHAR(20) DEFAULT 'pending',  -- pending, running, completed, failed
-    started_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    error_message TEXT,
-    
-    -- Results summary
-    forecasts_generated INTEGER,
-    metadata_json JSONB,
-    
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_forecast_runs_model_id ON forecast_runs(model_id);
-CREATE INDEX idx_forecast_runs_vintage_id_new ON forecast_runs(vintage_id_new);
-CREATE INDEX idx_forecast_runs_vintage_id_old ON forecast_runs(vintage_id_old) WHERE vintage_id_old IS NOT NULL;
-CREATE INDEX idx_forecast_runs_target_series_id ON forecast_runs(target_series_id) WHERE target_series_id IS NOT NULL;
-CREATE INDEX idx_forecast_runs_status ON forecast_runs(status);
-CREATE INDEX idx_forecast_runs_github_run_id ON forecast_runs(github_run_id) WHERE github_run_id IS NOT NULL;
-CREATE INDEX idx_forecast_runs_created_at ON forecast_runs(created_at DESC);
-
-COMMENT ON TABLE forecast_runs IS 'Tracks forecast runs (nowcast updates, batch forecasts)';
-
--- ============================================================================
--- 16. Forecasts Table
+-- 7. Forecasts Table (with run info integrated)
 -- ============================================================================
 -- Stores individual forecasts
 CREATE TABLE IF NOT EXISTS forecasts (
     forecast_id SERIAL PRIMARY KEY,
     model_id INTEGER NOT NULL REFERENCES trained_models(model_id) ON DELETE CASCADE,
-    run_id INTEGER REFERENCES forecast_runs(run_id) ON DELETE SET NULL,
     series_id VARCHAR(100) NOT NULL REFERENCES series(series_id) ON DELETE CASCADE,
     
     -- Forecast details
@@ -595,53 +300,140 @@ CREATE TABLE IF NOT EXISTS forecasts (
     upper_bound DOUBLE PRECISION,
     confidence_level FLOAT DEFAULT 0.95,
     
+    -- Run info (from forecast_runs, integrated)
+    run_type VARCHAR(50),  -- 'nowcast', 'forecast', 'batch'
+    vintage_id_old INTEGER REFERENCES data_vintages(vintage_id) ON DELETE SET NULL,
+    vintage_id_new INTEGER REFERENCES data_vintages(vintage_id) ON DELETE SET NULL,
+    github_run_id VARCHAR(100),
+    
     -- Additional metadata
-    metadata_json JSONB,  -- Additional forecast metadata
+    metadata_json JSONB,  -- Additional forecast metadata (run info, etc.)
     
     created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX idx_forecasts_model_id ON forecasts(model_id);
-CREATE INDEX idx_forecasts_run_id ON forecasts(run_id) WHERE run_id IS NOT NULL;
 CREATE INDEX idx_forecasts_series_id ON forecasts(series_id);
 CREATE INDEX idx_forecasts_forecast_date ON forecasts(forecast_date);
 CREATE INDEX idx_forecasts_model_series_date ON forecasts(model_id, series_id, forecast_date);
 CREATE INDEX idx_forecasts_created_at ON forecasts(created_at DESC);
+CREATE INDEX idx_forecasts_run_type ON forecasts(run_type) WHERE run_type IS NOT NULL;
+CREATE INDEX idx_forecasts_vintage_id_new ON forecasts(vintage_id_new) WHERE vintage_id_new IS NOT NULL;
 
 COMMENT ON TABLE forecasts IS 'Individual forecasts from DFM models';
 COMMENT ON COLUMN forecasts.forecast_date IS 'Target date for the forecast';
 
 -- ============================================================================
--- 17. Additional Optimized Indexes for Forecasting Queries
+-- 8. Factors Table (DFM Factors for Frontend Visualization)
+-- ============================================================================
+-- Stores DFM factor metadata
+CREATE TABLE IF NOT EXISTS factors (
+    id SERIAL PRIMARY KEY,
+    model_id INTEGER NOT NULL REFERENCES trained_models(model_id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,  -- Factor name (e.g., "Factor 1", "Global Factor")
+    description TEXT,  -- Factor description
+    factor_index INTEGER NOT NULL,  -- Index/order of factor in the model
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    
+    CONSTRAINT unique_model_factor_index UNIQUE (model_id, factor_index)
+);
+
+CREATE INDEX idx_factors_model_id ON factors(model_id);
+CREATE INDEX idx_factors_factor_index ON factors(factor_index);
+
+COMMENT ON TABLE factors IS 'DFM factor metadata for frontend visualization';
+COMMENT ON COLUMN factors.factor_index IS 'Index/order of factor in the model (0-based or 1-based)';
+
+-- ============================================================================
+-- 9. Factor Values Table (Factor Time Series)
+-- ============================================================================
+-- Stores time series of factor estimates
+CREATE TABLE IF NOT EXISTS factor_values (
+    id SERIAL PRIMARY KEY,
+    factor_id INTEGER NOT NULL REFERENCES factors(id) ON DELETE CASCADE,
+    vintage_id INTEGER NOT NULL REFERENCES data_vintages(vintage_id) ON DELETE CASCADE,
+    date DATE NOT NULL,  -- Observation date
+    value DOUBLE PRECISION NOT NULL,  -- Factor value
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    
+    CONSTRAINT unique_factor_vintage_date UNIQUE (factor_id, vintage_id, date)
+);
+
+CREATE INDEX idx_factor_values_factor_id ON factor_values(factor_id);
+CREATE INDEX idx_factor_values_vintage_id ON factor_values(vintage_id);
+CREATE INDEX idx_factor_values_date ON factor_values(date);
+CREATE INDEX idx_factor_values_factor_vintage ON factor_values(factor_id, vintage_id);
+CREATE INDEX idx_factor_values_factor_date ON factor_values(factor_id, date);
+
+COMMENT ON TABLE factor_values IS 'Time series of factor estimates (DFM factor values over time)';
+COMMENT ON COLUMN factor_values.vintage_id IS 'Vintage snapshot this factor value belongs to';
+
+-- ============================================================================
+-- 10. Factor Loadings Table (Factor-Variable Loadings)
+-- ============================================================================
+-- Stores factor loading matrix: how each variable (series) loads onto each factor
+CREATE TABLE IF NOT EXISTS factor_loadings (
+    factor_id INTEGER NOT NULL REFERENCES factors(id) ON DELETE CASCADE,
+    series_id VARCHAR(100) NOT NULL REFERENCES series(series_id) ON DELETE CASCADE,
+    loading DOUBLE PRECISION NOT NULL,  -- Loading coefficient (can be positive or negative)
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    
+    CONSTRAINT pk_factor_loadings PRIMARY KEY (factor_id, series_id)
+);
+
+CREATE INDEX idx_factor_loadings_factor_id ON factor_loadings(factor_id);
+CREATE INDEX idx_factor_loadings_series_id ON factor_loadings(series_id);
+CREATE INDEX idx_factor_loadings_loading ON factor_loadings(loading);
+
+COMMENT ON TABLE factor_loadings IS 'Factor loading matrix: how each variable (series) loads onto each factor';
+COMMENT ON COLUMN factor_loadings.loading IS 'Loading coefficient (positive or negative)';
+
+-- ============================================================================
+-- 11. Initial Data: Insert Data Sources
+-- ============================================================================
+INSERT INTO data_sources (source_code, source_name, source_name_eng, api_base_url, is_active)
+VALUES 
+    ('BOK', '한국은행', 'Bank of Korea', 'https://ecos.bok.or.kr/api/', TRUE),
+    ('KOSIS', '통계청', 'Statistics Korea', 'https://kosis.kr/openapi/', TRUE)
+ON CONFLICT (source_code) DO NOTHING;
+
+-- ============================================================================
+-- 12. Helper Views
 -- ============================================================================
 
--- Composite index for efficient vintage data retrieval (most common query pattern)
-CREATE INDEX IF NOT EXISTS idx_observations_vintage_date_series 
-    ON observations(vintage_id, date, series_id);
+-- View for series with group information (simplified: no series_groups join)
+CREATE OR REPLACE VIEW series_with_groups
+WITH (security_invoker=true) AS
+SELECT 
+    series_id,
+    series_name,
+    api_source,
+    data_code,
+    item_id,
+    api_group_id,
+    frequency,
+    transformation,
+    category,
+    units,
+    country,
+    is_active,
+    is_kpi,
+    created_at,
+    updated_at
+FROM series
+WHERE is_active = TRUE;
 
--- Composite index for series data retrieval across vintages
-CREATE INDEX IF NOT EXISTS idx_observations_series_date_vintage 
-    ON observations(series_id, date, vintage_id);
-
--- Index for DFM-selected series filtering
-CREATE INDEX IF NOT EXISTS idx_series_dfm_compatible 
-    ON series(series_id, frequency, is_active) 
-    WHERE is_active = TRUE;
-
--- Index for efficient vintage comparison queries
-CREATE INDEX IF NOT EXISTS idx_observations_series_vintage_date 
-    ON observations(series_id, vintage_id, date);
-
--- ============================================================================
--- 18. Helper Views for Forecasting
--- ============================================================================
+COMMENT ON VIEW series_with_groups IS 'View of active series with their group information (api_group_id)';
 
 -- View for latest forecasts per series
-CREATE OR REPLACE VIEW latest_forecasts_view AS
+CREATE OR REPLACE VIEW latest_forecasts_view
+WITH (security_invoker=true) AS
 SELECT DISTINCT ON (f.series_id, f.forecast_date)
     f.forecast_id,
     f.model_id,
-    f.run_id,
     f.series_id,
     s.series_name,
     f.forecast_date,
@@ -664,7 +456,8 @@ ORDER BY f.series_id, f.forecast_date, f.created_at DESC;
 COMMENT ON VIEW latest_forecasts_view IS 'Latest forecast for each series and date combination';
 
 -- View for model training history
-CREATE OR REPLACE VIEW model_training_history AS
+CREATE OR REPLACE VIEW model_training_history
+WITH (security_invoker=true) AS
 SELECT 
     tm.model_id,
     tm.config_id,
@@ -687,9 +480,198 @@ ORDER BY tm.trained_at DESC;
 
 COMMENT ON VIEW model_training_history IS 'Model training history with forecast counts';
 
+-- View for variables (frontend visualization - based on series)
+CREATE OR REPLACE VIEW variables_view
+WITH (security_invoker=true) AS
+SELECT 
+    series_id AS id,
+    series_name AS name,
+    units AS unit,
+    is_kpi,
+    frequency,
+    transformation,
+    category,
+    country,
+    is_active,
+    created_at,
+    updated_at
+FROM series
+WHERE is_active = TRUE;
+
+COMMENT ON VIEW variables_view IS 'Variables view for frontend visualization (based on series table)';
+
+-- View for variable values (frontend visualization - based on observations)
+CREATE OR REPLACE VIEW variable_values_view
+WITH (security_invoker=true) AS
+SELECT 
+    series_id AS variable_id,
+    date,
+    value,
+    vintage_id,
+    github_run_id,
+    is_forecast,
+    created_at
+FROM observations;
+
+COMMENT ON VIEW variable_values_view IS 'Variable values view for frontend visualization (based on observations table)';
+
 -- ============================================================================
--- 19. Additional Triggers
+-- 13. Triggers for updated_at
 -- ============================================================================
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER update_data_sources_updated_at BEFORE UPDATE ON data_sources
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_series_updated_at BEFORE UPDATE ON series
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_model_configs_updated_at BEFORE UPDATE ON model_configs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================================
+-- 14. Row Level Security (RLS) Policies
+-- ============================================================================
+-- Enable RLS on all tables for security
+
+-- Data Sources
+ALTER TABLE data_sources ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read access to data_sources"
+    ON data_sources FOR SELECT
+    USING (true);
+
+-- Series
+ALTER TABLE series ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read access to series"
+    ON series FOR SELECT
+    USING (true);
+CREATE POLICY "Allow authenticated insert to series"
+    ON series FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+CREATE POLICY "Allow authenticated update to series"
+    ON series FOR UPDATE
+    TO authenticated
+    USING (true);
+
+-- Data Vintages
+ALTER TABLE data_vintages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read access to data_vintages"
+    ON data_vintages FOR SELECT
+    USING (true);
+CREATE POLICY "Allow authenticated insert to data_vintages"
+    ON data_vintages FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+CREATE POLICY "Allow authenticated update to data_vintages"
+    ON data_vintages FOR UPDATE
+    TO authenticated
+    USING (true);
+
+-- Observations
+ALTER TABLE observations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read access to observations"
+    ON observations FOR SELECT
+    USING (true);
+CREATE POLICY "Allow authenticated insert to observations"
+    ON observations FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+CREATE POLICY "Allow authenticated update to observations"
+    ON observations FOR UPDATE
+    TO authenticated
+    USING (true);
+
+-- Model Configs
+ALTER TABLE model_configs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read access to model_configs"
+    ON model_configs FOR SELECT
+    USING (true);
+CREATE POLICY "Allow authenticated insert to model_configs"
+    ON model_configs FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+CREATE POLICY "Allow authenticated update to model_configs"
+    ON model_configs FOR UPDATE
+    TO authenticated
+    USING (true);
+
+-- Trained Models
+ALTER TABLE trained_models ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read access to trained_models"
+    ON trained_models FOR SELECT
+    USING (true);
+CREATE POLICY "Allow authenticated insert to trained_models"
+    ON trained_models FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+CREATE POLICY "Allow authenticated update to trained_models"
+    ON trained_models FOR UPDATE
+    TO authenticated
+    USING (true);
+
+-- Forecasts
+ALTER TABLE forecasts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read access to forecasts"
+    ON forecasts FOR SELECT
+    USING (true);
+CREATE POLICY "Allow authenticated insert to forecasts"
+    ON forecasts FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+CREATE POLICY "Allow authenticated update to forecasts"
+    ON forecasts FOR UPDATE
+    TO authenticated
+    USING (true);
+
+-- Factors
+ALTER TABLE factors ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read access to factors"
+    ON factors FOR SELECT
+    USING (true);
+CREATE POLICY "Allow authenticated insert to factors"
+    ON factors FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+CREATE POLICY "Allow authenticated update to factors"
+    ON factors FOR UPDATE
+    TO authenticated
+    USING (true);
+
+-- Factor Values
+ALTER TABLE factor_values ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read access to factor_values"
+    ON factor_values FOR SELECT
+    USING (true);
+CREATE POLICY "Allow authenticated insert to factor_values"
+    ON factor_values FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+CREATE POLICY "Allow authenticated update to factor_values"
+    ON factor_values FOR UPDATE
+    TO authenticated
+    USING (true);
+
+-- Factor Loadings
+ALTER TABLE factor_loadings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read access to factor_loadings"
+    ON factor_loadings FOR SELECT
+    USING (true);
+CREATE POLICY "Allow authenticated insert to factor_loadings"
+    ON factor_loadings FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+CREATE POLICY "Allow authenticated update to factor_loadings"
+    ON factor_loadings FOR UPDATE
+    TO authenticated
+    USING (true);
