@@ -551,7 +551,11 @@ def load_data_from_db(
         f"series={len(config_series_ids)}, observations={len(Time)}"
     )
     
-    return X, Time, Z
+    # Convert to DataFrame for consistency
+    data_df = pd.DataFrame(X, index=Time, columns=None)
+    Z_df = pd.DataFrame(Z, index=Time, columns=None) if Z is not None else None
+    series_metadata_df = pd.DataFrame()  # Empty metadata for CSV path
+    return data_df, Time, Z_df, series_metadata_df
 
 
 def save_nowcast_to_db(
