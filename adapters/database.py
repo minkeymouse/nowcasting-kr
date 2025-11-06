@@ -175,6 +175,7 @@ def _fetch_vintage_data(
     vintage_id: int,
     config_series_ids: List[str],
     config: Optional[ModelConfig] = None,
+    config_name: Optional[str] = None,
     config_id: Optional[int] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
@@ -183,7 +184,15 @@ def _fetch_vintage_data(
 ) -> Tuple[pd.DataFrame, pd.DatetimeIndex, pd.DataFrame]:
     """Fetch vintage data and metadata from database.
     
-    Uses config-specific function if available, otherwise falls back to general function.
+    Uses config-specific function with blocks table ordering if available,
+    otherwise falls back to general function.
+    
+    Parameters
+    ----------
+    config_name : str, optional
+        Configuration name (e.g., '001-initial-spec') - uses blocks table for ordering
+    config_id : int, optional, deprecated
+        Configuration ID (deprecated: use config_name instead)
     """
     try:
         from database import (
@@ -194,20 +203,37 @@ def _fetch_vintage_data(
     except ImportError:
         raise
     
-    # Prefer config-specific function (uses model_block_assignments for ordering)
-    if config_id is not None:
+    # Prefer config-specific function (uses blocks table for ordering)
+    # Try config_name first, then config_id (deprecated)
+    if config_name is not None:
         try:
             return get_vintage_data_for_config(
+                config_name=config_name,
                 vintage_id=vintage_id,
-                config_id=config_id,
                 start_date=start_date,
                 end_date=end_date,
                 strict_mode=strict_mode,
                 client=client
             )
         except (TypeError, AttributeError) as e:
-            # Fallback if function signature differs or not available
             logger.warning(f"get_vintage_data_for_config failed ({e}), using general function")
+    elif config_id is not None:
+        # Deprecated: resolve config_name from config_id
+        try:
+            from database.helpers import resolve_config_name
+            resolved_config_name = resolve_config_name(config_id=config_id, client=client)
+            if resolved_config_name:
+                logger.warning("config_id is deprecated. Use config_name instead.")
+                return get_vintage_data_for_config(
+                    config_name=resolved_config_name,
+                    vintage_id=vintage_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                    strict_mode=strict_mode,
+                    client=client
+                )
+        except (TypeError, AttributeError, ImportError) as e:
+            logger.warning(f"Could not resolve config_name from config_id ({e}), using general function")
     
     # Use general function with series IDs
     result = get_vintage_data(
@@ -235,6 +261,7 @@ def load_data_from_db(
     vintage_id: Optional[int] = None,
     vintage_date: Optional[Union[date, str, pd.Timestamp]] = None,
     config: Optional[ModelConfig] = None,
+    config_name: Optional[str] = None,
     config_id: Optional[int] = None,
     config_series_ids: Optional[List[str]] = None,
     start_date: Optional[Union[date, str, pd.Timestamp]] = None,
@@ -257,8 +284,10 @@ def load_data_from_db(
         Vintage date (alternative to vintage_id)
     config : ModelConfig, optional
         Model configuration object (required for transformations)
-    config_id : int, optional
-        Model configuration ID in database (uses model_block_assignments for ordering)
+    config_name : str, optional
+        Model configuration name (e.g., '001-initial-spec') - uses blocks table for ordering
+    config_id : int, optional, deprecated
+        Model configuration ID (deprecated: use config_name instead)
     config_series_ids : List[str], optional
         List of series IDs in exact order (if None and config provided, uses config.SeriesID)
     start_date : date, str, or Timestamp, optional
@@ -307,11 +336,22 @@ def load_data_from_db(
         else:
             raise ValueError("Must provide either config or config_series_ids")
     
+    # Resolve config_name if only config_id provided (backward compatibility)
+    if config_name is None and config_id is not None:
+        try:
+            from database.helpers import resolve_config_name
+            config_name = resolve_config_name(config_id=config_id, client=client)
+            if config_name:
+                logger.warning("config_id is deprecated. Use config_name instead.")
+        except ImportError:
+            pass  # Will fall back to config_id handling in _fetch_vintage_data
+    
     # Fetch data from database
     data_df, Time, series_metadata_df = _fetch_vintage_data(
         vintage_id=resolved_vintage_id,
         config_series_ids=config_series_ids,
         config=config,
+        config_name=config_name,
         config_id=config_id,
         start_date=normalized_start,
         end_date=normalized_end,
