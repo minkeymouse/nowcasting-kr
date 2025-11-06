@@ -337,6 +337,6 @@ if HYDRA_AVAILABLE:
         
     except Exception as e:
         # If registration fails, continue without schema validation
-        # Configs will still work via from_dict() in config_loader.py
+        # Configs will still work via from_dict() in scripts
         warnings.warn(f"Could not register Hydra structured config schemas: {e}. "
                      f"Configs will still work via from_dict() but without schema validation.")

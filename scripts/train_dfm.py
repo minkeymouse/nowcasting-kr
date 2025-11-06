@@ -14,8 +14,60 @@ import pickle
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.nowcasting import load_config, load_data, dfm, load_model_config_from_hydra
+from src.nowcasting import load_config, load_data, dfm, ModelConfig
 from src.utils import summarize
+
+
+def load_model_config_from_hydra(cfg_model: DictConfig, use_db: bool = True) -> ModelConfig:
+    """Load model configuration from database (latest) or CSV/YAML file.
+    
+    Application-specific config loader for Hydra workflows.
+    Priority: Database → CSV → YAML
+    
+    This function is kept in scripts (not in DFM module) to keep DFM generic.
+    """
+    # Try database first (if enabled)
+    if use_db:
+        try:
+            from database import get_client, load_model_config
+            
+            client = get_client()
+            config_name = cfg_model.get('config_name', '001-initial-spec')
+            
+            db_config = load_model_config(config_name, client=client)
+            if db_config and 'config_json' in db_config:
+                config_dict = db_config['config_json']
+                if 'block_names' not in config_dict and 'block_names' in db_config:
+                    config_dict['block_names'] = db_config['block_names']
+                return ModelConfig.from_dict(config_dict)
+        except (ImportError, Exception):
+            pass  # Fall back to file
+    
+    # Load from CSV or YAML file
+    model_config_path = cfg_model.get('config_path')
+    if model_config_path:
+        config_file = Path(model_config_path)
+        if not config_file.is_absolute():
+            # Resolve relative path
+            current = Path.cwd()
+            for parent in [current] + list(current.parents):
+                candidate = parent / model_config_path
+                if candidate.exists():
+                    config_file = candidate
+                    break
+            else:
+                config_file = Path(__file__).parent.parent.parent / model_config_path
+        
+        if not config_file.exists():
+            raise FileNotFoundError(
+                f"Model config file not found: {config_file}\n"
+                f"Researchers should update: src/spec/001_initial_spec.csv"
+            )
+        
+        return load_config(config_file)
+    else:
+        # Fallback to YAML config (convert DictConfig to dict, then to ModelConfig)
+        return ModelConfig.from_dict(OmegaConf.to_container(cfg_model, resolve=True))
 
 
 @hydra.main(version_base=None, config_path="../../config", config_name="defaults")
@@ -53,7 +105,7 @@ def main(cfg: DictConfig) -> None:
     
     # Load data
     if use_database:
-        from src.nowcasting import load_data_from_db
+        from adapters.database import load_data_from_db
         sample_start_dt = pd.to_datetime(sample_start) if sample_start else None
         X, Time, Z = load_data_from_db(
             vintage_date=vintage,

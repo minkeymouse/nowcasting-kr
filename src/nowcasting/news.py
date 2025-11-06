@@ -2,7 +2,7 @@
 
 import numpy as np
 from scipy.linalg import pinv, inv
-from typing import Tuple, Optional, Dict, Union, List, Any
+from typing import Tuple, Optional, Dict, Union, List, Any, Callable
 from datetime import datetime
 import pandas as pd
 
@@ -318,183 +318,14 @@ def news_dfm(X_old: np.ndarray, X_new: np.ndarray, Res, t_fcst: int,
     return y_old, y_new, singlenews, actual, forecast, weight, t_miss, v_miss, innov
 
 
-def _save_nowcast_to_db(
-    model_id: Optional[int],
-    series: str,
-    forecast_date: pd.Timestamp,
-    forecast_value: float,
-    old_forecast_value: Optional[float] = None,
-    impact_revisions: Optional[float] = None,
-    impact_releases: Optional[float] = None,
-    total_impact: Optional[float] = None,
-    vintage_old: Optional[str] = None,
-    vintage_new: Optional[str] = None,
-    Res: Optional[Any] = None,
-    confidence_level: float = 0.95
-) -> None:
-    """Robustly save nowcast to database with comprehensive error handling.
-    
-    This function attempts to save nowcast values to the database but will not
-    interrupt execution if saving fails. All errors are logged as warnings.
-    
-    Parameters:
-    -----------
-    model_id : int, optional
-        Model ID for database. If None, will attempt to extract from Res or skip.
-    series : str
-        Series ID for the nowcast
-    forecast_date : pd.Timestamp
-        Date of the forecast
-    forecast_value : float
-        New nowcast value
-    old_forecast_value : float, optional
-        Old nowcast value (for comparison)
-    impact_revisions : float, optional
-        Impact from data revisions
-    impact_releases : float, optional
-        Impact from data releases
-    total_impact : float, optional
-        Total impact (revisions + releases)
-    vintage_old : str, optional
-        Old vintage date
-    vintage_new : str, optional
-        New vintage date
-    Res : DFMResult or dict, optional
-        DFM results - may contain model_id
-    confidence_level : float, default=0.95
-        Confidence level for bounds (currently not computed)
-    """
-    import warnings
-    import logging
-    
-    logger = logging.getLogger(__name__)
-    
-    # Validate inputs - try multiple methods to get model_id
-    if model_id is None:
-        # Method 1: Try to extract model_id from Res
-        if Res is not None:
-            if isinstance(Res, dict):
-                model_id = Res.get('model_id')
-            elif hasattr(Res, 'model_id'):
-                model_id = Res.model_id
-        
-        # Method 2: Try to look up model_id from database using config_id and vintage
-        if model_id is None:
-            try:
-                from database import get_client, get_latest_vintage_id
-                
-                # Try to get model_id from trained_models table
-                # Note: This will only work if models have been saved to DB
-                # Since we're not saving to trained_models yet, this might not work
-                # But we'll try anyway for robustness
-                client = get_client()
-                if vintage_new:
-                    vintage_id = get_latest_vintage_id(vintage_date=vintage_new, client=client)
-                    if vintage_id:
-                        # Query trained_models for matching vintage_id
-                        # This is a fallback - may not work if models aren't saved yet
-                        try:
-                            from database import TABLES
-                            result = (client.table(TABLES.get('trained_models', 'trained_models'))
-                                     .select('model_id')
-                                     .eq('vintage_id', vintage_id)
-                                     .order('created_at', desc=True)
-                                     .limit(1)
-                                     .execute())
-                            if result.data and len(result.data) > 0:
-                                model_id = result.data[0].get('model_id')
-                        except Exception:
-                            pass  # If table doesn't exist or query fails, continue
-            except Exception:
-                pass  # If database lookup fails, continue
-        
-        # Final check - if still None, skip saving
-        if model_id is None:
-            logger.warning(
-                "Cannot save nowcast to database: model_id not provided, "
-                "not found in Res, and not found in database. "
-                "Skipping database save. Note: Model weights must be saved to "
-                "trained_models table first, or model_id must be provided."
-            )
-            return
-    
-    # Validate forecast value
-    if np.isnan(forecast_value) or np.isinf(forecast_value):
-        logger.warning(
-            f"Cannot save nowcast to database: forecast_value is invalid "
-            f"(NaN or Inf) for series {series}. Skipping database save."
-        )
-        return
-    
-    # Validate date
-    try:
-        if isinstance(forecast_date, pd.Timestamp):
-            forecast_date_obj = forecast_date.date()
-        elif isinstance(forecast_date, (str, datetime)):
-            forecast_date_obj = pd.to_datetime(forecast_date).date()
-        else:
-            forecast_date_obj = forecast_date
-    except Exception as e:
-        logger.warning(
-            f"Cannot save nowcast to database: invalid forecast_date "
-            f"for series {series}: {e}. Skipping database save."
-        )
-        return
-    
-    # Attempt to save to database with comprehensive error handling
-    try:
-        from database import get_client, save_forecast
-        
-        client = get_client()
-        
-        # Compute confidence bounds if possible (simplified - could be enhanced)
-        # For now, we'll save without bounds or use a simple approximation
-        lower_bound = None
-        upper_bound = None
-        
-        # Save main forecast
-        result = save_forecast(
-            model_id=model_id,
-            series_id=series,
-            forecast_date=forecast_date_obj,
-            forecast_value=float(forecast_value),
-            lower_bound=lower_bound,
-            upper_bound=upper_bound,
-            confidence_level=confidence_level,
-            client=client
-        )
-        
-        if result:
-            logger.info(
-                f"Successfully saved nowcast to database: series={series}, "
-                f"date={forecast_date_obj}, value={forecast_value:.4f}, "
-                f"model_id={model_id}"
-            )
-        else:
-            logger.warning(
-                f"save_forecast returned None for series {series}, "
-                f"date {forecast_date_obj}. Forecast may not have been saved."
-            )
-            
-    except ImportError as e:
-        logger.warning(
-            f"Cannot save nowcast to database: database module not available: {e}. "
-            f"Skipping database save."
-        )
-    except Exception as e:
-        logger.warning(
-            f"Failed to save nowcast to database for series {series}, "
-            f"date {forecast_date_obj}: {e}. Error type: {type(e).__name__}. "
-            f"Continuing without database save."
-        )
-
-
+# Database saving function moved to adapters/database.py
+# This keeps the DFM module generic and database-agnostic.
+# Use: from adapters.database import save_nowcast_to_db
 def update_nowcast(X_old: np.ndarray, X_new: np.ndarray, Time: pd.DatetimeIndex,
                   config, Res, series: str, period: str,
                   vintage_old: str, vintage_new: str,
                   model_id: Optional[int] = None,
-                  use_database: bool = False,
-                  save_to_db: bool = True) -> None:
+                  save_callback: Optional[Callable] = None) -> None:
     """Update nowcast and decompose changes into news.
     
     Parameters:
@@ -519,12 +350,12 @@ def update_nowcast(X_old: np.ndarray, X_new: np.ndarray, Time: pd.DatetimeIndex,
     vintage_new : str
         New vintage date
     model_id : int, optional
-        Model ID for database saving. If None and save_to_db=True, will attempt
-        to find model_id from Res or skip saving.
-    use_database : bool, default=False
-        Whether database is available for saving forecasts
-    save_to_db : bool, default=True
-        Whether to save nowcast values to database. Requires model_id if True.
+        Model ID for saving (passed to save_callback if provided)
+    save_callback : Callable, optional
+        Optional callback function to save nowcast results.
+        If provided, will be called with nowcast parameters.
+        Example: from adapters.database import save_nowcast_to_db
+                 save_callback=lambda **kwargs: save_nowcast_to_db(**kwargs)
         
     Notes:
     ------
@@ -702,19 +533,26 @@ def update_nowcast(X_old: np.ndarray, X_new: np.ndarray, Time: pd.DatetimeIndex,
                 print(f'{series_id:20s}  Forecast: {forecast[i]:8.2f}  Actual: {actual[i]:8.2f}  '
                       f'Weight: {weight[i]:8.4f}  Impact: {impact_releases[i]:8.2f}')
         
-        # Save nowcast to database (robust with error handling)
-        if save_to_db and use_database:
-            _save_nowcast_to_db(
-                model_id=model_id,
-                series=series,
-                forecast_date=target_date,
-                forecast_value=y_new,
-                old_forecast_value=y_old,
-                impact_revisions=impact_revisions,
-                impact_releases=np.nansum(impact_releases),
-                total_impact=impact_revisions + np.nansum(impact_releases),
-                vintage_old=vintage_old,
-                vintage_new=vintage_new,
-                Res=Res
-            )
+        # Save nowcast using callback if provided (generic - not database-specific)
+        if save_callback is not None:
+            try:
+                save_callback(
+                    model_id=model_id,
+                    series=series,
+                    forecast_date=target_date,
+                    forecast_value=y_new,
+                    old_forecast_value=y_old,
+                    impact_revisions=impact_revisions,
+                    impact_releases=np.nansum(impact_releases),
+                    total_impact=impact_revisions + np.nansum(impact_releases),
+                    vintage_old=vintage_old,
+                    vintage_new=vintage_new,
+                    Res=Res
+                )
+            except Exception as e:
+                import warnings
+                warnings.warn(
+                    f"save_callback failed: {e}. Continuing without saving.",
+                    UserWarning
+                )
 
