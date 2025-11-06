@@ -54,3 +54,16 @@ CREATE POLICY "Allow authenticated delete from blocks"
     ON blocks FOR DELETE
     TO authenticated
     USING (true);
+
+-- ============================================================================
+-- Add block_name to factors table
+-- ============================================================================
+-- DFM factors are organized by blocks:
+-- - Global factor: block_name = NULL or 'Global' (applies to all series)
+-- - Inner block factors: block_name = 'Invest', 'Extern', etc. (applies only to series in that block)
+ALTER TABLE factors ADD COLUMN IF NOT EXISTS block_name VARCHAR(50) NULL;
+
+CREATE INDEX IF NOT EXISTS idx_factors_block_name ON factors(block_name);
+CREATE INDEX IF NOT EXISTS idx_factors_model_block ON factors(model_id, block_name);
+
+COMMENT ON COLUMN factors.block_name IS 'Block name for inner block factors (NULL or Global for global factors)';
