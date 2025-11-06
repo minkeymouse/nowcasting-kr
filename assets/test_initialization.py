@@ -172,7 +172,7 @@ try:
         logger.error(f"   ❌ Failed to create vintage - cannot continue")
         sys.exit(1)
     
-    print(f"   ✅ Vintage ID: {vintage_id}")
+        print(f"   ✅ Vintage ID: {vintage_id}")
     logger.info(f"   ✅ Vintage ID: {vintage_id}")
     
     # Rate limiting

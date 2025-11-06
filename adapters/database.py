@@ -312,12 +312,13 @@ def load_data_from_db(
         vintage_id=resolved_vintage_id,
         config_series_ids=config_series_ids,
         config=config,
-        config_id=config_id,
-        start_date=normalized_start,
-        end_date=normalized_end,
-        strict_mode=strict_mode,
-        client=client
-    )
+            config_name=config_name,
+            config_id=config_id,  # Deprecated but kept for backward compatibility
+            start_date=normalized_start,
+            end_date=normalized_end,
+            strict_mode=strict_mode,
+            client=client
+        )
     
     # Handle missing series
     data_df = _handle_missing_series(

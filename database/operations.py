@@ -856,18 +856,18 @@ def get_vintage_data(
 
 
 def get_model_config_series_ids(
-    config_id: int,
+    config_name: str,
     client: Optional[Client] = None
 ) -> List[str]:
     """
     Get ordered list of series IDs for a model configuration.
     
-    Orders by model_block_assignments.block_index.
+    Orders by blocks.series_order.
     
     Parameters
     ----------
-    config_id : int
-        Model configuration ID
+    config_name : str
+        Model configuration name (e.g., '001-initial-spec')
     client : Client, optional
         Supabase client instance
         
@@ -876,22 +876,33 @@ def get_model_config_series_ids(
     List[str]
         Ordered list of series IDs
     """
+    client = ensure_client(client)
+    
     result = (
-        client.table(TABLES['model_block_assignments'])
+        client.table('blocks')
         .select('series_id')
-        .eq('config_id', config_id)
-        .order('block_index', desc=False)
+        .eq('config_name', config_name)
+        .order('series_order', desc=False)
         .execute()
     )
     
     if not result.data:
         return []
     
-    return [row['series_id'] for row in result.data]
+    # Return distinct series_ids in order
+    seen = set()
+    ordered_series = []
+    for row in result.data:
+        series_id = row['series_id']
+        if series_id not in seen:
+            seen.add(series_id)
+            ordered_series.append(series_id)
+    
+    return ordered_series
 
 
 def get_vintage_data_for_config(
-    config_id: int,
+    config_name: str,
     vintage_id: int,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
@@ -901,13 +912,13 @@ def get_vintage_data_for_config(
     """
     Get vintage data ordered by model configuration block assignments.
     
-    This function uses model_block_assignments.block_index to order series,
+    This function uses blocks.series_order to order series,
     ensuring proper block structure for DFM.
     
     Parameters
     ----------
-    config_id : int
-        Model configuration ID
+    config_name : str
+        Model configuration name (e.g., '001-initial-spec')
     vintage_id : int
         Vintage ID
     start_date : date, optional
@@ -922,13 +933,15 @@ def get_vintage_data_for_config(
     Returns
     -------
     Tuple[pd.DataFrame, pd.DatetimeIndex, pd.DataFrame, pd.DataFrame]
-        (X, Time, Z, series_metadata) ordered by block_index
+        (X, Time, Z, series_metadata) ordered by series_order
     """
-    # Get ordered series IDs from block assignments
-    config_series_ids = get_model_config_series_ids(config_id, client=client)
+    client = ensure_client(client)
+    
+    # Get ordered series IDs from blocks table
+    config_series_ids = get_model_config_series_ids(config_name, client=client)
     
     if not config_series_ids:
-        raise ValueError(f"No series assigned to config_id {config_id}")
+        raise ValueError(f"No series assigned to config_name {config_name}")
     
     # Get data with ordering
     X, Time, Z, series_metadata = get_vintage_data(
@@ -970,9 +983,21 @@ def save_model_config(
     return result.data[0] if result.data else None
 
 
-def load_model_config(config_name: str, client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
+def load_model_config(
+    config_name: Optional[str] = None,
+    config_id: Optional[int] = None,
+    client: Optional[Client] = None
+) -> Optional[Dict[str, Any]]:
+    """Load model configuration by config_name or config_id."""
+    client = ensure_client(client)
     
-    result = client.table(TABLES['model_configs']).select('*').eq('config_name', config_name).execute()
+    if config_name:
+        result = client.table(TABLES['model_configs']).select('*').eq('config_name', config_name).execute()
+    elif config_id:
+        result = client.table(TABLES['model_configs']).select('*').eq('config_id', config_id).execute()
+    else:
+        raise ValueError("Either config_name or config_id must be provided")
+    
     return result.data[0] if result.data else None
 
 
@@ -1588,7 +1613,8 @@ def load_data_from_db(
     vintage_id: Optional[int] = None,
     vintage_date: Optional[date] = None,
     config_series_ids: Optional[List[str]] = None,
-    config_id: Optional[int] = None,
+    config_name: Optional[str] = None,
+    config_id: Optional[int] = None,  # Deprecated: use config_name instead
     sample_start: Optional[Union[date, str, pd.Timestamp]] = None,
     strict_mode: bool = False,
     client: Optional[Client] = None
@@ -1606,9 +1632,11 @@ def load_data_from_db(
     vintage_date : date, optional
         Vintage date (alternative to vintage_id)
     config_series_ids : List[str], optional
-        List of series IDs to include (if None and config_id provided, uses config)
-    config_id : int, optional
-        Model configuration ID (uses block assignments for ordering)
+        List of series IDs to include (if None and config_name provided, uses config)
+    config_name : str, optional
+        Model configuration name (e.g., '001-initial-spec') - uses blocks table for ordering
+    config_id : int, optional, deprecated
+        Model configuration ID (deprecated: use config_name instead)
     sample_start : date, str, or Timestamp, optional
         Start date for estimation sample
     strict_mode : bool
@@ -1647,15 +1675,35 @@ def load_data_from_db(
             start_date = sample_start
     
     # Get data
-    if config_id:
-        # Use block-ordered data
+    if config_name:
+        # Use block-ordered data from blocks table
         X, Time, Z, _ = get_vintage_data_for_config(
-            config_id=config_id,
+            config_name=config_name,
             vintage_id=vintage_id,
             start_date=start_date,
             strict_mode=strict_mode,
             client=client
         )
+    elif config_id:
+        # Deprecated: try to get config_name from config_id
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("config_id is deprecated. Use config_name instead.")
+        # Try to get config_name from model_configs if it exists
+        try:
+            config = load_model_config(config_name=None, config_id=config_id, client=client)
+            if config and config.get('config_name'):
+                X, Time, Z, _ = get_vintage_data_for_config(
+                    config_name=config['config_name'],
+                    vintage_id=vintage_id,
+                    start_date=start_date,
+                    strict_mode=strict_mode,
+                    client=client
+                )
+            else:
+                raise ValueError(f"Could not find config_name for config_id {config_id}")
+        except Exception:
+            raise ValueError(f"config_id {config_id} is deprecated. Please use config_name instead.")
     else:
         # Use config_series_ids ordering
         X, Time, Z, _ = get_vintage_data(

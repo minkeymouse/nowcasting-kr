@@ -186,11 +186,11 @@ class DataIngestionOrchestrator:
                     finalize_ingestion_job(
                         vintage_id=vintage_id,
                         status='in_progress',
-                        total_series=total_series,
-                        successful_series=stats['successful'],
-                        failed_series=stats['failed'],
-                        client=self.client
-                    )
+                    total_series=total_series,
+                    successful_series=stats['successful'],
+                    failed_series=stats['failed'],
+                    client=self.client
+                )
         
         # Step 5: Finalize vintage
         finalize_ingestion_job(
@@ -427,7 +427,7 @@ class DataIngestionOrchestrator:
                 source_code=source_code,
                 stat_code=source.api_code,
                 series_name=source.name,
-                frequency=map_frequency_to_code(source.frequency),
+                    frequency=map_frequency_to_code(source.frequency),
                 item_code=source.item_code1,
                 api_source=source_code,
                 client=self.client
