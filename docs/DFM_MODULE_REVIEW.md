@@ -5,9 +5,10 @@
 ### ✅ DFM Module (`src/nowcasting/`) - Generic 확인
 
 #### 검증 결과
-- **데이터베이스 의존성 없음**: `src/nowcasting/` 내 모든 모듈에서 database, supabase, postgres 등 외부 의존성 없음
+- **데이터베이스 의존성 없음**: AST 파싱으로 확인 - `src/nowcasting/` 내 모든 모듈에서 실제 database import 없음 (주석만 존재)
 - **순수 알고리즘**: DFM 추정, Kalman filter, News decomposition 등 순수 통계 알고리즘만 포함
 - **설정 파일 독립**: CSV/YAML 파일만으로 동작 가능 (DB 불필요)
+- **검증 방법**: Python AST로 실제 import 문 분석 - 모든 모듈에서 database 관련 실제 import 없음 확인
 
 #### 모듈별 확인
 1. **`dfm.py`**: 
@@ -95,13 +96,15 @@
 
 ## 4. 데이터베이스 모듈 점검 결과 반영
 
-### ✅ ensure_client export 추가
-- **`database/__init__.py`**: `ensure_client` import 및 export 추가
-- **`__all__`**: `ensure_client` 포함
+### ✅ ensure_client export 추가 (완료)
+- **`database/__init__.py`**: `ensure_client` import 및 export 추가 완료
+- **`__all__`**: `ensure_client` 포함 완료
+- **검증**: `from database import ensure_client` 정상 작동 확인
 
 ### ✅ ImportError 해결
 - 모든 필요한 함수들이 `database/__init__.py`에서 export됨
 - `adapters/database.py`에서 정상 import 가능
+- AST 파싱으로 실제 import 확인 (주석만 있고 실제 import 없음)
 
 ### ⚠️ 최적화 권장 사항 (기능상 문제 없음)
 1. **`adapters/database.py`**: 
