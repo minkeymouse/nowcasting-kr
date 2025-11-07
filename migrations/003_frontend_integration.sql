@@ -603,3 +603,51 @@ COMMENT ON INDEX idx_factor_values_factor_date IS 'Index for optimizing latest_f
 COMMENT ON INDEX idx_observations_series_date IS 'Index for optimizing latest_observations_view queries';
 COMMENT ON INDEX idx_blocks_series_config IS 'Index for optimizing block_name lookups in views';
 
+-- ============================================================================
+-- PART 6: KPI Series View (Optional but useful for frontend)
+-- ============================================================================
+-- View for KPI series with latest observation values
+-- This provides a convenient way to fetch KPI series metadata and latest values
+
+DROP VIEW IF EXISTS latest_kpi_series_view CASCADE;
+CREATE VIEW latest_kpi_series_view
+WITH (security_invoker=true) AS
+SELECT 
+    s.series_id,
+    s.series_name,
+    s.units,
+    s.is_kpi,
+    s.frequency,
+    s.transformation,
+    s.category,
+    s.country,
+    -- Latest observation value and date
+    (
+        SELECT value 
+        FROM latest_observations_view 
+        WHERE series_id = s.series_id 
+        ORDER BY date DESC 
+        LIMIT 1
+    ) AS latest_value,
+    (
+        SELECT date 
+        FROM latest_observations_view 
+        WHERE series_id = s.series_id 
+        ORDER BY date DESC 
+        LIMIT 1
+    ) AS latest_date,
+    -- Block information
+    (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
+     FROM blocks b
+     WHERE b.series_id = s.series_id
+     AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = s.series_id)
+    ) AS block_names,
+    s.created_at,
+    s.updated_at
+FROM series s
+WHERE s.is_kpi = true
+  AND s.is_active = true
+ORDER BY s.series_name;
+
+COMMENT ON VIEW latest_kpi_series_view IS 'KPI series with latest observation values and metadata (for frontend dashboard)';
+
