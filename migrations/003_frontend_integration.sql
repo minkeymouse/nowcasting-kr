@@ -404,30 +404,104 @@ WHERE s.is_active = TRUE;
 COMMENT ON VIEW series_with_blocks IS 'Active series with their block information from the most recent config (from 002, ensured current)';
 
 -- ============================================================================
--- PART 4: Initial Data Cleanup (Run once)
+-- PART 4: Initial Data Cleanup (Run once - AGGRESSIVE CLEANUP)
 -- ============================================================================
+-- This section performs aggressive cleanup to reduce database size:
+-- 1. Keep only the LATEST training run (keep_latest_models=1)
+-- 2. Clean up old observations (keep only latest 2 vintages)
+-- 3. Clean up old forecasts
 
--- Cleanup old factors (keeps only latest 3 models)
+-- Step 1: Cleanup old factors (keeps only LATEST training run)
 -- This will delete old factors and cascade to factor_values and factor_loadings
 DO $$
 DECLARE
     cleanup_result RECORD;
+    before_count BIGINT;
+    after_count BIGINT;
 BEGIN
-    SELECT * INTO cleanup_result FROM cleanup_old_factors(3);
-    RAISE NOTICE 'Cleanup completed: Deleted % factors, % factor_values, % factor_loadings',
+    -- Count before cleanup
+    SELECT COUNT(*) INTO before_count FROM public.factors;
+    SELECT COUNT(*) INTO before_count FROM public.factor_values;
+    
+    -- Perform cleanup (keep only latest 1 training run)
+    SELECT * INTO cleanup_result FROM cleanup_old_factors(1);
+    
+    -- Count after cleanup
+    SELECT COUNT(*) INTO after_count FROM public.factors;
+    SELECT COUNT(*) INTO after_count FROM public.factor_values;
+    
+    RAISE NOTICE 'Factor cleanup completed: Deleted % factors, % factor_values, % factor_loadings',
         cleanup_result.deleted_factors,
         cleanup_result.deleted_factor_values,
         cleanup_result.deleted_factor_loadings;
+    RAISE NOTICE 'Factor values: Before % rows, After % rows (Deleted % rows)',
+        before_count, after_count, before_count - after_count;
 END;
 $$;
 
--- Cleanup old forecasts (keeps only latest 1 per series/date/run_type)
+-- Step 2: Cleanup old observations (keep only latest 2 vintages)
+-- This reduces observations table size significantly
+DO $$
+DECLARE
+    vintage_ids_to_keep INTEGER[];
+    vintage_ids_to_delete INTEGER[];
+    deleted_obs_count BIGINT := 0;
+    before_count BIGINT;
+    after_count BIGINT;
+BEGIN
+    -- Count before cleanup
+    SELECT COUNT(*) INTO before_count FROM public.observations;
+    
+    -- Get vintage_ids to keep (latest 2 vintages)
+    SELECT array_agg(vintage_id)
+    INTO vintage_ids_to_keep
+    FROM (
+        SELECT vintage_id
+        FROM public.data_vintages
+        ORDER BY vintage_date DESC
+        LIMIT 2
+    ) latest_vintages;
+    
+    -- Get vintage_ids to delete
+    SELECT array_agg(vintage_id)
+    INTO vintage_ids_to_delete
+    FROM public.data_vintages
+    WHERE vintage_id != ALL(COALESCE(vintage_ids_to_keep, ARRAY[]::INTEGER[]));
+    
+    -- Delete old observations
+    IF vintage_ids_to_delete IS NOT NULL AND array_length(vintage_ids_to_delete, 1) > 0 THEN
+        DELETE FROM public.observations
+        WHERE vintage_id = ANY(vintage_ids_to_delete);
+        
+        GET DIAGNOSTICS deleted_obs_count = ROW_COUNT;
+    END IF;
+    
+    -- Count after cleanup
+    SELECT COUNT(*) INTO after_count FROM public.observations;
+    
+    RAISE NOTICE 'Observation cleanup completed: Deleted % observations (Before: %, After: %)',
+        deleted_obs_count, before_count, after_count;
+END;
+$$;
+
+-- Step 3: Cleanup old forecasts (keeps only latest 1 per series/date/run_type)
 DO $$
 DECLARE
     deleted_count INTEGER;
+    before_count BIGINT;
+    after_count BIGINT;
 BEGIN
+    -- Count before cleanup
+    SELECT COUNT(*) INTO before_count FROM public.forecasts;
+    
+    -- Perform cleanup
     SELECT cleanup_old_forecasts(1) INTO deleted_count;
-    RAISE NOTICE 'Forecast cleanup completed: Deleted % old forecasts', deleted_count;
+    
+    -- Count after cleanup
+    SELECT COUNT(*) INTO after_count FROM public.forecasts;
+    
+    RAISE NOTICE 'Forecast cleanup completed: Deleted % old forecasts (Before: %, After: %)',
+        deleted_count, before_count, after_count;
 END;
 $$;
 
