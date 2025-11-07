@@ -1356,11 +1356,11 @@ def save_forecast(
         # Update existing forecast
         forecast_id = existing_result.data[0]['forecast_id']
         result = client.table(TABLES['forecasts']).update(data).eq('forecast_id', forecast_id).execute()
-        logger.debug(f"Updated existing forecast: forecast_id={forecast_id}, series={series_id}, date={forecast_date}")
+        logger.info(f"Updated existing forecast: forecast_id={forecast_id}, series={series_id}, date={forecast_date}, run_type={run_type}")
     else:
         # Insert new forecast
         result = client.table(TABLES['forecasts']).insert(data).execute()
-        logger.debug(f"Inserted new forecast: series={series_id}, date={forecast_date}")
+        logger.info(f"Inserted new forecast: series={series_id}, date={forecast_date}, run_type={run_type}")
     
     return result.data[0] if result.data else None
 
