@@ -36,15 +36,15 @@ logger = logging.getLogger(__name__)
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Load environment variables from .env file (local development only)
+# Load environment variables from .env.local file (local development only)
 # In GitHub Actions, environment variables come from secrets
 env_loaded = False
 
 if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
-    # Standard Python convention: use .env (not .env.local)
+    # Use .env.local for local development
     env_locations = [
-        project_root / '.env',
-        Path('.env'),  # Current directory
+        project_root / '.env.local',
+        Path('.env.local'),  # Current directory
     ]
     
     for env_path in env_locations:
@@ -62,7 +62,7 @@ elif not env_loaded and not HAS_DOTENV:
     env_loaded = True  # If no dotenv, we rely on system env vars
 
 if not env_loaded and HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
-    logger.warning("⚠️  .env file not found - using environment variables from system")
+    logger.warning("⚠️  .env.local file not found - using environment variables from system")
 
 import pandas as pd
 
