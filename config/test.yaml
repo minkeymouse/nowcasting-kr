@@ -18,11 +18,11 @@ model:
   # Block definitions with their factor dimensions
   blocks:
     Global:
-      factors: 3
+      factors: 2
     Investment:
-      factors: 2
+      factors: 1
     Consumption:
-      factors: 2
+      factors: 1
   
   # Optional: factors_per_block as list (auto-generated from blocks if null)
   factors_per_block: null  # Will be [1, 1, 1] from blocks above
