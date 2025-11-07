@@ -1892,9 +1892,14 @@ def save_factors_to_db(
         blocks = getattr(config, 'Blocks', None)
         
         # Delete existing factors for this model_id (cascade will delete factor_values and factor_loadings)
+        # This ensures we always have only the latest factors for each model_id
         try:
-            db_client.table('factors').delete().eq('model_id', model_id).execute()
-            logger.debug(f"Deleted existing factors for model_id={model_id}")
+            delete_result = db_client.table('factors').delete().eq('model_id', model_id).execute()
+            deleted_count = len(delete_result.data) if delete_result.data else 0
+            if deleted_count > 0:
+                logger.info(f"Deleted {deleted_count} existing factors for model_id={model_id} (replacing with new factors)")
+            else:
+                logger.debug(f"No existing factors found for model_id={model_id}")
         except Exception as e:
             logger.warning(f"Could not delete existing factors for model_id={model_id}: {e}")
         

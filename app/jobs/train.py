@@ -335,6 +335,7 @@ def main(cfg: DictConfig) -> None:
                 print(f'✅ Saved factors, factor_values, and factor_loadings to database for model_id={model_id}')
                 
                 # Cleanup old models (keep only latest 3)
+                # This prevents database from growing unbounded
                 try:
                     from app.adapters.adapter_database import cleanup_old_models
                     cleanup_result = cleanup_old_models(
@@ -342,11 +343,14 @@ def main(cfg: DictConfig) -> None:
                         client=db_client if db_client else get_db_client()
                     )
                     if cleanup_result['deleted_count'] > 0:
-                        print(f'Cleaned up old models: kept {len(cleanup_result["kept_models"])} latest, deleted {cleanup_result["deleted_count"]} old models')
-                        print(f'  (Deleted {cleanup_result["deleted_factors"]} factors, ~{cleanup_result["deleted_factor_values"]} factor_values, ~{cleanup_result["deleted_factor_loadings"]} factor_loadings)')
+                        print(f'✅ Cleaned up old models: kept {len(cleanup_result["kept_models"])} latest, deleted {cleanup_result["deleted_count"]} old models')
+                        print(f'   (Deleted {cleanup_result["deleted_factors"]} factors, ~{cleanup_result["deleted_factor_values"]} factor_values, ~{cleanup_result["deleted_factor_loadings"]} factor_loadings)')
                         logger.info(f"Cleaned up models: kept {len(cleanup_result['kept_models'])} latest, deleted {cleanup_result['deleted_count']}")
+                    else:
+                        print(f'✅ No cleanup needed: only {cleanup_result["total_models"]} model(s) found (keeping all)')
                 except Exception as cleanup_error:
-                    logger.warning(f"Failed to cleanup old models: {cleanup_error}")
+                    logger.error(f"Failed to cleanup old models: {cleanup_error}", exc_info=True)
+                    print(f'⚠️  Warning: Failed to cleanup old models: {cleanup_error}')
             else:
                 print(f'⚠️  Could not resolve vintage_id for {vintage}. Skipping factor save.')
         except ImportError:
