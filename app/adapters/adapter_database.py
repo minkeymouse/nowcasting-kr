@@ -1122,7 +1122,17 @@ def cleanup_old_model_weights(
             if updated_at:
                 try:
                     from datetime import datetime
-                    return datetime.fromisoformat(updated_at.replace('Z', '+00:00')).timestamp()
+                    # Handle different types: string, datetime, or already parsed
+                    if isinstance(updated_at, datetime):
+                        return updated_at.timestamp()
+                    elif isinstance(updated_at, str):
+                        if updated_at.endswith('Z'):
+                            return datetime.fromisoformat(updated_at.replace('Z', '+00:00')).timestamp()
+                        else:
+                            return datetime.fromisoformat(updated_at).timestamp()
+                    else:
+                        # Try to convert to datetime
+                        return pd.to_datetime(updated_at).timestamp()
                 except Exception:
                     pass
             
