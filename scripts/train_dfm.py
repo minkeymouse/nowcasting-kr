@@ -19,7 +19,7 @@ sys.path.insert(0, str(project_root))
 
 from dfm_python import load_data, dfm
 from src.utils import summarize
-from scripts.utils import load_model_config_from_hydra, get_db_client
+from scripts.utils import load_model_config_from_hydra, get_db_client, merge_factors_per_block_from_hydra
 import logging
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,6 @@ def main(cfg: DictConfig) -> None:
         logger.info("CSV config not found, trying Hydra YAML structure...")
         try:
             from dfm_python.config import DFMConfig
-            from omegaconf import OmegaConf
             
             # Combine series and model configs
             series_dict = OmegaConf.to_container(cfg.series, resolve=True) if hasattr(cfg, 'series') else {}
@@ -68,21 +67,8 @@ def main(cfg: DictConfig) -> None:
     
     # Merge model-level config from Hydra (factors_per_block from cfg.model.blocks)
     # CSV provides series info but NOT model-level config, so we need Hydra
-    model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
-    blocks_dict = model_dict.get('blocks', {})
-    if blocks_dict and isinstance(blocks_dict, dict):
-        # Extract factors_per_block from blocks dict: {'Global': {'factors': 3}, ...}
-        factors_per_block = []
-        for block_name, block_cfg in blocks_dict.items():
-            if isinstance(block_cfg, dict):
-                factors = block_cfg.get('factors', 1)
-            else:
-                factors = 1
-            factors_per_block.append(factors)
-        
-        if factors_per_block:
-            model_cfg.factors_per_block = factors_per_block
-            logger.info(f"Merged factors_per_block from Hydra model.blocks: {factors_per_block}")
+    if hasattr(cfg, 'model'):
+        merge_factors_per_block_from_hydra(model_cfg, cfg.model)
     
     # Merge DFM estimation parameters from Hydra into model config
     dfm_cfg_dict = OmegaConf.to_container(cfg.dfm, resolve=True)

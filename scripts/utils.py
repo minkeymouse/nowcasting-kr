@@ -245,6 +245,43 @@ def get_db_client():
         return get_client()
 
 
+def merge_factors_per_block_from_hydra(
+    model_cfg: ModelConfig,
+    cfg_model: DictConfig
+) -> None:
+    """Merge factors_per_block from Hydra config into model config.
+    
+    CSV provides series info but NOT model-level config (factors_per_block),
+    so we need to merge it from Hydra YAML config.
+    
+    Parameters
+    ----------
+    model_cfg : ModelConfig
+        Model configuration to update
+    cfg_model : DictConfig
+        Hydra model configuration dict containing blocks with factors
+    """
+    if not hasattr(cfg_model, '__class__'):
+        return
+    
+    model_dict = OmegaConf.to_container(cfg_model, resolve=True)
+    blocks_dict = model_dict.get('blocks', {})
+    
+    if blocks_dict and isinstance(blocks_dict, dict):
+        # Extract factors_per_block from blocks dict: {'Global': {'factors': 3}, ...}
+        factors_per_block = []
+        for block_name, block_cfg in blocks_dict.items():
+            if isinstance(block_cfg, dict):
+                factors = block_cfg.get('factors', 1)
+            else:
+                factors = 1
+            factors_per_block.append(factors)
+        
+        if factors_per_block:
+            model_cfg.factors_per_block = factors_per_block
+            logger.info(f"Merged factors_per_block from Hydra model.blocks: {factors_per_block}")
+
+
 def generate_forecasts(
     X: np.ndarray,
     Time: pd.DatetimeIndex,

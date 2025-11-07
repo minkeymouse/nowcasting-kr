@@ -24,7 +24,7 @@ sys.path.insert(0, str(project_root))
 
 from dfm_python import load_data, dfm, update_nowcast
 from adapters.adapter_database import load_data_from_db, save_nowcast_to_db
-from scripts.utils import load_model_config_from_hydra, get_db_client
+from scripts.utils import load_model_config_from_hydra, get_db_client, merge_factors_per_block_from_hydra
 
 # Configure logging
 logging.basicConfig(
@@ -61,7 +61,12 @@ def main(cfg: DictConfig) -> None:
     try:
         # Load model configuration with priority: CSV from DB storage → Hydra YAML
         # Application-specific: Try database storage first, then fallback to Hydra YAML
-        use_db_for_config = cfg.get('model', {}).get('use_db', True)
+        # Get use_db from model config, default to True
+        use_db_for_config = True
+        model_dict = None
+        if hasattr(cfg, 'model'):
+            model_dict = OmegaConf.to_container(cfg.model, resolve=True)
+            use_db_for_config = model_dict.get('use_db', True)
         try:
             model_cfg = load_model_config_from_hydra(
                 cfg.model,
@@ -73,7 +78,6 @@ def main(cfg: DictConfig) -> None:
             logger.info("CSV config not found, trying Hydra YAML structure...")
             try:
                 from dfm_python.config import DFMConfig
-                from omegaconf import OmegaConf
                 
                 # Combine series and model configs
                 series_dict = OmegaConf.to_container(cfg.series, resolve=True) if hasattr(cfg, 'series') else {}
@@ -96,21 +100,8 @@ def main(cfg: DictConfig) -> None:
         
         # Merge model-level config from Hydra (factors_per_block from cfg.model.blocks)
         # CSV provides series info but NOT model-level config, so we need Hydra
-        model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
-        blocks_dict = model_dict.get('blocks', {})
-        if blocks_dict and isinstance(blocks_dict, dict):
-            # Extract factors_per_block from blocks dict: {'Global': {'factors': 3}, ...}
-            factors_per_block = []
-            for block_name, block_cfg in blocks_dict.items():
-                if isinstance(block_cfg, dict):
-                    factors = block_cfg.get('factors', 1)
-                else:
-                    factors = 1
-                factors_per_block.append(factors)
-            
-            if factors_per_block:
-                model_cfg.factors_per_block = factors_per_block
-                logger.info(f"Merged factors_per_block from Hydra model.blocks: {factors_per_block}")
+        if hasattr(cfg, 'model'):
+            merge_factors_per_block_from_hydra(model_cfg, cfg.model)
         
         # Load data and DFM configs from Hydra
         data_cfg_dict = OmegaConf.to_container(cfg.data, resolve=True)
@@ -127,10 +118,11 @@ def main(cfg: DictConfig) -> None:
         if use_database and (not vintage_old or not vintage_new):
             try:
                 from database import get_latest_vintage_id, get_vintage
-                client = get_db_client()
-                latest_vintage_id = get_latest_vintage_id(client=client)
+                if db_client is None:
+                    db_client = get_db_client()
+                latest_vintage_id = get_latest_vintage_id(client=db_client)
                 if latest_vintage_id:
-                    vintage_info = get_vintage(vintage_id=latest_vintage_id, client=client)
+                    vintage_info = get_vintage(vintage_id=latest_vintage_id, client=db_client)
                     if vintage_info:
                         latest_vintage_date = vintage_info['vintage_date']
                         if not vintage_new:
@@ -184,7 +176,7 @@ def main(cfg: DictConfig) -> None:
                     model_weights_from_storage = download_model_weights_from_storage(
                         filename=model_filename,
                         bucket_name="model-weights",
-                        client=get_db_client()
+                        client=db_client if db_client else get_db_client()
                     )
                 
                 # Fallback to vintage-only file
@@ -193,7 +185,7 @@ def main(cfg: DictConfig) -> None:
                     model_weights_from_storage = download_model_weights_from_storage(
                         filename=model_filename,
                         bucket_name="model-weights",
-                        client=get_db_client()
+                        client=db_client if db_client else get_db_client()
                     )
                 
                 if model_weights_from_storage:
@@ -272,7 +264,7 @@ def main(cfg: DictConfig) -> None:
                         model_weights=model_weights,
                         filename=model_filename,
                         bucket_name="model-weights",
-                        client=get_db_client()
+                        client=db_client if db_client else get_db_client()
                     )
                     logger.info(f"Model weights uploaded to Supabase storage: {storage_url}")
                 except Exception as e:
@@ -289,8 +281,9 @@ def main(cfg: DictConfig) -> None:
                     if isinstance(vintage_new, int):
                         vintage_id_new = vintage_new
                     else:
-                        client = get_db_client()
-                        vintage_id_new = get_latest_vintage_id(vintage_date=vintage_new, client=client)
+                        if db_client is None:
+                            db_client = get_db_client()
+                        vintage_id_new = get_latest_vintage_id(vintage_date=vintage_new, client=db_client)
                     
                     if vintage_id_new:
                         save_factors_to_db(
@@ -299,7 +292,7 @@ def main(cfg: DictConfig) -> None:
                             config=model_cfg,
                             vintage_id=vintage_id_new,
                             Time=Time,
-                            client=get_db_client()
+                            client=db_client if db_client else get_db_client()
                         )
                         logger.info(f"Saved factors, factor_values, and factor_loadings to database for model_id={model_id}")
                     else:
