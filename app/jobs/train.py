@@ -333,6 +333,20 @@ def main(cfg: DictConfig) -> None:
                     client=db_client if db_client else get_db_client()
                 )
                 print(f'✅ Saved factors, factor_values, and factor_loadings to database for model_id={model_id}')
+                
+                # Cleanup old models (keep only latest 3)
+                try:
+                    from app.adapters.adapter_database import cleanup_old_models
+                    cleanup_result = cleanup_old_models(
+                        keep_latest=3,
+                        client=db_client if db_client else get_db_client()
+                    )
+                    if cleanup_result['deleted_count'] > 0:
+                        print(f'Cleaned up old models: kept {len(cleanup_result["kept_models"])} latest, deleted {cleanup_result["deleted_count"]} old models')
+                        print(f'  (Deleted {cleanup_result["deleted_factors"]} factors, ~{cleanup_result["deleted_factor_values"]} factor_values, ~{cleanup_result["deleted_factor_loadings"]} factor_loadings)')
+                        logger.info(f"Cleaned up models: kept {len(cleanup_result['kept_models'])} latest, deleted {cleanup_result['deleted_count']}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to cleanup old models: {cleanup_error}")
             else:
                 print(f'⚠️  Could not resolve vintage_id for {vintage}. Skipping factor save.')
         except ImportError:

@@ -1179,6 +1179,166 @@ def cleanup_old_model_weights(
         raise
 
 
+def cleanup_old_models(
+    keep_latest: int = 3,
+    client: Optional[object] = None
+) -> Dict[str, Any]:
+    """Clean up old models, keeping only the latest N model_ids.
+    
+    This deletes old factors, which cascades to factor_values and
+    factor_loadings via foreign key constraints.
+    
+    Parameters
+    ----------
+    keep_latest : int, default=3
+        Number of latest models to keep
+    client : object, optional
+        Supabase client. If None, will get from database module.
+    
+    Returns
+    -------
+    Dict[str, Any]
+        Dictionary with cleanup results:
+        - total_models: Total number of models found
+        - kept_models: List of model_ids kept
+        - deleted_models: List of model_ids deleted
+        - deleted_count: Number of models deleted
+        - deleted_factors: Number of factors deleted (cascade)
+        - deleted_factor_values: Estimated factor_values deleted
+        - deleted_factor_loadings: Estimated factor_loadings deleted
+    
+    Raises
+    ------
+    ImportError
+        If database module not available
+    Exception
+        If cleanup fails
+    """
+    try:
+        db_client = _get_db_client(client)
+        
+        # Get all unique model_ids with their latest creation time
+        # Use a subquery to get MAX(created_at) per model_id
+        factors_result = db_client.table('factors').select('model_id, created_at').execute()
+        
+        if not factors_result.data:
+            logger.debug("No factors found in database")
+            return {
+                'total_models': 0,
+                'kept_models': [],
+                'deleted_models': [],
+                'deleted_count': 0,
+                'deleted_factors': 0,
+                'deleted_factor_values': 0,
+                'deleted_factor_loadings': 0
+            }
+        
+        # Group by model_id and find latest created_at for each
+        from collections import defaultdict
+        from datetime import datetime
+        
+        model_ages = defaultdict(lambda: datetime.min)
+        for row in factors_result.data:
+            model_id = row['model_id']
+            created_at_str = row.get('created_at')
+            if created_at_str:
+                try:
+                    # Parse timestamp (handle both with and without timezone)
+                    if 'T' in created_at_str:
+                        if created_at_str.endswith('Z'):
+                            created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                        else:
+                            created_at = datetime.fromisoformat(created_at_str)
+                    else:
+                        created_at = datetime.fromisoformat(created_at_str)
+                    
+                    # Keep the latest timestamp for each model_id
+                    if created_at > model_ages[model_id]:
+                        model_ages[model_id] = created_at
+                except Exception as e:
+                    logger.warning(f"Could not parse created_at for model_id {model_id}: {e}")
+                    # Use current time as fallback
+                    model_ages[model_id] = datetime.now()
+        
+        # Convert to list of (model_id, latest_created_at) tuples
+        model_list = [(model_id, created_at) for model_id, created_at in model_ages.items()]
+        
+        if len(model_list) <= keep_latest:
+            logger.debug(f"Only {len(model_list)} models found, keeping all (limit: {keep_latest})")
+            return {
+                'total_models': len(model_list),
+                'kept_models': [model_id for model_id, _ in model_list],
+                'deleted_models': [],
+                'deleted_count': 0,
+                'deleted_factors': 0,
+                'deleted_factor_values': 0,
+                'deleted_factor_loadings': 0
+            }
+        
+        # Sort by created_at (newest first)
+        model_list.sort(key=lambda x: x[1], reverse=True)
+        
+        # Split into kept and deleted
+        models_to_keep = model_list[:keep_latest]
+        models_to_delete = model_list[keep_latest:]
+        
+        kept_model_ids = [model_id for model_id, _ in models_to_keep]
+        deleted_model_ids = [model_id for model_id, _ in models_to_delete]
+        
+        # Count factors that will be deleted (for reporting)
+        factors_to_delete = db_client.table('factors').select('id', count='exact').in_('model_id', deleted_model_ids).execute()
+        factor_count = factors_to_delete.count if hasattr(factors_to_delete, 'count') else 0
+        
+        # Estimate factor_values and factor_loadings that will be deleted
+        # (These will be deleted via CASCADE, so we estimate based on factors)
+        factor_ids_result = db_client.table('factors').select('id').in_('model_id', deleted_model_ids).execute()
+        factor_ids = [row['id'] for row in factor_ids_result.data] if factor_ids_result.data else []
+        
+        factor_values_count = 0
+        factor_loadings_count = 0
+        if factor_ids:
+            # Count factor_values
+            fv_result = db_client.table('factor_values').select('id', count='exact').in_('factor_id', factor_ids).execute()
+            factor_values_count = fv_result.count if hasattr(fv_result, 'count') else 0
+            
+            # Count factor_loadings
+            fl_result = db_client.table('factor_loadings').select('factor_id, series_id', count='exact').in_('factor_id', factor_ids).execute()
+            factor_loadings_count = fl_result.count if hasattr(fl_result, 'count') else 0
+        
+        # Delete old models (this will CASCADE to factor_values and factor_loadings)
+        deleted_count = 0
+        for model_id in deleted_model_ids:
+            try:
+                # Delete factors for this model_id (CASCADE will handle factor_values and factor_loadings)
+                db_client.table('factors').delete().eq('model_id', model_id).execute()
+                deleted_count += 1
+                logger.debug(f"Deleted factors for model_id={model_id} (cascade deleted factor_values and factor_loadings)")
+            except Exception as e:
+                logger.warning(f"Failed to delete factors for model_id={model_id}: {e}")
+        
+        logger.info(
+            f"Cleaned up old models: kept {len(kept_model_ids)} latest models, "
+            f"deleted {deleted_count} old models ({factor_count} factors, "
+            f"~{factor_values_count} factor_values, ~{factor_loadings_count} factor_loadings)"
+        )
+        
+        return {
+            'total_models': len(model_list),
+            'kept_models': kept_model_ids,
+            'deleted_models': deleted_model_ids,
+            'deleted_count': deleted_count,
+            'deleted_factors': factor_count,
+            'deleted_factor_values': factor_values_count,
+            'deleted_factor_loadings': factor_loadings_count
+        }
+        
+    except ImportError:
+        raise ImportError("Database module not available. Cannot cleanup models.")
+    except Exception as e:
+        logger.error(f"Failed to cleanup old models: {e}")
+        raise
+
+
 def csv_spec_to_hydra_config(
     config: DFMConfig,
     dfm_config_overrides: Optional[Dict[str, Any]] = None
