@@ -127,11 +127,11 @@ def _transform_series(z: np.ndarray, formula: str, freq: str, step: int) -> np.n
                 X[np.isinf(X)] = np.nan
         else:
             # For non-quarterly or default behavior, use fixed indices
-        idx = np.arange(t1, T, step)
-        if len(idx) > 1:
-            X[idx[0]] = np.nan
-            with np.errstate(divide='ignore', invalid='ignore'):
-                X[idx[1:]] = 100 * ((z[idx[1:]] / z[idx[:-1]]) ** (1/n) - 1)
+            idx = np.arange(t1, T, step)
+            if len(idx) > 1:
+                X[idx[0]] = np.nan
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    X[idx[1:]] = 100 * ((z[idx[1:]] / z[idx[:-1]]) ** (1/n) - 1)
             X[np.isinf(X)] = np.nan
     elif formula == 'log':
         with np.errstate(invalid='ignore'):
