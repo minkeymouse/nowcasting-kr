@@ -41,11 +41,10 @@ sys.path.insert(0, str(project_root))
 env_loaded = False
 
 if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
+    # Standard Python convention: use .env (not .env.local)
     env_locations = [
-        project_root / '.env.local',
-        Path('/home/minkeymouse/Nowcasting') / '.env.local',  # Main worktree
-        Path.home() / '.env.local',
-        Path('.env.local'),  # Current directory
+        project_root / '.env',
+        Path('.env'),  # Current directory
     ]
     
     for env_path in env_locations:
@@ -55,25 +54,15 @@ if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
             env_loaded = True
             break
 
-if not env_loaded:
-    # Try loading from current directory's .env.local if it exists
-    try:
-        load_dotenv('.env.local', override=True)
-        logger.info("✅ Loaded environment from current directory .env.local")
-        env_loaded = True
-    except:
-        pass
-elif os.getenv('GITHUB_ACTIONS'):
+if not env_loaded and os.getenv('GITHUB_ACTIONS'):
     logger.info("Running in GitHub Actions - using environment variables from secrets")
     env_loaded = True  # In GitHub Actions, we use secrets, so consider it "loaded"
-elif not HAS_DOTENV:
+elif not env_loaded and not HAS_DOTENV:
     logger.info("dotenv not available - using environment variables from system")
     env_loaded = True  # If no dotenv, we rely on system env vars
 
 if not env_loaded and HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
-    logger.warning("⚠️  .env.local not found in standard locations")
-    logger.warning("   Checked: project root, main worktree, home directory, current directory")
-    logger.warning("   Will use environment variables from system")
+    logger.warning("⚠️  .env file not found - using environment variables from system")
 
 import pandas as pd
 
