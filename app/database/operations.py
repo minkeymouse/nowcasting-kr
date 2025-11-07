@@ -102,10 +102,10 @@ def _transform_series(z: np.ndarray, formula: str, freq: str, step: int) -> np.n
                 X[idx[1:]] = 100 * (z[idx[1:]] / z[idx[:-1]] - 1)
         else:
             # For non-quarterly or default behavior, use fixed indices
-        idx = np.arange(t1, T, step)
-        if len(idx) > 1:
-            X[idx[0]] = np.nan
-            X[idx[1:]] = 100 * (z[idx[1:]] / z[idx[:-1]] - 1)
+            idx = np.arange(t1, T, step)
+            if len(idx) > 1:
+                X[idx[0]] = np.nan
+                X[idx[1:]] = 100 * (z[idx[1:]] / z[idx[:-1]] - 1)
     elif formula == 'pc1':
         idx = np.arange(12 + t1, T, step)
         if len(idx) > 0:
