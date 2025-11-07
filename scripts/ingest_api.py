@@ -161,7 +161,7 @@ def main() -> None:
     
     # Priority 2: Fallback to local file (for local development or if DB unavailable)
     if csv_df is None or csv_df.empty:
-    csv_path = project_root / 'src' / 'spec' / '001_initial_spec.csv'
+        csv_path = project_root / 'src' / 'spec' / '001_initial_spec.csv'
         if csv_path.exists():
             try:
                 csv_df = pd.read_csv(csv_path)
