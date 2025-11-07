@@ -107,18 +107,90 @@ def main() -> None:
     logger.info("Macroeconomic Forecasting Database Ingestion")
     logger.info("=" * 80)
     
-    # Load CSV specification (single source of truth)
-    csv_path = project_root / 'src' / 'spec' / '001_initial_spec.csv'
-    if not csv_path.exists():
-        logger.error(f"CSV specification file not found: {csv_path}")
-        print(f"❌ Error: CSV file not found: {csv_path}")
+    # Load CSV specification from database storage bucket (primary source)
+    # Fallback to local file only if database is unavailable
+    csv_df = None
+    spec_source = None
+    spec_filename = None
+    
+    # Priority 1: Load from database storage bucket
+    try:
+        from adapters.adapter_database import download_spec_csv_from_storage, get_latest_spec_csv_filename
+        from scripts.utils import get_db_client
+        
+        logger.info("Loading spec CSV from database storage bucket...")
+        client = get_db_client()
+        spec_filename = get_latest_spec_csv_filename("spec", client)
+        
+        if spec_filename:
+            logger.info(f"Found spec file in storage: {spec_filename}")
+            csv_content = download_spec_csv_from_storage(spec_filename, "spec", client)
+            
+            if csv_content:
+                import io
+                csv_df = pd.read_csv(io.BytesIO(csv_content))
+                spec_source = "database_storage"
+                print(f"\n📄 CSV file: {spec_filename} (from database storage)")
+                logger.info(f"✅ Loaded CSV specification from database storage: {spec_filename} ({len(csv_df)} series)")
+            else:
+                logger.warning(f"Spec file {spec_filename} found in storage but download returned empty content")
+        else:
+            logger.warning("No spec CSV files found in database storage bucket 'spec'")
+            
+    except ImportError as e:
+        logger.warning(f"Database adapter not available: {e}")
+    except Exception as e:
+        logger.warning(f"Failed to load spec from database storage: {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
+    
+    # Priority 2: Fallback to local file (for local development or if DB unavailable)
+    if csv_df is None or csv_df.empty:
+        csv_path = project_root / 'src' / 'spec' / '001_initial_spec.csv'
+        if csv_path.exists():
+            try:
+                csv_df = pd.read_csv(csv_path)
+                spec_source = "local_file"
+                print(f"\n📄 CSV file: {csv_path} (from local file)")
+                logger.info(f"✅ Loaded CSV specification from local file: {len(csv_df)} series")
+                logger.warning("⚠️  Using local spec file - database storage should be the primary source")
+            except Exception as e:
+                logger.error(f"Failed to load local spec file: {e}")
+                csv_df = None
+    
+    # Validate loaded CSV
+    if csv_df is None or csv_df.empty:
+        error_msg = (
+            f"\n❌ ERROR: Could not load CSV specification file\n"
+            f"   Tried sources:\n"
+            f"   1. Database storage bucket 'spec' (primary)\n"
+            f"   2. Local file: {project_root / 'src' / 'spec' / '001_initial_spec.csv'}\n\n"
+            f"   Solutions:\n"
+            f"   - Upload spec CSV to database storage bucket 'spec'\n"
+            f"   - Or ensure local spec file exists at: src/spec/001_initial_spec.csv\n"
+        )
+        logger.error(error_msg)
+        print(error_msg)
         sys.exit(1)
     
-    print(f"\n📄 CSV file: {csv_path}")
-    logger.info(f"CSV file: {csv_path}")
+    # Validate CSV structure
+    required_columns = ['api_source', 'data_code', 'item_id', 'series_name']
+    missing_columns = [col for col in required_columns if col not in csv_df.columns]
+    if missing_columns:
+        error_msg = (
+            f"\n❌ ERROR: CSV specification missing required columns: {missing_columns}\n"
+            f"   Required columns: {required_columns}\n"
+            f"   Found columns: {list(csv_df.columns)}\n"
+        )
+        logger.error(error_msg)
+        print(error_msg)
+        sys.exit(1)
     
-    # Load CSV
-    csv_df = pd.read_csv(csv_path)
+    if len(csv_df) == 0:
+        error_msg = "\n❌ ERROR: CSV specification file is empty\n"
+        logger.error(error_msg)
+        print(error_msg)
+        sys.exit(1)
     
     # Generate series_id from data_code, item_id, and api_source
     # Note: CSV 'id' column is just an index, not the actual series_id
