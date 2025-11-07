@@ -1345,7 +1345,23 @@ def save_forecast(
     if metadata_json is not None:
         data['metadata_json'] = metadata_json
     
-    result = client.table(TABLES['forecasts']).insert(data).execute()
+    # Check if forecast already exists for this model_id, series_id, forecast_date, run_type
+    # If exists, update it; otherwise insert
+    existing = client.table(TABLES['forecasts']).select('forecast_id').eq('model_id', model_id).eq('series_id', series_id).eq('forecast_date', forecast_date.isoformat())
+    if run_type:
+        existing = existing.eq('run_type', run_type)
+    existing_result = existing.execute()
+    
+    if existing_result.data:
+        # Update existing forecast
+        forecast_id = existing_result.data[0]['forecast_id']
+        result = client.table(TABLES['forecasts']).update(data).eq('forecast_id', forecast_id).execute()
+        logger.debug(f"Updated existing forecast: forecast_id={forecast_id}, series={series_id}, date={forecast_date}")
+    else:
+        # Insert new forecast
+        result = client.table(TABLES['forecasts']).insert(data).execute()
+        logger.debug(f"Inserted new forecast: series={series_id}, date={forecast_date}")
+    
     return result.data[0] if result.data else None
 
 
