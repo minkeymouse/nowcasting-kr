@@ -38,6 +38,8 @@ sys.path.insert(0, str(project_root))
 
 # Load environment variables from .env file (local development only)
 # In GitHub Actions, environment variables come from secrets
+env_loaded = False
+
 if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
     env_locations = [
         project_root / '.env.local',
@@ -45,14 +47,13 @@ if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
         Path.home() / '.env.local',
         Path('.env.local'),  # Current directory
     ]
-
-env_loaded = False
-for env_path in env_locations:
-    if env_path.exists():
-        load_dotenv(env_path, override=True)
-        logger.info(f"✅ Loaded environment from: {env_path}")
-        env_loaded = True
-        break
+    
+    for env_path in env_locations:
+        if env_path.exists():
+            load_dotenv(env_path, override=True)
+            logger.info(f"✅ Loaded environment from: {env_path}")
+            env_loaded = True
+            break
 
 if not env_loaded:
     # Try loading from current directory's .env.local if it exists
