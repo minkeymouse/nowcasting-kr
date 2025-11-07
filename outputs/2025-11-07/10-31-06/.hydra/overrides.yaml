@@ -1,5 +1,0 @@
-- model.config_path=src/spec/001_initial_spec.csv
-- data.use_database=false
-- data.data_path=/dev/null
-- dfm.max_iter=5
-- dfm.threshold=1e-3
