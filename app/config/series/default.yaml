@@ -10,7 +10,7 @@ series:
   BOK_200Y106_1400:
     series_name: "Real GDP (Quarterly)"
     frequency: "q"
-    transformation: "pca"
+    transformation: "log"  # Changed from 'pca' to 'log' to reduce RMSE (stabilizes variance for large-scale series)
     units: "Billion Won"
     category: "GDP"
     blocks: [Global]
