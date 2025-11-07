@@ -265,6 +265,20 @@ COMMENT ON VIEW latest_factor_values_view IS 'Latest factor values from the most
 DROP VIEW IF EXISTS latest_factor_loadings_view CASCADE;
 CREATE VIEW latest_factor_loadings_view
 WITH (security_invoker=true) AS
+WITH variable_blocks AS (
+    -- CTE to optimize variable block lookups (avoid repeated subqueries)
+    SELECT DISTINCT ON (b.series_id)
+        b.series_id,
+        b.block_name,
+        b.config_name
+    FROM blocks b
+    WHERE b.config_name = (
+        SELECT MAX(config_name) 
+        FROM blocks b2 
+        WHERE b2.series_id = b.series_id
+    )
+    ORDER BY b.series_id, b.config_name DESC
+)
 SELECT 
     fl.factor_id,
     fl.series_id,
@@ -280,31 +294,17 @@ SELECT
         ELSE abs(hashtext(f.block_name))::INTEGER
     END AS factor_block_id,
     s.series_name,
-    -- Variable (series) block name from blocks table (most recent config)
-    (SELECT DISTINCT b.block_name 
-     FROM blocks b
-     WHERE b.series_id = fl.series_id 
-     AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = fl.series_id)
-     LIMIT 1
-    ) AS variable_block_name,
+    -- Variable (series) block name from blocks table (most recent config) - optimized with CTE
+    vb.block_name AS variable_block_name,
     -- Variable block ID: hash of variable_block_name
     CASE 
-        WHEN (SELECT DISTINCT b.block_name 
-              FROM blocks b
-              WHERE b.series_id = fl.series_id 
-              AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = fl.series_id)
-              LIMIT 1) IS NULL THEN NULL
-        ELSE abs(hashtext(
-            (SELECT DISTINCT b.block_name 
-             FROM blocks b
-             WHERE b.series_id = fl.series_id 
-             AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = fl.series_id)
-             LIMIT 1)
-        ))::INTEGER
+        WHEN vb.block_name IS NULL THEN NULL
+        ELSE abs(hashtext(vb.block_name))::INTEGER
     END AS variable_block_id
 FROM factor_loadings fl
 JOIN factors f ON fl.factor_id = f.id
 JOIN series s ON fl.series_id = s.series_id
+LEFT JOIN variable_blocks vb ON fl.series_id = vb.series_id
 WHERE f.model_id = (
     SELECT model_id
     FROM factors
@@ -335,11 +335,14 @@ SELECT DISTINCT ON (f.series_id, f.forecast_date, f.run_type)
     f.vintage_id_new,
     f.metadata_json,
     f.created_at,
-    -- Block information
-    (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
-     FROM blocks b
-     WHERE b.series_id = f.series_id
-     AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = f.series_id)
+    -- Block information (NULL 대신 빈 배열 반환 보장)
+    COALESCE(
+        (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
+         FROM blocks b
+         WHERE b.series_id = f.series_id
+         AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = f.series_id)
+        ),
+        ARRAY[]::TEXT[]
     ) AS block_names
 FROM forecasts f
 JOIN series s ON f.series_id = s.series_id
@@ -395,11 +398,14 @@ SELECT
     s.category,
     s.country,
     s.is_active,
-    -- Block information from most recent config
-    (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
-     FROM blocks b
-     WHERE b.series_id = s.series_id
-     AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = s.series_id)
+    -- Block information from most recent config (NULL 대신 빈 배열 반환 보장)
+    COALESCE(
+        (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
+         FROM blocks b
+         WHERE b.series_id = s.series_id
+         AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = s.series_id)
+        ),
+        ARRAY[]::TEXT[]
     ) AS block_names,
     s.created_at,
     s.updated_at
