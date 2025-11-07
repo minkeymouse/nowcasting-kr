@@ -38,11 +38,11 @@ sys.path.insert(0, str(project_root))
 # In GitHub Actions, environment variables come from secrets
 if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
     env_locations = [
-    project_root / '.env.local',
-    Path('/home/minkeymouse/Nowcasting') / '.env.local',  # Main worktree
-    Path.home() / '.env.local',
-    Path('.env.local'),  # Current directory
-]
+        project_root / '.env.local',
+        Path('/home/minkeymouse/Nowcasting') / '.env.local',  # Main worktree
+        Path.home() / '.env.local',
+        Path('.env.local'),  # Current directory
+    ]
 
 env_loaded = False
 for env_path in env_locations:
