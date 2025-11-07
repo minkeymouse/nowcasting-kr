@@ -8,10 +8,9 @@ This is NOT forward nowcasting - it only nowcasts the current period (t=now).
 """
 
 import sys
-import os
 import logging
+import pickle
 from pathlib import Path
-from datetime import date, datetime
 from typing import Optional
 import hydra
 from omegaconf import DictConfig, OmegaConf
@@ -22,9 +21,9 @@ import numpy as np
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.nowcasting import load_data, dfm, update_nowcast, load_config, ModelConfig
+from src.nowcasting import load_data, dfm, update_nowcast
 from adapters.adapter_database import load_data_from_db, save_nowcast_to_db
-import pickle
+from scripts.utils import load_model_config_from_hydra, get_db_client
 
 # Configure logging
 logging.basicConfig(
@@ -32,121 +31,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-
-def load_model_config_from_hydra(
-    cfg_model: DictConfig,
-    use_db: bool = True,
-    script_path: Optional[Path] = None
-) -> ModelConfig:
-    """Load model configuration from database (latest) or CSV/YAML file.
-    
-    Application-specific config loader for Hydra workflows.
-    Priority: Database → CSV → YAML
-    
-    Parameters
-    ----------
-    cfg_model : DictConfig
-        Hydra model configuration dict
-    use_db : bool, default=True
-        Whether to try loading from database first
-    script_path : Path, optional
-        Path to the calling script (for relative path resolution)
-        If None, uses current working directory
-    
-    Returns
-    -------
-    ModelConfig
-        Loaded model configuration
-    
-    Raises
-    ------
-    FileNotFoundError
-        If config file is specified but not found
-    """
-    # Try database first (if enabled)
-    if use_db:
-        try:
-            from database import get_client, load_model_config
-            
-            client = get_client()
-            config_name = cfg_model.get('config_name', '001-initial-spec')
-            
-            db_config = load_model_config(config_name, client=client)
-            if db_config and 'config_json' in db_config:
-                config_dict = db_config['config_json']
-                if 'block_names' not in config_dict and 'block_names' in db_config:
-                    config_dict['block_names'] = db_config['block_names']
-                return ModelConfig.from_dict(config_dict)
-        except (ImportError, Exception):
-            pass  # Fall back to file
-    
-    # Load from CSV or YAML file
-    model_config_path = cfg_model.get('config_path')
-    if model_config_path:
-        config_file = Path(model_config_path)
-        
-        # Resolve relative paths
-        if not config_file.is_absolute():
-            # Start from script location or current directory
-            if script_path:
-                base_dir = script_path.parent.parent
-            else:
-                base_dir = Path.cwd()
-            
-            # Try multiple possible locations
-            search_paths = [
-                base_dir / model_config_path,  # Relative to project root
-                Path.cwd() / model_config_path,  # Relative to current dir
-            ]
-            
-            # Also try parent directories
-            for parent in [base_dir] + list(base_dir.parents):
-                search_paths.append(parent / model_config_path)
-            
-            # Find first existing path
-            for candidate in search_paths:
-                if candidate.exists():
-                    config_file = candidate
-                    break
-            else:
-                # If not found, use default location relative to script
-                if script_path:
-                    config_file = script_path.parent.parent / model_config_path
-                else:
-                    config_file = Path(model_config_path)
-        
-        if not config_file.exists():
-            raise FileNotFoundError(
-                f"Model config file not found: {config_file}\n"
-                f"Researchers should update: src/spec/001_initial_spec.csv"
-            )
-        
-        # Load config from file
-        model_config = load_config(config_file)
-        
-        # If loading from CSV and use_db is enabled, save blocks to database
-        if use_db and config_file.suffix.lower() == '.csv':
-            try:
-                from adapters.adapter_database import save_blocks_to_db
-                
-                # Derive config_name from CSV filename
-                # Example: '001_initial_spec.csv' → '001-initial-spec'
-                config_name = config_file.stem.replace('_', '-')
-                
-                # Save blocks to database
-                save_blocks_to_db(model_config, config_name)
-            except (ImportError, Exception) as e:
-                # Log warning but don't fail - block saving is optional
-                logger.warning(
-                    f"Could not save blocks to database for {config_file.name}: {e}. "
-                    f"Continuing without saving blocks."
-                )
-        
-        return model_config
-    else:
-        # Fallback to YAML config (convert DictConfig to dict, then to ModelConfig)
-        return ModelConfig.from_dict(OmegaConf.to_container(cfg_model, resolve=True))
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="defaults")
@@ -191,13 +75,14 @@ def main(cfg: DictConfig) -> None:
         use_database = data_cfg_dict.get('use_database', True)
         vintage_old = cfg.get('vintage_old') or data_cfg_dict.get('vintage_old')
         vintage_new = cfg.get('vintage_new') or data_cfg_dict.get('vintage_new') or data_cfg_dict.get('vintage')
+        threshold = dfm_cfg_dict.get('threshold', 1e-5)
+        max_iter = dfm_cfg_dict.get('max_iter', 5000)
         
         # If vintages not specified, use latest vintage for both (for testing)
         if use_database and (not vintage_old or not vintage_new):
             try:
                 from database import get_latest_vintage_id, get_vintage
-                from adapters.adapter_database import _get_db_client
-                client = _get_db_client()
+                client = get_db_client()
                 latest_vintage_id = get_latest_vintage_id(client=client)
                 if latest_vintage_id:
                     vintage_info = get_vintage(vintage_id=latest_vintage_id, client=client)
@@ -220,7 +105,6 @@ def main(cfg: DictConfig) -> None:
         
         series = cfg.get('series', data_cfg_dict.get('target_series', 'GDPC1'))
         period = cfg.get('period', data_cfg_dict.get('target_period', '2016q4'))
-        threshold = dfm_cfg_dict.get('threshold', 1e-5)
         config_id = data_cfg_dict.get('config_id')
         strict_mode = data_cfg_dict.get('strict_mode', False)
         
@@ -328,7 +212,7 @@ def main(cfg: DictConfig) -> None:
                     )
                 X, Time, Z = load_data(data_file, model_cfg)
             
-            Res = dfm(X, model_cfg, threshold=threshold)
+            Res = dfm(X, model_cfg, threshold=threshold, max_iter=max_iter)
             
             # Save model weights to model/ directory (not to database yet)
             if vintage_new:

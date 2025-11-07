@@ -11,129 +11,15 @@ from typing import Optional
 import sys
 import pandas as pd
 import pickle
+import numpy as np
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-from src.nowcasting import load_data, dfm, load_config, ModelConfig
+from src.nowcasting import load_data, dfm
 from src.utils import summarize
-
-
-def load_model_config_from_hydra(
-    cfg_model: DictConfig,
-    use_db: bool = True,
-    script_path: Optional[Path] = None
-) -> ModelConfig:
-    """Load model configuration from database (latest) or CSV/YAML file.
-    
-    Application-specific config loader for Hydra workflows.
-    Priority: Database → CSV → YAML
-    
-    Parameters
-    ----------
-    cfg_model : DictConfig
-        Hydra model configuration dict
-    use_db : bool, default=True
-        Whether to try loading from database first
-    script_path : Path, optional
-        Path to the calling script (for relative path resolution)
-        If None, uses current working directory
-    
-    Returns
-    -------
-    ModelConfig
-        Loaded model configuration
-    
-    Raises
-    ------
-    FileNotFoundError
-        If config file is specified but not found
-    """
-    # Try database first (if enabled)
-    if use_db:
-        try:
-            from database import get_client, load_model_config
-            
-            client = get_client()
-            config_name = cfg_model.get('config_name', '001-initial-spec')
-            
-            db_config = load_model_config(config_name, client=client)
-            if db_config and 'config_json' in db_config:
-                config_dict = db_config['config_json']
-                if 'block_names' not in config_dict and 'block_names' in db_config:
-                    config_dict['block_names'] = db_config['block_names']
-                return ModelConfig.from_dict(config_dict)
-        except (ImportError, Exception):
-            pass  # Fall back to file
-    
-    # Load from CSV or YAML file
-    model_config_path = cfg_model.get('config_path')
-    if model_config_path:
-        config_file = Path(model_config_path)
-        
-        # Resolve relative paths
-        if not config_file.is_absolute():
-            # Start from script location or current directory
-            if script_path:
-                base_dir = script_path.parent.parent
-            else:
-                base_dir = Path.cwd()
-            
-            # Try multiple possible locations
-            search_paths = [
-                base_dir / model_config_path,  # Relative to project root
-                Path.cwd() / model_config_path,  # Relative to current dir
-            ]
-            
-            # Also try parent directories
-            for parent in [base_dir] + list(base_dir.parents):
-                search_paths.append(parent / model_config_path)
-            
-            # Find first existing path
-            for candidate in search_paths:
-                if candidate.exists():
-                    config_file = candidate
-                    break
-            else:
-                # If not found, use default location relative to script
-                if script_path:
-                    config_file = script_path.parent.parent / model_config_path
-                else:
-                    config_file = Path(model_config_path)
-        
-        if not config_file.exists():
-            raise FileNotFoundError(
-                f"Model config file not found: {config_file}\n"
-                f"Researchers should update: src/spec/001_initial_spec.csv"
-            )
-        
-        # Load config from file
-        model_config = load_config(config_file)
-        
-        # If loading from CSV and use_db is enabled, save blocks to database
-        if use_db and config_file.suffix.lower() == '.csv':
-            try:
-                from adapters.adapter_database import save_blocks_to_db
-                
-                # Derive config_name from CSV filename
-                # Example: '001_initial_spec.csv' → '001-initial-spec'
-                config_name = config_file.stem.replace('_', '-')
-                
-                # Save blocks to database
-                save_blocks_to_db(model_config, config_name)
-            except (ImportError, Exception) as e:
-                # Log warning but don't fail - block saving is optional
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(
-                    f"Could not save blocks to database for {config_file.name}: {e}. "
-                    f"Continuing without saving blocks."
-                )
-        
-        return model_config
-    else:
-        # Fallback to YAML config (convert DictConfig to dict, then to ModelConfig)
-        return ModelConfig.from_dict(OmegaConf.to_container(cfg_model, resolve=True))
+from scripts.utils import load_model_config_from_hydra, get_db_client
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="defaults")
@@ -168,6 +54,7 @@ def main(cfg: DictConfig) -> None:
     config_id = data_cfg_dict.get('config_id')
     strict_mode = data_cfg_dict.get('strict_mode', False)
     threshold = dfm_cfg_dict.get('threshold', 1e-5)
+    max_iter = dfm_cfg_dict.get('max_iter', 5000)
     
     # Load data
     if use_database:
@@ -178,8 +65,7 @@ def main(cfg: DictConfig) -> None:
         if vintage is None:
             try:
                 from database import get_latest_vintage_id
-                from adapters.adapter_database import _get_db_client
-                client = _get_db_client()
+                client = get_db_client()
                 latest_vintage_id = get_latest_vintage_id(client=client)
                 if latest_vintage_id:
                     print(f"   Using latest vintage_id: {latest_vintage_id}")
@@ -198,9 +84,8 @@ def main(cfg: DictConfig) -> None:
                 config_name = config_file.stem.replace('_', '-')
                 # Check if blocks table has data for this config_name
                 try:
-                    from adapters.adapter_database import _get_db_client
                     from database.helpers import get_series_ids_for_config
-                    client = _get_db_client()
+                    client = get_db_client()
                     series_ids = get_series_ids_for_config(config_name, client=client)
                     if not series_ids:
                         # No blocks data, don't use config_name
@@ -241,8 +126,50 @@ def main(cfg: DictConfig) -> None:
     # Summarize data
     summarize(X, Time, model_cfg, vintage)
     
+    # Pre-flight data validation
+    print(f"\n{'='*70}")
+    print("Data Validation")
+    print(f"{'='*70}\n")
+    
+    # Check data completeness
+    total_obs = X.shape[0] * X.shape[1]
+    finite_obs = np.sum(np.isfinite(X))
+    completeness_pct = (finite_obs / total_obs * 100) if total_obs > 0 else 0.0
+    print(f"Data completeness: {finite_obs}/{total_obs} ({completeness_pct:.1f}%)")
+    
+    # Check minimum observations per series
+    min_obs = 20
+    insufficient = [(model_cfg.SeriesID[i], np.sum(np.isfinite(X[:, i]))) 
+                     for i in range(len(model_cfg.SeriesID))
+                     if np.sum(np.isfinite(X[:, i])) < min_obs]
+    
+    if insufficient:
+        print(f"⚠️  {len(insufficient)} series have <{min_obs} observations:")
+        for series_id, count in insufficient[:5]:
+            print(f"   - {series_id}: {count} obs")
+        if len(insufficient) > 5:
+            print(f"   ... and {len(insufficient) - 5} more")
+    
+    # Block coverage summary
+    if hasattr(model_cfg, 'block_names') and model_cfg.block_names:
+        blocks = np.array([[s.blocks[i] if hasattr(s, 'blocks') and i < len(s.blocks) else 0
+                          for i in range(len(model_cfg.block_names))] 
+                         for s in model_cfg.series])
+        print(f"\nBlock coverage:")
+        for i, block_name in enumerate(model_cfg.block_names):
+            block_series = np.where(blocks[:, i] == 1)[0]
+            if len(block_series) > 0:
+                block_obs = np.sum(np.isfinite(X[:, block_series]), axis=0)
+                print(f"   {block_name}: {len(block_series)} series, "
+                      f"obs: {np.min(block_obs)}-{np.max(block_obs)} (avg {np.mean(block_obs):.0f})")
+    
+    if completeness_pct < 50.0:
+        print(f"\n⚠️  Warning: Low data completeness may affect estimation")
+    
+    print(f"{'='*70}\n")
+    
     # Run DFM estimation
-    Res = dfm(X, model_cfg, threshold=threshold)
+    Res = dfm(X, model_cfg, threshold=threshold, max_iter=max_iter)
     
     # Save results to pickle file
     output_dir = Path(cfg.get('output_dir', '.'))

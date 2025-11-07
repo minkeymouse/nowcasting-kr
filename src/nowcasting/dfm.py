@@ -505,9 +505,21 @@ def init_conditions(x: np.ndarray, r: np.ndarray, p: int, blocks: np.ndarray,
                 res_block = res[:, idx_iM].copy()
                 # Remove rows with any NaN (np.cov doesn't handle NaN)
                 finite_rows = np.all(np.isfinite(res_block), axis=1)
-                if np.sum(finite_rows) < 2:
+                n_finite = np.sum(finite_rows)
+                n_total = len(finite_rows)
+                completeness_pct = (n_finite / n_total * 100) if n_total > 0 else 0.0
+                
+                # Check minimum data requirements
+                min_obs_required = max(2, len(idx_iM) + 1)  # Need at least n+1 observations for n series
+                if n_finite < min_obs_required:
                     # Not enough finite data - use identity
-                    raise ValueError("Insufficient finite data for covariance")
+                    _logger.warning(
+                        f"init_conditions: Block {i+1} has insufficient data for covariance calculation. "
+                        f"Series in block: {len(idx_iM)}, Finite observations: {n_finite}/{n_total} "
+                        f"({completeness_pct:.1f}%), Required: {min_obs_required}. "
+                        f"Using identity matrix as fallback."
+                    )
+                    raise ValueError(f"Insufficient finite data: {n_finite} < {min_obs_required}")
                 
                 res_block_clean = res_block[finite_rows, :]
                 cov_res = np.cov(res_block_clean.T)
@@ -515,18 +527,23 @@ def init_conditions(x: np.ndarray, r: np.ndarray, p: int, blocks: np.ndarray,
                 # Check for NaN/Inf in covariance
                 if np.any(np.isnan(cov_res)) or np.any(np.isinf(cov_res)):
                     # Replace with identity if covariance invalid
+                    _logger.warning(
+                        f"init_conditions: Block {i+1} covariance contains NaN/Inf values. "
+                        f"Series in block: {len(idx_iM)}, Finite observations: {n_finite}/{n_total}. "
+                        f"Using identity matrix as fallback."
+                    )
                     cov_res = np.eye(len(idx_iM))
-                # Check for constant series (zero variance)
+                # Check for constant series (zero variance) and regularize
                 var_diag = np.diag(cov_res)
                 if np.any(var_diag < 1e-10):
-                    # Add small regularization
                     cov_res = cov_res + np.eye(len(idx_iM)) * 1e-8
             except (ValueError, np.linalg.LinAlgError) as e:
                 # Covariance calculation failed - use identity as fallback
                 # This can happen with insufficient data or numerical issues
                 _logger.warning(
-                    f"init_conditions: Covariance calculation failed for block {i+1}, "
-                    f"using identity matrix as fallback. Error: {type(e).__name__}"
+                    f"init_conditions: Covariance calculation failed for block {i+1}. "
+                    f"Series in block: {len(idx_iM)}, Series indices: {idx_iM.tolist()}. "
+                    f"Error: {type(e).__name__}: {str(e)}. Using identity matrix as fallback."
                 )
                 cov_res = np.eye(len(idx_iM))
             
@@ -1914,7 +1931,7 @@ def em_step(y: np.ndarray, A: np.ndarray, C: np.ndarray, Q: np.ndarray,
     return C_new, R_new, A_new, Q_new, Z_0, V_0_new, loglik
 
 
-def dfm(X: np.ndarray, config, threshold: float = 1e-5) -> DFMResult:
+def dfm(X: np.ndarray, config, threshold: float = 1e-5, max_iter: Optional[int] = None) -> DFMResult:
     """Estimate dynamic factor model using EM algorithm.
     
     This is the main function for estimating a Dynamic Factor Model (DFM). It implements
@@ -1955,6 +1972,9 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5) -> DFMResult:
         |loglik_current - loglik_previous| / avg(|loglik_current|, |loglik_previous|) < threshold.
         Smaller values require more iterations but provide more precise convergence.
         Typical range: 1e-5 to 1e-3.
+    max_iter : int, optional
+        Maximum EM iterations (default 5000). If None, uses 5000.
+        For testing, use smaller values like 10-20.
         
     Returns
     -------
@@ -2054,7 +2074,9 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5) -> DFMResult:
     ])
     q = np.zeros(4)
     
-    max_iter = 5000
+    # Use provided max_iter or default to 5000
+    if max_iter is None:
+        max_iter = 5000
     
     # Prepare data
     Mx = np.nanmean(X, axis=0)
@@ -2069,32 +2091,9 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5) -> DFMResult:
         xNaN, r, p, blocks, optNaN, R_mat, q, nQ, i_idio
     )
     
-    # Diagnostic check: Verify initial conditions are valid
-    init_params = {'A': A, 'C': C, 'Q': Q, 'R': R, 'Z_0': Z_0, 'V_0': V_0}
-    for param_name, param_value in init_params.items():
-        nan_count = np.sum(np.isnan(param_value)) if param_value.size > 0 else 0
-        inf_count = np.sum(np.isinf(param_value)) if param_value.size > 0 else 0
-        if nan_count > 0 or inf_count > 0:
-            print(f"  WARNING: Initial {param_name} contains {nan_count} NaN, {inf_count} Inf")
-            # Parameters should have been cleaned in init_conditions, but check anyway
-            if param_name in ['A', 'Q', 'V_0']:
-                param_value = np.nan_to_num(param_value, nan=0.0, posinf=1e6, neginf=-1e6)
-                param_value = 0.5 * (param_value + param_value.T)
-                param_value = param_value + np.eye(param_value.shape[0]) * 1e-8
-                if param_name == 'A':
-                    A = param_value
-                elif param_name == 'Q':
-                    Q = param_value
-                elif param_name == 'V_0':
-                    V_0 = param_value
-            elif param_name == 'R':
-                R_diag = np.diag(param_value)
-                R_diag = np.where((np.isnan(R_diag)) | (np.isinf(R_diag)) | (R_diag < 1e-6), 1e-4, R_diag)
-                R = np.diag(R_diag)
-            elif param_name == 'C':
-                C = np.nan_to_num(C, nan=0.0, posinf=1.0, neginf=-1.0)
-            elif param_name == 'Z_0':
-                Z_0 = np.zeros_like(Z_0)
+    # Verify initial conditions are valid (should already be cleaned by init_conditions)
+    if np.any(~np.isfinite(A)) or np.any(~np.isfinite(C)) or np.any(~np.isfinite(Q)) or np.any(~np.isfinite(R)):
+        _logger.warning("Initial conditions contain NaN/Inf - this should not happen after init_conditions()")
     
     # Initialize EM loop
     previous_loglik = -np.inf

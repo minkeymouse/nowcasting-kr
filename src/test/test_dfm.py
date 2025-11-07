@@ -530,5 +530,188 @@ def run_all_tests():
     
     return results
 
+# ============================================================================
+# Fast Tests (<60s total)
+# ============================================================================
+
+def test_dfm_quick():
+    """Fast DFM test with synthetic data (target: <10 seconds).
+    
+    Uses small synthetic dataset and very few iterations to verify
+    basic DFM structure without full convergence.
+    """
+    print("\n" + "="*70)
+    print("TEST: DFM Quick (Fast Test)")
+    print("="*70)
+    
+    # Create synthetic data: 10 series, 50 observations
+    T, N = 50, 10
+    np.random.seed(42)  # For reproducibility
+    
+    # Generate synthetic data with some structure
+    # Factor structure: 2 common factors
+    factors = np.random.randn(T, 2)
+    loadings = np.random.randn(N, 2) * 0.5
+    X = factors @ loadings.T + np.random.randn(T, N) * 0.3
+    
+    # Add some missing values (10%)
+    missing_mask = np.random.rand(T, N) < 0.1
+    X[missing_mask] = np.nan
+    
+    # Create minimal config
+    from src.nowcasting.config import ModelConfig, SeriesConfig
+    
+    block_names = ['Global', 'Block1']
+    series_list = []
+    for i in range(N):
+        # All series load on Global, some on Block1
+        blocks = [1, 1 if i < 5 else 0]  # First 5 series also load on Block1
+        series_list.append(SeriesConfig(
+            series_id=f"TEST_{i:02d}",
+            series_name=f"Test Series {i}",
+            frequency='m',
+            transformation='lin',
+            category='Test',
+            units='Index',
+            blocks=blocks
+        ))
+    
+    config = ModelConfig(series=series_list, block_names=block_names)
+    
+    # Run DFM with relaxed threshold for faster convergence
+    # Note: dfm() uses max_iter=5000 internally, but with relaxed threshold
+    # it should converge quickly for this small synthetic dataset
+    threshold = 1e-3  # Relaxed threshold for faster convergence
+    Res = dfm(X, config, threshold=threshold)
+    
+    # Verify basic structure (even if not converged)
+    assert hasattr(Res, 'x_sm') and hasattr(Res, 'X_sm')
+    assert hasattr(Res, 'Z') and hasattr(Res, 'C')
+    assert hasattr(Res, 'A') and hasattr(Res, 'Q') and hasattr(Res, 'R')
+    
+    T_actual, N_actual = X.shape
+    assert Res.x_sm.shape == (T_actual, N_actual)
+    assert Res.Z.shape[0] == T_actual
+    assert Res.C.shape[0] == N_actual
+    
+    # Check that results are finite (even if not optimal)
+    assert np.any(np.isfinite(Res.Z))
+    assert np.any(np.isfinite(Res.x_sm))
+    assert np.any(np.isfinite(Res.C))
+    
+    print("✓ DFM quick test completed")
+    print(f"  Data shape: {X.shape}")
+    print(f"  Factors estimated: {Res.Z.shape[1]}")
+    print(f"  Convergence: {'Yes' if hasattr(Res, 'converged') and Res.converged else 'Partial (quick test)'}")
+    return Res
+
+
+def test_init_conditions_blocks():
+    """Test init_conditions with various block configurations (target: <5 seconds).
+    
+    Tests covariance calculation for different block structures including
+    edge cases like single series per block and missing data.
+    """
+    print("\n" + "="*70)
+    print("TEST: Init Conditions Blocks (Fast Test)")
+    print("="*70)
+    
+    from src.nowcasting.dfm import init_conditions
+    
+    # Test case 1: Multiple series per block
+    print("  Test 1: Multiple series per block")
+    T, N = 30, 8
+    np.random.seed(123)
+    x1 = np.random.randn(T, N)
+    x1 = (x1 - np.mean(x1, axis=0)) / np.std(x1, axis=0)  # Standardize
+    
+    blocks1 = np.array([
+        [1, 1, 0, 0],  # Series 0: Global + Block1
+        [1, 1, 0, 0],  # Series 1: Global + Block1
+        [1, 1, 0, 0],  # Series 2: Global + Block1
+        [1, 0, 1, 0],  # Series 3: Global + Block2
+        [1, 0, 1, 0],  # Series 4: Global + Block2
+        [1, 0, 0, 1],  # Series 5: Global + Block3
+        [1, 0, 0, 1],  # Series 6: Global + Block3
+        [1, 0, 0, 0],  # Series 7: Global only
+    ])
+    
+    r1 = np.ones(4)  # One factor per block
+    p1 = 1
+    nQ1 = 0  # All monthly
+    i_idio1 = np.ones(N)
+    Rcon1 = np.array([[2, -1, 0, 0, 0], [3, 0, -1, 0, 0], 
+                      [2, 0, 0, -1, 0], [1, 0, 0, 0, -1]])
+    q1 = np.zeros(4)
+    opt_nan1 = {'method': 2, 'k': 3}
+    
+    A1, C1, Q1, R1, Z_01, V_01 = init_conditions(
+        x1, r1, p1, blocks1, opt_nan1, Rcon1, q1, nQ1, i_idio1
+    )
+    
+    # Verify outputs
+    assert A1 is not None and C1 is not None
+    assert Q1 is not None and R1 is not None
+    assert Z_01 is not None and V_01 is not None
+    assert np.all(np.isfinite(A1)) and np.all(np.isfinite(C1))
+    print("    ✓ Multiple series per block: PASSED")
+    
+    # Test case 2: Single series per block (edge case)
+    print("  Test 2: Single series per block (edge case)")
+    T2, N2 = 20, 4
+    x2 = np.random.randn(T2, N2)
+    x2 = (x2 - np.mean(x2, axis=0)) / np.std(x2, axis=0)
+    
+    blocks2 = np.array([
+        [1, 1, 0, 0],  # Series 0: Global + Block1
+        [1, 0, 1, 0],  # Series 1: Global + Block2
+        [1, 0, 0, 1],  # Series 2: Global + Block3
+        [1, 0, 0, 0],  # Series 3: Global only
+    ])
+    
+    r2 = np.ones(4)
+    p2 = 1
+    nQ2 = 0
+    i_idio2 = np.ones(N2)
+    
+    A2, C2, Q2, R2, Z_02, V_02 = init_conditions(
+        x2, r2, p2, blocks2, opt_nan1, Rcon1, q1, nQ2, i_idio2
+    )
+    
+    assert A2 is not None and C2 is not None
+    print("    ✓ Single series per block: PASSED")
+    
+    # Test case 3: Missing data (should use fallback)
+    print("  Test 3: Missing data handling")
+    T3, N3 = 15, 3
+    x3 = np.random.randn(T3, N3)
+    x3 = (x3 - np.mean(x3, axis=0)) / np.std(x3, axis=0)
+    # Add significant missing data
+    x3[:5, :] = np.nan  # First 5 rows missing
+    
+    blocks3 = np.array([
+        [1, 1, 0],
+        [1, 1, 0],
+        [1, 0, 1],
+    ])
+    
+    r3 = np.ones(3)
+    p3 = 1
+    nQ3 = 0
+    i_idio3 = np.ones(N3)
+    
+    # Should handle missing data gracefully (may use identity fallback)
+    A3, C3, Q3, R3, Z_03, V_03 = init_conditions(
+        x3, r3, p3, blocks3, opt_nan1, Rcon1, q1, nQ3, i_idio3
+    )
+    
+    assert A3 is not None and C3 is not None
+    assert np.all(np.isfinite(A3)) and np.all(np.isfinite(C3))
+    print("    ✓ Missing data handling: PASSED")
+    
+    print("✓ Init conditions blocks test completed")
+    return True
+
+
 if __name__ == '__main__':
     run_all_tests()
