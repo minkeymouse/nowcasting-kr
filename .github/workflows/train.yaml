@@ -18,6 +18,13 @@ on:
         required: false
         default: 'default'
         type: string
+  push:
+    paths:
+      - 'scripts/train_dfm.py'
+      - 'config/**/*.yaml'
+    branches:
+      - main
+      - master
 
 jobs:
   train:
@@ -51,6 +58,44 @@ jobs:
         run: |
           echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
           echo "SUPABASE_SECRET_KEY=$SUPABASE_SECRET_KEY" >> $GITHUB_ENV
+      
+      - name: Wait for latest vintage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          source .venv/bin/activate
+          python -c "
+          from database import get_latest_vintage_id, get_vintage
+          from scripts.utils import get_db_client
+          import time
+          
+          client = get_db_client()
+          max_wait = 300  # 5 minutes
+          wait_interval = 10  # 10 seconds
+          waited = 0
+          
+          while waited < max_wait:
+              vintage_id = get_latest_vintage_id(status='completed', client=client)
+              if not vintage_id:
+                  vintage_id = get_latest_vintage_id(status='partial', client=client)
+              
+              if vintage_id:
+                  vintage_info = get_vintage(vintage_id=vintage_id, client=client)
+                  if vintage_info:
+                      status = vintage_info.get('fetch_status', 'unknown')
+                      if status in ['completed', 'partial']:
+                          print(f'✅ Found vintage {vintage_id} with status: {status}')
+                          exit(0)
+              
+              print(f'Waiting for vintage... ({waited}s/{max_wait}s)')
+              time.sleep(wait_interval)
+              waited += wait_interval
+          
+          print('⚠️  No completed/partial vintage found after waiting')
+          exit(0)  # Don't fail, just continue
+          "
+        continue-on-error: true
       
       - name: Train DFM model
         env:

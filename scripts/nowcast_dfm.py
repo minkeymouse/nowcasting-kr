@@ -24,7 +24,12 @@ sys.path.insert(0, str(project_root))
 
 from dfm_python import load_data, dfm, update_nowcast
 from adapters.adapter_database import load_data_from_db, save_nowcast_to_db
-from scripts.utils import load_model_config_from_hydra, get_db_client, merge_factors_per_block_from_hydra
+from scripts.utils import (
+    load_model_config_with_hydra_fallback,
+    get_db_client,
+    get_latest_vintage_with_fallback,
+    extract_hydra_config_dicts
+)
 
 # Configure logging
 logging.basicConfig(
@@ -60,52 +65,22 @@ def main(cfg: DictConfig) -> None:
     
     try:
         # Load model configuration with priority: CSV from DB storage → Hydra YAML
-        # Application-specific: Try database storage first, then fallback to Hydra YAML
-        # Get use_db from model config, default to True
         use_db_for_config = True
-        model_dict = None
         if hasattr(cfg, 'model'):
-            model_dict = OmegaConf.to_container(cfg.model, resolve=True)
-            use_db_for_config = model_dict.get('use_db', True)
-        try:
-            model_cfg = load_model_config_from_hydra(
-                cfg.model,
-                use_db=use_db_for_config,
-                script_path=Path(__file__)
-            )
-        except (ValueError, FileNotFoundError) as e:
-            # If CSV loading fails, try Hydra YAML structure
-            logger.info("CSV config not found, trying Hydra YAML structure...")
-            try:
-                from dfm_python.config import DFMConfig
-                
-                # Combine series and model configs
-                series_dict = OmegaConf.to_container(cfg.series, resolve=True) if hasattr(cfg, 'series') else {}
-                model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
-                
-                # Merge: series from cfg.series.series, blocks from cfg.model.blocks
-                combined_dict = {
-                    'series': series_dict.get('series', {}),
-                    'blocks': model_dict.get('blocks', {}),
-                    'block_names': model_dict.get('block_names', None),
-                    'factors_per_block': model_dict.get('factors_per_block', None)
-                }
-                
-                # Try loading from combined structure
-                model_cfg = DFMConfig.from_dict(combined_dict)
-                logger.info("✅ Loaded config from Hydra YAML structure")
-            except Exception as e2:
-                logger.error(f"Failed to load config from CSV storage and Hydra YAML: {e2}")
-                raise
+            model_dicts = extract_hydra_config_dicts(cfg, sections=['model'])
+            model_dict = model_dicts.get('model', {})
+            use_db_for_config = model_dict.get('use_db', True) if model_dict else True
         
-        # Merge model-level config from Hydra (factors_per_block from cfg.model.blocks)
-        # CSV provides series info but NOT model-level config, so we need Hydra
-        if hasattr(cfg, 'model'):
-            merge_factors_per_block_from_hydra(model_cfg, cfg.model)
+        model_cfg = load_model_config_with_hydra_fallback(
+            cfg,
+            script_path=Path(__file__),
+            use_db=use_db_for_config
+        )
         
-        # Load data and DFM configs from Hydra
-        data_cfg_dict = OmegaConf.to_container(cfg.data, resolve=True)
-        dfm_cfg_dict = OmegaConf.to_container(cfg.dfm, resolve=True)
+        # Extract config dicts
+        config_dicts = extract_hydra_config_dicts(cfg, sections=['data', 'dfm'])
+        data_cfg_dict = config_dicts['data']
+        dfm_cfg_dict = config_dicts['dfm']
         
         # Extract settings
         use_database = data_cfg_dict.get('use_database', True)
@@ -117,20 +92,20 @@ def main(cfg: DictConfig) -> None:
         # If vintages not specified, use latest vintage for both (for testing)
         if use_database and (not vintage_old or not vintage_new):
             try:
-                from database import get_latest_vintage_id, get_vintage
                 if db_client is None:
                     db_client = get_db_client()
-                latest_vintage_id = get_latest_vintage_id(client=db_client)
-                if latest_vintage_id:
-                    vintage_info = get_vintage(vintage_id=latest_vintage_id, client=db_client)
-                    if vintage_info:
-                        latest_vintage_date = vintage_info['vintage_date']
-                        if not vintage_new:
-                            vintage_new = latest_vintage_date
-                        if not vintage_old:
-                            # Use same vintage for both (for testing - in production should use different vintages)
-                            vintage_old = latest_vintage_date
-                        logger.info(f"Using latest vintage: {latest_vintage_date} (ID: {latest_vintage_id})")
+                result = get_latest_vintage_with_fallback(client=db_client)
+                if result:
+                    latest_vintage_id, vintage_info = result
+                    latest_vintage_date = vintage_info['vintage_date']
+                    if not vintage_new:
+                        vintage_new = latest_vintage_date
+                    if not vintage_old:
+                        # Use same vintage for both (for testing - in production should use different vintages)
+                        vintage_old = latest_vintage_date
+                    logger.info(f"Using latest vintage: {latest_vintage_date} (ID: {latest_vintage_id})")
+                else:
+                    logger.warning("No vintage found in database. Run ingest_api.py first.")
             except Exception as e:
                 logger.warning(f"Could not get latest vintage: {e}")
         
@@ -165,6 +140,7 @@ def main(cfg: DictConfig) -> None:
         
         # Try loading from Supabase storage first (primary source for latest weights)
         model_weights_from_storage = None
+        model_weights_found = False
         if use_database and vintage_new:
             try:
                 from adapters.adapter_database import download_model_weights_from_storage
@@ -190,9 +166,11 @@ def main(cfg: DictConfig) -> None:
                 
                 if model_weights_from_storage:
                     logger.info(f"✅ Loaded model weights from Supabase storage: {model_filename}")
+                    model_weights_found = True
                     # Note: We still need full Res for nowcasting, so we'll estimate if ResDFM.pkl not available
                 else:
-                    logger.info("No model weights found in storage bucket, will check local files or re-estimate")
+                    logger.warning(f"⚠️  No model weights found in storage for vintage {vintage_new}")
+                    logger.info("Will check local files or re-estimate model")
             except ImportError:
                 logger.debug("Supabase storage not available, trying local files...")
             except Exception as e:
@@ -222,6 +200,12 @@ def main(cfg: DictConfig) -> None:
         
         # Re-estimate if not found
         if Res is None:
+            if not model_weights_found and use_database:
+                logger.warning(
+                    "⚠️  No model weights found in storage and ResDFM.pkl not available. "
+                    "Will re-estimate model, but this may take time. "
+                    "Consider running train_dfm.py first to generate model weights."
+                )
             logger.info('Estimating DFM model...')
             
             if use_database:

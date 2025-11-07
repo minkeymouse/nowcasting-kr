@@ -14,6 +14,7 @@ from .adapter_database import (
     export_data_to_csv,
     upload_model_weights_to_storage,
     download_model_weights_from_storage,
+    upload_spec_csv_to_storage,
     download_spec_csv_from_storage,
     csv_spec_to_hydra_config,
 )
@@ -27,6 +28,7 @@ __all__ = [
     'export_data_to_csv',
     'upload_model_weights_to_storage',
     'download_model_weights_from_storage',
+    'upload_spec_csv_to_storage',
     'download_spec_csv_from_storage',
     'list_spec_csv_files_from_storage',
     'get_latest_spec_csv_filename',

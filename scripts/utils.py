@@ -245,6 +245,136 @@ def get_db_client():
         return get_client()
 
 
+def get_latest_vintage_with_fallback(
+    client: Optional[Any] = None,
+    allow_partial: bool = True
+) -> Optional[tuple[int, dict]]:
+    """Get latest vintage ID with fallback from 'completed' to 'partial'.
+    
+    Parameters
+    ----------
+    client : Client, optional
+        Database client. If None, will get from get_db_client()
+    allow_partial : bool, default=True
+        If True, fallback to 'partial' status if no 'completed' vintage found
+    
+    Returns
+    -------
+    tuple[int, dict] or None
+        (vintage_id, vintage_info) if found, None otherwise
+    """
+    from database import get_latest_vintage_id, get_vintage
+    
+    if client is None:
+        client = get_db_client()
+    
+    # Try 'completed' first
+    vintage_id = get_latest_vintage_id(status='completed', client=client)
+    if not vintage_id and allow_partial:
+        vintage_id = get_latest_vintage_id(status='partial', client=client)
+        if vintage_id:
+            logger.warning(f"Using 'partial' vintage {vintage_id} (no 'completed' vintage found)")
+    
+    if vintage_id:
+        vintage_info = get_vintage(vintage_id=vintage_id, client=client)
+        if vintage_info:
+            return vintage_id, vintage_info
+    
+    return None
+
+
+def load_model_config_with_hydra_fallback(
+    cfg: DictConfig,
+    script_path: Optional[Path] = None,
+    use_db: bool = True
+) -> ModelConfig:
+    """Load model config with CSV → Hydra YAML fallback.
+    
+    Consolidated config loading logic used by train_dfm.py and nowcast_dfm.py.
+    
+    Parameters
+    ----------
+    cfg : DictConfig
+        Full Hydra configuration
+    script_path : Path, optional
+        Path to calling script for relative path resolution
+    use_db : bool, default=True
+        Whether to try loading from database storage first
+    
+    Returns
+    -------
+    ModelConfig
+        Loaded model configuration
+    
+    Raises
+    ------
+    ValueError
+        If config cannot be loaded from any source
+    """
+    # Try loading from CSV (DB storage or local)
+    try:
+        use_db_for_config = use_db
+        if hasattr(cfg, 'model'):
+            model_dict = OmegaConf.to_container(cfg.model, resolve=True)
+            use_db_for_config = model_dict.get('use_db', use_db)
+        
+        model_cfg = load_model_config_from_hydra(
+            cfg.model,
+            use_db=use_db_for_config,
+            script_path=script_path
+        )
+    except (ValueError, FileNotFoundError):
+        # Fallback to Hydra YAML structure
+        logger.info("CSV config not found, trying Hydra YAML structure...")
+        from dfm_python.config import DFMConfig
+        
+        series_dict = OmegaConf.to_container(cfg.series, resolve=True) if hasattr(cfg, 'series') else {}
+        model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
+        
+        combined_dict = {
+            'series': series_dict.get('series', {}),
+            'blocks': model_dict.get('blocks', {}),
+            'block_names': model_dict.get('block_names', None),
+            'factors_per_block': model_dict.get('factors_per_block', None)
+        }
+        
+        model_cfg = DFMConfig.from_dict(combined_dict)
+        logger.info("✅ Loaded config from Hydra YAML structure")
+    
+    # Merge factors_per_block from Hydra if available
+    if hasattr(cfg, 'model'):
+        merge_factors_per_block_from_hydra(model_cfg, cfg.model)
+    
+    return model_cfg
+
+
+def extract_hydra_config_dicts(
+    cfg: DictConfig,
+    sections: list[str] = ['data', 'dfm']
+) -> dict[str, dict]:
+    """Extract and convert Hydra config sections to dictionaries.
+    
+    Parameters
+    ----------
+    cfg : DictConfig
+        Full Hydra configuration
+    sections : list[str]
+        List of config sections to extract (default: ['data', 'dfm'])
+    
+    Returns
+    -------
+    dict[str, dict]
+        Dictionary mapping section names to their config dicts
+    """
+    result = {}
+    for section in sections:
+        if hasattr(cfg, section):
+            result[section] = OmegaConf.to_container(getattr(cfg, section), resolve=True)
+        else:
+            result[section] = {}
+    return result
+
+
 def merge_factors_per_block_from_hydra(
     model_cfg: ModelConfig,
     cfg_model: DictConfig

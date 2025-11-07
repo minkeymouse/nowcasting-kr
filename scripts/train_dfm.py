@@ -19,7 +19,12 @@ sys.path.insert(0, str(project_root))
 
 from dfm_python import load_data, dfm
 from src.utils import summarize
-from scripts.utils import load_model_config_from_hydra, get_db_client, merge_factors_per_block_from_hydra
+from scripts.utils import (
+    load_model_config_with_hydra_fallback,
+    get_db_client,
+    get_latest_vintage_with_fallback,
+    extract_hydra_config_dicts
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -37,49 +42,18 @@ def main(cfg: DictConfig) -> None:
         python train_dfm.py --multirun dfm.threshold=1e-5,1e-4,1e-3  # Sweep
     """
     # Load model configuration with priority: CSV from DB storage → Hydra YAML
-    # Application-specific: Try database storage first, then fallback to Hydra YAML
-    try:
-        model_cfg = load_model_config_from_hydra(cfg.model, script_path=Path(__file__))
-    except (ValueError, FileNotFoundError) as e:
-        # If CSV loading fails, try Hydra YAML structure
-        logger.info("CSV config not found, trying Hydra YAML structure...")
-        try:
-            from dfm_python.config import DFMConfig
-            
-            # Combine series and model configs
-            series_dict = OmegaConf.to_container(cfg.series, resolve=True) if hasattr(cfg, 'series') else {}
-            model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
-            
-            # Merge: series from cfg.series.series, blocks from cfg.model.blocks
-            combined_dict = {
-                'series': series_dict.get('series', {}),
-                'blocks': model_dict.get('blocks', {}),
-                'block_names': model_dict.get('block_names', None),
-                'factors_per_block': model_dict.get('factors_per_block', None)
-            }
-            
-            # Try loading from combined structure
-            model_cfg = DFMConfig.from_dict(combined_dict)
-            logger.info("✅ Loaded config from Hydra YAML structure")
-        except Exception as e2:
-            logger.error(f"Failed to load config from CSV storage and Hydra YAML: {e2}")
-            raise
+    model_cfg = load_model_config_with_hydra_fallback(cfg, script_path=Path(__file__))
     
-    # Merge model-level config from Hydra (factors_per_block from cfg.model.blocks)
-    # CSV provides series info but NOT model-level config, so we need Hydra
-    if hasattr(cfg, 'model'):
-        merge_factors_per_block_from_hydra(model_cfg, cfg.model)
+    # Extract and merge config dicts
+    config_dicts = extract_hydra_config_dicts(cfg, sections=['data', 'dfm'])
+    data_cfg_dict = config_dicts['data']
+    dfm_cfg_dict = config_dicts['dfm']
     
     # Merge DFM estimation parameters from Hydra into model config
-    dfm_cfg_dict = OmegaConf.to_container(cfg.dfm, resolve=True)
     if dfm_cfg_dict:
-        # Update model_cfg with estimation parameters from Hydra
         for key in ['ar_lag', 'threshold', 'max_iter', 'nan_method', 'nan_k']:
             if key in dfm_cfg_dict and dfm_cfg_dict[key] is not None:
                 setattr(model_cfg, key, dfm_cfg_dict[key])
-    
-    # Load data config (use OmegaConf directly, no Pydantic classes needed)
-    data_cfg_dict = OmegaConf.to_container(cfg.data, resolve=True)
     
     print(f"\n{'='*70}")
     print(f"DFM Estimation - Experiment: {cfg.get('experiment_name', 'default')}")
@@ -112,13 +86,13 @@ def main(cfg: DictConfig) -> None:
         # Use latest vintage if not specified
         if vintage is None:
             try:
-                from database import get_latest_vintage_id
                 if db_client is None:
                     db_client = get_db_client()
-                latest_vintage_id = get_latest_vintage_id(client=db_client)
-                if latest_vintage_id:
+                result = get_latest_vintage_with_fallback(client=db_client)
+                if result:
+                    latest_vintage_id, vintage_info = result
                     print(f"   Using latest vintage_id: {latest_vintage_id}")
-                    vintage = latest_vintage_id  # Use vintage_id instead
+                    vintage = latest_vintage_id
                 else:
                     raise ValueError("No vintage available in database")
             except Exception as e:
@@ -217,6 +191,36 @@ def main(cfg: DictConfig) -> None:
     
     if completeness_pct < 50.0:
         print(f"\n⚠️  Warning: Low data completeness may affect estimation")
+    
+    # Validate minimum data requirements before estimation
+    # Check if we have enough series with sufficient data
+    series_with_data = sum(1 for i in range(X.shape[1]) if np.sum(np.isfinite(X[:, i])) >= 20)
+    min_series_required = max(3, len(model_cfg.block_names))  # At least 3 series or number of blocks
+    
+    if series_with_data < min_series_required:
+        error_msg = (
+            f"\n❌ ERROR: Insufficient data for DFM estimation\n"
+            f"   Series with ≥20 observations: {series_with_data}\n"
+            f"   Minimum required: {min_series_required}\n"
+            f"   Data completeness: {completeness_pct:.1f}%\n\n"
+            f"Possible solutions:\n"
+            f"  1. Use a different vintage that has more data\n"
+            f"  2. Check why series are missing from vintage {vintage}\n"
+            f"  3. Reduce the number of series in the config\n"
+            f"  4. Run data ingestion to populate missing series\n"
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    # Check if any series have data (to avoid empty array issues)
+    if series_with_data == 0:
+        error_msg = (
+            f"\n❌ ERROR: No series have sufficient data\n"
+            f"   All {X.shape[1]} series have <20 observations\n"
+            f"   Cannot estimate DFM model\n"
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
     print(f"{'='*70}\n")
     

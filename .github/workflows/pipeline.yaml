@@ -1,17 +1,30 @@
-name: Data Ingestion
+name: Full Pipeline
 
 on:
   workflow_dispatch:
     inputs:
-      spec_file:
-        description: 'Spec CSV file path (relative to src/spec/)'
+      config_name:
+        description: 'Hydra config name (e.g., default, test)'
         required: false
-        default: '001_initial_spec.csv'
+        default: 'default'
+        type: string
+      series_config:
+        description: 'Series config name (e.g., default, test_series)'
+        required: false
+        default: 'default'
+        type: string
+      max_iter:
+        description: 'Maximum EM iterations for training'
+        required: false
+        default: '100'
         type: string
   push:
     paths:
       - 'scripts/ingest_api.py'
+      - 'scripts/train_dfm.py'
+      - 'scripts/nowcast_dfm.py'
       - 'src/spec/**/*.csv'
+      - 'config/**/*.yaml'
     branches:
       - main
       - master
@@ -60,7 +73,6 @@ jobs:
         run: |
           source .venv/bin/activate
           python scripts/ingest_api.py
-        continue-on-error: false
       
       - name: Upload spec CSV to storage
         if: success()
@@ -116,14 +128,108 @@ jobs:
               print('⚠️  No vintage found')
           "
         continue-on-error: true
+
+  train:
+    needs: ingest
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       
-      - name: Upload logs on failure
-        if: failure()
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv venv .venv
+          source .venv/bin/activate
+          uv pip install -e .[hydra,database]
+          uv pip install hydra-core>=1.3.0 omegaconf>=2.3.0
+      
+      - name: Load environment variables
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
+          echo "SUPABASE_SECRET_KEY=$SUPABASE_SECRET_KEY" >> $GITHUB_ENV
+      
+      - name: Train DFM model
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          source .venv/bin/activate
+          python scripts/train_dfm.py \
+            --config-name=${{ inputs.config_name || 'default' }} \
+            series=${{ inputs.series_config || 'default' }} \
+            "data.use_database=true" \
+            "data.strict_mode=false" \
+            "dfm.max_iter=${{ inputs.max_iter || '100' }}"
+      
+      - name: Upload model weights
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ingestion-logs
+          name: model-weights
           path: |
-            *.log
-            outputs/**/*.log
-          retention-days: 7
+            ResDFM.pkl
+            *.pkl
+          retention-days: 30
+
+  nowcast:
+    needs: train
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv venv .venv
+          source .venv/bin/activate
+          uv pip install -e .[hydra,database]
+          uv pip install hydra-core>=1.3.0 omegaconf>=2.3.0
+      
+      - name: Download model weights
+        uses: actions/download-artifact@v4
+        with:
+          name: model-weights
+          path: .
+        continue-on-error: true
+      
+      - name: Load environment variables
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
+          echo "SUPABASE_SECRET_KEY=$SUPABASE_SECRET_KEY" >> $GITHUB_ENV
+      
+      - name: Run nowcasting
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          source .venv/bin/activate
+          python scripts/nowcast_dfm.py \
+            --config-name=${{ inputs.config_name || 'default' }} \
+            series=${{ inputs.series_config || 'default' }} \
+            data.use_database=true \
+            data.strict_mode=false
 

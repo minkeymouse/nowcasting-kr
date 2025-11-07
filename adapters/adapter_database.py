@@ -1231,6 +1231,72 @@ def get_latest_spec_csv_filename(
         return None
 
 
+def upload_spec_csv_to_storage(
+    file_path: str,
+    filename: Optional[str] = None,
+    bucket_name: str = "spec",
+    client: Optional[object] = None
+) -> str:
+    """Upload spec CSV file to Supabase storage.
+    
+    Parameters
+    ----------
+    file_path : str
+        Path to local CSV file to upload
+    filename : str, optional
+        Filename in storage (default: basename of file_path)
+    bucket_name : str, default="spec"
+        Supabase storage bucket name for spec files
+    client : object, optional
+        Supabase client. If None, will get from database module.
+    
+    Returns
+    -------
+    str
+        Public URL of uploaded file (if public) or path
+    
+    Raises
+    ------
+    ImportError
+        If database module not available
+    Exception
+        If upload fails
+    """
+    try:
+        db_client = _get_db_client(client)
+        
+        # Read file content
+        with open(file_path, 'rb') as f:
+            file_content = f.read()
+        
+        # Use provided filename or basename
+        if filename is None:
+            filename = Path(file_path).name
+        
+        # Upload to Supabase storage
+        response = db_client.storage.from_(bucket_name).upload(
+            path=filename,
+            file=file_content,
+            file_options={"content-type": "text/csv", "upsert": "true"}
+        )
+        
+        logger.info(f"Uploaded spec CSV to storage: {bucket_name}/{filename}")
+        
+        # Get public URL
+        try:
+            public_url = db_client.storage.from_(bucket_name).get_public_url(filename)
+            return public_url
+        except Exception:
+            # If public URL not available, return path
+            return f"{bucket_name}/{filename}"
+            
+    except ImportError:
+        raise ImportError("Database module not available. Cannot upload to storage.")
+    except Exception as e:
+        logger.error(f"Failed to upload spec CSV to storage: {e}")
+        raise
+
+
 def download_spec_csv_from_storage(
     filename: str,
     bucket_name: str = "spec",

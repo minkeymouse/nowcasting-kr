@@ -23,6 +23,12 @@ on:
         required: false
         default: ''
         type: string
+  push:
+    paths:
+      - 'scripts/nowcast_dfm.py'
+    branches:
+      - main
+      - master
 
 jobs:
   nowcast:
@@ -54,6 +60,44 @@ jobs:
         with:
           name: model-weights
           path: .
+        continue-on-error: true
+      
+      - name: Check for model weights in storage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          source .venv/bin/activate
+          python -c "
+          from adapters.adapter_database import download_model_weights_from_storage
+          from database import get_latest_vintage_id, get_vintage
+          from scripts.utils import get_db_client
+          
+          client = get_db_client()
+          vintage_id = get_latest_vintage_id(status='completed', client=client)
+          if not vintage_id:
+              vintage_id = get_latest_vintage_id(status='partial', client=client)
+          
+          if vintage_id:
+              vintage_info = get_vintage(vintage_id=vintage_id, client=client)
+              if vintage_info:
+                  vintage_date = vintage_info.get('vintage_date', '')
+                  model_filename = f'dfm_{vintage_date}.pkl'
+                  weights = download_model_weights_from_storage(
+                      filename=model_filename,
+                      bucket_name='model-weights',
+                      client=client
+                  )
+                  if weights:
+                      print(f'✅ Found model weights: {model_filename}')
+                  else:
+                      print(f'⚠️  Model weights not found: {model_filename}')
+                      print('   Will re-estimate model if needed')
+              else:
+                  print('⚠️  Could not retrieve vintage info')
+          else:
+              print('⚠️  No vintage found')
+          "
         continue-on-error: true
       
       - name: Load environment variables
