@@ -1,26 +1,25 @@
 -- ============================================================================
 -- Migration: 003_cleanup_unused_schema.sql
--- Purpose: Remove unused schema elements identified in code review
+-- Purpose: Clean up unused schema elements identified in code review
 -- 
 -- This migration:
--- 1. Drops legacy series_with_groups view (replaced by series_with_blocks in 002)
--- 2. Keeps model_configs and trained_models tables as optional (handled gracefully in code)
+-- 1. Notes: series_with_groups view is kept (for API fetching optimization via api_group_id)
+-- 2. Notes: series_with_blocks view is for DFM block structure (different purpose)
+-- 3. Keeps model_configs and trained_models tables as optional (handled gracefully in code)
 -- 
--- This is an incremental migration that only removes unused elements.
--- It does NOT drop or modify existing tables.
+-- Note: series_with_groups and series_with_blocks serve different purposes:
+--   - series_with_groups: API optimization (grouping by api_group_id = {api_source}_{data_code})
+--   - series_with_blocks: DFM model structure (block assignments from blocks table)
+-- 
+-- This is an incremental migration that documents schema usage.
+-- It does NOT drop or modify existing tables/views.
 -- This migration is idempotent and can be run multiple times safely.
 -- ============================================================================
 
--- ============================================================================
--- Drop Legacy Views
--- ============================================================================
-
--- Drop series_with_groups view (replaced by series_with_blocks in migration 002)
-DROP VIEW IF EXISTS series_with_groups CASCADE;
-
-COMMENT ON VIEW series_with_groups IS 'DEPRECATED: Replaced by series_with_blocks view in migration 002';
-
--- Note: variable_values_view is kept as it may be used by frontend
--- Note: model_configs and trained_models tables are not created as they are optional
---       and code handles their absence gracefully
+-- No schema changes needed at this time.
+-- Both series_with_groups (API optimization) and series_with_blocks (DFM structure) are kept.
+-- 
+-- Future improvements:
+-- - Consider populating api_group_id in series table for API fetching optimization
+-- - Consider using series_with_groups view for batch API fetching
 
