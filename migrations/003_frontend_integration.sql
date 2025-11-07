@@ -6,11 +6,39 @@
 -- 1. Creates optimized views for frontend (latest data only)
 -- 2. Adds cleanup functions for old data
 -- 3. Cleans up existing data to keep only latest models
+-- 4. Removes unused tables and views from previous migrations
 -- 
 -- This is an incremental migration that adds views and functions.
--- It does NOT drop or modify existing tables.
+-- It also cleans up unused objects from previous migrations.
 -- This migration is idempotent and can be run multiple times safely.
 -- ============================================================================
+
+-- ============================================================================
+-- PART -1: Cleanup Unused Tables and Views
+-- ============================================================================
+-- Remove tables and views that were created in previous migrations but are no longer used
+
+-- Drop unused tables (these were dropped in 001 but may still exist in some databases)
+DROP TABLE IF EXISTS trained_models CASCADE;
+DROP TABLE IF EXISTS model_configs CASCADE;
+DROP TABLE IF EXISTS series_groups CASCADE;
+DROP TABLE IF EXISTS model_block_assignments CASCADE;
+DROP TABLE IF EXISTS forecast_runs CASCADE;
+DROP TABLE IF EXISTS ingestion_jobs CASCADE;
+DROP TABLE IF EXISTS data_sources CASCADE;
+DROP TABLE IF EXISTS api_fetches CASCADE;
+DROP TABLE IF EXISTS statistics_items CASCADE;
+DROP TABLE IF EXISTS statistics_metadata CASCADE;
+
+-- Drop unused/duplicate views
+-- series_with_groups (001) was replaced by series_with_blocks (002)
+DROP VIEW IF EXISTS series_with_groups CASCADE;
+-- model_training_history was never created but was dropped in 001
+DROP VIEW IF EXISTS model_training_history CASCADE;
+-- variable_values_view may not be used (check if needed)
+-- Keeping it for now as it might be used by frontend
+
+COMMENT ON SCHEMA public IS 'Cleaned up unused tables and views from previous migrations';
 
 -- ============================================================================
 -- PART 0: DFM Results Table (Complete DFMResult Storage)
@@ -350,7 +378,72 @@ ORDER BY o.series_id, o.date;
 COMMENT ON VIEW latest_observations_view IS 'Latest observations from the most recent vintage (for frontend visualization)';
 
 -- ============================================================================
--- PART 3: Initial Data Cleanup (Run once)
+-- PART 3: View Consolidation and Cleanup
+-- ============================================================================
+-- Ensure all views are up-to-date and remove any duplicates
+
+-- Update variables_view to include block information (if not already updated in 002)
+-- This ensures consistency across all views
+DROP VIEW IF EXISTS variables_view CASCADE;
+CREATE VIEW variables_view
+WITH (security_invoker=true) AS
+SELECT 
+    s.series_id AS id,
+    s.series_name AS name,
+    s.units AS unit,
+    s.is_kpi,
+    s.frequency,
+    s.transformation,
+    s.category,
+    s.country,
+    s.is_active,
+    -- Block information from most recent config
+    (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
+     FROM blocks b
+     WHERE b.series_id = s.series_id
+     AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = s.series_id)
+    ) AS block_names,
+    s.created_at,
+    s.updated_at
+FROM series s
+WHERE s.is_active = TRUE;
+
+COMMENT ON VIEW variables_view IS 'Variables view for frontend visualization with block information (updated from 001 and 002)';
+
+-- Ensure series_with_blocks view exists (from 002, but ensure it's current)
+DROP VIEW IF EXISTS series_with_blocks CASCADE;
+CREATE VIEW series_with_blocks
+WITH (security_invoker=true) AS
+SELECT 
+    s.series_id,
+    s.series_name,
+    s.api_source,
+    s.data_code,
+    s.item_id,
+    s.api_group_id,
+    s.frequency,
+    s.transformation,
+    s.category,
+    s.units,
+    s.country,
+    s.is_active,
+    s.is_kpi,
+    -- Block information from most recent config
+    (SELECT MAX(config_name) FROM blocks WHERE series_id = s.series_id) AS latest_config_name,
+    (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
+     FROM blocks b
+     WHERE b.series_id = s.series_id
+     AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = s.series_id)
+    ) AS block_names,
+    s.created_at,
+    s.updated_at
+FROM series s
+WHERE s.is_active = TRUE;
+
+COMMENT ON VIEW series_with_blocks IS 'Active series with their block information from the most recent config (from 002, ensured current)';
+
+-- ============================================================================
+-- PART 4: Initial Data Cleanup (Run once)
 -- ============================================================================
 
 -- Function to cleanup old dfm_results (keeps only latest N models)
@@ -424,7 +517,7 @@ END;
 $$;
 
 -- ============================================================================
--- PART 4: Indexes for Performance
+-- PART 5: Indexes for Performance
 -- ============================================================================
 
 -- Index for faster latest model queries
