@@ -91,6 +91,26 @@ COMMENT ON COLUMN dfm_results.initial_conditions_json IS 'Initial conditions: Z_
 COMMENT ON COLUMN dfm_results.structure_json IS 'Model structure: r (factors per block), p (AR lag order)';
 COMMENT ON COLUMN dfm_results.config_json IS 'Model configuration (DFMConfig) as JSON';
 
+-- RLS Policies for dfm_results table
+ALTER TABLE dfm_results ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read access to dfm_results" ON dfm_results;
+CREATE POLICY "Allow public read access to dfm_results"
+    ON dfm_results FOR SELECT
+    USING (true);
+
+DROP POLICY IF EXISTS "Allow authenticated insert to dfm_results" ON dfm_results;
+CREATE POLICY "Allow authenticated insert to dfm_results"
+    ON dfm_results FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow authenticated update to dfm_results" ON dfm_results;
+CREATE POLICY "Allow authenticated update to dfm_results"
+    ON dfm_results FOR UPDATE
+    TO authenticated
+    USING (true);
+
 -- View for latest DFM results (from most recent model)
 DROP VIEW IF EXISTS latest_dfm_results_view CASCADE;
 CREATE VIEW latest_dfm_results_view
@@ -249,6 +269,11 @@ SELECT
     f.description,
     f.factor_index,
     f.block_name,
+    -- Block ID: hash of block_name for consistent ID generation (matches frontend logic)
+    CASE 
+        WHEN f.block_name IS NULL THEN NULL
+        ELSE abs(hashtext(f.block_name))::INTEGER
+    END AS block_id,
     f.created_at
 FROM factors f
 WHERE f.model_id = (
@@ -260,7 +285,7 @@ WHERE f.model_id = (
 )
 ORDER BY f.factor_index;
 
-COMMENT ON VIEW latest_factors_view IS 'Latest factors from the most recent model (for frontend visualization)';
+COMMENT ON VIEW latest_factors_view IS 'Latest factors from the most recent model (for frontend visualization). block_id is a hash of block_name for consistent ID generation.';
 
 -- View for latest factor values only (from latest model)
 DROP VIEW IF EXISTS latest_factor_values_view CASCADE;
@@ -276,7 +301,12 @@ SELECT
     f.model_id,
     f.factor_index,
     f.name AS factor_name,
-    f.block_name
+    f.block_name,
+    -- Block ID: hash of block_name for consistent ID generation
+    CASE 
+        WHEN f.block_name IS NULL THEN NULL
+        ELSE abs(hashtext(f.block_name))::INTEGER
+    END AS block_id
 FROM factor_values fv
 JOIN factors f ON fv.factor_id = f.id
 WHERE f.model_id = (
@@ -288,7 +318,7 @@ WHERE f.model_id = (
 )
 ORDER BY f.factor_index, fv.date;
 
-COMMENT ON VIEW latest_factor_values_view IS 'Latest factor values from the most recent model (for frontend visualization)';
+COMMENT ON VIEW latest_factor_values_view IS 'Latest factor values from the most recent model (for frontend visualization). block_id is a hash of block_name for consistent ID generation.';
 
 -- View for latest factor loadings only (from latest model)
 DROP VIEW IF EXISTS latest_factor_loadings_view CASCADE;
@@ -302,8 +332,35 @@ SELECT
     f.model_id,
     f.factor_index,
     f.name AS factor_name,
-    f.block_name,
-    s.series_name
+    f.block_name AS factor_block_name,
+    -- Block ID for factor: hash of block_name
+    CASE 
+        WHEN f.block_name IS NULL THEN NULL
+        ELSE abs(hashtext(f.block_name))::INTEGER
+    END AS factor_block_id,
+    s.series_name,
+    -- Variable (series) block name from blocks table (most recent config)
+    (SELECT DISTINCT b.block_name 
+     FROM blocks b
+     WHERE b.series_id = fl.series_id 
+     AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = fl.series_id)
+     LIMIT 1
+    ) AS variable_block_name,
+    -- Variable block ID: hash of variable_block_name
+    CASE 
+        WHEN (SELECT DISTINCT b.block_name 
+              FROM blocks b
+              WHERE b.series_id = fl.series_id 
+              AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = fl.series_id)
+              LIMIT 1) IS NULL THEN NULL
+        ELSE abs(hashtext(
+            (SELECT DISTINCT b.block_name 
+             FROM blocks b
+             WHERE b.series_id = fl.series_id 
+             AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = fl.series_id)
+             LIMIT 1)
+        ))::INTEGER
+    END AS variable_block_id
 FROM factor_loadings fl
 JOIN factors f ON fl.factor_id = f.id
 JOIN series s ON fl.series_id = s.series_id
@@ -316,7 +373,7 @@ WHERE f.model_id = (
 )
 ORDER BY f.factor_index, s.series_name;
 
-COMMENT ON VIEW latest_factor_loadings_view IS 'Latest factor loadings from the most recent model (for frontend visualization)';
+COMMENT ON VIEW latest_factor_loadings_view IS 'Latest factor loadings from the most recent model (for frontend visualization). Includes both factor_block_name/id and variable_block_name/id for comprehensive block information.';
 
 -- Enhanced latest forecasts view (with block information)
 DROP VIEW IF EXISTS latest_forecasts_view CASCADE;
@@ -529,7 +586,20 @@ CREATE INDEX IF NOT EXISTS idx_observations_vintage_date ON observations(vintage
 -- Index for faster latest forecast queries
 CREATE INDEX IF NOT EXISTS idx_forecasts_series_date_created ON forecasts(series_id, forecast_date, created_at DESC);
 
+-- Additional indexes for view query optimization
+-- Index for latest_factor_values_view: optimize factor_id and date queries
+CREATE INDEX IF NOT EXISTS idx_factor_values_factor_date ON factor_values(factor_id, date DESC);
+
+-- Index for latest_observations_view: optimize series_id and date queries
+CREATE INDEX IF NOT EXISTS idx_observations_series_date ON observations(series_id, date DESC);
+
+-- Index for latest_factor_loadings_view: optimize series_id lookups in blocks table
+CREATE INDEX IF NOT EXISTS idx_blocks_series_config ON blocks(series_id, config_name DESC);
+
 COMMENT ON INDEX idx_factors_model_created IS 'Index for faster queries to find latest model';
 COMMENT ON INDEX idx_observations_vintage_date IS 'Index for faster queries to find latest vintage observations';
 COMMENT ON INDEX idx_forecasts_series_date_created IS 'Index for faster queries to find latest forecasts';
+COMMENT ON INDEX idx_factor_values_factor_date IS 'Index for optimizing latest_factor_values_view queries';
+COMMENT ON INDEX idx_observations_series_date IS 'Index for optimizing latest_observations_view queries';
+COMMENT ON INDEX idx_blocks_series_config IS 'Index for optimizing block_name lookups in views';
 
