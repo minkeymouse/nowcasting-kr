@@ -1,0 +1,309 @@
+-- ============================================================================
+-- Migration: 003_frontend_integration.sql
+-- Purpose: Frontend optimization and data cleanup
+-- 
+-- This migration:
+-- 1. Creates optimized views for frontend (latest data only)
+-- 2. Adds cleanup functions for old data
+-- 3. Cleans up existing data to keep only latest models
+-- 
+-- This is an incremental migration that adds views and functions.
+-- It does NOT drop or modify existing tables.
+-- This migration is idempotent and can be run multiple times safely.
+-- ============================================================================
+
+-- ============================================================================
+-- PART 1: Cleanup Functions
+-- ============================================================================
+
+-- Function to cleanup old factors (keeps only latest N models)
+CREATE OR REPLACE FUNCTION cleanup_old_factors(keep_latest_models INTEGER DEFAULT 3)
+RETURNS TABLE(
+    deleted_factors INTEGER,
+    deleted_factor_values BIGINT,
+    deleted_factor_loadings BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    model_ids_to_delete INTEGER[];
+    factor_ids_to_delete INTEGER[];
+    deleted_factors_count INTEGER := 0;
+    deleted_factor_values_count BIGINT := 0;
+    deleted_factor_loadings_count BIGINT := 0;
+BEGIN
+    -- Get model_ids to keep (latest N by created_at)
+    WITH latest_models AS (
+        SELECT DISTINCT model_id
+        FROM factors
+        ORDER BY MAX(created_at) DESC
+        LIMIT keep_latest_models
+    ),
+    all_models AS (
+        SELECT DISTINCT model_id
+        FROM factors
+    )
+    SELECT array_agg(am.model_id)
+    INTO model_ids_to_delete
+    FROM all_models am
+    WHERE am.model_id NOT IN (SELECT model_id FROM latest_models);
+    
+    -- If no models to delete, return early
+    IF model_ids_to_delete IS NULL OR array_length(model_ids_to_delete, 1) = 0 THEN
+        RETURN QUERY SELECT 0, 0::BIGINT, 0::BIGINT;
+        RETURN;
+    END IF;
+    
+    -- Get factor_ids to delete
+    SELECT array_agg(id)
+    INTO factor_ids_to_delete
+    FROM factors
+    WHERE model_id = ANY(model_ids_to_delete);
+    
+    -- Count factor_values and factor_loadings that will be deleted
+    IF factor_ids_to_delete IS NOT NULL AND array_length(factor_ids_to_delete, 1) > 0 THEN
+        SELECT COUNT(*) INTO deleted_factor_values_count
+        FROM factor_values
+        WHERE factor_id = ANY(factor_ids_to_delete);
+        
+        SELECT COUNT(*) INTO deleted_factor_loadings_count
+        FROM factor_loadings
+        WHERE factor_id = ANY(factor_ids_to_delete);
+    END IF;
+    
+    -- Delete factors (CASCADE will delete factor_values and factor_loadings)
+    DELETE FROM factors
+    WHERE model_id = ANY(model_ids_to_delete);
+    
+    GET DIAGNOSTICS deleted_factors_count = ROW_COUNT;
+    
+    RETURN QUERY SELECT deleted_factors_count, deleted_factor_values_count, deleted_factor_loadings_count;
+END;
+$$;
+
+COMMENT ON FUNCTION cleanup_old_factors IS 'Cleanup old factors, keeping only latest N models. Returns counts of deleted records.';
+
+-- Function to cleanup old forecasts (keeps only latest N forecasts per series/date)
+CREATE OR REPLACE FUNCTION cleanup_old_forecasts(keep_latest_per_series INTEGER DEFAULT 1)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    deleted_count INTEGER := 0;
+BEGIN
+    -- Delete old forecasts, keeping only latest N per (series_id, forecast_date, run_type)
+    WITH ranked_forecasts AS (
+        SELECT 
+            forecast_id,
+            ROW_NUMBER() OVER (
+                PARTITION BY series_id, forecast_date, run_type 
+                ORDER BY created_at DESC
+            ) AS rn
+        FROM forecasts
+    )
+    DELETE FROM forecasts
+    WHERE forecast_id IN (
+        SELECT forecast_id
+        FROM ranked_forecasts
+        WHERE rn > keep_latest_per_series
+    );
+    
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    RETURN deleted_count;
+END;
+$$;
+
+COMMENT ON FUNCTION cleanup_old_forecasts IS 'Cleanup old forecasts, keeping only latest N per (series_id, forecast_date, run_type).';
+
+-- ============================================================================
+-- PART 2: Frontend-Optimized Views (Latest Data Only)
+-- ============================================================================
+
+-- View for latest factors only (from latest model)
+DROP VIEW IF EXISTS latest_factors_view CASCADE;
+CREATE VIEW latest_factors_view
+WITH (security_invoker=true) AS
+SELECT 
+    f.id,
+    f.model_id,
+    f.name,
+    f.description,
+    f.factor_index,
+    f.block_name,
+    f.created_at
+FROM factors f
+WHERE f.model_id = (
+    SELECT model_id
+    FROM factors
+    ORDER BY MAX(created_at) DESC
+    GROUP BY model_id
+    LIMIT 1
+)
+ORDER BY f.factor_index;
+
+COMMENT ON VIEW latest_factors_view IS 'Latest factors from the most recent model (for frontend visualization)';
+
+-- View for latest factor values only (from latest model)
+DROP VIEW IF EXISTS latest_factor_values_view CASCADE;
+CREATE VIEW latest_factor_values_view
+WITH (security_invoker=true) AS
+SELECT 
+    fv.id,
+    fv.factor_id,
+    fv.vintage_id,
+    fv.date,
+    fv.value,
+    fv.created_at,
+    f.model_id,
+    f.factor_index,
+    f.name AS factor_name,
+    f.block_name
+FROM factor_values fv
+JOIN factors f ON fv.factor_id = f.id
+WHERE f.model_id = (
+    SELECT model_id
+    FROM factors
+    ORDER BY MAX(created_at) DESC
+    GROUP BY model_id
+    LIMIT 1
+)
+ORDER BY f.factor_index, fv.date;
+
+COMMENT ON VIEW latest_factor_values_view IS 'Latest factor values from the most recent model (for frontend visualization)';
+
+-- View for latest factor loadings only (from latest model)
+DROP VIEW IF EXISTS latest_factor_loadings_view CASCADE;
+CREATE VIEW latest_factor_loadings_view
+WITH (security_invoker=true) AS
+SELECT 
+    fl.factor_id,
+    fl.series_id,
+    fl.loading,
+    fl.created_at,
+    f.model_id,
+    f.factor_index,
+    f.name AS factor_name,
+    f.block_name,
+    s.series_name
+FROM factor_loadings fl
+JOIN factors f ON fl.factor_id = f.id
+JOIN series s ON fl.series_id = s.series_id
+WHERE f.model_id = (
+    SELECT model_id
+    FROM factors
+    ORDER BY MAX(created_at) DESC
+    GROUP BY model_id
+    LIMIT 1
+)
+ORDER BY f.factor_index, s.series_name;
+
+COMMENT ON VIEW latest_factor_loadings_view IS 'Latest factor loadings from the most recent model (for frontend visualization)';
+
+-- Enhanced latest forecasts view (with block information)
+DROP VIEW IF EXISTS latest_forecasts_view CASCADE;
+CREATE VIEW latest_forecasts_view
+WITH (security_invoker=true) AS
+SELECT DISTINCT ON (f.series_id, f.forecast_date, f.run_type)
+    f.forecast_id,
+    f.model_id,
+    f.series_id,
+    s.series_name,
+    f.forecast_date,
+    f.forecast_value,
+    f.lower_bound,
+    f.upper_bound,
+    f.confidence_level,
+    f.run_type,
+    f.vintage_id_old,
+    f.vintage_id_new,
+    f.metadata_json,
+    f.created_at,
+    -- Block information
+    (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
+     FROM blocks b
+     WHERE b.series_id = f.series_id
+     AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = f.series_id)
+    ) AS block_names
+FROM forecasts f
+JOIN series s ON f.series_id = s.series_id
+ORDER BY f.series_id, f.forecast_date, f.run_type, f.created_at DESC;
+
+COMMENT ON VIEW latest_forecasts_view IS 'Latest forecast for each series and date combination with block information';
+
+-- View for latest observations (most recent vintage only)
+DROP VIEW IF EXISTS latest_observations_view CASCADE;
+CREATE VIEW latest_observations_view
+WITH (security_invoker=true) AS
+SELECT 
+    o.observation_id,
+    o.series_id,
+    s.series_name,
+    o.date,
+    o.value,
+    o.vintage_id,
+    o.github_run_id,
+    o.is_forecast,
+    o.created_at,
+    dv.vintage_date
+FROM observations o
+JOIN series s ON o.series_id = s.series_id
+JOIN data_vintages dv ON o.vintage_id = dv.vintage_id
+WHERE o.vintage_id = (
+    SELECT vintage_id
+    FROM data_vintages
+    ORDER BY vintage_date DESC
+    LIMIT 1
+)
+ORDER BY o.series_id, o.date;
+
+COMMENT ON VIEW latest_observations_view IS 'Latest observations from the most recent vintage (for frontend visualization)';
+
+-- ============================================================================
+-- PART 3: Initial Data Cleanup (Run once)
+-- ============================================================================
+
+-- Cleanup old factors (keeps only latest 3 models)
+-- This will delete old factors and cascade to factor_values and factor_loadings
+DO $$
+DECLARE
+    cleanup_result RECORD;
+BEGIN
+    SELECT * INTO cleanup_result FROM cleanup_old_factors(3);
+    RAISE NOTICE 'Cleanup completed: Deleted % factors, % factor_values, % factor_loadings',
+        cleanup_result.deleted_factors,
+        cleanup_result.deleted_factor_values,
+        cleanup_result.deleted_factor_loadings;
+END;
+$$;
+
+-- Cleanup old forecasts (keeps only latest 1 per series/date/run_type)
+DO $$
+DECLARE
+    deleted_count INTEGER;
+BEGIN
+    SELECT cleanup_old_forecasts(1) INTO deleted_count;
+    RAISE NOTICE 'Forecast cleanup completed: Deleted % old forecasts', deleted_count;
+END;
+$$;
+
+-- ============================================================================
+-- PART 4: Indexes for Performance
+-- ============================================================================
+
+-- Index for faster latest model queries
+CREATE INDEX IF NOT EXISTS idx_factors_model_created ON factors(model_id, created_at DESC);
+
+-- Index for faster latest vintage queries
+CREATE INDEX IF NOT EXISTS idx_observations_vintage_date ON observations(vintage_id, date);
+
+-- Index for faster latest forecast queries
+CREATE INDEX IF NOT EXISTS idx_forecasts_series_date_created ON forecasts(series_id, forecast_date, created_at DESC);
+
+COMMENT ON INDEX idx_factors_model_created IS 'Index for faster queries to find latest model';
+COMMENT ON INDEX idx_observations_vintage_date IS 'Index for faster queries to find latest vintage observations';
+COMMENT ON INDEX idx_forecasts_series_date_created IS 'Index for faster queries to find latest forecasts';
+
