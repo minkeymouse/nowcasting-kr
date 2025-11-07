@@ -16,13 +16,55 @@ from omegaconf import DictConfig, OmegaConf
 from pathlib import Path
 from typing import Optional
 import sys
+import os
 import pandas as pd
 import pickle
 import numpy as np
+import logging
 
 # Add project root to path (script is in app/jobs/ directory)
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Optional dotenv import (for local development only)
+try:
+    from dotenv import load_dotenv
+    HAS_DOTENV = True
+except ImportError:
+    HAS_DOTENV = False
+    load_dotenv = None
+
+# Configure logging first
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Load environment variables from .env.local file (local development only)
+# In GitHub Actions, environment variables come from secrets
+env_loaded = False
+
+if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
+    # Use .env.local for local development
+    env_locations = [
+        project_root / '.env.local',
+        Path('.env.local'),  # Current directory
+    ]
+    
+    for env_path in env_locations:
+        if env_path.exists():
+            load_dotenv(env_path, override=True)
+            logger.info(f"✅ Loaded environment from: {env_path}")
+            env_loaded = True
+            break
+
+if not env_loaded and os.getenv('GITHUB_ACTIONS'):
+    logger.info("Running in GitHub Actions - using environment variables from secrets")
+    env_loaded = True  # In GitHub Actions, we use secrets, so consider it "loaded"
+elif not env_loaded and not HAS_DOTENV:
+    logger.info("dotenv not available - using environment variables from system")
+    env_loaded = True  # If no dotenv, we rely on system env vars
 
 from dfm_python import load_data, dfm
 from app.utils import summarize
@@ -58,7 +100,7 @@ def main(cfg: DictConfig) -> None:
     
     # Merge DFM estimation parameters from Hydra into model config
     if dfm_cfg_dict:
-        for key in ['ar_lag', 'threshold', 'max_iter', 'nan_method', 'nan_k']:
+        for key in ['ar_lag', 'threshold', 'max_iter', 'nan_method', 'nan_k', 'clock']:
             if key in dfm_cfg_dict and dfm_cfg_dict[key] is not None:
                 setattr(model_cfg, key, dfm_cfg_dict[key])
     
@@ -291,7 +333,7 @@ def main(cfg: DictConfig) -> None:
     
     # Save model weights to Supabase storage
     try:
-        from app.adapters.adapter_database import upload_model_weights_to_storage
+        from app.adapters.adapter_database import upload_model_weights_to_storage, cleanup_old_model_weights
         
         # Create model filename based on vintage and config
         if isinstance(vintage, int):
@@ -337,6 +379,19 @@ def main(cfg: DictConfig) -> None:
         )
         
         print(f'Model weights uploaded to Supabase storage: {storage_url}')
+        
+        # Cleanup old model weights (keep only latest 3)
+        try:
+            cleanup_result = cleanup_old_model_weights(
+                keep_latest=3,
+                bucket_name="model-weights",
+                client=db_client if db_client else get_db_client()
+            )
+            if cleanup_result['deleted_count'] > 0:
+                print(f'Cleaned up old model weights: kept {len(cleanup_result["kept_files"])} latest, deleted {cleanup_result["deleted_count"]} old files')
+                logger.info(f"Cleaned up model weights: kept {len(cleanup_result['kept_files'])} latest, deleted {cleanup_result['deleted_count']} old")
+        except Exception as cleanup_error:
+            logger.warning(f"Failed to cleanup old model weights: {cleanup_error}")
         
     except ImportError:
         print('⚠️  Warning: Could not upload model weights to storage (database module not available)')

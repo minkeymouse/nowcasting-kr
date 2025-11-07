@@ -26,6 +26,14 @@ import numpy as np
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Optional dotenv import (for local development only)
+try:
+    from dotenv import load_dotenv
+    HAS_DOTENV = True
+except ImportError:
+    HAS_DOTENV = False
+    load_dotenv = None
+
 from dfm_python import load_data, dfm, update_nowcast
 from app.adapters.adapter_database import load_data_from_db, save_nowcast_to_db
 from app.utils import (
@@ -41,6 +49,31 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Load environment variables from .env.local file (local development only)
+# In GitHub Actions, environment variables come from secrets
+env_loaded = False
+
+if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
+    # Use .env.local for local development
+    env_locations = [
+        project_root / '.env.local',
+        Path('.env.local'),  # Current directory
+    ]
+    
+    for env_path in env_locations:
+        if env_path.exists():
+            load_dotenv(env_path, override=True)
+            logger.info(f"✅ Loaded environment from: {env_path}")
+            env_loaded = True
+            break
+
+if not env_loaded and os.getenv('GITHUB_ACTIONS'):
+    logger.info("Running in GitHub Actions - using environment variables from secrets")
+    env_loaded = True  # In GitHub Actions, we use secrets, so consider it "loaded"
+elif not env_loaded and not HAS_DOTENV:
+    logger.info("dotenv not available - using environment variables from system")
+    env_loaded = True  # If no dotenv, we rely on system env vars
 
 
 @hydra.main(version_base=None, config_path="../../app/config", config_name="default")
@@ -93,6 +126,14 @@ def main(cfg: DictConfig) -> None:
         threshold = dfm_cfg_dict.get('threshold', 1e-5)
         max_iter = dfm_cfg_dict.get('max_iter', 5000)
         
+        # Initialize database client if needed
+        db_client = None
+        if use_database:
+            try:
+                db_client = get_db_client()
+            except Exception:
+                pass  # Will handle errors in specific operations
+        
         # If vintages not specified, use latest vintage for both (for testing)
         if use_database and (not vintage_old or not vintage_new):
             try:
@@ -119,8 +160,40 @@ def main(cfg: DictConfig) -> None:
                 "Nowcasting compares forecasts between two vintages for the same period."
             )
         
-        series = cfg.get('series', data_cfg_dict.get('target_series', 'GDPC1'))
-        period = cfg.get('period', data_cfg_dict.get('target_period', '2016q4'))
+        # Handle series parameter - can be a string (series ID) or DictConfig (series config)
+        series_raw = cfg.get('series', data_cfg_dict.get('target_series', 'GDPC1'))
+        # If it's a DictConfig (from Hydra config group), extract the actual series ID
+        if hasattr(series_raw, '__class__') and 'DictConfig' in str(type(series_raw)):
+            # Series config is a dict of series definitions, get the first series ID
+            series_dict = OmegaConf.to_container(series_raw, resolve=True)
+            if isinstance(series_dict, dict) and 'series' in series_dict:
+                # Extract first series ID from the series dict
+                series_dict_inner = series_dict.get('series', {})
+                if isinstance(series_dict_inner, dict) and series_dict_inner:
+                    series = list(series_dict_inner.keys())[0]
+                else:
+                    series = 'GDPC1'  # Default fallback
+            else:
+                series = 'GDPC1'  # Default fallback
+        else:
+            series = str(series_raw) if series_raw else 'GDPC1'
+        
+        period_raw = cfg.get('period', data_cfg_dict.get('target_period', '2016q4'))
+        # Convert period format if needed: '2016q4' -> '2016m10' (last month of quarter)
+        if isinstance(period_raw, str) and 'q' in period_raw.lower():
+            # Parse quarterly format: YYYYqQ -> YYYYmMM
+            # Q1 -> m03, Q2 -> m06, Q3 -> m09, Q4 -> m12
+            import re
+            match = re.match(r'(\d{4})q([1-4])', period_raw.lower())
+            if match:
+                year = match.group(1)
+                quarter = int(match.group(2))
+                month = quarter * 3  # Q1=3, Q2=6, Q3=9, Q4=12
+                period = f"{year}m{month:02d}"
+            else:
+                period = period_raw  # Keep as-is if can't parse
+        else:
+            period = str(period_raw) if period_raw else '2016m10'
         config_id = data_cfg_dict.get('config_id')
         strict_mode = data_cfg_dict.get('strict_mode', False)
         forecast_periods = cfg.get('forecast_periods', data_cfg_dict.get('forecast_periods', 2))
@@ -231,7 +304,8 @@ def main(cfg: DictConfig) -> None:
             
             Res = dfm(X, model_cfg, threshold=threshold, max_iter=max_iter)
             
-            # Save model weights to Supabase storage
+            # Save model weights to Supabase storage (if re-estimated)
+            # Note: Cleanup is only done in train job, not here
             if use_database and vintage_new:
                 try:
                     from app.adapters.adapter_database import upload_model_weights_to_storage
@@ -330,6 +404,7 @@ def main(cfg: DictConfig) -> None:
             X_new, Time, _ = load_data(datafile_new, model_cfg)
         
         # Update nowcast (news decomposition) - MATLAB functionality
+        # series is already converted to string above
         logger.info(f"Running nowcast update for {series}, period {period}")
         logger.info("This compares old vs new vintage forecasts for the current period (nowcasting)")
         

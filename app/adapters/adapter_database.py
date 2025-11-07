@@ -1055,6 +1055,130 @@ def download_model_weights_from_storage(
         raise
 
 
+def cleanup_old_model_weights(
+    keep_latest: int = 3,
+    bucket_name: str = "model-weights",
+    client: Optional[object] = None
+) -> Dict[str, Any]:
+    """Clean up old model weights, keeping only the latest N files.
+    
+    Parameters
+    ----------
+    keep_latest : int, default=3
+        Number of latest model weight files to keep
+    bucket_name : str, default="model-weights"
+        Supabase storage bucket name
+    client : object, optional
+        Supabase client. If None, will get from database module.
+    
+    Returns
+    -------
+    Dict[str, Any]
+        Dictionary with cleanup results:
+        - total_files: Total number of files found
+        - kept_files: List of files kept
+        - deleted_files: List of files deleted
+        - deleted_count: Number of files deleted
+    
+    Raises
+    ------
+    ImportError
+        If database module not available
+    Exception
+        If cleanup fails
+    """
+    try:
+        db_client = _get_db_client(client)
+        
+        # List all files in the bucket
+        files = db_client.storage.from_(bucket_name).list()
+        
+        if not files:
+            logger.debug(f"No files found in storage bucket: {bucket_name}")
+            return {
+                'total_files': 0,
+                'kept_files': [],
+                'deleted_files': [],
+                'deleted_count': 0
+            }
+        
+        # Filter for .pkl files only
+        pkl_files = [f for f in files if f.get('name', '').endswith('.pkl')]
+        
+        if len(pkl_files) <= keep_latest:
+            logger.debug(f"Only {len(pkl_files)} model weight files found, keeping all (limit: {keep_latest})")
+            return {
+                'total_files': len(pkl_files),
+                'kept_files': [f['name'] for f in pkl_files],
+                'deleted_files': [],
+                'deleted_count': 0
+            }
+        
+        # Sort files by creation time (newest first)
+        # Use updated_at if available, otherwise use name (which contains date)
+        def get_sort_key(file_info):
+            # Try to get updated_at timestamp
+            updated_at = file_info.get('updated_at')
+            if updated_at:
+                try:
+                    from datetime import datetime
+                    return datetime.fromisoformat(updated_at.replace('Z', '+00:00')).timestamp()
+                except Exception:
+                    pass
+            
+            # Fallback: extract date from filename (e.g., "dfm_2025-11-07.pkl" -> 2025-11-07)
+            filename = file_info.get('name', '')
+            import re
+            date_match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
+            if date_match:
+                try:
+                    from datetime import datetime
+                    return datetime.strptime(date_match.group(1), '%Y-%m-%d').timestamp()
+                except Exception:
+                    pass
+            
+            # Last resort: use name for alphabetical sort
+            return 0
+        
+        pkl_files.sort(key=get_sort_key, reverse=True)
+        
+        # Keep latest N files, delete the rest
+        files_to_keep = pkl_files[:keep_latest]
+        files_to_delete = pkl_files[keep_latest:]
+        
+        kept_filenames = [f['name'] for f in files_to_keep]
+        deleted_filenames = [f['name'] for f in files_to_delete]
+        
+        # Delete old files
+        deleted_count = 0
+        for file_info in files_to_delete:
+            filename = file_info['name']
+            try:
+                db_client.storage.from_(bucket_name).remove([filename])
+                deleted_count += 1
+                logger.debug(f"Deleted old model weight file: {filename}")
+            except Exception as e:
+                logger.warning(f"Failed to delete model weight file {filename}: {e}")
+        
+        logger.info(
+            f"Cleaned up model weights: kept {len(kept_filenames)} latest files, "
+            f"deleted {deleted_count} old files"
+        )
+        
+        return {
+            'total_files': len(pkl_files),
+            'kept_files': kept_filenames,
+            'deleted_files': deleted_filenames,
+            'deleted_count': deleted_count
+        }
+        
+    except ImportError:
+        raise ImportError("Database module not available. Cannot cleanup storage.")
+    except Exception as e:
+        logger.error(f"Failed to cleanup old model weights: {e}")
+        raise
+
+
 def csv_spec_to_hydra_config(
     config: DFMConfig,
     dfm_config_overrides: Optional[Dict[str, Any]] = None
@@ -1071,7 +1195,7 @@ def csv_spec_to_hydra_config(
         DFM configuration loaded from CSV spec file
     dfm_config_overrides : dict, optional
         Optional DFM config overrides (e.g., from CSV metadata or user preferences)
-        Keys: ar_lag, factors_per_block, threshold, max_iter, nan_method, nan_k
+        Keys: ar_lag, factors_per_block, threshold, max_iter, nan_method, nan_k, clock
     
     Returns
     -------
@@ -1105,7 +1229,8 @@ def csv_spec_to_hydra_config(
         'threshold': 1e-5,
         'max_iter': 5000,
         'nan_method': 2,
-        'nan_k': 3
+        'nan_k': 3,
+        'clock': 'm'  # Default to monthly clock
     }
     
     # Start with defaults
@@ -1470,10 +1595,16 @@ def save_factors_to_db(
             
             for t_idx, (date_val, value) in enumerate(zip(Time, factor_series)):
                 if np.isfinite(value):
+                    # Convert date to ISO format string for JSON serialization
+                    if hasattr(date_val, 'date'):
+                        date_str = date_val.date().isoformat()
+                    else:
+                        date_str = pd.to_datetime(date_val).date().isoformat()
+                    
                     factor_value_records.append({
                         'factor_id': factor_id,
                         'vintage_id': vintage_id,
-                        'date': date_val.date() if hasattr(date_val, 'date') else pd.to_datetime(date_val).date(),
+                        'date': date_str,
                         'value': float(value)
                     })
         

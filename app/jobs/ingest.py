@@ -396,22 +396,79 @@ def main() -> None:
                 stats['skipped'] += 1
                 continue
             
-            # Determine start_date based on whether series exists
+            # Determine start_date based on whether series exists and has data in CURRENT vintage
             start_date = None
             end_date = None
             
+            # Check if CURRENT vintage has observations for this series
+            latest_date_in_current_vintage = get_latest_observation_date(series_id, vintage_id=vintage_id, client=client)
+            
+            # Count observations and check date span in current vintage to detect insufficient data
+            obs_count_in_vintage = 0
+            date_span_years = 0
+            earliest_date_in_vintage = None
+            
+            if latest_date_in_current_vintage:
+                # Get all observations in current vintage to check count and date span
+                obs_result = client.table('observations').select('date').eq('series_id', series_id).eq('vintage_id', vintage_id).order('date').execute()
+                if obs_result.data and isinstance(obs_result.data, list):
+                    obs_count_in_vintage = len(obs_result.data)
+                    dates = []
+                    for obs in obs_result.data:
+                        if isinstance(obs, dict) and 'date' in obs:
+                            try:
+                                dates.append(pd.to_datetime(obs['date']).date())
+                            except Exception:
+                                pass
+                    if dates:
+                        earliest_date_in_vintage = dates[0]
+                        date_span_years = (dates[-1] - dates[0]).days / 365.25
+            
+            # Determine minimum expected observations and date span based on frequency
+            # For quarterly: expect at least 10 observations (2.5 years) AND span >= 20 years for full history
+            # For monthly: expect at least 12 observations (1 year) AND span >= 25 years for full history
+            # For daily: expect at least 30 observations (1 month) AND span >= 25 years for full history
+            min_expected_obs = {
+                'q': 10,  # Quarterly: at least 2.5 years
+                'm': 12,  # Monthly: at least 1 year
+                'd': 30,  # Daily: at least 1 month
+                'a': 5,   # Annual: at least 5 years
+            }.get(frequency.lower(), 10)
+            
+            min_expected_span_years = {
+                'q': 20,  # Quarterly: expect at least 20 years of history
+                'm': 25,  # Monthly: expect at least 25 years of history
+                'd': 25,  # Daily: expect at least 25 years of history
+                'a': 20,  # Annual: expect at least 20 years of history
+            }.get(frequency.lower(), 20)
+            
             if series_exists:
-                # Incremental update: fetch from latest observation date forward
-                latest_date = get_latest_observation_date(series_id, vintage_id=None, client=client)
-                if latest_date:
-                    start_date = get_next_period_date(latest_date, frequency)
-                    print(f"   📅 Latest observation in DB: {latest_date}, fetching new data from {start_date}...")
-                    logger.info(f"  Latest observation: {latest_date}, fetching from {start_date}")
+                if latest_date_in_current_vintage:
+                    # Check if vintage has insufficient data (by count OR date span)
+                    insufficient_by_count = obs_count_in_vintage < min_expected_obs
+                    insufficient_by_span = date_span_years < min_expected_span_years
+                    
+                    if insufficient_by_count or insufficient_by_span:
+                        # Vintage has data but insufficient - force full re-fetch
+                        start_date = None
+                        reasons = []
+                        if insufficient_by_count:
+                            reasons.append(f"only {obs_count_in_vintage} observations (expected at least {min_expected_obs})")
+                        if insufficient_by_span:
+                            reasons.append(f"only {date_span_years:.1f} years of history (expected at least {min_expected_span_years} years)")
+                        reason_str = ", ".join(reasons)
+                        print(f"   ⚠️  Vintage {vintage_id} has {reason_str} - fetching full history")
+                        logger.warning(f"  Vintage {vintage_id} has insufficient data ({reason_str}) - forcing full re-fetch")
+                    else:
+                        # Current vintage has sufficient data - do incremental update from latest date in THIS vintage
+                        start_date = get_next_period_date(latest_date_in_current_vintage, frequency)
+                        print(f"   📅 Latest observation in vintage {vintage_id}: {latest_date_in_current_vintage}, fetching new data from {start_date}...")
+                        logger.info(f"  Latest observation in vintage {vintage_id}: {latest_date_in_current_vintage}, fetching from {start_date}")
                 else:
-                    # No observations yet - fetch full history
+                    # Series exists but CURRENT vintage has no data - fetch full history for this vintage
                     start_date = None
-                    print(f"   📅 No observations found - fetching full history")
-                    logger.info(f"  No observations found - fetching full history")
+                    print(f"   📅 Series exists but vintage {vintage_id} has no data - fetching full history")
+                    logger.info(f"  Series exists but vintage {vintage_id} has no data - fetching full history")
             else:
                 # New series - fetch full history
                 stats['new_series'] += 1
@@ -430,7 +487,8 @@ def main() -> None:
                     source=api_source,
                     frequency=frequency,
                     start_date=start_date,
-                    end_date=end_date
+                    end_date=end_date,
+                    item_id=item_id  # Pass item_id for BOK API filtering
                 )
             except Exception as api_error:
                 # Handle API-specific errors (wrong API code, invalid parameters, etc.)

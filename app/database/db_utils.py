@@ -152,7 +152,8 @@ def fetch_series_data(
     source: str,
     frequency: str,
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    item_id: Optional[str] = None
 ) -> pd.DataFrame:
     """
     Fetch data for a single series from API.
@@ -198,7 +199,8 @@ def fetch_series_data(
             end_date = end_date_obj.strftime('%Y')
     
     if not start_date:
-        start_date_obj = datetime.now() - timedelta(days=365*10)  # 10 years
+        # Increased from 10 to 30 years for full history fetches
+        start_date_obj = datetime.now() - timedelta(days=365*30)  # 30 years
         if api_freq == 'Q':
             q = (start_date_obj.month - 1) // 3 + 1
             start_date = f"{start_date_obj.year}Q{q}"
@@ -210,7 +212,7 @@ def fetch_series_data(
             start_date = start_date_obj.strftime('%Y')
     
     try:
-        # Fetch data
+        # Fetch data with pagination support for > 1000 observations
         # For KOSIS: item_code1=objL1 (필수), item_code2=itmId (필수)
         # Different tables require different parameters:
         # - DT_1J22003 (CPI): objL1='ALL', itmId='T'
@@ -232,52 +234,105 @@ def fetch_series_data(
                 item_code1_val = 'ALL'
                 item_code2_val = 'T'
         else:
-            item_code1_val = '?'
+            # For BOK API, use item_id if provided, otherwise use '?'
+            # item_id is needed to filter specific items from a statistic code
+            item_code1_val = item_id if item_id else '?'
             item_code2_val = '?'
         
-        data_result = api_client.fetch_statistic_data(
-            stat_code=api_code,
-            frequency=api_freq,
-            start_date=start_date,
-            end_date=end_date,
-            item_code1=item_code1_val,
-            item_code2=item_code2_val,
-            item_code3=None,  # Don't pass '?' for optional params
-            item_code4=None
-        )
+        # Pagination: API limit is 1000 rows per request
+        # For daily data (30 years = ~11,000 observations), we need pagination
+        all_rows = []
+        page_size = 1000
+        start_count = 1
+        max_pages = 50  # Safety limit to prevent infinite loops
         
-        # KOSIS returns list directly, BOK returns dict with 'StatisticSearch'
-        if source == 'KOSIS':
-            # KOSIS response is a list directly (wrapped in {'data': [...]} by client)
-            if isinstance(data_result, dict) and 'data' in data_result:
-                rows = data_result['data']
-            elif isinstance(data_result, list):
-                rows = data_result
+        for page in range(max_pages):
+            # KOSIS doesn't support pagination parameters, so only pass them for BOK
+            if source == 'BOK':
+                data_result = api_client.fetch_statistic_data(
+                    stat_code=api_code,
+                    frequency=api_freq,
+                    start_date=start_date,
+                    end_date=end_date,
+                    item_code1=item_code1_val,
+                    item_code2=item_code2_val,
+                    item_code3=None,  # Don't pass '?' for optional params
+                    item_code4=None,
+                    start_count=start_count,
+                    end_count=start_count + page_size - 1
+                )
             else:
-                logger.warning(f"No data returned for {series_id}")
-                return pd.DataFrame()
-        else:
-            # BOK response format - check for rate limiting errors
-            if 'RESULT' in data_result:
-                result = data_result['RESULT']
-                if isinstance(result, dict) and 'CODE' in result:
-                    error_code = result.get('CODE', '')
-                    error_msg = result.get('MESSAGE', '')
-                    if 'ERROR' in error_code or '602' in error_code:
-                        logger.error(f"BOK API rate limit error for {series_id}: {error_msg}")
-                        raise Exception(f"BOK API rate limit: {error_msg}")
-                    else:
-                        logger.warning(f"BOK API error for {series_id}: {error_code} - {error_msg}")
-                        return pd.DataFrame()
+                # KOSIS: fetch all data in one request (no pagination support)
+                if page > 0:
+                    break  # Already fetched on first page
+                data_result = api_client.fetch_statistic_data(
+                    stat_code=api_code,
+                    frequency=api_freq,
+                    start_date=start_date,
+                    end_date=end_date,
+                    item_code1=item_code1_val,
+                    item_code2=item_code2_val,
+                    item_code3=None,
+                    item_code4=None
+                )
             
-            if 'StatisticSearch' not in data_result:
-                logger.warning(f"No data returned for {series_id}")
-                return pd.DataFrame()
-            rows = data_result['StatisticSearch'].get('row', [])
+            # Extract rows from response
+            page_rows = []
+            if source == 'KOSIS':
+                # KOSIS response is a list directly (wrapped in {'data': [...]} by client)
+                if isinstance(data_result, dict) and 'data' in data_result:
+                    page_rows = data_result['data']
+                elif isinstance(data_result, list):
+                    page_rows = data_result
+                else:
+                    if page == 0:  # Only warn on first page
+                        logger.warning(f"No data returned for {series_id}")
+                    break
+            else:
+                # BOK response format - check for rate limiting errors
+                if 'RESULT' in data_result:
+                    result = data_result['RESULT']
+                    if isinstance(result, dict) and 'CODE' in result:
+                        error_code = result.get('CODE', '')
+                        error_msg = result.get('MESSAGE', '')
+                        if 'ERROR' in error_code or '602' in error_code:
+                            logger.error(f"BOK API rate limit error for {series_id}: {error_msg}")
+                            raise Exception(f"BOK API rate limit: {error_msg}")
+                        else:
+                            if page == 0:  # Only warn on first page
+                                logger.warning(f"BOK API error for {series_id}: {error_code} - {error_msg}")
+                            break
+                
+                if 'StatisticSearch' not in data_result:
+                    if page == 0:  # Only warn on first page
+                        logger.warning(f"No data returned for {series_id}")
+                    break
+                page_rows = data_result['StatisticSearch'].get('row', [])
+            
+            if not page_rows:
+                # No more data
+                break
+            
+            all_rows.extend(page_rows)
+            
+            # If we got fewer rows than page_size, we've reached the end
+            if len(page_rows) < page_size:
+                break
+            
+            # Prepare for next page
+            start_count += page_size
+            
+            # Log pagination progress for large datasets
+            if page > 0 and (page + 1) % 5 == 0:
+                logger.info(f"Fetched page {page + 1} for {series_id}: {len(all_rows)} total rows so far")
         
-        if not rows:
+        if not all_rows:
             logger.warning(f"Empty data for {series_id}")
             return pd.DataFrame()
+        
+        rows = all_rows
+        if len(all_rows) > page_size:
+            logger.info(f"Fetched {len(all_rows)} rows in {page + 1} pages for {series_id}")
         
         # Parse into DataFrame
         data_list = []
@@ -306,6 +361,14 @@ def fetch_series_data(
                     # For now, accept all but could be refined if needed
                     pass  # Accept all for Employment Rate (can filter later if needed)
             else:
+                # BOK API: Filter by ITEM_CODE1 if item_id was provided
+                # The API returns all items for a statistic code, so we need to filter
+                if item_id:
+                    item_code1 = row.get('ITEM_CODE1', '')
+                    # Compare as strings (item_id might be string or number)
+                    if str(item_code1) != str(item_id):
+                        continue  # Skip rows that don't match our item_id
+                
                 time_str = row.get('TIME', '')
                 value = row.get('DATA_VALUE')
             
@@ -347,7 +410,49 @@ def fetch_series_data(
             return pd.DataFrame()
         
         df = pd.DataFrame(data_list)
-        logger.info(f"Parsed {len(df)} valid observations for {series_id}")
+        
+        # Log actual vs requested date range for debugging
+        if not df.empty:
+            actual_start = df['date'].min()
+            actual_end = df['date'].max()
+            actual_span_years = (actual_end - actual_start).days / 365.25
+            
+            # Calculate requested span
+            requested_start_str = start_date
+            requested_end_str = end_date
+            
+            logger.info(f"Parsed {len(df)} valid observations for {series_id}")
+            logger.info(f"  Date range: {actual_start} to {actual_end} ({actual_span_years:.1f} years)")
+            logger.info(f"  Requested: {requested_start_str} to {requested_end_str}")
+            
+            # Warn if actual span is much shorter than requested (suggests API limitation)
+            if requested_start_str and requested_end_str:
+                try:
+                    # Parse requested dates (approximate)
+                    if api_freq == 'Q' and 'Q' in requested_start_str:
+                        req_start_year = int(requested_start_str.split('Q')[0])
+                        req_end_year = int(requested_end_str.split('Q')[0])
+                        requested_span_years = req_end_year - req_start_year
+                    elif api_freq == 'M' and len(requested_start_str) == 6:
+                        req_start_year = int(requested_start_str[:4])
+                        req_end_year = int(requested_end_str[:4])
+                        requested_span_years = req_end_year - req_start_year
+                    elif api_freq == 'D' and len(requested_start_str) == 8:
+                        req_start = datetime.strptime(requested_start_str, '%Y%m%d')
+                        req_end = datetime.strptime(requested_end_str, '%Y%m%d')
+                        requested_span_years = (req_end - req_start).days / 365.25
+                    else:
+                        requested_span_years = None
+                    
+                    if requested_span_years and actual_span_years < requested_span_years * 0.5:
+                        logger.warning(
+                            f"  API returned shorter date range than requested: "
+                            f"{actual_span_years:.1f} years vs {requested_span_years:.1f} years requested. "
+                            f"This may indicate an API limitation."
+                        )
+                except Exception:
+                    pass  # Ignore parsing errors for logging
+        
         return df
         
     except Exception as e:

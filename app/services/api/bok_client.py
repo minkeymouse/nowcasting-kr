@@ -183,12 +183,15 @@ class BOKAPIClient(BaseAPIClient):
         item_code1: Optional[str] = None,
         item_code2: Optional[str] = None,
         item_code3: Optional[str] = None,
-        item_code4: Optional[str] = None
+        item_code4: Optional[str] = None,
+        start_count: int = 1,
+        end_count: int = 1000
     ) -> Dict[str, Any]:
         """Fetch time-series data (implements BaseAPIClient)."""
         return self.search_statistics(
             stat_code, frequency, start_date, end_date,
-            item_code1, item_code2, item_code3, item_code4
+            item_code1, item_code2, item_code3, item_code4,
+            start_count, end_count
         )
     
     def get_statistic_table_list(

@@ -7,6 +7,7 @@ defaults:
 
 # DFM estimation parameters
 dfm:
+  clock: "m"  # Base frequency for all latent factors (monthly clock)
   threshold: 1e-5
   max_iter: 100
   nan_method: 2
@@ -14,14 +15,17 @@ dfm:
   ar_lag: 1  # AR lag for all blocks (model-wise)
 
 # Model structure: block definitions
+# NOTE: Block order must match CSV spec (CSV is source of truth)
+# CSV order: Block_Global, Block_Consumption, Block_Invest, Block_Extern
 model:
-  # Block definitions with their factor dimensions
   blocks:
     Global:
       factors: 2
-    Investment:
-      factors: 1
     Consumption:
+      factors: 1
+    Investment:  # Maps to CSV 'Block_Invest'
+      factors: 1
+    External:  # Maps to CSV 'Block_Extern'
       factors: 1
   
   # Optional: factors_per_block as list (auto-generated from blocks if null)

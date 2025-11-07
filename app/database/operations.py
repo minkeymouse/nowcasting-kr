@@ -69,19 +69,43 @@ def _transform_series(z: np.ndarray, formula: str, freq: str, step: int) -> np.n
     if formula == 'lin':
         X[:] = z
     elif formula == 'chg':
-        idx = np.arange(t1, T, step)
-        if len(idx) > 1:
-            X[idx[0]] = np.nan
-            X[idx[1:]] = z[idx[1:]] - z[idx[:-1]]
+        # For quarterly data, find actual data locations instead of assuming fixed indices
+        if freq == 'q' and step == 3:
+            # Find where quarterly data actually exists (non-NaN values)
+            valid_mask = ~np.isnan(z)
+            valid_indices = np.where(valid_mask)[0]
+            if len(valid_indices) > 1:
+                # Use actual quarterly data locations
+                idx = valid_indices
+                X[idx[0]] = np.nan
+                X[idx[1:]] = z[idx[1:]] - z[idx[:-1]]
+        else:
+            # For non-quarterly or default behavior, use fixed indices
+            idx = np.arange(t1, T, step)
+            if len(idx) > 1:
+                X[idx[0]] = np.nan
+                X[idx[1:]] = z[idx[1:]] - z[idx[:-1]]
     elif formula == 'ch1':
         idx = np.arange(12 + t1, T, step)
         if len(idx) > 0:
             X[idx] = z[idx] - z[idx - 12]
     elif formula == 'pch':
-        idx = np.arange(t1, T, step)
-        if len(idx) > 1:
-            X[idx[0]] = np.nan
-            X[idx[1:]] = 100 * (z[idx[1:]] / z[idx[:-1]] - 1)
+        # For quarterly data, find actual data locations instead of assuming fixed indices
+        if freq == 'q' and step == 3:
+            # Find where quarterly data actually exists (non-NaN values)
+            valid_mask = ~np.isnan(z)
+            valid_indices = np.where(valid_mask)[0]
+            if len(valid_indices) > 1:
+                # Use actual quarterly data locations
+                idx = valid_indices
+                X[idx[0]] = np.nan
+                X[idx[1:]] = 100 * (z[idx[1:]] / z[idx[:-1]] - 1)
+        else:
+            # For non-quarterly or default behavior, use fixed indices
+            idx = np.arange(t1, T, step)
+            if len(idx) > 1:
+                X[idx[0]] = np.nan
+                X[idx[1:]] = 100 * (z[idx[1:]] / z[idx[:-1]] - 1)
     elif formula == 'pc1':
         idx = np.arange(12 + t1, T, step)
         if len(idx) > 0:
@@ -89,12 +113,26 @@ def _transform_series(z: np.ndarray, formula: str, freq: str, step: int) -> np.n
                 X[idx] = 100 * (z[idx] / z[idx - 12] - 1)
             X[np.isinf(X)] = np.nan
     elif formula == 'pca':
-        idx = np.arange(t1, T, step)
-        if len(idx) > 1:
-            X[idx[0]] = np.nan
-            with np.errstate(divide='ignore', invalid='ignore'):
-                X[idx[1:]] = 100 * ((z[idx[1:]] / z[idx[:-1]]) ** (1/n) - 1)
-            X[np.isinf(X)] = np.nan
+        # For quarterly data, find actual data locations instead of assuming fixed indices
+        if freq == 'q' and step == 3:
+            # Find where quarterly data actually exists (non-NaN values)
+            valid_mask = ~np.isnan(z)
+            valid_indices = np.where(valid_mask)[0]
+            if len(valid_indices) > 1:
+                # Use actual quarterly data locations
+                idx = valid_indices
+                X[idx[0]] = np.nan
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    X[idx[1:]] = 100 * ((z[idx[1:]] / z[idx[:-1]]) ** (1/n) - 1)
+                X[np.isinf(X)] = np.nan
+        else:
+            # For non-quarterly or default behavior, use fixed indices
+            idx = np.arange(t1, T, step)
+            if len(idx) > 1:
+                X[idx[0]] = np.nan
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    X[idx[1:]] = 100 * ((z[idx[1:]] / z[idx[:-1]]) ** (1/n) - 1)
+                X[np.isinf(X)] = np.nan
     elif formula == 'log':
         with np.errstate(invalid='ignore'):
             X[:] = np.log(z)
@@ -639,8 +677,10 @@ def get_observations(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None
 ) -> pd.DataFrame:
-    """Get observations as a pandas DataFrame."""
+    """Get observations as a pandas DataFrame with pagination support."""
+    client = ensure_client(client)
     
+    # Build base query
     query = client.table(TABLES['observations']).select('*')
     
     if series_id:
@@ -652,12 +692,42 @@ def get_observations(
     if end_date:
         query = query.lte('date', end_date.isoformat())
     
-    result = query.execute()
+    # Pagination: Supabase default limit is 1000 rows
+    all_data = []
+    page_size = 1000
+    offset = 0
     
-    if not result.data:
+    while True:
+        # Create a fresh query for each page to avoid parameter accumulation
+        page_query = client.table(TABLES['observations']).select('*')
+        
+        if series_id:
+            page_query = page_query.eq('series_id', series_id)
+        if vintage_id:
+            page_query = page_query.eq('vintage_id', vintage_id)
+        if start_date:
+            page_query = page_query.gte('date', start_date.isoformat())
+        if end_date:
+            page_query = page_query.lte('date', end_date.isoformat())
+        
+        page_query = page_query.range(offset, offset + page_size - 1)
+        result = page_query.execute()
+        
+        if not result.data:
+            break
+        
+        all_data.extend(result.data)
+        
+        # If we got fewer rows than page_size, we've reached the end
+        if len(result.data) < page_size:
+            break
+        
+        offset += page_size
+    
+    if not all_data:
         return pd.DataFrame()
     
-    df = pd.DataFrame(result.data)
+    df = pd.DataFrame(all_data)
     if 'date' in df.columns:
         df['date'] = pd.to_datetime(df['date'])
     
@@ -841,6 +911,68 @@ def get_vintage_data(
     
     # Sort by date
     df_pivot = df_pivot.sort_index()
+    
+    # Resample to monthly frequency (MS = month start) as required by DFM
+    # This aligns all series to a monthly grid, which is what DFM expects
+    # - Daily series: take last value of month
+    # - Monthly series: already aligned, keep as-is
+    # - Quarterly series: forward-fill to keep values at quarter-ends
+    
+    # Create monthly index from the full date range (use original df dates, not pivoted)
+    # This ensures we capture all data including early quarterly observations
+    min_date = df['date'].min() if not df.empty else df_pivot.index.min()
+    max_date = df['date'].max() if not df.empty else df_pivot.index.max()
+    
+    # Round to month start
+    if isinstance(min_date, pd.Timestamp):
+        min_month = min_date.replace(day=1)
+    else:
+        min_month = pd.Timestamp(min_date).replace(day=1)
+    if isinstance(max_date, pd.Timestamp):
+        max_month = max_date.replace(day=1)
+    else:
+        max_month = pd.Timestamp(max_date).replace(day=1)
+    
+    df_pivot_monthly = pd.DataFrame(index=pd.date_range(
+        start=min_month,
+        end=max_month,
+        freq='MS'  # Month start frequency
+    ))
+    
+    # Resample each series according to its frequency
+    for series_id in df_pivot.columns:
+        series_data = df_pivot[series_id]
+        
+        # Get frequency from metadata
+        freq = 'm'  # Default to monthly
+        if not series_metadata.empty:
+            meta_row = series_metadata[series_metadata['series_id'] == series_id]
+            if not meta_row.empty:
+                freq = meta_row.iloc[0].get('frequency', 'm')
+        
+        # Resample based on frequency
+        if freq == 'd':
+            # Daily: take last value of month
+            resampled = series_data.resample('MS').last()
+        elif freq == 'q':
+            # Quarterly: values are at quarter-ends (Mar, Jun, Sep, Dec)
+            # Resample to monthly grid, keeping only quarter-end values
+            # DO NOT forward-fill - DFM expects quarterly data only at quarter-ends
+            # with NaN in between (this is the "tent structure" for mixed-frequency data)
+            monthly = series_data.resample('MS').last()
+            # Keep only March, June, September, December (quarter-ends)
+            quarter_ends = monthly[monthly.index.month.isin([3, 6, 9, 12])]
+            # Reindex to full monthly grid WITHOUT forward-fill (keep NaN between quarters)
+            resampled = quarter_ends.reindex(df_pivot_monthly.index)
+        else:
+            # Monthly or other: resample to monthly
+            resampled = series_data.resample('MS').last()
+        
+        # Align to monthly index
+        df_pivot_monthly[series_id] = resampled
+    
+    # Use monthly-aligned data
+    df_pivot = df_pivot_monthly
     
     # Get Time index
     Time = df_pivot.index

@@ -439,35 +439,79 @@ def merge_factors_per_block_from_hydra(
 ) -> None:
     """Merge factors_per_block from Hydra config into model config.
     
-    CSV provides series info but NOT model-level config (factors_per_block),
-    so we need to merge it from Hydra YAML config.
+    CSV provides series info and block structure (source of truth for block order).
+    Hydra config provides factor counts per block.
+    
+    This function aligns Hydra config blocks with CSV block_names (CSV priority).
     
     Parameters
     ----------
     model_cfg : ModelConfig
-        Model configuration to update
+        Model configuration to update (contains block_names from CSV)
     cfg_model : DictConfig
         Hydra model configuration dict containing blocks with factors
     """
     if not hasattr(cfg_model, '__class__'):
         return
     
+    # Get block names from CSV config (source of truth for order and count)
+    if not hasattr(model_cfg, 'block_names') or not model_cfg.block_names:
+        return
+    
+    csv_block_names = model_cfg.block_names
+    
     model_dict = OmegaConf.to_container(cfg_model, resolve=True)
     blocks_dict = model_dict.get('blocks', {})
     
     if blocks_dict and isinstance(blocks_dict, dict):
-        # Extract factors_per_block from blocks dict: {'Global': {'factors': 3}, ...}
-        factors_per_block = []
+        # Create mapping from Hydra block names to factors
+        hydra_factors = {}
         for block_name, block_cfg in blocks_dict.items():
             if isinstance(block_cfg, dict):
                 factors = block_cfg.get('factors', 1)
             else:
                 factors = 1
-            factors_per_block.append(factors)
+            hydra_factors[block_name] = factors
+        
+        # Map CSV block names to Hydra block names (handle variations)
+        # CSV may have 'Block_' prefix: 'Block_Global' -> 'Global'
+        # CSV may use 'Invest' while Hydra uses 'Investment', etc.
+        block_name_mapping = {
+            'Global': 'Global',
+            'Block_Global': 'Global',
+            'Consumption': 'Consumption',
+            'Block_Consumption': 'Consumption',
+            'Invest': 'Investment',  # CSV uses 'Invest', Hydra uses 'Investment'
+            'Block_Invest': 'Investment',
+            'Investment': 'Investment',
+            'Extern': 'External',  # CSV uses 'Extern', Hydra uses 'External'
+            'Block_Extern': 'External',
+            'External': 'External',
+        }
+        
+        # Build factors_per_block matching CSV block order (CSV priority)
+        factors_per_block = []
+        for csv_block_name in csv_block_names:
+            # Remove 'Block_' prefix if present
+            clean_block_name = csv_block_name.replace('Block_', '')
+            
+            # Find matching Hydra block name
+            hydra_block_name = block_name_mapping.get(csv_block_name, 
+                                                      block_name_mapping.get(clean_block_name, clean_block_name))
+            
+            # Get factors from Hydra config, default to 1 if not found
+            if hydra_block_name in hydra_factors:
+                factors_per_block.append(hydra_factors[hydra_block_name])
+            elif clean_block_name in hydra_factors:
+                factors_per_block.append(hydra_factors[clean_block_name])
+            else:
+                # Default to 1 factor for blocks not defined in Hydra
+                factors_per_block.append(1)
+                logger.warning(f"Block '{csv_block_name}' not found in Hydra config, using default 1 factor")
         
         if factors_per_block:
             model_cfg.factors_per_block = factors_per_block
-            logger.info(f"Merged factors_per_block from Hydra model.blocks: {factors_per_block}")
+            logger.info(f"Merged factors_per_block from Hydra: {factors_per_block} (aligned with CSV: {len(csv_block_names)} blocks)")
 
 
 def generate_forecasts(
