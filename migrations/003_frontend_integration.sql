@@ -503,8 +503,25 @@ BEGIN
 END;
 $$;
 
--- Note: We keep data_vintages, series, and blocks tables as they contain configuration data
--- that should persist. Ingest job will create new vintages and observations.
+-- Step 4: Truncate blocks table
+-- Blocks table contains block assignments from spec CSV files
+-- Ingest job will repopulate this when processing the spec CSV
+DO $$
+DECLARE
+    blocks_count BIGINT;
+BEGIN
+    -- Count before truncate
+    SELECT COUNT(*) INTO blocks_count FROM public.blocks;
+    
+    -- Truncate blocks
+    TRUNCATE TABLE public.blocks;
+    
+    RAISE NOTICE 'Truncated blocks table: Deleted % block assignments', blocks_count;
+END;
+$$;
+
+-- Note: We keep data_vintages and series tables as they contain core configuration data
+-- that should persist. Ingest job will create new vintages, observations, and blocks.
 
 -- ============================================================================
 -- PART 5: Indexes for Performance
