@@ -334,12 +334,12 @@ def main(cfg: DictConfig) -> None:
                 )
                 print(f'✅ Saved factors, factor_values, and factor_loadings to database for model_id={model_id}')
                 
-                # Cleanup old models (keep only latest 3)
+                # Cleanup old models (keep only latest 1 training run)
                 # This prevents database from growing unbounded
                 try:
                     from app.adapters.adapter_database import cleanup_old_models
                     cleanup_result = cleanup_old_models(
-                        keep_latest=3,
+                        keep_latest=1,
                         client=db_client if db_client else get_db_client()
                     )
                     if cleanup_result['deleted_count'] > 0:

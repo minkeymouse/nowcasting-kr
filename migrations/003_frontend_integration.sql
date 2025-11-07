@@ -88,34 +88,41 @@ BEGIN
     -- Then, if multiple model_ids exist, keep only the latest N model_ids
     
     WITH model_training_runs AS (
-        -- Group factors by model_id and created_at (each group is a training run)
+        -- Group factors by model_id and created_at (rounded to nearest second for grouping)
+        -- This handles cases where factors from same training run have slightly different timestamps
         SELECT 
             model_id,
-            created_at,
+            DATE_TRUNC('second', created_at) as created_at_rounded,
+            MIN(created_at) as created_at_min,
+            MAX(created_at) as created_at_max,
             COUNT(*) as factor_count
         FROM public.factors
-        GROUP BY model_id, created_at
+        GROUP BY model_id, DATE_TRUNC('second', created_at)
     ),
     latest_runs_per_model AS (
         -- For each model_id, get the latest training run (by created_at)
         SELECT DISTINCT ON (model_id)
             model_id,
-            created_at
+            created_at_rounded,
+            created_at_min,
+            created_at_max
         FROM model_training_runs
-        ORDER BY model_id, created_at DESC
+        ORDER BY model_id, created_at_rounded DESC
     ),
     model_ids_to_keep AS (
         -- If multiple model_ids, keep latest N; if single model_id, keep it
         SELECT model_id
         FROM latest_runs_per_model
-        ORDER BY created_at DESC
+        ORDER BY created_at_rounded DESC
         LIMIT keep_latest_models
     ),
     factors_to_keep AS (
         -- Get all factor_ids from the latest training runs of kept model_ids
+        -- Match by model_id and created_at within the time range of the training run
         SELECT f.id
         FROM public.factors f
-        INNER JOIN latest_runs_per_model lr ON f.model_id = lr.model_id AND f.created_at = lr.created_at
+        INNER JOIN latest_runs_per_model lr ON f.model_id = lr.model_id 
+            AND DATE_TRUNC('second', f.created_at) = lr.created_at_rounded
         INNER JOIN model_ids_to_keep mk ON f.model_id = mk.model_id
     )
     SELECT array_agg(id) INTO factor_ids_to_keep
