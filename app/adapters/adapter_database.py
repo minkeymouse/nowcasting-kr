@@ -1218,8 +1218,8 @@ def cleanup_old_models(
         db_client = _get_db_client(client)
         
         # Get all unique model_ids with their latest creation time
-        # Use a subquery to get MAX(created_at) per model_id
-        factors_result = db_client.table('factors').select('model_id, created_at').execute()
+        # Use a subquery to get MAX(created_at) per model_id, or use id as fallback
+        factors_result = db_client.table('factors').select('id, model_id, created_at').order('created_at', desc=True).execute()
         
         if not factors_result.data:
             logger.debug("No factors found in database")
@@ -1234,40 +1234,52 @@ def cleanup_old_models(
             }
         
         # Group by model_id and find latest created_at for each
+        # Also track factor_id as fallback for sorting
         from collections import defaultdict
         from datetime import datetime
         
-        model_ages = defaultdict(lambda: datetime.min)
+        model_ages = defaultdict(lambda: (datetime.min, -1))  # (created_at, max_factor_id)
         for row in factors_result.data:
             model_id = row['model_id']
-            created_at_str = row.get('created_at')
-            if created_at_str:
+            factor_id = row.get('id', -1)
+            created_at_raw = row.get('created_at')
+            
+            created_at = datetime.min
+            if created_at_raw:
                 try:
-                    # Parse timestamp (handle both with and without timezone)
-                    if 'T' in created_at_str:
-                        if created_at_str.endswith('Z'):
-                            created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                    # Handle different types: string, datetime, or already parsed
+                    if isinstance(created_at_raw, datetime):
+                        created_at = created_at_raw
+                    elif isinstance(created_at_raw, str):
+                        # Parse timestamp (handle both with and without timezone)
+                        if 'T' in created_at_raw:
+                            if created_at_raw.endswith('Z'):
+                                created_at = datetime.fromisoformat(created_at_raw.replace('Z', '+00:00'))
+                            else:
+                                created_at = datetime.fromisoformat(created_at_raw)
                         else:
-                            created_at = datetime.fromisoformat(created_at_str)
+                            created_at = datetime.fromisoformat(created_at_raw)
                     else:
-                        created_at = datetime.fromisoformat(created_at_str)
-                    
-                    # Keep the latest timestamp for each model_id
-                    if created_at > model_ages[model_id]:
-                        model_ages[model_id] = created_at
+                        # Try to convert to datetime
+                        created_at = pd.to_datetime(created_at_raw).to_pydatetime()
                 except Exception as e:
-                    logger.warning(f"Could not parse created_at for model_id {model_id}: {e}")
+                    logger.warning(f"Could not parse created_at for model_id {model_id}: {e}, type: {type(created_at_raw)}")
                     # Use current time as fallback
-                    model_ages[model_id] = datetime.now()
+                    created_at = datetime.now()
+            
+            # Keep the latest timestamp and highest factor_id for each model_id
+            current_max_time, current_max_id = model_ages[model_id]
+            if created_at > current_max_time or (created_at == current_max_time and factor_id > current_max_id):
+                model_ages[model_id] = (created_at, factor_id)
         
-        # Convert to list of (model_id, latest_created_at) tuples
-        model_list = [(model_id, created_at) for model_id, created_at in model_ages.items()]
+        # Convert to list of (model_id, latest_created_at, max_factor_id) tuples
+        model_list = [(model_id, created_at, max_id) for model_id, (created_at, max_id) in model_ages.items()]
         
         if len(model_list) <= keep_latest:
             logger.debug(f"Only {len(model_list)} models found, keeping all (limit: {keep_latest})")
             return {
                 'total_models': len(model_list),
-                'kept_models': [model_id for model_id, _ in model_list],
+                'kept_models': [model_id for model_id, _, _ in model_list],
                 'deleted_models': [],
                 'deleted_count': 0,
                 'deleted_factors': 0,
@@ -1275,15 +1287,78 @@ def cleanup_old_models(
                 'deleted_factor_loadings': 0
             }
         
-        # Sort by created_at (newest first)
-        model_list.sort(key=lambda x: x[1], reverse=True)
+        # Sort by created_at (newest first), then by factor_id as tiebreaker
+        model_list.sort(key=lambda x: (x[1], x[2]), reverse=True)
         
+        # Special case: if all factors have the same model_id, use factor_id-based cleanup instead
+        unique_model_ids = set(model_id for model_id, _, _ in model_list)
+        if len(unique_model_ids) == 1:
+            # All factors belong to the same model_id - use factor_id-based cleanup
+            logger.warning(f"All factors belong to the same model_id {list(unique_model_ids)[0]}. Using factor_id-based cleanup.")
+            # Get all factors sorted by id (newest first, assuming id is auto-increment)
+            all_factors = db_client.table('factors').select('id, model_id').order('id', desc=True).execute()
+            if all_factors.data:
+                total_factors = len(all_factors.data)
+                if total_factors <= keep_latest:
+                    logger.debug(f"Only {total_factors} factors found, keeping all (limit: {keep_latest})")
+                    return {
+                        'total_models': 1,
+                        'kept_models': list(unique_model_ids),
+                        'deleted_models': [],
+                        'deleted_count': 0,
+                        'deleted_factors': 0,
+                        'deleted_factor_values': 0,
+                        'deleted_factor_loadings': 0
+                    }
+                
+                # Keep latest N factors by id
+                factors_to_keep = all_factors.data[:keep_latest]
+                factors_to_delete = all_factors.data[keep_latest:]
+                
+                kept_factor_ids = [f['id'] for f in factors_to_keep]
+                deleted_factor_ids = [f['id'] for f in factors_to_delete]
+                
+                # Delete old factors by id (CASCADE will handle factor_values and factor_loadings)
+                deleted_count = 0
+                for factor_id in deleted_factor_ids:
+                    try:
+                        db_client.table('factors').delete().eq('id', factor_id).execute()
+                        deleted_count += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to delete factor id={factor_id}: {e}")
+                
+                # Count factor_values and factor_loadings that will be deleted
+                factor_values_count = 0
+                factor_loadings_count = 0
+                if deleted_factor_ids:
+                    fv_result = db_client.table('factor_values').select('id', count='exact').in_('factor_id', deleted_factor_ids).execute()
+                    factor_values_count = fv_result.count if hasattr(fv_result, 'count') else 0
+                    
+                    fl_result = db_client.table('factor_loadings').select('factor_id, series_id', count='exact').in_('factor_id', deleted_factor_ids).execute()
+                    factor_loadings_count = fl_result.count if hasattr(fl_result, 'count') else 0
+                
+                logger.info(
+                    f"Cleaned up factors by id: kept {len(kept_factor_ids)} latest factors, "
+                    f"deleted {deleted_count} old factors (~{factor_values_count} factor_values, ~{factor_loadings_count} factor_loadings)"
+                )
+                
+                return {
+                    'total_models': 1,
+                    'kept_models': list(unique_model_ids),
+                    'deleted_models': [],
+                    'deleted_count': deleted_count,
+                    'deleted_factors': deleted_count,
+                    'deleted_factor_values': factor_values_count,
+                    'deleted_factor_loadings': factor_loadings_count
+                }
+        
+        # Normal case: multiple model_ids - use model_id-based cleanup
         # Split into kept and deleted
         models_to_keep = model_list[:keep_latest]
         models_to_delete = model_list[keep_latest:]
         
-        kept_model_ids = [model_id for model_id, _ in models_to_keep]
-        deleted_model_ids = [model_id for model_id, _ in models_to_delete]
+        kept_model_ids = [model_id for model_id, _, _ in models_to_keep]
+        deleted_model_ids = [model_id for model_id, _, _ in models_to_delete]
         
         # Count factors that will be deleted (for reporting)
         factors_to_delete = db_client.table('factors').select('id', count='exact').in_('model_id', deleted_model_ids).execute()
