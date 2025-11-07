@@ -143,6 +143,11 @@ def main(cfg: DictConfig) -> None:
                 if result:
                     latest_vintage_id, vintage_info = result
                     latest_vintage_date = vintage_info['vintage_date']
+                    # Normalize vintage_date to string if it's a date object
+                    if hasattr(latest_vintage_date, 'isoformat'):
+                        latest_vintage_date = latest_vintage_date.isoformat()
+                    elif not isinstance(latest_vintage_date, str):
+                        latest_vintage_date = str(latest_vintage_date)
                     if not vintage_new:
                         vintage_new = latest_vintage_date
                     if not vintage_old:
