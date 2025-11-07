@@ -712,8 +712,8 @@ def get_observations(
         
         page_query = page_query.range(offset, offset + page_size - 1)
         result = page_query.execute()
-    
-    if not result.data:
+        
+        if not result.data:
             break
         
         all_data.extend(result.data)
