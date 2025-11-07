@@ -29,7 +29,8 @@ jobs:
           pip install uv
           uv venv .venv
           source .venv/bin/activate
-          uv sync
+          uv pip install -e .[database]
+          uv pip install supabase>=2.0.0 psycopg2-binary>=2.9.0 httpx>=0.24.0
       
       - name: Load environment variables
         env:
