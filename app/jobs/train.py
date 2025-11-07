@@ -344,7 +344,7 @@ def main(cfg: DictConfig) -> None:
                     )
                     if cleanup_result['deleted_count'] > 0:
                         print(f'✅ Cleaned up old models: kept {len(cleanup_result["kept_models"])} latest, deleted {cleanup_result["deleted_count"]} old models')
-                        print(f'   (Deleted {cleanup_result["deleted_factors"]} factors, ~{cleanup_result["deleted_factor_values"]} factor_values, ~{cleanup_result["deleted_factor_loadings"]} factor_loadings)')
+                        print(f'   (Deleted {cleanup_result["deleted_factors"]} factors, ~{cleanup_result["deleted_factor_values"]} factor_values, ~{cleanup_result["deleted_factor_loadings"]} factor_loadings, {cleanup_result.get("deleted_dfm_results", 0)} dfm_results)')
                         logger.info(f"Cleaned up models: kept {len(cleanup_result['kept_models'])} latest, deleted {cleanup_result['deleted_count']}")
                     else:
                         print(f'✅ No cleanup needed: only {cleanup_result["total_models"]} model(s) found (keeping all)')
