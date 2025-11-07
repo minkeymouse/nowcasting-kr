@@ -1,0 +1,4 @@
+# Hydra configuration management
+hydra-core>=1.3.0
+omegaconf>=2.3.0
+
