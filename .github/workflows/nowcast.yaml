@@ -1,4 +1,4 @@
-name: Forecast Generation
+name: Nowcast DFM
 
 on:
   workflow_dispatch:
@@ -8,66 +8,9 @@ on:
         required: false
         default: 'src/spec/001_initial_spec.csv'
         type: string
-      max_iter:
-        description: 'Maximum EM iterations for training'
-        required: false
-        default: '100'
-        type: string
 
 jobs:
-  train:
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-      
-      - name: Install dependencies
-        run: |
-          pip install uv
-          uv venv .venv
-          source .venv/bin/activate
-          uv sync
-      
-      - name: Load environment variables
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
-          echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
-          echo "SUPABASE_KEY=$SUPABASE_KEY" >> $GITHUB_ENV
-      
-      - name: Train DFM model
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
-          source .venv/bin/activate
-          python scripts/train_dfm.py \
-            "model.config_path=${{ inputs.config_path }}" \
-            "data.use_database=true" \
-            "data.strict_mode=false" \
-            "dfm.max_iter=${{ inputs.max_iter }}"
-      
-      - name: Upload model weights
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: model-weights
-          path: |
-            ResDFM.pkl
-            *.pkl
-          retention-days: 30
-  
   nowcast:
-    needs: train
     runs-on: ubuntu-latest
     timeout-minutes: 60
     
@@ -88,11 +31,12 @@ jobs:
           source .venv/bin/activate
           uv sync
       
-      - name: Download model weights
+      - name: Download model weights (optional)
         uses: actions/download-artifact@v4
         with:
           name: model-weights
           path: .
+        continue-on-error: true
       
       - name: Load environment variables
         env:
@@ -117,7 +61,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: forecast-logs
+          name: nowcast-logs
           path: |
             *.log
             outputs/**/*.log
