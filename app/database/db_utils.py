@@ -249,14 +249,14 @@ def fetch_series_data(
         for page in range(max_pages):
             # KOSIS doesn't support pagination parameters, so only pass them for BOK
             if source == 'BOK':
-                data_result = api_client.fetch_statistic_data(
-                    stat_code=api_code,
-                    frequency=api_freq,
-                    start_date=start_date,
-                    end_date=end_date,
-                    item_code1=item_code1_val,
-                    item_code2=item_code2_val,
-                    item_code3=None,  # Don't pass '?' for optional params
+        data_result = api_client.fetch_statistic_data(
+            stat_code=api_code,
+            frequency=api_freq,
+            start_date=start_date,
+            end_date=end_date,
+            item_code1=item_code1_val,
+            item_code2=item_code2_val,
+            item_code3=None,  # Don't pass '?' for optional params
                     item_code4=None,
                     start_count=start_count,
                     end_count=start_count + page_size - 1
@@ -273,42 +273,42 @@ def fetch_series_data(
                     item_code1=item_code1_val,
                     item_code2=item_code2_val,
                     item_code3=None,
-                    item_code4=None
-                )
-            
+            item_code4=None
+        )
+        
             # Extract rows from response
             page_rows = []
-            if source == 'KOSIS':
-                # KOSIS response is a list directly (wrapped in {'data': [...]} by client)
-                if isinstance(data_result, dict) and 'data' in data_result:
+        if source == 'KOSIS':
+            # KOSIS response is a list directly (wrapped in {'data': [...]} by client)
+            if isinstance(data_result, dict) and 'data' in data_result:
                     page_rows = data_result['data']
-                elif isinstance(data_result, list):
+            elif isinstance(data_result, list):
                     page_rows = data_result
-                else:
-                    if page == 0:  # Only warn on first page
-                        logger.warning(f"No data returned for {series_id}")
-                    break
             else:
-                # BOK response format - check for rate limiting errors
-                if 'RESULT' in data_result:
-                    result = data_result['RESULT']
-                    if isinstance(result, dict) and 'CODE' in result:
-                        error_code = result.get('CODE', '')
-                        error_msg = result.get('MESSAGE', '')
-                        if 'ERROR' in error_code or '602' in error_code:
-                            logger.error(f"BOK API rate limit error for {series_id}: {error_msg}")
-                            raise Exception(f"BOK API rate limit: {error_msg}")
-                        else:
-                            if page == 0:  # Only warn on first page
-                                logger.warning(f"BOK API error for {series_id}: {error_code} - {error_msg}")
-                            break
-                
-                if 'StatisticSearch' not in data_result:
                     if page == 0:  # Only warn on first page
-                        logger.warning(f"No data returned for {series_id}")
+                logger.warning(f"No data returned for {series_id}")
+                    break
+        else:
+            # BOK response format - check for rate limiting errors
+            if 'RESULT' in data_result:
+                result = data_result['RESULT']
+                if isinstance(result, dict) and 'CODE' in result:
+                    error_code = result.get('CODE', '')
+                    error_msg = result.get('MESSAGE', '')
+                    if 'ERROR' in error_code or '602' in error_code:
+                        logger.error(f"BOK API rate limit error for {series_id}: {error_msg}")
+                        raise Exception(f"BOK API rate limit: {error_msg}")
+                    else:
+                            if page == 0:  # Only warn on first page
+                        logger.warning(f"BOK API error for {series_id}: {error_code} - {error_msg}")
+                            break
+            
+            if 'StatisticSearch' not in data_result:
+                    if page == 0:  # Only warn on first page
+                logger.warning(f"No data returned for {series_id}")
                     break
                 page_rows = data_result['StatisticSearch'].get('row', [])
-            
+        
             if not page_rows:
                 # No more data
                 break
@@ -421,7 +421,7 @@ def fetch_series_data(
             requested_start_str = start_date
             requested_end_str = end_date
             
-            logger.info(f"Parsed {len(df)} valid observations for {series_id}")
+        logger.info(f"Parsed {len(df)} valid observations for {series_id}")
             logger.info(f"  Date range: {actual_start} to {actual_end} ({actual_span_years:.1f} years)")
             logger.info(f"  Requested: {requested_start_str} to {requested_end_str}")
             

@@ -92,7 +92,7 @@ def _resolve_vintage_id(
     
     if vintage_date is not None:
         try:
-            from app.database import get_latest_vintage_id
+        from app.database import get_latest_vintage_id
             normalized_date = _normalize_date(vintage_date)
             resolved_id = get_latest_vintage_id(vintage_date=normalized_date, client=client)
             if resolved_id is None:

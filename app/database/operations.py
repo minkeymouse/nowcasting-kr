@@ -81,10 +81,10 @@ def _transform_series(z: np.ndarray, formula: str, freq: str, step: int) -> np.n
                 X[idx[1:]] = z[idx[1:]] - z[idx[:-1]]
         else:
             # For non-quarterly or default behavior, use fixed indices
-            idx = np.arange(t1, T, step)
-            if len(idx) > 1:
-                X[idx[0]] = np.nan
-                X[idx[1:]] = z[idx[1:]] - z[idx[:-1]]
+        idx = np.arange(t1, T, step)
+        if len(idx) > 1:
+            X[idx[0]] = np.nan
+            X[idx[1:]] = z[idx[1:]] - z[idx[:-1]]
     elif formula == 'ch1':
         idx = np.arange(12 + t1, T, step)
         if len(idx) > 0:
@@ -102,10 +102,10 @@ def _transform_series(z: np.ndarray, formula: str, freq: str, step: int) -> np.n
                 X[idx[1:]] = 100 * (z[idx[1:]] / z[idx[:-1]] - 1)
         else:
             # For non-quarterly or default behavior, use fixed indices
-            idx = np.arange(t1, T, step)
-            if len(idx) > 1:
-                X[idx[0]] = np.nan
-                X[idx[1:]] = 100 * (z[idx[1:]] / z[idx[:-1]] - 1)
+        idx = np.arange(t1, T, step)
+        if len(idx) > 1:
+            X[idx[0]] = np.nan
+            X[idx[1:]] = 100 * (z[idx[1:]] / z[idx[:-1]] - 1)
     elif formula == 'pc1':
         idx = np.arange(12 + t1, T, step)
         if len(idx) > 0:
@@ -127,12 +127,12 @@ def _transform_series(z: np.ndarray, formula: str, freq: str, step: int) -> np.n
                 X[np.isinf(X)] = np.nan
         else:
             # For non-quarterly or default behavior, use fixed indices
-            idx = np.arange(t1, T, step)
-            if len(idx) > 1:
-                X[idx[0]] = np.nan
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    X[idx[1:]] = 100 * ((z[idx[1:]] / z[idx[:-1]]) ** (1/n) - 1)
-                X[np.isinf(X)] = np.nan
+        idx = np.arange(t1, T, step)
+        if len(idx) > 1:
+            X[idx[0]] = np.nan
+            with np.errstate(divide='ignore', invalid='ignore'):
+                X[idx[1:]] = 100 * ((z[idx[1:]] / z[idx[:-1]]) ** (1/n) - 1)
+            X[np.isinf(X)] = np.nan
     elif formula == 'log':
         with np.errstate(invalid='ignore'):
             X[:] = np.log(z)
@@ -712,8 +712,8 @@ def get_observations(
         
         page_query = page_query.range(offset, offset + page_size - 1)
         result = page_query.execute()
-        
-        if not result.data:
+    
+    if not result.data:
             break
         
         all_data.extend(result.data)
@@ -1359,7 +1359,7 @@ def save_forecast(
         logger.info(f"Updated existing forecast: forecast_id={forecast_id}, series={series_id}, date={forecast_date}, run_type={run_type}")
     else:
         # Insert new forecast
-        result = client.table(TABLES['forecasts']).insert(data).execute()
+    result = client.table(TABLES['forecasts']).insert(data).execute()
         logger.info(f"Inserted new forecast: series={series_id}, date={forecast_date}, run_type={run_type}")
     
     return result.data[0] if result.data else None

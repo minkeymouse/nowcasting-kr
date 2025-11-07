@@ -366,7 +366,7 @@ def main(cfg: DictConfig) -> None:
         if isinstance(vintage, int):
             # If vintage is an ID, get the date
             try:
-                from app.database import get_vintage
+            from app.database import get_vintage
                 if db_client is None:
                     db_client = get_db_client()
                 vintage_info = get_vintage(vintage_id=vintage, client=db_client)

@@ -46,13 +46,13 @@ if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
         project_root / '.env.local',
         Path('.env.local'),  # Current directory
     ]
-    
-    for env_path in env_locations:
-        if env_path.exists():
-            load_dotenv(env_path, override=True)
-            logger.info(f"✅ Loaded environment from: {env_path}")
-            env_loaded = True
-            break
+
+for env_path in env_locations:
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+        logger.info(f"✅ Loaded environment from: {env_path}")
+        env_loaded = True
+        break
 
 if not env_loaded and os.getenv('GITHUB_ACTIONS'):
     logger.info("Running in GitHub Actions - using environment variables from secrets")
@@ -86,7 +86,7 @@ from app.database.db_utils import (
     fetch_series_data,
     get_next_period_date,
 )
-from app.database import ensure_vintage_and_job, finalize_ingestion_job, delete_old_vintages
+            from app.database import ensure_vintage_and_job, finalize_ingestion_job, delete_old_vintages
 
 
 def main() -> None:
@@ -120,7 +120,7 @@ def main() -> None:
         except ImportError:
             # Fallback: try importing database client directly
             try:
-                from app.database import get_client as get_db_client
+            from app.database import get_client as get_db_client
             except ImportError:
                 raise ImportError("Database client not available")
         
