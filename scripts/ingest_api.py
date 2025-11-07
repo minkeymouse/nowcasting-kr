@@ -224,6 +224,17 @@ def main() -> None:
     print(f"   ✅ Loaded CSV: {len(csv_df)} series")
     logger.info(f"Loaded CSV: {len(csv_df)} series")
     
+    # Determine config_name from spec source
+    if spec_source == "database_storage" and spec_filename:
+        # Extract config name from filename (e.g., "001_initial_spec.csv" -> "001-initial-spec")
+        config_name = Path(spec_filename).stem.replace('_', '-')
+    elif spec_source == "local_file":
+        csv_path = project_root / 'src' / 'spec' / '001_initial_spec.csv'
+        config_name = csv_path.stem.replace('_', '-')
+    else:
+        # Fallback: use default
+        config_name = "001-initial-spec"
+    
     # Create a simple config-like object from CSV
     class SimpleSeriesConfig:
         def __init__(self, row):
@@ -262,7 +273,7 @@ def main() -> None:
                 block_cols = ['Global', 'Consumption', 'Investment', 'External']
             self.block_names = block_cols
     
-    model_cfg = SimpleModelConfig(csv_df)
+    model_cfg = SimpleModelConfig(csv_df, config_name=config_name)
     # Ensure series_id column exists for indexing
     if 'series_id' not in csv_df.columns and 'id' in csv_df.columns:
         csv_df['series_id'] = csv_df['id'].astype(str)
