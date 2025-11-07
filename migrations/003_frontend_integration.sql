@@ -171,10 +171,10 @@ DECLARE
 BEGIN
     -- Get model_ids to keep (latest N by created_at)
     WITH latest_models AS (
-        SELECT DISTINCT model_id
+        SELECT model_id, MAX(created_at) as max_created_at
         FROM public.factors
         GROUP BY model_id
-        ORDER BY MAX(created_at) DESC
+        ORDER BY max_created_at DESC
         LIMIT keep_latest_models
     ),
     all_models AS (
