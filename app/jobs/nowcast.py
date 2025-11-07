@@ -184,16 +184,26 @@ def main(cfg: DictConfig) -> None:
             series = str(series_raw) if series_raw else 'GDPC1'
         
         period_raw = cfg.get('period', data_cfg_dict.get('target_period', '2016q4'))
-        # Keep period in original format for update_nowcast (it expects format matching series frequency)
-        # For quarterly series: 'YYYYqQ' format (e.g., '2016q4')
-        # For monthly series: 'YYYYmMM' format (e.g., '2016m12')
         period = str(period_raw) if period_raw else '2016q4'
         
-        # Also create period_monthly for other uses (like generate_forecasts if needed)
-        # Convert quarterly to monthly format if needed
-        period_monthly = period
+        # Determine series frequency from config to convert period format
+        # update_nowcast expects period format matching the series' original frequency
+        # But DFM uses monthly clock, so we need to check the series' original frequency
+        series_frequency = 'm'  # Default to monthly
+        if hasattr(model_cfg, 'SeriesID') and hasattr(model_cfg, 'Frequency'):
+            try:
+                series_idx = model_cfg.SeriesID.index(series) if series in model_cfg.SeriesID else -1
+                if series_idx >= 0 and series_idx < len(model_cfg.Frequency):
+                    series_frequency = model_cfg.Frequency[series_idx].lower()
+            except (ValueError, AttributeError, IndexError):
+                pass
+        
+        # Convert period to match series frequency format
+        # update_nowcast checks the series frequency and expects matching format
+        # Based on error message, it seems update_nowcast may use monthly clock format
+        # So we convert quarterly periods to monthly format
         if isinstance(period_raw, str) and 'q' in period_raw.lower():
-            # Parse quarterly format: YYYYqQ -> YYYYmMM
+            # Convert quarterly format: YYYYqQ -> YYYYmMM
             # Q1 -> m03, Q2 -> m06, Q3 -> m09, Q4 -> m12
             import re
             match = re.match(r'(\d{4})q([1-4])', period_raw.lower())
@@ -201,7 +211,8 @@ def main(cfg: DictConfig) -> None:
                 year = match.group(1)
                 quarter = int(match.group(2))
                 month = quarter * 3  # Q1=3, Q2=6, Q3=9, Q4=12
-                period_monthly = f"{year}m{month:02d}"
+                period = f"{year}m{month:02d}"
+        # If already monthly format, keep as is
         
         config_id = data_cfg_dict.get('config_id')
         strict_mode = data_cfg_dict.get('strict_mode', False)
