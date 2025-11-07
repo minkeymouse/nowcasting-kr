@@ -27,4 +27,5 @@ matlab/**/*.xls
 *.txt
 *.pyc
 
-outputs/
+outputs/PR_REVIEW.md
+PR_DESCRIPTION.md

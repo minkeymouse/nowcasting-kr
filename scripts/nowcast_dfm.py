@@ -10,6 +10,7 @@ This is NOT forward nowcasting - it only nowcasts the current period (t=now).
 import sys
 import logging
 import pickle
+import os
 from pathlib import Path
 from typing import Optional
 import hydra
@@ -115,59 +116,52 @@ def main(cfg: DictConfig) -> None:
         
         # Load or estimate DFM model
         base_dir = Path(__file__).parent.parent
-        model_dir = base_dir / 'model'
-        model_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Fallback to ResDFM.pkl if model file not found
         res_file = base_dir / 'ResDFM.pkl'
         Res = None
-        model_id = None
         
-        # Try to load model weights from model/ directory
-        model_file = None
-        if vintage_new:
-            # Try config-specific file first
-            if config_id:
-                model_file = model_dir / f"dfm_config_{config_id}_{vintage_new}.pkl"
-                if not model_file.exists():
-                    model_file = None
-            # Fallback to vintage-only file
-            if model_file is None or not model_file.exists():
-                model_file = model_dir / f"dfm_{vintage_new}.pkl"
+        # Use config_id as model_id, or generate a simple hash-based ID
+        if config_id:
+            model_id = int(config_id) if isinstance(config_id, (int, str)) and str(config_id).isdigit() else hash(str(config_id)) % 2147483647
+        else:
+            # Generate model_id from config hash
+            model_id = hash(str(model_cfg.SeriesID)) % 2147483647
         
-        # Try loading from model/ directory first
-        if model_file and model_file.exists():
+        # Try loading from Supabase storage first (primary source for latest weights)
+        model_weights_from_storage = None
+        if use_database and vintage_new:
             try:
-                logger.info(f"Loading model weights from {model_file}")
-                with open(model_file, 'rb') as f:
-                    model_weights = pickle.load(f)
+                from adapters.adapter_database import download_model_weights_from_storage
                 
-                # Reconstruct DFMResult from weights (need to estimate full model)
-                # For nowcasting, we need full Res object, so we'll still need to estimate
-                # But we can skip if we have ResDFM.pkl with full results
-                logger.info("Model weights loaded, but full DFM estimation needed for nowcasting")
-                logger.info("Checking for full DFM results in ResDFM.pkl...")
-            except Exception as e:
-                logger.warning(f"Failed to load model weights from {model_file}: {e}")
-                model_file = None
-        
-        # Try loading from model/ directory first
-        if model_file and model_file.exists():
-            try:
-                logger.info(f"Loading model weights from {model_file}")
-                with open(model_file, 'rb') as f:
-                    model_weights = pickle.load(f)
+                # Try config-specific file first
+                model_filename = None
+                if config_id:
+                    model_filename = f"dfm_config_{config_id}_{vintage_new}.pkl"
+                    model_weights_from_storage = download_model_weights_from_storage(
+                        filename=model_filename,
+                        bucket_name="model-weights",
+                        client=get_db_client()
+                    )
                 
-                # Reconstruct DFMResult from weights (need to estimate full model)
-                # For nowcasting, we need full Res object, so we'll still need to estimate
-                # But we can skip if we have ResDFM.pkl with full results
-                logger.info("Model weights loaded, but full DFM estimation needed for nowcasting")
-                logger.info("Checking for full DFM results in ResDFM.pkl...")
+                # Fallback to vintage-only file
+                if model_weights_from_storage is None:
+                    model_filename = f"dfm_{vintage_new}.pkl"
+                    model_weights_from_storage = download_model_weights_from_storage(
+                        filename=model_filename,
+                        bucket_name="model-weights",
+                        client=get_db_client()
+                    )
+                
+                if model_weights_from_storage:
+                    logger.info(f"✅ Loaded model weights from Supabase storage: {model_filename}")
+                    # Note: We still need full Res for nowcasting, so we'll estimate if ResDFM.pkl not available
+                else:
+                    logger.info("No model weights found in storage bucket, will check local files or re-estimate")
+            except ImportError:
+                logger.debug("Supabase storage not available, trying local files...")
             except Exception as e:
-                logger.warning(f"Failed to load model weights from {model_file}: {e}")
-                model_file = None
+                logger.warning(f"Failed to load from Supabase storage: {e}. Trying local files...")
         
-        # Try loading full results from ResDFM.pkl
+        # Try loading full results from ResDFM.pkl (preferred for nowcasting)
         if not Res:
             try:
                 logger.info(f"Loading full DFM results from {res_file}")
@@ -214,32 +208,63 @@ def main(cfg: DictConfig) -> None:
             
             Res = dfm(X, model_cfg, threshold=threshold, max_iter=max_iter)
             
-            # Save model weights to model/ directory (not to database yet)
-            if vintage_new:
-                model_filename = f"dfm_{vintage_new}.pkl"
-                if config_id:
-                    model_filename = f"dfm_config_{config_id}_{vintage_new}.pkl"
-                model_file = model_dir / model_filename
-                
-                model_weights = {
-                    'C': Res.C,
-                    'R': Res.R,
-                    'A': Res.A,
-                    'Q': Res.Q,
-                    'Z_0': Res.Z_0,
-                    'V_0': Res.V_0,
-                    'Mx': Res.Mx,
-                    'Wx': Res.Wx,
-                    'threshold': threshold,
-                    'vintage': vintage_new,
-                    'config_id': config_id,
-                    'convergence_iter': getattr(Res, 'convergence_iter', None),
-                    'log_likelihood': getattr(Res, 'loglik', None),
-                }
-                
-                with open(model_file, 'wb') as f:
-                    pickle.dump(model_weights, f)
-                logger.info(f"Model weights saved to {model_file}")
+            # Save model weights to Supabase storage
+            if use_database and vintage_new:
+                try:
+                    from adapters.adapter_database import upload_model_weights_to_storage
+                    
+                    model_filename = f"dfm_{vintage_new}.pkl"
+                    if config_id:
+                        model_filename = f"dfm_config_{config_id}_{vintage_new}.pkl"
+                    
+                    model_weights = {
+                        'C': Res.C, 'R': Res.R, 'A': Res.A, 'Q': Res.Q,
+                        'Z_0': Res.Z_0, 'V_0': Res.V_0, 'Mx': Res.Mx, 'Wx': Res.Wx,
+                        'threshold': threshold, 'vintage': vintage_new, 'config_id': config_id,
+                        'convergence_iter': getattr(Res, 'convergence_iter', None),
+                        'log_likelihood': getattr(Res, 'loglik', None),
+                    }
+                    
+                    storage_url = upload_model_weights_to_storage(
+                        model_weights=model_weights,
+                        filename=model_filename,
+                        bucket_name="model-weights",
+                        client=get_db_client()
+                    )
+                    logger.info(f"Model weights uploaded to Supabase storage: {storage_url}")
+                except Exception as e:
+                    logger.warning(f"Failed to upload model weights to storage: {e}")
+            
+            # Save factors, factor_values, and factor_loadings to database for frontend visualization
+            if use_database:
+                try:
+                    from adapters.adapter_database import save_factors_to_db
+                    from database import get_latest_vintage_id
+                    
+                    # Get vintage_id for factor_values
+                    vintage_id_new = None
+                    if isinstance(vintage_new, int):
+                        vintage_id_new = vintage_new
+                    else:
+                        client = get_db_client()
+                        vintage_id_new = get_latest_vintage_id(vintage_date=vintage_new, client=client)
+                    
+                    if vintage_id_new:
+                        save_factors_to_db(
+                            Res=Res,
+                            model_id=model_id,
+                            config=model_cfg,
+                            vintage_id=vintage_id_new,
+                            Time=Time,
+                            client=get_db_client()
+                        )
+                        logger.info(f"Saved factors, factor_values, and factor_loadings to database for model_id={model_id}")
+                    else:
+                        logger.warning(f"Could not resolve vintage_id for {vintage_new}. Skipping factor save.")
+                except ImportError:
+                    logger.warning("Database module not available. Cannot save factors to database.")
+                except Exception as e:
+                    logger.warning(f"Failed to save factors to database: {e}", exc_info=True)
             
             # Save full results to ResDFM.pkl (legacy support)
             with open(res_file, 'wb') as f:

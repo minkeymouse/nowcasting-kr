@@ -9,10 +9,13 @@ The DFM module itself remains generic and database-agnostic.
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import List, Optional, Tuple, Union, Any
+from typing import List, Optional, Tuple, Union, Any, Dict
 from datetime import date
 import warnings
 import logging
+import pickle
+import io
+import os
 
 # Import generic DFM module functions
 from src.nowcasting.config import ModelConfig
@@ -211,7 +214,7 @@ def _fetch_vintage_data(
     end_date: Optional[date] = None,
     strict_mode: bool = False,
     client: Optional[object] = None
-) -> Tuple[pd.DataFrame, pd.DatetimeIndex, pd.DataFrame]:
+) -> Tuple[pd.DataFrame, pd.DatetimeIndex, pd.DataFrame, pd.DataFrame]:
     """Fetch vintage data and metadata from database.
     
     Uses config-specific function with blocks table ordering if available,
@@ -578,8 +581,11 @@ def load_data_from_db(
     # Ensure Z and Time have matching lengths
     if Z is not None and len(Z) != len(Time):
         Z = Z[:len(Time)] if len(Z) > len(Time) else Z
-    series_metadata_df = pd.DataFrame()  # Empty metadata for CSV path
-    return _convert_to_dataframes(X, Time, Z, series_metadata_df)
+    
+    # Convert to numpy arrays for DFM (return only X, Time, Z - 3 values)
+    X_array = X.values if isinstance(X, pd.DataFrame) else X
+    Z_array = Z.values if isinstance(Z, pd.DataFrame) else Z
+    return X_array, Time, Z_array
 
 
 def save_nowcast_to_db(
@@ -817,4 +823,380 @@ def save_blocks_to_db(
         logger.warning("Database module not available. Cannot save blocks to database.")
     except Exception as e:
         logger.error(f"Failed to save blocks to database for config_name={config_name}: {e}")
+        raise
+
+
+# ============================================================================
+# Supabase Storage Functions (Model Weights)
+# ============================================================================
+
+def upload_model_weights_to_storage(
+    model_weights: Dict[str, Any],
+    filename: str,
+    bucket_name: str = "model-weights",
+    client: Optional[object] = None
+) -> str:
+    """Upload model weights pickle file to Supabase storage.
+    
+    Parameters
+    ----------
+    model_weights : Dict[str, Any]
+        Model weights dictionary to pickle and upload
+    filename : str
+        Filename in storage (e.g., "dfm_2025-11-07.pkl")
+    bucket_name : str, default="model-weights"
+        Supabase storage bucket name
+    client : object, optional
+        Supabase client. If None, will get from database module.
+    
+    Returns
+    -------
+    str
+        Public URL of uploaded file (if public) or path
+    
+    Raises
+    ------
+    ImportError
+        If database module not available
+    Exception
+        If upload fails
+    """
+    try:
+        db_client = _get_db_client(client)
+        
+        # Serialize model weights to bytes
+        pickled_data = pickle.dumps(model_weights)
+        
+        # Upload to Supabase storage
+        # Supabase storage.upload expects file as bytes or file-like object
+        response = db_client.storage.from_(bucket_name).upload(
+            path=filename,
+            file=pickled_data,
+            file_options={"content-type": "application/octet-stream", "upsert": "true"}
+        )
+        
+        logger.info(f"Uploaded model weights to storage: {bucket_name}/{filename}")
+        
+        # Get public URL
+        try:
+            public_url = db_client.storage.from_(bucket_name).get_public_url(filename)
+            return public_url
+        except Exception:
+            # If public URL not available, return path
+            return f"{bucket_name}/{filename}"
+            
+    except ImportError:
+        raise ImportError("Database module not available. Cannot upload to storage.")
+    except Exception as e:
+        logger.error(f"Failed to upload model weights to storage: {e}")
+        raise
+
+
+def download_model_weights_from_storage(
+    filename: str,
+    bucket_name: str = "model-weights",
+    client: Optional[object] = None
+) -> Optional[Dict[str, Any]]:
+    """Download model weights pickle file from Supabase storage.
+    
+    Parameters
+    ----------
+    filename : str
+        Filename in storage (e.g., "dfm_2025-11-07.pkl")
+    bucket_name : str, default="model-weights"
+        Supabase storage bucket name
+    client : object, optional
+        Supabase client. If None, will get from database module.
+    
+    Returns
+    -------
+    Dict[str, Any] or None
+        Model weights dictionary, or None if file not found
+    
+    Raises
+    ------
+    ImportError
+        If database module not available
+    Exception
+        If download fails
+    """
+    try:
+        db_client = _get_db_client(client)
+        
+        # Download from Supabase storage
+        response = db_client.storage.from_(bucket_name).download(filename)
+        
+        if response is None:
+            logger.warning(f"Model weights file not found in storage: {bucket_name}/{filename}")
+            return None
+        
+        # Deserialize pickle data
+        model_weights = pickle.loads(response)
+        
+        logger.info(f"Downloaded model weights from storage: {bucket_name}/{filename}")
+        return model_weights
+        
+    except ImportError:
+        raise ImportError("Database module not available. Cannot download from storage.")
+    except FileNotFoundError:
+        logger.warning(f"Model weights file not found: {bucket_name}/{filename}")
+        return None
+    except Exception as e:
+        logger.error(f"Failed to download model weights from storage: {e}")
+        raise
+
+
+def download_spec_csv_from_storage(
+    filename: str,
+    bucket_name: str = "specs",
+    client: Optional[object] = None
+) -> Optional[bytes]:
+    """Download spec CSV file from Supabase storage.
+    
+    Parameters
+    ----------
+    filename : str
+        Filename in storage (e.g., "001_initial_spec.csv")
+    bucket_name : str, default="specs"
+        Supabase storage bucket name for spec files
+    client : object, optional
+        Supabase client. If None, will get from database module.
+    
+    Returns
+    -------
+    bytes or None
+        CSV file content as bytes, or None if file not found
+    
+    Raises
+    ------
+    ImportError
+        If database module not available
+    Exception
+        If download fails
+    """
+    try:
+        db_client = _get_db_client(client)
+        
+        # Download from Supabase storage
+        response = db_client.storage.from_(bucket_name).download(filename)
+        
+        if response is None:
+            logger.debug(f"Spec CSV file not found in storage: {bucket_name}/{filename}")
+            return None
+        
+        logger.info(f"Downloaded spec CSV from storage: {bucket_name}/{filename}")
+        return response
+        
+    except ImportError:
+        raise ImportError("Database module not available. Cannot download from storage.")
+    except FileNotFoundError:
+        logger.debug(f"Spec CSV file not found: {bucket_name}/{filename}")
+        return None
+    except Exception as e:
+        logger.debug(f"Failed to download spec CSV from storage: {e}")
+        return None
+
+
+# ============================================================================
+# Factor and Factor Loading Database Functions
+# ============================================================================
+
+def save_factors_to_db(
+    Res: Any,  # DFMResult
+    model_id: int,
+    config: ModelConfig,
+    vintage_id: int,
+    Time: pd.DatetimeIndex,
+    client: Optional[object] = None
+) -> None:
+    """Save factors, factor values, and factor loadings to database for frontend visualization.
+    
+    This function extracts factor information from DFMResult and saves it to:
+    - factors: Factor metadata (name, description, index, block_name)
+    - factor_values: Time series of factor estimates
+    - factor_loadings: Factor-variable loading matrix
+    
+    Parameters
+    ----------
+    Res : DFMResult
+        DFM estimation results containing factors (Z), loadings (C), etc.
+    model_id : int
+        Model identifier (used as model_id in factors table)
+    config : ModelConfig
+        Model configuration with SeriesID, block_names, etc.
+    vintage_id : int
+        Vintage ID for factor values
+    Time : pd.DatetimeIndex
+        Time index for factor values
+    client : object, optional
+        Database client. If None, will get from database module.
+    
+    Notes
+    -----
+    - Deletes existing factors for this model_id before inserting new ones
+    - Factor names are derived from block_names if available
+    - Factor index is 0-based (column index in Z matrix)
+    """
+    try:
+        db_client = _get_db_client(client)
+        
+        # Get factor count
+        n_factors = Res.Z.shape[1] if hasattr(Res, 'Z') and Res.Z is not None else 0
+        if n_factors == 0:
+            logger.warning("No factors found in DFMResult. Skipping factor save.")
+            return
+        
+        # Get block names from config
+        block_names = getattr(config, 'block_names', [])
+        blocks = getattr(config, 'Blocks', None)
+        
+        # Delete existing factors for this model_id (cascade will delete factor_values and factor_loadings)
+        try:
+            db_client.table('factors').delete().eq('model_id', model_id).execute()
+            logger.debug(f"Deleted existing factors for model_id={model_id}")
+        except Exception as e:
+            logger.warning(f"Could not delete existing factors for model_id={model_id}: {e}")
+        
+        # Prepare factor records
+        factor_records = []
+        factor_id_map = {}  # Map factor_index -> factor_id (will be set after insert)
+        
+        # Determine factor names based on block structure
+        # First factors are typically global, then block-specific
+        factor_idx = 0
+        for block_idx, block_name in enumerate(block_names):
+            # Get number of factors for this block (from r parameter)
+            n_block_factors = int(Res.r[block_idx]) if hasattr(Res, 'r') and block_idx < len(Res.r) else 1
+            
+            for f in range(n_block_factors):
+                if factor_idx >= n_factors:
+                    break
+                
+                # Factor name
+                if block_idx == 0 or block_name == 'Global':
+                    factor_name = f"Global Factor {f+1}" if n_block_factors > 1 else "Global Factor"
+                else:
+                    factor_name = f"{block_name} Factor {f+1}" if n_block_factors > 1 else f"{block_name} Factor"
+                
+                factor_records.append({
+                    'model_id': model_id,
+                    'name': factor_name,
+                    'description': f"Factor {factor_idx} from {block_name} block",
+                    'factor_index': factor_idx,
+                    'block_name': None if block_idx == 0 or block_name == 'Global' else block_name
+                })
+                factor_idx += 1
+        
+        # Fill remaining factors if any
+        while factor_idx < n_factors:
+            factor_records.append({
+                'model_id': model_id,
+                'name': f"Factor {factor_idx + 1}",
+                'description': f"Factor {factor_idx}",
+                'factor_index': factor_idx,
+                'block_name': None
+            })
+            factor_idx += 1
+        
+        # Insert factors and get IDs
+        if factor_records:
+            result = db_client.table('factors').insert(factor_records).execute()
+            if result.data:
+                # Map factor_index to factor_id
+                for factor_data in result.data:
+                    factor_id_map[factor_data['factor_index']] = factor_data['id']
+                logger.info(f"Inserted {len(result.data)} factors for model_id={model_id}")
+            else:
+                logger.warning("No factors inserted. Check database connection and permissions.")
+                return
+        
+        # Prepare factor_values records (time series of factors)
+        factor_value_records = []
+        for factor_idx, factor_id in factor_id_map.items():
+            if factor_idx >= Res.Z.shape[1]:
+                continue
+            
+            # Extract factor time series
+            factor_series = Res.Z[:, factor_idx]
+            
+            for t_idx, (date_val, value) in enumerate(zip(Time, factor_series)):
+                if np.isfinite(value):
+                    factor_value_records.append({
+                        'factor_id': factor_id,
+                        'vintage_id': vintage_id,
+                        'date': date_val.date() if hasattr(date_val, 'date') else pd.to_datetime(date_val).date(),
+                        'value': float(value)
+                    })
+        
+        # Insert factor values in batches
+        if factor_value_records:
+            batch_size = 1000
+            total_inserted = 0
+            for i in range(0, len(factor_value_records), batch_size):
+                batch = factor_value_records[i:i + batch_size]
+                try:
+                    result = db_client.table('factor_values').upsert(
+                        batch,
+                        on_conflict='factor_id,vintage_id,date'
+                    ).execute()
+                    if result.data:
+                        total_inserted += len(result.data)
+                except Exception as e:
+                    logger.error(f"Failed to insert factor_values batch {i//batch_size + 1}: {e}")
+                    raise
+            
+            logger.info(f"Inserted {total_inserted} factor values for model_id={model_id}")
+        
+        # Prepare factor_loadings records (C matrix: N x m)
+        factor_loading_records = []
+        series_ids = config.SeriesID if hasattr(config, 'SeriesID') else []
+        
+        if hasattr(Res, 'C') and Res.C is not None:
+            C = Res.C  # N x m matrix
+            n_series, n_factors_actual = C.shape
+            
+            for series_idx, series_id in enumerate(series_ids):
+                if series_idx >= n_series:
+                    break
+                
+                for factor_idx, factor_id in factor_id_map.items():
+                    if factor_idx >= n_factors_actual:
+                        break
+                    
+                    loading_value = float(C[series_idx, factor_idx])
+                    if np.isfinite(loading_value):
+                        factor_loading_records.append({
+                            'factor_id': factor_id,
+                            'series_id': series_id,
+                            'loading': loading_value
+                        })
+        
+        # Insert factor loadings in batches
+        if factor_loading_records:
+            batch_size = 1000
+            total_inserted = 0
+            for i in range(0, len(factor_loading_records), batch_size):
+                batch = factor_loading_records[i:i + batch_size]
+                try:
+                    result = db_client.table('factor_loadings').upsert(
+                        batch,
+                        on_conflict='factor_id,series_id'
+                    ).execute()
+                    if result.data:
+                        total_inserted += len(result.data)
+                except Exception as e:
+                    logger.error(f"Failed to insert factor_loadings batch {i//batch_size + 1}: {e}")
+                    raise
+            
+            logger.info(f"Inserted {total_inserted} factor loadings for model_id={model_id}")
+        
+        logger.info(
+            f"Successfully saved factors, factor_values, and factor_loadings to database "
+            f"for model_id={model_id}, vintage_id={vintage_id}"
+        )
+        
+    except ImportError:
+        logger.warning("Database module not available. Cannot save factors to database.")
+    except Exception as e:
+        logger.error(f"Failed to save factors to database: {e}", exc_info=True)
         raise

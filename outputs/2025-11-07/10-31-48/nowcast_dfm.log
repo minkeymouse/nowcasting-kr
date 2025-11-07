@@ -1,0 +1,8 @@
+[2025-11-07 10:31:48,558][adapters.adapter_database][ERROR] - Failed to save blocks to database for config_name=001-initial-spec: Supabase URL must be provided or set in SUPABASE_URL environment variable
+[2025-11-07 10:31:48,558][__main__][WARNING] - Could not save blocks to database for 001_initial_spec.csv: Supabase URL must be provided or set in SUPABASE_URL environment variable. Continuing without saving blocks.
+[2025-11-07 10:31:48,558][__main__][WARNING] - Could not get latest vintage: Supabase URL must be provided or set in SUPABASE_URL environment variable
+[2025-11-07 10:31:48,558][__main__][ERROR] - Fatal error in nowcasting: Both vintage_old and vintage_new must be specified for nowcasting. Nowcasting compares forecasts between two vintages for the same period.
+Traceback (most recent call last):
+  File "/home/minkeymouse/.cursor/worktrees/Nowcasting__SSH__10.8.0.1_/Cb3X5/scripts/nowcast_dfm.py", line 218, in main
+    raise ValueError(
+ValueError: Both vintage_old and vintage_new must be specified for nowcasting. Nowcasting compares forecasts between two vintages for the same period.

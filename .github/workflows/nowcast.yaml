@@ -1,16 +1,16 @@
-name: Data Ingestion
+name: Nowcast DFM
 
 on:
   workflow_dispatch:
     inputs:
-      spec_file:
-        description: 'Spec CSV file path (relative to src/spec/)'
+      config_path:
+        description: 'Model config CSV path (relative to src/spec/)'
         required: false
-        default: '001_initial_spec.csv'
+        default: 'src/spec/001_initial_spec.csv'
         type: string
 
 jobs:
-  ingest:
+  nowcast:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     
@@ -31,35 +31,37 @@ jobs:
           source .venv/bin/activate
           uv sync
       
+      - name: Download model weights (optional)
+        uses: actions/download-artifact@v4
+        with:
+          name: model-weights
+          path: .
+        continue-on-error: true
+      
       - name: Load environment variables
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          BOK_API_KEY: ${{ secrets.BOK_API_KEY }}
-          KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
         run: |
           echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
           echo "SUPABASE_KEY=$SUPABASE_KEY" >> $GITHUB_ENV
-          echo "BOK_API_KEY=$BOK_API_KEY" >> $GITHUB_ENV
-          echo "KOSIS_API_KEY=$KOSIS_API_KEY" >> $GITHUB_ENV
       
-      - name: Run data ingestion
+      - name: Run nowcasting
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          BOK_API_KEY: ${{ secrets.BOK_API_KEY }}
-          KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
-          GITHUB_WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           source .venv/bin/activate
-          python scripts/ingest_api.py
-        continue-on-error: false
+          python scripts/nowcast_dfm.py \
+            "model.config_path=${{ inputs.config_path }}" \
+            "data.use_database=true" \
+            "data.strict_mode=false"
       
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ingestion-logs
+          name: nowcast-logs
           path: |
             *.log
             outputs/**/*.log
