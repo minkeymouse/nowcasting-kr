@@ -34,19 +34,19 @@ jobs:
       - name: Load environment variables
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           BOK_API_KEY: ${{ secrets.BOK_API_KEY }}
           KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
         run: |
           echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
-          echo "SUPABASE_KEY=$SUPABASE_KEY" >> $GITHUB_ENV
+          echo "SUPABASE_SECRET_KEY=$SUPABASE_SECRET_KEY" >> $GITHUB_ENV
           echo "BOK_API_KEY=$BOK_API_KEY" >> $GITHUB_ENV
           echo "KOSIS_API_KEY=$KOSIS_API_KEY" >> $GITHUB_ENV
       
       - name: Run data ingestion
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           BOK_API_KEY: ${{ secrets.BOK_API_KEY }}
           KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
           GITHUB_WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
