@@ -1375,8 +1375,13 @@ def get_forecast(
         return pd.DataFrame()
     
     df = pd.DataFrame(result.data)
+    # Convert date/datetime columns to datetime type for proper comparison
     if 'forecast_date' in df.columns:
         df['forecast_date'] = pd.to_datetime(df['forecast_date'])
+    if 'created_at' in df.columns:
+        df['created_at'] = pd.to_datetime(df['created_at'])
+    if 'updated_at' in df.columns:
+        df['updated_at'] = pd.to_datetime(df['updated_at'])
     
     return df
 
@@ -1541,8 +1546,13 @@ def get_latest_forecasts(client: Optional[Client] = None, limit: int = 100) -> p
         return pd.DataFrame()
     
     df = pd.DataFrame(result.data)
+    # Convert date/datetime columns to datetime type for proper comparison
     if 'forecast_date' in df.columns:
         df['forecast_date'] = pd.to_datetime(df['forecast_date'])
+    if 'created_at' in df.columns:
+        df['created_at'] = pd.to_datetime(df['created_at'])
+    if 'updated_at' in df.columns:
+        df['updated_at'] = pd.to_datetime(df['updated_at'])
     
     return df
 
