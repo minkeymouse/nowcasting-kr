@@ -155,21 +155,51 @@ jobs:
           echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
           echo "SUPABASE_SECRET_KEY=$SUPABASE_SECRET_KEY" >> $GITHUB_ENV
       
+      - name: Wait for latest vintage
+        if: success()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          source .venv/bin/activate
+          python -c "
+          from scripts.utils import get_latest_vintage_with_fallback
+          import time
+          
+          print('Waiting for latest vintage to be available...')
+          max_wait = 300  # 5 minutes
+          start_time = time.time()
+          
+          while time.time() - start_time < max_wait:
+              result = get_latest_vintage_with_fallback(allow_partial=True)
+              if result:
+                  vintage_id, vintage_info = result
+                  status = vintage_info.get('fetch_status', 'unknown')
+                  print(f'Found vintage {vintage_id} with status: {status}')
+                  if status in ['completed', 'partial']:
+                      print(f'✅ Vintage {vintage_id} is ready')
+                      break
+              time.sleep(5)
+          else:
+              print('⚠️  Timeout waiting for vintage')
+          "
+        continue-on-error: true
+      
       - name: Train DFM model
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           source .venv/bin/activate
-        CONFIG_NAME="${{ inputs.config_name }}"
-        SERIES_CONFIG="${{ inputs.series_config }}"
-        MAX_ITER="${{ inputs.max_iter }}"
-        python scripts/train_dfm.py \
-          --config-name=${CONFIG_NAME:-test} \
-          series=${SERIES_CONFIG:-test_series} \
-          "data.use_database=true" \
-          "data.strict_mode=false" \
-          "dfm.max_iter=${MAX_ITER:-100}"
+          CONFIG_NAME="${{ inputs.config_name }}"
+          SERIES_CONFIG="${{ inputs.series_config }}"
+          MAX_ITER="${{ inputs.max_iter }}"
+          python scripts/train_dfm.py \
+            --config-name=${CONFIG_NAME:-test} \
+            series=${SERIES_CONFIG:-test_series} \
+            "data.use_database=true" \
+            "data.strict_mode=false" \
+            "dfm.max_iter=${MAX_ITER:-100}"
       
       - name: Upload model weights
         if: success()
