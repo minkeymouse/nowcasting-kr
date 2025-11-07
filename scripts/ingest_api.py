@@ -248,9 +248,12 @@ def main() -> None:
                 self.blocks[block_name] = int(block_value) if block_value not in [None, ''] else 0
     
     class SimpleModelConfig:
-        def __init__(self, df):
+        def __init__(self, df, config_name: Optional[str] = None):
             self.series = [SimpleSeriesConfig(row) for _, row in df.iterrows()]
-            self.config_name = csv_path.stem.replace('_', '-')
+            if config_name is None:
+                # Fallback: try to determine from context or use default
+                config_name = "001-initial-spec"
+            self.config_name = config_name
             self.country = 'KR'
             # Detect block names from columns (only Block_X columns)
             block_cols = [col.replace('Block_', '') for col in df.columns if col.startswith('Block_')]
