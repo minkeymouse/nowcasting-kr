@@ -166,12 +166,15 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           source .venv/bin/activate
+          CONFIG_NAME="${{ inputs.config_name }}"
+          SERIES_CONFIG="${{ inputs.series_config }}"
+          MAX_ITER="${{ inputs.max_iter }}"
           python scripts/train_dfm.py \
-            --config-name=${{ inputs.config_name || 'default' }} \
-            series=${{ inputs.series_config || 'default' }} \
+            --config-name=${CONFIG_NAME:-default} \
+            series=${SERIES_CONFIG:-default} \
             "data.use_database=true" \
             "data.strict_mode=false" \
-            "dfm.max_iter=${{ inputs.max_iter || '100' }}"
+            "dfm.max_iter=${MAX_ITER:-100}"
       
       - name: Upload model weights
         if: success()
@@ -227,9 +230,11 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           source .venv/bin/activate
+          CONFIG_NAME="${{ inputs.config_name }}"
+          SERIES_CONFIG="${{ inputs.series_config }}"
           python scripts/nowcast_dfm.py \
-            --config-name=${{ inputs.config_name || 'default' }} \
-            series=${{ inputs.series_config || 'default' }} \
-            data.use_database=true \
-            data.strict_mode=false
+            --config-name=${CONFIG_NAME:-default} \
+            series=${SERIES_CONFIG:-default} \
+            "data.use_database=true" \
+            "data.strict_mode=false"
 

@@ -8,13 +8,6 @@ on:
         required: false
         default: '001_initial_spec.csv'
         type: string
-  push:
-    paths:
-      - 'scripts/ingest_api.py'
-      - 'src/spec/**/*.csv'
-    branches:
-      - main
-      - master
 
 jobs:
   ingest:

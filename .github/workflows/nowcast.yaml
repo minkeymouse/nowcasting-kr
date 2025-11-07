@@ -23,12 +23,6 @@ on:
         required: false
         default: ''
         type: string
-  push:
-    paths:
-      - 'scripts/nowcast_dfm.py'
-    branches:
-      - main
-      - master
 
 jobs:
   nowcast:
@@ -114,7 +108,9 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           source .venv/bin/activate
-          CMD="python scripts/nowcast_dfm.py --config-name=${{ inputs.config_name }} series=${{ inputs.series_config }} data.use_database=true data.strict_mode=false"
+          CONFIG_NAME="${{ inputs.config_name }}"
+          SERIES_CONFIG="${{ inputs.series_config }}"
+          CMD="python scripts/nowcast_dfm.py --config-name=${CONFIG_NAME:-default} series=${SERIES_CONFIG:-default} data.use_database=true data.strict_mode=false"
           if [ -n "${{ inputs.series }}" ]; then
             CMD="$CMD series=${{ inputs.series }}"
           fi
