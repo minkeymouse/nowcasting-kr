@@ -75,15 +75,22 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           python -c "
-          from app.adapters.adapter_database import download_model_weights_from_storage
+          from app.adapters.adapter_database import cleanup_old_model_weights
           from app.database.client import get_client
+          from datetime import datetime
           client = get_client()
           try:
-              weights = download_model_weights_from_storage('model_weights', client=client)
-              if weights:
-                  print('✅ Model weights found in storage')
+              # List files in bucket to verify upload (cleanup returns file list)
+              result = cleanup_old_model_weights(keep_latest=10, bucket_name='model-weights', client=client)
+              if result and result.get('total_files', 0) > 0:
+                  latest_files = result.get('kept_files', [])
+                  if latest_files:
+                      print(f'✅ Model weights found in storage: {len(latest_files)} file(s)')
+                      print(f'   Latest: {latest_files[0]}')
+                  else:
+                      print('⚠️  Model weights bucket exists but no files found')
               else:
-                  print('⚠️  Model weights not found')
+                  print('⚠️  No model weights found in storage')
           except Exception as e:
               print(f'⚠️  Could not verify model weights: {e}')
           "

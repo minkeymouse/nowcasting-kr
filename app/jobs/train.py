@@ -100,7 +100,16 @@ def main(cfg: DictConfig) -> None:
     
     # Merge DFM estimation parameters from Hydra into model config
     if dfm_cfg_dict:
-        for key in ['ar_lag', 'threshold', 'max_iter', 'nan_method', 'nan_k', 'clock']:
+        # Core DFM parameters
+        core_keys = ['ar_lag', 'threshold', 'max_iter', 'nan_method', 'nan_k', 'clock']
+        # Numerical stability parameters (dfm-python 0.1.5+)
+        stability_keys = [
+            'clip_ar_coefficients', 'ar_clip_min', 'ar_clip_max', 'warn_on_ar_clip',
+            'clip_data_values', 'data_clip_threshold', 'warn_on_data_clip',
+            'use_regularization', 'regularization_scale', 'min_eigenvalue', 'max_eigenvalue', 'warn_on_regularization',
+            'use_damped_updates', 'damping_factor', 'warn_on_damped_update'
+        ]
+        for key in core_keys + stability_keys:
             if key in dfm_cfg_dict and dfm_cfg_dict[key] is not None:
                 setattr(model_cfg, key, dfm_cfg_dict[key])
     

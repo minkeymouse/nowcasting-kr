@@ -1195,7 +1195,9 @@ def csv_spec_to_hydra_config(
         DFM configuration loaded from CSV spec file
     dfm_config_overrides : dict, optional
         Optional DFM config overrides (e.g., from CSV metadata or user preferences)
-        Keys: ar_lag, factors_per_block, threshold, max_iter, nan_method, nan_k, clock
+        Keys: ar_lag, factors_per_block, threshold, max_iter, nan_method, nan_k, clock,
+        and numerical stability parameters (clip_ar_coefficients, clip_data_values,
+        use_regularization, use_damped_updates, etc.) for dfm-python 0.1.5+
     
     Returns
     -------
@@ -1230,7 +1232,23 @@ def csv_spec_to_hydra_config(
         'max_iter': 5000,
         'nan_method': 2,
         'nan_k': 3,
-        'clock': 'm'  # Default to monthly clock
+        'clock': 'm',  # Default to monthly clock
+        # Numerical stability parameters (dfm-python 0.1.5+)
+        'clip_ar_coefficients': True,
+        'ar_clip_min': -0.99,
+        'ar_clip_max': 0.99,
+        'warn_on_ar_clip': True,
+        'clip_data_values': True,
+        'data_clip_threshold': 100.0,
+        'warn_on_data_clip': True,
+        'use_regularization': True,
+        'regularization_scale': 1e-6,
+        'min_eigenvalue': 1e-8,
+        'max_eigenvalue': 1e6,
+        'warn_on_regularization': True,
+        'use_damped_updates': True,
+        'damping_factor': 0.8,
+        'warn_on_damped_update': True
     }
     
     # Start with defaults
