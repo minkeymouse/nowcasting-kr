@@ -411,7 +411,7 @@ DROP VIEW IF EXISTS latest_observations_view CASCADE;
 CREATE VIEW latest_observations_view
 WITH (security_invoker=true) AS
 SELECT 
-    o.observation_id,
+    o.id AS observation_id,
     o.series_id,
     s.series_name,
     o.date,
