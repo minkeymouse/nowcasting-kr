@@ -115,8 +115,22 @@ def main() -> None:
     
     # Priority 1: Load from database storage bucket
     try:
-        from adapters.adapter_database import download_spec_csv_from_storage, get_latest_spec_csv_filename
-        from scripts.utils import get_db_client
+        # Import only what we need, handle missing dependencies gracefully
+        try:
+            from adapters.adapter_database import download_spec_csv_from_storage, get_latest_spec_csv_filename
+        except ImportError as import_err:
+            # If adapter import fails, try importing database functions directly
+            logger.warning(f"Could not import adapter functions: {import_err}")
+            raise ImportError("Database adapter not available") from import_err
+        
+        try:
+            from scripts.utils import get_db_client
+        except ImportError:
+            # Fallback: try importing database client directly
+            try:
+                from database import get_client as get_db_client
+            except ImportError:
+                raise ImportError("Database client not available")
         
         logger.info("Loading spec CSV from database storage bucket...")
         client = get_db_client()
@@ -139,6 +153,7 @@ def main() -> None:
             
     except ImportError as e:
         logger.warning(f"Database adapter not available: {e}")
+        logger.info("Will try local file fallback...")
     except Exception as e:
         logger.warning(f"Failed to load spec from database storage: {e}")
         import traceback

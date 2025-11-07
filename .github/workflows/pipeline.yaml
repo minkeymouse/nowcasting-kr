@@ -44,7 +44,7 @@ jobs:
           uv venv .venv
           source .venv/bin/activate
           uv pip install -e .[database]
-          uv pip install supabase>=2.0.0 psycopg2-binary>=2.9.0 httpx>=0.24.0
+          uv pip install supabase>=2.0.0 psycopg2-binary>=2.9.0 httpx>=0.24.0 omegaconf>=2.3.0
       
       - name: Load environment variables
         env:
