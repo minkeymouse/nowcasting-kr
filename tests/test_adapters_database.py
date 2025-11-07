@@ -27,22 +27,41 @@ def test_load_data_from_db_mock(mock_fetch, mock_resolve, mock_client):
     
     # Create mock config
     series_configs = [
-        SeriesConfig(series_id='TEST1', transformation='lin', frequency='m'),
-        SeriesConfig(series_id='TEST2', transformation='chg', frequency='q'),
+        SeriesConfig(
+            series_id='TEST1', 
+            series_name='Test Series 1',
+            transformation='lin', 
+            frequency='m',
+            units='Index',
+            category='Test',
+            blocks=[1]  # Must start with global block (1)
+        ),
+        SeriesConfig(
+            series_id='TEST2',
+            series_name='Test Series 2',
+            transformation='chg', 
+            frequency='q',
+            units='Percent',
+            category='Test',
+            blocks=[1]  # Must start with global block (1)
+        ),
     ]
     config = ModelConfig(series=series_configs, block_names=['block1'])
     
     # Mock database responses
     mock_client.return_value = Mock()
     mock_resolve.return_value = 1  # vintage_id
+    # _fetch_vintage_data returns (data_df, Time, Z_df, series_metadata_df) - 4 values
+    # (despite type hint saying 3, load_data_from_db expects 4)
     mock_fetch.return_value = (
         pd.DataFrame({'TEST1': [1.0, 2.0, 3.0], 'TEST2': [4.0, 5.0, 6.0]}),
         pd.DatetimeIndex(['2024-01-01', '2024-02-01', '2024-03-01']),
+        pd.DataFrame({'TEST1': [1.0, 1.0, 1.0], 'TEST2': [1.0, 1.0, 1.0]}),  # Z_df (standardization)
         pd.DataFrame({
             'series_id': ['TEST1', 'TEST2'],
             'transformation': ['lin', 'chg'],
             'frequency': ['m', 'q']
-        })
+        })  # series_metadata_df
     )
     
     # Call function
@@ -72,7 +91,17 @@ def test_load_data_from_db_import_error(mock_client):
     mock_client.side_effect = ImportError("Database module not available")
     
     # Should raise ImportError
-    series_configs = [SeriesConfig(series_id='TEST1', transformation='lin', frequency='m')]
+    series_configs = [
+        SeriesConfig(
+            series_id='TEST1',
+            series_name='Test Series 1',
+            transformation='lin',
+            frequency='m',
+            units='Index',
+            category='Test',
+            blocks=[1]
+        )
+    ]
     config = ModelConfig(series=series_configs, block_names=['block1'])
     
     try:

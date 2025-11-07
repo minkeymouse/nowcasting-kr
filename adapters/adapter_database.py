@@ -214,7 +214,7 @@ def _fetch_vintage_data(
     end_date: Optional[date] = None,
     strict_mode: bool = False,
     client: Optional[object] = None
-) -> Tuple[pd.DataFrame, pd.DatetimeIndex, pd.DataFrame]:
+) -> Tuple[pd.DataFrame, pd.DatetimeIndex, pd.DataFrame, pd.DataFrame]:
     """Fetch vintage data and metadata from database.
     
     Uses config-specific function with blocks table ordering if available,
@@ -581,8 +581,11 @@ def load_data_from_db(
     # Ensure Z and Time have matching lengths
     if Z is not None and len(Z) != len(Time):
         Z = Z[:len(Time)] if len(Z) > len(Time) else Z
-    series_metadata_df = pd.DataFrame()  # Empty metadata for CSV path
-    return _convert_to_dataframes(X, Time, Z, series_metadata_df)
+    
+    # Convert to numpy arrays for DFM (return only X, Time, Z - 3 values)
+    X_array = X.values if isinstance(X, pd.DataFrame) else X
+    Z_array = Z.values if isinstance(Z, pd.DataFrame) else Z
+    return X_array, Time, Z_array
 
 
 def save_nowcast_to_db(
