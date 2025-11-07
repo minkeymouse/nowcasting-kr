@@ -12,14 +12,14 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 import pandas as pd
 
-from database import get_client, generate_series_id
-from database.operations import (
+from app.database import get_client, generate_series_id
+from app.database.operations import (
     ensure_vintage_and_job,
     finalize_ingestion_job,
 )
-from database.settings import BOKAPIConfig, KOSISAPIConfig
-from services.api.bok_client import BOKAPIClient
-from services.api.kosis_client import KOSISAPIClient
+from app.database.settings import BOKAPIConfig, KOSISAPIConfig
+from app.services.api.bok_client import BOKAPIClient
+from app.services.api.kosis_client import KOSISAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -502,8 +502,8 @@ def process_series(
         
         # Save series metadata if not dry run
         if not dry_run and client:
-            from database.models import SeriesModel
-            from database.operations import get_series
+            from app.database.models import SeriesModel
+            from app.database.operations import get_series
             
             series_model = SeriesModel(
                 series_id=series_id,

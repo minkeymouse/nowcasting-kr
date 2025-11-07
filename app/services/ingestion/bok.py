@@ -9,16 +9,16 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 import pandas as pd
 
-from database import (
+        from app.database import (
     get_statistics_metadata,
     upsert_statistics_metadata,
     upsert_statistics_items,
 )
-from database.models import StatisticsMetadataModel, StatisticsItemModel
-from database.settings import AppSettings
-from database.helpers import map_frequency_to_code
-from services.api.bok_client import BOKAPIClient
-from services.ingestion.base import BaseIngestion
+from app.database.models import StatisticsMetadataModel, StatisticsItemModel
+from app.database.settings import AppSettings
+from app.database.helpers import map_frequency_to_code
+from app.services.api.bok_client import BOKAPIClient
+from app.services.ingestion.base import BaseIngestion
 
 logger = logging.getLogger(__name__)
 

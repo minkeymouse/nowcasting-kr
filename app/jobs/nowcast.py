@@ -1,10 +1,14 @@
-"""Nowcasting script for DFM models (MATLAB-compatible).
+"""Job 3: Generate nowcasts/forecasts and update database.
 
-This script performs nowcasting (vintage comparison) using trained DFM models.
-It matches MATLAB functionality: compares old vs new vintage forecasts for the current period,
-and decomposes changes into news components.
+This job:
+- Queries database for latest data vintage
+- Downloads latest model weights from Supabase storage bucket
+- Loads model configuration (from DB storage CSV or Hydra YAML)
+- Generates nowcasts (current period) and forecasts (future periods)
+- Saves nowcasts and forecasts to database with news decomposition
 
-This is NOT forward nowcasting - it only nowcasts the current period (t=now).
+Usage:
+    python -m app.jobs.nowcast --config-name=test series=test_series
 """
 
 import sys
@@ -18,13 +22,13 @@ from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 import numpy as np
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
+# Add project root to path (script is in app/jobs/ directory)
+project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from dfm_python import load_data, dfm, update_nowcast
-from adapters.adapter_database import load_data_from_db, save_nowcast_to_db
-from scripts.utils import (
+from app.adapters.adapter_database import load_data_from_db, save_nowcast_to_db
+from app.utils import (
     load_model_config_with_hydra_fallback,
     get_db_client,
     get_latest_vintage_with_fallback,
@@ -39,7 +43,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-@hydra.main(version_base=None, config_path="../config", config_name="default")
+@hydra.main(version_base=None, config_path="../../app/config", config_name="default")
 def main(cfg: DictConfig) -> None:
     """Run nowcasting with Hydra configuration (MATLAB-compatible).
     
@@ -143,7 +147,7 @@ def main(cfg: DictConfig) -> None:
         model_weights_found = False
         if use_database and vintage_new:
             try:
-                from adapters.adapter_database import download_model_weights_from_storage
+                from app.adapters.adapter_database import download_model_weights_from_storage
                 
                 # Try config-specific file first
                 model_filename = None
@@ -230,7 +234,7 @@ def main(cfg: DictConfig) -> None:
             # Save model weights to Supabase storage
             if use_database and vintage_new:
                 try:
-                    from adapters.adapter_database import upload_model_weights_to_storage
+                    from app.adapters.adapter_database import upload_model_weights_to_storage
                     
                     model_filename = f"dfm_{vintage_new}.pkl"
                     if config_id:
@@ -257,8 +261,8 @@ def main(cfg: DictConfig) -> None:
             # Save factors, factor_values, and factor_loadings to database for frontend visualization
             if use_database:
                 try:
-                    from adapters.adapter_database import save_factors_to_db
-                    from database import get_latest_vintage_id
+                    from app.adapters.adapter_database import save_factors_to_db
+                    from app.database import get_latest_vintage_id
                     
                     # Get vintage_id for factor_values
                     vintage_id_new = None
@@ -350,7 +354,7 @@ def main(cfg: DictConfig) -> None:
             logger.info("=" * 80)
             
             # Generate forecasts
-            from scripts.utils import generate_forecasts
+            from app.utils import generate_forecasts
             
             generate_forecasts(
                 X_new, Time, model_cfg, Res, series, forecast_periods,

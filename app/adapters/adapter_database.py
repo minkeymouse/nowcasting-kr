@@ -60,7 +60,7 @@ def _get_db_client(client: Optional[object] = None):
     if client is not None:
         return client
     try:
-        from database import get_client
+        from app.database import get_client
         return get_client()
     except ImportError as e:
         raise ImportError(
@@ -92,7 +92,7 @@ def _resolve_vintage_id(
     
     if vintage_date is not None:
         try:
-            from database import get_latest_vintage_id
+            from app.database import get_latest_vintage_id
             normalized_date = _normalize_date(vintage_date)
             resolved_id = get_latest_vintage_id(vintage_date=normalized_date, client=client)
             if resolved_id is None:
@@ -216,7 +216,7 @@ def _fetch_vintage_data(
     strict_mode: bool = False,
     client: Optional[object] = None
 ) -> Tuple[pd.DataFrame, pd.DatetimeIndex, pd.DataFrame, pd.DataFrame]:
-    """Fetch vintage data and metadata from database.
+    """Fetch vintage data and metadata from app.database.
     
     Uses config-specific function with blocks table ordering if available,
     otherwise falls back to general function.
@@ -229,7 +229,7 @@ def _fetch_vintage_data(
         Configuration ID (deprecated: use config_name instead)
     """
     try:
-        from database import (
+        from app.database import (
             get_vintage_data,
             get_vintage_data_for_config,
             get_series_metadata_bulk
@@ -255,7 +255,7 @@ def _fetch_vintage_data(
     elif config_id is not None:
         # Deprecated: resolve config_name from config_id
         try:
-            from database.helpers import resolve_config_name
+            from app.database.helpers import resolve_config_name
             resolved_config_name = resolve_config_name(config_id=config_id, client=client)
             if resolved_config_name:
                 logger.warning("config_id is deprecated. Use config_name instead.")
@@ -336,7 +336,7 @@ def export_data_to_csv(
     
     Examples
     --------
-    >>> from adapters.adapter_database import export_data_to_csv
+    >>> from app.adapters.adapter_database import export_data_to_csv
     >>> csv_path = export_data_to_csv(
     ...     output_path='data/vintage_1.csv',
     ...     vintage_id=1,
@@ -344,11 +344,11 @@ def export_data_to_csv(
     ... )
     """
     try:
-        from database.operations import (
+        from app.database.operations import (
             get_latest_vintage_id,
             get_vintage
         )
-        from database.helpers import (
+        from app.database.helpers import (
             get_model_config_series_ids,
             resolve_config_name
         )
@@ -535,7 +535,7 @@ def load_data_from_db(
     # Resolve config_name if only config_id provided (backward compatibility)
     if config_name is None and config_id is not None:
         try:
-            from database.helpers import resolve_config_name
+            from app.database.helpers import resolve_config_name
             config_name = resolve_config_name(config_id=config_id, client=client)
             if config_name:
                 logger.warning("config_id is deprecated. Use config_name instead.")
@@ -659,7 +659,7 @@ def save_forecast_to_db(
         return
     
     try:
-        from database import get_client, save_forecast
+        from app.database import get_client, save_forecast
         import os
         db_client = client or _get_db_client(client)
         
@@ -773,7 +773,7 @@ def save_nowcast_to_db(
     
     # Attempt to save to database with comprehensive error handling
     try:
-        from database import get_client, save_forecast, get_latest_vintage_id
+        from app.database import get_client, save_forecast, get_latest_vintage_id
         import os
         db_client = client or get_client()
         
@@ -1082,7 +1082,7 @@ def csv_spec_to_hydra_config(
     Examples
     --------
     >>> from dfm_python import load_config
-    >>> from adapters.adapter_database import csv_spec_to_hydra_config
+    >>> from app.adapters.adapter_database import csv_spec_to_hydra_config
     >>> config = load_config('src/spec/001_initial_spec.csv')
     >>> hydra_config = csv_spec_to_hydra_config(config)
     >>> # Merge with existing Hydra config

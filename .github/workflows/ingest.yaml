@@ -1,0 +1,58 @@
+name: Ingest Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      config_name:
+        description: 'Hydra config name'
+        required: false
+        default: 'default'
+  push:
+    paths:
+      - 'app/jobs/ingest.py'
+      - 'app/database/**'
+      - 'app/services/**'
+      - '.github/workflows/ingest.yaml'
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-database.txt
+      
+      - name: Ingest data from APIs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          BOK_API_KEY: ${{ secrets.BOK_API_KEY }}
+          KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+        run: |
+          python -m app.jobs.ingest
+      
+      - name: Validate vintage creation
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python -c "
+          from app.database import get_latest_vintage_id
+          from app.database.client import get_client
+          client = get_client()
+          vintage_id = get_latest_vintage_id(client=client)
+          if vintage_id:
+              print(f'✅ Vintage {vintage_id} created successfully')
+          else:
+              print('⚠️  No vintage found')
+          "
+

@@ -8,7 +8,7 @@ import time
 from typing import Optional, Dict, Any
 from datetime import datetime
 import httpx
-from database.settings import BOKAPIConfig, BOK_ERROR_CODES
+from app.database.settings import BOKAPIConfig, BOK_ERROR_CODES
 from .base import BaseAPIClient, APIError
 
 

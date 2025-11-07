@@ -104,7 +104,7 @@ def test_nowcasting_workflow():
 def verify_database_updates():
     """Verify that forecasts were saved to database."""
     try:
-        from adapters.adapter_database import _get_db_client
+        from app.adapters.adapter_database import _get_db_client
         
         client = _get_db_client()
         

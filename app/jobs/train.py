@@ -1,7 +1,14 @@
-"""Hydra-enabled script for DFM estimation with experiment management.
+"""Job 2: Train DFM model and save weights to storage.
 
-This script is for training DFM models, typically run on-demand or periodically.
-For regular data ingestion (GitHub Actions), use scripts/ingest_data.py instead.
+This job:
+- Queries database for latest data vintage
+- Loads model configuration (from DB storage CSV or Hydra YAML)
+- Trains DFM model using EM algorithm
+- Saves model weights to Supabase storage bucket
+- Saves factors to database
+
+Usage:
+    python -m app.jobs.train --config-name=test series=test_series
 """
 
 import hydra
@@ -13,13 +20,13 @@ import pandas as pd
 import pickle
 import numpy as np
 
-# Add parent directory to path
-project_root = Path(__file__).parent.parent
+# Add project root to path (script is in app/jobs/ directory)
+project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from dfm_python import load_data, dfm
-from scripts.utils import summarize
-from scripts.utils import (
+from app.utils import summarize
+from app.utils import (
     load_model_config_with_hydra_fallback,
     get_db_client,
     get_latest_vintage_with_fallback,
@@ -30,7 +37,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-@hydra.main(version_base=None, config_path="../config", config_name="default")
+@hydra.main(version_base=None, config_path="../../app/config", config_name="default")
 def main(cfg: DictConfig) -> None:
     """Run DFM estimation with Hydra configuration.
     
@@ -80,7 +87,7 @@ def main(cfg: DictConfig) -> None:
     
     # Load data
     if use_database:
-        from adapters.adapter_database import load_data_from_db
+        from app.adapters.adapter_database import load_data_from_db
         sample_start_dt = pd.to_datetime(sample_start) if sample_start else None
         
         # Use latest vintage if not specified
@@ -107,7 +114,7 @@ def main(cfg: DictConfig) -> None:
                 config_name = config_file.stem.replace('_', '-')
                 # Check if blocks table has data for this config_name
                 try:
-                    from database.helpers import get_series_ids_for_config
+                    from app.database.helpers import get_series_ids_for_config
                     if db_client is None:
                         db_client = get_db_client()
                     series_ids = get_series_ids_for_config(config_name, client=db_client)
@@ -241,8 +248,8 @@ def main(cfg: DictConfig) -> None:
     # Save factors, factor_values, and factor_loadings to database for frontend visualization
     if use_database:
         try:
-            from adapters.adapter_database import save_factors_to_db
-            from database import get_vintage
+            from app.adapters.adapter_database import save_factors_to_db
+            from app.database import get_vintage
             
             # Generate model_id from config_id or hash
             if config_id:
@@ -284,13 +291,13 @@ def main(cfg: DictConfig) -> None:
     
     # Save model weights to Supabase storage
     try:
-        from adapters.adapter_database import upload_model_weights_to_storage
+        from app.adapters.adapter_database import upload_model_weights_to_storage
         
         # Create model filename based on vintage and config
         if isinstance(vintage, int):
             # If vintage is an ID, get the date
             try:
-                from database import get_vintage
+                from app.database import get_vintage
                 if db_client is None:
                     db_client = get_db_client()
                 vintage_info = get_vintage(vintage_id=vintage, client=db_client)

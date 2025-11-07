@@ -1,11 +1,13 @@
-"""Main entry point for data ingestion (GitHub Actions).
+"""Job 1: Ingest data from APIs and update database.
 
-This script reads from src/spec/001_initial_spec.csv and updates the database:
-- For new series: fetches full history and inserts series metadata + observations
-- For existing series: fetches incremental data (from latest observation date) and inserts observations only
+This job:
+- Loads spec CSV from database storage bucket (or local fallback)
+- Fetches data from BOK and KOSIS APIs
+- Creates/updates data vintages in database
+- Saves observations and series metadata
 
 Usage:
-    python scripts/ingest_api.py
+    python -m app.jobs.ingest
 """
 
 import sys
@@ -30,8 +32,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Add project root to path (script is in scripts/ directory)
-project_root = Path(__file__).resolve().parent.parent
+# Add project root to path (script is in app/jobs/ directory)
+project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Load environment variables from .env file (local development only)
@@ -74,7 +76,7 @@ if not env_loaded and HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
 
 import pandas as pd
 
-from database import (
+from app.database import (
     get_client,
     upsert_series,
     get_series,
@@ -82,19 +84,19 @@ from database import (
     save_model_config,
     update_vintage_status,
 )
-from database.operations import (
+from app.database.operations import (
     get_latest_observation_date,
     check_series_exists,
 )
-from database.models import SeriesModel
-from database.operations import TABLES
-from database.db_utils import (
+from app.database.models import SeriesModel
+from app.database.operations import TABLES
+from app.database.db_utils import (
     RateLimiter,
     initialize_api_clients,
     fetch_series_data,
     get_next_period_date,
 )
-from database import ensure_vintage_and_job, finalize_ingestion_job, delete_old_vintages
+from app.database import ensure_vintage_and_job, finalize_ingestion_job, delete_old_vintages
 
 
 def main() -> None:
@@ -117,18 +119,18 @@ def main() -> None:
     try:
         # Import only what we need, handle missing dependencies gracefully
         try:
-            from adapters.adapter_database import download_spec_csv_from_storage, get_latest_spec_csv_filename
+            from app.adapters.adapter_database import download_spec_csv_from_storage, get_latest_spec_csv_filename
         except ImportError as import_err:
             # If adapter import fails, try importing database functions directly
             logger.warning(f"Could not import adapter functions: {import_err}")
             raise ImportError("Database adapter not available") from import_err
         
         try:
-            from scripts.utils import get_db_client
+            from app.utils import get_db_client
         except ImportError:
             # Fallback: try importing database client directly
             try:
-                from database import get_client as get_db_client
+                from app.database import get_client as get_db_client
             except ImportError:
                 raise ImportError("Database client not available")
         
@@ -210,7 +212,7 @@ def main() -> None:
     # Generate series_id from data_code, item_id, and api_source
     # Note: CSV 'id' column is just an index, not the actual series_id
     # The actual series_id is generated using generate_series_id() for consistency
-    from database.operations import generate_series_id
+    from app.database.operations import generate_series_id
     csv_df['series_id'] = csv_df.apply(
         lambda row: generate_series_id(
             row.get('api_source', ''),
@@ -579,7 +581,7 @@ def main() -> None:
     config_name = model_cfg.config_name
     print(f"   Config name: {config_name}")
     
-    # Extract block assignments from ModelConfig
+    # Extract block assignments from DFMConfig
     block_names = model_cfg.block_names
     print(f"   Block names: {', '.join(block_names)}")
     block_records = []
@@ -654,7 +656,7 @@ def main() -> None:
         client.table('blocks').delete().eq('config_name', config_name).execute()
         
         # Insert using batch_insert helper
-        from database.helpers import batch_insert
+        from app.database.helpers import batch_insert
         total_inserted = batch_insert(
             client=client,
             table_name='blocks',

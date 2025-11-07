@@ -1,132 +1,94 @@
-name: Nowcast DFM
+name: Nowcast
 
 on:
   workflow_dispatch:
     inputs:
       config_name:
-        description: 'Hydra config name (e.g., default, test)'
+        description: 'Hydra config name'
         required: false
-        default: 'default'
-        type: string
+        default: 'test'
       series_config:
-        description: 'Series config name (e.g., default, test_series)'
+        description: 'Series config name'
         required: false
-        default: 'default'
-        type: string
-      series:
-        description: 'Target series ID for nowcasting'
-        required: false
-        default: 'BOK_200Y106_1400'
-        type: string
+        default: 'test_series'
       period:
-        description: 'Target period (e.g., 2016q4)'
+        description: 'Forecast period'
         required: false
-        default: ''
-        type: string
+        default: '2'
+  push:
+    paths:
+      - 'app/jobs/nowcast.py'
+      - 'app/adapters/**'
+      - 'app/config/**'
+      - '.github/workflows/nowcast.yaml'
 
 jobs:
   nowcast:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
       
       - name: Install dependencies
         run: |
-          pip install uv
-          uv venv .venv
-          source .venv/bin/activate
-          # Install dfm-python package with optional dependencies
-          uv pip install dfm-python[hydra]
-          uv pip install -e .[database]
-          # Install application-specific dependencies
-          uv pip install hydra-core>=1.3.0 omegaconf>=2.3.0
-      
-      - name: Download model weights (optional)
-        uses: actions/download-artifact@v4
-        with:
-          name: model-weights
-          path: .
-        continue-on-error: true
+          pip install -r requirements.txt
+          pip install -r requirements-hydra.txt
+          pip install -r requirements-database.txt
       
       - name: Check for model weights in storage
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: |
-          source .venv/bin/activate
-          python -c "
-          from adapters.adapter_database import download_model_weights_from_storage
-          from database import get_latest_vintage_id, get_vintage
-          from scripts.utils import get_db_client
-          
-          client = get_db_client()
-          vintage_id = get_latest_vintage_id(status='completed', client=client)
-          if not vintage_id:
-              vintage_id = get_latest_vintage_id(status='partial', client=client)
-          
-          if vintage_id:
-              vintage_info = get_vintage(vintage_id=vintage_id, client=client)
-              if vintage_info:
-                  vintage_date = vintage_info.get('vintage_date', '')
-                  model_filename = f'dfm_{vintage_date}.pkl'
-                  weights = download_model_weights_from_storage(
-                      filename=model_filename,
-                      bucket_name='model-weights',
-                      client=client
-                  )
-                  if weights:
-                      print(f'✅ Found model weights: {model_filename}')
-                  else:
-                      print(f'⚠️  Model weights not found: {model_filename}')
-                      print('   Will re-estimate model if needed')
-              else:
-                  print('⚠️  Could not retrieve vintage info')
-          else:
-              print('⚠️  No vintage found')
-          "
         continue-on-error: true
-      
-      - name: Load environment variables
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
-          echo "SUPABASE_SECRET_KEY=$SUPABASE_SECRET_KEY" >> $GITHUB_ENV
+          python -c "
+          from app.adapters.adapter_database import download_model_weights_from_storage
+          from app.database.client import get_client
+          client = get_client()
+          try:
+              weights = download_model_weights_from_storage('model_weights', client=client)
+              if weights:
+                  print('✅ Model weights found in storage')
+              else:
+                  print('⚠️  Model weights not found - train job must run first')
+          except Exception as e:
+              print(f'⚠️  Could not verify model weights: {e}')
+          "
       
       - name: Run nowcasting
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          source .venv/bin/activate
           CONFIG_NAME="${{ inputs.config_name }}"
           SERIES_CONFIG="${{ inputs.series_config }}"
-          CMD="python scripts/nowcast_dfm.py --config-name=${CONFIG_NAME:-default} series=${SERIES_CONFIG:-default} data.use_database=true data.strict_mode=false"
-          if [ -n "${{ inputs.series }}" ]; then
-            CMD="$CMD series=${{ inputs.series }}"
-          fi
-          if [ -n "${{ inputs.period }}" ]; then
-            CMD="$CMD period=${{ inputs.period }}"
+          PERIOD="${{ inputs.period }}"
+          CMD="python -m app.jobs.nowcast --config-name=${CONFIG_NAME:-test} series=${SERIES_CONFIG:-test_series} data.use_database=true data.strict_mode=false"
+          if [ -n "$PERIOD" ]; then
+            CMD="$CMD data.forecast_periods=$PERIOD"
           fi
           eval $CMD
       
-      - name: Upload logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: nowcast-logs
-          path: |
-            *.log
-            outputs/**/*.log
-          retention-days: 7
+      - name: Validate nowcasts
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python -c "
+          from datetime import datetime, timedelta
+          from app.database.client import get_client
+          from app.database.operations import get_latest_forecasts
+          client = get_client()
+          forecasts = get_latest_forecasts(client=client, limit=10)
+          if not forecasts.empty:
+              recent = forecasts[forecasts['created_at'] > datetime.now() - timedelta(hours=1)]
+              print(f'✅ Found {len(recent)} recent nowcast(s)')
+          else:
+              print('⚠️  No nowcasts found')
+          "
 

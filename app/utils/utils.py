@@ -110,7 +110,7 @@ def load_model_config_from_hydra(
     # Priority 1: Try to load CSV from database storage bucket
     if use_db:
         try:
-            from adapters.adapter_database import (
+            from app.adapters.adapter_database import (
                 download_spec_csv_from_storage,
                 get_latest_spec_csv_filename
             )
@@ -185,7 +185,7 @@ def load_model_config_from_hydra(
                 
                 # Save blocks to database
                 try:
-                    from adapters.adapter_database import save_blocks_to_db
+                    from app.adapters.adapter_database import save_blocks_to_db
                     config_name = Path(loaded_filename).stem.replace('_', '-')
                     save_blocks_to_db(model_config, config_name)
                     logger.info(f"Saved blocks to database for {config_name}")
@@ -255,7 +255,7 @@ def load_model_config_from_hydra(
             # Save blocks to database if enabled
             if use_db and config_file.suffix.lower() == '.csv':
                 try:
-                    from adapters.adapter_database import save_blocks_to_db
+                    from app.adapters.adapter_database import save_blocks_to_db
                     config_name = config_file.stem.replace('_', '-')
                     save_blocks_to_db(model_config, config_name)
                 except Exception as e:
@@ -295,11 +295,11 @@ def get_db_client():
         If client initialization fails
     """
     try:
-        from adapters.adapter_database import _get_db_client
+        from app.adapters.adapter_database import _get_db_client
         return _get_db_client()
     except ImportError:
         # Fallback to database.get_client
-        from database import get_client
+        from app.database import get_client
         return get_client()
 
 
@@ -321,7 +321,7 @@ def get_latest_vintage_with_fallback(
     tuple[int, dict] or None
         (vintage_id, vintage_info) if found, None otherwise
     """
-    from database import get_latest_vintage_id, get_vintage
+    from app.database import get_latest_vintage_id, get_vintage
     
     if client is None:
         client = get_db_client()
@@ -600,8 +600,8 @@ def generate_forecasts(
     # Save forecasts to database
     if use_database:
         try:
-            from adapters.adapter_database import save_forecast_to_db
-            from database import get_latest_vintage_id
+            from app.adapters.adapter_database import save_forecast_to_db
+            from app.database import get_latest_vintage_id
             
             db_client = get_db_client()
             

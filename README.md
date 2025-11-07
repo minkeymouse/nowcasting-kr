@@ -16,10 +16,16 @@ uv venv .venv
 source .venv/bin/activate
 
 # Install the application
-uv pip install -e .[database,hydra]
+pip install -r requirements.txt
 
-# Or install all optional dependencies
-uv pip install -e .[all]
+# Install with database support
+pip install -r requirements.txt -r requirements-database.txt
+
+# Install with Hydra configuration support
+pip install -r requirements.txt -r requirements-hydra.txt
+
+# Install with all optional dependencies
+pip install -r requirements.txt -r requirements-database.txt -r requirements-hydra.txt
 ```
 
 ## Dependencies
@@ -35,41 +41,84 @@ Note: The DFM module is now a separate PyPI package (`dfm-python`). All DFM-rela
 
 ```
 nowcasting-kr/
-├── adapters/          # Database adapters for DFM module
-├── config/            # Hydra configuration files
-├── database/          # Database operations and models
-├── scripts/           # Main application scripts
-│   ├── ingest_api.py      # Data ingestion from APIs
-│   ├── train_dfm.py       # DFM model training
-│   └── nowcast_dfm.py     # Nowcasting and forecasting
-└── services/          # API clients and ingestion services
+├── app/               # Main application package
+│   ├── adapters/      # Database adapters for DFM module
+│   ├── cli/           # CLI wrapper and validation tools
+│   ├── config/        # Hydra configuration files
+│   ├── database/      # Database operations and models
+│   ├── jobs/          # GitHub Actions jobs (main entry points)
+│   │   ├── ingest.py  # Job 1: Ingest data from APIs
+│   │   ├── train.py   # Job 2: Train DFM model
+│   │   └── nowcast.py # Job 3: Generate nowcasts/forecasts
+│   ├── services/      # API clients and ingestion services
+│   └── utils/         # Shared utility functions
+├── .github/workflows/ # GitHub Actions workflows
+│   ├── ingest.yaml    # Ingest job workflow
+│   ├── train.yaml     # Train job workflow
+│   ├── nowcast.yaml   # Nowcast job workflow
+│   └── pipeline.yaml  # Full pipeline (all three jobs)
+├── tests/             # Test suite
+└── migrations/        # Database migrations
 ```
 
 ## Usage
 
-### Data Ingestion
+### Job 1: Ingest Data
 
 ```bash
-python scripts/ingest_api.py
+# Local execution
+python -m app.jobs.ingest
+
+# GitHub Actions
+# Triggered automatically on push or manually via workflow_dispatch
 ```
 
-Ingests data from BOK and KOSIS APIs and stores it in the database.
+**What it does:**
+- Loads spec CSV from database storage bucket (or local fallback)
+- Fetches data from BOK and KOSIS APIs
+- Creates/updates data vintages in database
+- Saves observations and series metadata
 
-### Model Training
+### Job 2: Train DFM Model
 
 ```bash
-python scripts/train_dfm.py --config-name=test series=test_series
+# Local execution
+python -m app.jobs.train --config-name=test series=test_series
+
+# GitHub Actions
+# Triggered automatically on push or manually via workflow_dispatch
 ```
 
-Trains a DFM model using the specified configuration.
+**What it does:**
+- Queries database for latest data vintage
+- Loads model configuration (from DB storage CSV or Hydra YAML)
+- Trains DFM model using EM algorithm
+- Saves model weights to Supabase storage bucket
+- Saves factors to database
 
-### Nowcasting
+### Job 3: Generate Nowcasts/Forecasts
 
 ```bash
-python scripts/nowcast_dfm.py --config-name=test series=test_series
+# Local execution
+python -m app.jobs.nowcast --config-name=test series=test_series
+
+# GitHub Actions
+# Triggered automatically on push or manually via workflow_dispatch
 ```
 
-Generates nowcasts and forecasts using the trained model.
+**What it does:**
+- Queries database for latest data vintage
+- Downloads latest model weights from Supabase storage bucket
+- Loads model configuration (from DB storage CSV or Hydra YAML)
+- Generates nowcasts (current period) and forecasts (future periods)
+- Saves nowcasts and forecasts to database with news decomposition
+
+### Full Pipeline
+
+The `pipeline.yaml` workflow runs all three jobs sequentially:
+1. Ingest → 2. Train → 3. Nowcast
+
+Triggered automatically on push to `main`/`master` branches.
 
 ## Configuration
 

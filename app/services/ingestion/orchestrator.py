@@ -5,7 +5,7 @@ import logging
 from typing import Optional, Dict, Any
 from datetime import date, datetime
 
-from database import (
+        from app.database import (
     get_client,
     create_vintage,
     update_vintage_status,
@@ -16,12 +16,12 @@ from database import (
     list_dfm_selected_statistics,
     finalize_ingestion_job,
 )
-from database.operations import create_series_from_item, create_or_get_series
-from services.ingestion.bok import BOKIngestion
-from services.ingestion.kosis import KOSISIngestion
-from database.settings import AppSettings, DataSourceConfig
-from database.helpers import map_frequency_to_code
-from services.api.base import APIError
+from app.database.operations import create_series_from_item, create_or_get_series
+from app.services.ingestion.bok import BOKIngestion
+from app.services.ingestion.kosis import KOSISIngestion
+from app.database.settings import AppSettings, DataSourceConfig
+from app.database.helpers import map_frequency_to_code
+from app.services.api.base import APIError
 
 logger = logging.getLogger(__name__)
 

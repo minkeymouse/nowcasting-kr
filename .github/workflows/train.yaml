@@ -4,126 +4,93 @@ on:
   workflow_dispatch:
     inputs:
       config_name:
-        description: 'Hydra config name (e.g., default, test)'
+        description: 'Hydra config name'
         required: false
-        default: 'default'
-        type: string
+        default: 'test'
+      series_config:
+        description: 'Series config name'
+        required: false
+        default: 'test_series'
       max_iter:
-        description: 'Maximum EM iterations for training'
+        description: 'Maximum iterations'
         required: false
         default: '100'
-        type: string
-      series_config:
-        description: 'Series config name (e.g., default, test_series)'
-        required: false
-        default: 'default'
-        type: string
+  push:
+    paths:
+      - 'app/jobs/train.py'
+      - 'app/adapters/**'
+      - 'app/config/**'
+      - '.github/workflows/train.yaml'
 
 jobs:
   train:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
-    
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
       
       - name: Install dependencies
         run: |
-          pip install uv
-          uv venv .venv
-          source .venv/bin/activate
-          # Install dfm-python package with optional dependencies
-          uv pip install dfm-python[hydra]
-          uv pip install -e .[database]
-          # Install application-specific dependencies
-          uv pip install hydra-core>=1.3.0 omegaconf>=2.3.0
-      
-      - name: Load environment variables
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: |
-          echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
-          echo "SUPABASE_SECRET_KEY=$SUPABASE_SECRET_KEY" >> $GITHUB_ENV
+          pip install -r requirements.txt
+          pip install -r requirements-hydra.txt
+          pip install -r requirements-database.txt
       
       - name: Wait for latest vintage
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          source .venv/bin/activate
           python -c "
-          from database import get_latest_vintage_id, get_vintage
-          from scripts.utils import get_db_client
           import time
-          
-          client = get_db_client()
-          max_wait = 300  # 5 minutes
-          wait_interval = 10  # 10 seconds
-          waited = 0
-          
-          while waited < max_wait:
-              vintage_id = get_latest_vintage_id(status='completed', client=client)
-              if not vintage_id:
-                  vintage_id = get_latest_vintage_id(status='partial', client=client)
-              
+          from app.database import get_latest_vintage_id
+          from app.database.client import get_client
+          client = get_client()
+          for i in range(30):
+              vintage_id = get_latest_vintage_id(client=client)
               if vintage_id:
-                  vintage_info = get_vintage(vintage_id=vintage_id, client=client)
-                  if vintage_info:
-                      status = vintage_info.get('fetch_status', 'unknown')
-                      if status in ['completed', 'partial']:
-                          print(f'✅ Found vintage {vintage_id} with status: {status}')
-                          exit(0)
-              
-              print(f'Waiting for vintage... ({waited}s/{max_wait}s)')
-              time.sleep(wait_interval)
-              waited += wait_interval
-          
-          print('⚠️  No completed/partial vintage found after waiting')
-          exit(0)  # Don't fail, just continue
+                  print(f'✅ Vintage {vintage_id} ready')
+                  break
+              print(f'Waiting for vintage... ({i+1}/30)')
+              time.sleep(10)
           "
-        continue-on-error: true
       
       - name: Train DFM model
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          source .venv/bin/activate
           CONFIG_NAME="${{ inputs.config_name }}"
           SERIES_CONFIG="${{ inputs.series_config }}"
           MAX_ITER="${{ inputs.max_iter }}"
-          python scripts/train_dfm.py \
-            --config-name=${CONFIG_NAME:-default} \
-            series=${SERIES_CONFIG:-default} \
+          python -m app.jobs.train \
+            --config-name=${CONFIG_NAME:-test} \
+            series=${SERIES_CONFIG:-test_series} \
             "data.use_database=true" \
             "data.strict_mode=false" \
             "dfm.max_iter=${MAX_ITER:-100}"
       
-      - name: Upload model weights
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: model-weights
-          path: |
-            ResDFM.pkl
-            *.pkl
-          retention-days: 30
-      
-      - name: Upload logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: train-logs
-          path: |
-            *.log
-            outputs/**/*.log
-          retention-days: 7
+      - name: Validate model weights
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python -c "
+          from app.adapters.adapter_database import download_model_weights_from_storage
+          from app.database.client import get_client
+          client = get_client()
+          try:
+              weights = download_model_weights_from_storage('model_weights', client=client)
+              if weights:
+                  print('✅ Model weights found in storage')
+              else:
+                  print('⚠️  Model weights not found')
+          except Exception as e:
+              print(f'⚠️  Could not verify model weights: {e}')
+          "
 

@@ -7,7 +7,7 @@ import time
 from typing import Optional, Dict, Any, List
 import httpx
 from urllib.parse import urlencode
-from database.settings import KOSISAPIConfig
+from app.database.settings import KOSISAPIConfig
 from .base import BaseAPIClient, APIError
 
 

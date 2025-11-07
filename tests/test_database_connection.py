@@ -51,7 +51,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
     from database import get_client, get_latest_vintage_id, list_series
-    from database.operations import get_source_id, get_source_code
+    from app.database.operations import get_source_id, get_source_code
 except ImportError as e:
     print(f"❌ Failed to import database module: {e}")
     sys.exit(1)

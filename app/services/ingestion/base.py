@@ -11,17 +11,17 @@ from typing import Dict, Any, Optional
 from datetime import datetime, date
 import pandas as pd
 
-from database import (
+        from app.database import (
     get_client,
     upsert_statistics_metadata,
     upsert_statistics_items,
     get_statistics_metadata,
     list_dfm_selected_statistics,
 )
-from database.models import StatisticsMetadataModel, StatisticsItemModel
-from database.operations import create_series_from_item, create_or_get_series
-from database.helpers import map_frequency_to_code
-from services.api.base import BaseAPIClient
+from app.database.models import StatisticsMetadataModel, StatisticsItemModel
+from app.database.operations import create_series_from_item, create_or_get_series
+from app.database.helpers import map_frequency_to_code
+from app.services.api.base import BaseAPIClient
 
 logger = logging.getLogger(__name__)
 

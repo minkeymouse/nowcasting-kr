@@ -4,7 +4,7 @@ This script validates the spec CSV file and tests API endpoints for each series.
 It identifies which series have API errors and suggests corrections.
 
 Usage:
-    python scripts/validate_spec.py [--spec-file path/to/spec.csv] [--use-db]
+    python -m app.cli.validate_spec [--spec-file path/to/spec.csv] [--use-db]
 """
 
 import sys
@@ -24,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Add project root to path
-project_root = Path(__file__).resolve().parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Load environment variables
@@ -46,17 +46,17 @@ for env_path in env_locations:
 if not env_loaded:
     logger.warning("⚠️  .env.local not found in standard locations")
 
-from database.db_utils import (
+from app.database.db_utils import (
     initialize_api_clients,
     fetch_series_data,
     RateLimiter,
 )
-from database.operations import generate_series_id
-from adapters.adapter_database import (
+from app.database.operations import generate_series_id
+from app.adapters.adapter_database import (
     download_spec_csv_from_storage,
     get_latest_spec_csv_filename,
 )
-from scripts.utils import get_db_client
+from app.utils import get_db_client
 
 
 def load_spec_file(spec_path: Optional[Path] = None, use_db: bool = False) -> pd.DataFrame:

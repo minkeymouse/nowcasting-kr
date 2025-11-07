@@ -22,7 +22,7 @@ def test_adapter_imports_without_database():
 @patch('adapters.adapter_database._fetch_vintage_data')
 def test_load_data_from_db_mock(mock_fetch, mock_resolve, mock_client):
     """Test load_data_from_db with mocked database functions."""
-    from adapters.adapter_database import load_data_from_db
+    from app.adapters.adapter_database import load_data_from_db
     from dfm_python import DFMConfig, SeriesConfig
     
     # Create mock config
@@ -84,7 +84,7 @@ def test_load_data_from_db_mock(mock_fetch, mock_resolve, mock_client):
 @patch('adapters.adapter_database._get_db_client')
 def test_load_data_from_db_import_error(mock_client):
     """Test load_data_from_db handles ImportError when database module unavailable."""
-    from adapters.adapter_database import load_data_from_db
+    from app.adapters.adapter_database import load_data_from_db
     from dfm_python import DFMConfig, SeriesConfig
     
     # Mock ImportError
@@ -117,7 +117,7 @@ def test_save_nowcast_to_db_mock(mock_save, mock_get_client):
     """Test save_nowcast_to_db with mocked database functions."""
     # First, mock the database module import
     with patch.dict('sys.modules', {'database': MagicMock()}):
-        from adapters.adapter_database import save_nowcast_to_db
+        from app.adapters.adapter_database import save_nowcast_to_db
         
         mock_get_client.return_value = Mock()
         mock_save.return_value = True
@@ -141,7 +141,7 @@ def test_save_nowcast_to_db_model_id_lookup(mock_tables, mock_vintage, mock_clie
     """Test save_nowcast_to_db attempts to resolve model_id from Res."""
     # This tests the model_id resolution logic in the adapter
     with patch.dict('sys.modules', {'database': MagicMock()}):
-        from adapters.adapter_database import save_nowcast_to_db
+        from app.adapters.adapter_database import save_nowcast_to_db
         
         # Mock Res with model_id
         Res = Mock()
@@ -158,7 +158,7 @@ def test_save_nowcast_to_db_model_id_lookup(mock_tables, mock_vintage, mock_clie
 def test_adapter_imports():
     """Test that adapters can be imported."""
     try:
-        from adapters.adapter_database import load_data_from_db, save_nowcast_to_db
+        from app.adapters.adapter_database import load_data_from_db, save_nowcast_to_db
         assert True
     except ImportError as e:
         # It's ok if database module isn't available for testing
