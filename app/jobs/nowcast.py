@@ -188,31 +188,63 @@ def main(cfg: DictConfig) -> None:
         
         # Determine series frequency from config to convert period format
         # update_nowcast expects period format matching the series' original frequency
-        # But DFM uses monthly clock, so we need to check the series' original frequency
+        # Quarterly series needs YYYYqQ format, Monthly series needs YYYYmMM format
         series_frequency = 'm'  # Default to monthly
         if hasattr(model_cfg, 'SeriesID') and hasattr(model_cfg, 'Frequency'):
             try:
                 series_idx = model_cfg.SeriesID.index(series) if series in model_cfg.SeriesID else -1
                 if series_idx >= 0 and series_idx < len(model_cfg.Frequency):
                     series_frequency = model_cfg.Frequency[series_idx].lower()
+                    logger.info(f"Series {series} has frequency: {series_frequency}")
             except (ValueError, AttributeError, IndexError):
                 pass
         
         # Convert period to match series frequency format
-        # update_nowcast checks the series frequency and expects matching format
-        # Based on error message, it seems update_nowcast may use monthly clock format
-        # So we convert quarterly periods to monthly format
-        if isinstance(period_raw, str) and 'q' in period_raw.lower():
-            # Convert quarterly format: YYYYqQ -> YYYYmMM
-            # Q1 -> m03, Q2 -> m06, Q3 -> m09, Q4 -> m12
-            import re
-            match = re.match(r'(\d{4})q([1-4])', period_raw.lower())
-            if match:
-                year = match.group(1)
-                quarter = int(match.group(2))
-                month = quarter * 3  # Q1=3, Q2=6, Q3=9, Q4=12
-                period = f"{year}m{month:02d}"
-        # If already monthly format, keep as is
+        # update_nowcast requires period format to match the series' native frequency
+        import re
+        if isinstance(period_raw, str):
+            period_lower = period_raw.lower()
+            # Check if period is in quarterly format (YYYYqQ)
+            q_match = re.match(r'(\d{4})q([1-4])', period_lower)
+            # Check if period is in monthly format (YYYYmMM)
+            m_match = re.match(r'(\d{4})m(\d{1,2})', period_lower)
+            
+            if q_match:
+                # Period is in quarterly format
+                if series_frequency == 'q':
+                    # Series is quarterly, keep quarterly format
+                    period = period_raw  # Keep as YYYYqQ
+                    logger.info(f"Keeping quarterly period format: {period}")
+                elif series_frequency == 'm':
+                    # Series is monthly, convert to monthly format
+                    year = q_match.group(1)
+                    quarter = int(q_match.group(2))
+                    month = quarter * 3  # Q1=3, Q2=6, Q3=9, Q4=12
+                    period = f"{year}m{month:02d}"
+                    logger.info(f"Converted quarterly period to monthly: {period_raw} -> {period}")
+                else:
+                    # Unknown frequency, keep as is
+                    period = period_raw
+            elif m_match:
+                # Period is in monthly format
+                if series_frequency == 'q':
+                    # Series is quarterly, convert to quarterly format
+                    year = m_match.group(1)
+                    month = int(m_match.group(2))
+                    quarter = (month - 1) // 3 + 1  # 1-3->Q1, 4-6->Q2, 7-9->Q3, 10-12->Q4
+                    period = f"{year}q{quarter}"
+                    logger.info(f"Converted monthly period to quarterly: {period_raw} -> {period}")
+                elif series_frequency == 'm':
+                    # Series is monthly, keep monthly format
+                    period = period_raw  # Keep as YYYYmMM
+                    logger.info(f"Keeping monthly period format: {period}")
+                else:
+                    # Unknown frequency, keep as is
+                    period = period_raw
+            else:
+                # Period format not recognized, keep as is
+                logger.warning(f"Period format not recognized: {period_raw}, keeping as is")
+                period = period_raw
         
         config_id = data_cfg_dict.get('config_id')
         strict_mode = data_cfg_dict.get('strict_mode', False)
@@ -356,7 +388,7 @@ def main(cfg: DictConfig) -> None:
             if use_database:
                 try:
                     from app.adapters.adapter_database import save_factors_to_db
-                    from app.database import get_latest_vintage_id
+            from app.database import get_latest_vintage_id
                     
                     # Get vintage_id for factor_values
                     vintage_id_new = None
