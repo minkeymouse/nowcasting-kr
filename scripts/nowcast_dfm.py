@@ -94,6 +94,24 @@ def main(cfg: DictConfig) -> None:
                 logger.error(f"Failed to load config from CSV storage and Hydra YAML: {e2}")
                 raise
         
+        # Merge model-level config from Hydra (factors_per_block from cfg.model.blocks)
+        # CSV provides series info but NOT model-level config, so we need Hydra
+        model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
+        blocks_dict = model_dict.get('blocks', {})
+        if blocks_dict and isinstance(blocks_dict, dict):
+            # Extract factors_per_block from blocks dict: {'Global': {'factors': 3}, ...}
+            factors_per_block = []
+            for block_name, block_cfg in blocks_dict.items():
+                if isinstance(block_cfg, dict):
+                    factors = block_cfg.get('factors', 1)
+                else:
+                    factors = 1
+                factors_per_block.append(factors)
+            
+            if factors_per_block:
+                model_cfg.factors_per_block = factors_per_block
+                logger.info(f"Merged factors_per_block from Hydra model.blocks: {factors_per_block}")
+        
         # Load data and DFM configs from Hydra
         data_cfg_dict = OmegaConf.to_container(cfg.data, resolve=True)
         dfm_cfg_dict = OmegaConf.to_container(cfg.dfm, resolve=True)

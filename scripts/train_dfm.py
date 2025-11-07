@@ -20,6 +20,9 @@ sys.path.insert(0, str(project_root))
 from dfm_python import load_data, dfm
 from src.utils import summarize
 from scripts.utils import load_model_config_from_hydra, get_db_client
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="default")
@@ -63,11 +66,29 @@ def main(cfg: DictConfig) -> None:
             logger.error(f"Failed to load config from CSV storage and Hydra YAML: {e2}")
             raise
     
+    # Merge model-level config from Hydra (factors_per_block from cfg.model.blocks)
+    # CSV provides series info but NOT model-level config, so we need Hydra
+    model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
+    blocks_dict = model_dict.get('blocks', {})
+    if blocks_dict and isinstance(blocks_dict, dict):
+        # Extract factors_per_block from blocks dict: {'Global': {'factors': 3}, ...}
+        factors_per_block = []
+        for block_name, block_cfg in blocks_dict.items():
+            if isinstance(block_cfg, dict):
+                factors = block_cfg.get('factors', 1)
+            else:
+                factors = 1
+            factors_per_block.append(factors)
+        
+        if factors_per_block:
+            model_cfg.factors_per_block = factors_per_block
+            logger.info(f"Merged factors_per_block from Hydra model.blocks: {factors_per_block}")
+    
     # Merge DFM estimation parameters from Hydra into model config
     dfm_cfg_dict = OmegaConf.to_container(cfg.dfm, resolve=True)
     if dfm_cfg_dict:
         # Update model_cfg with estimation parameters from Hydra
-        for key in ['ar_lag', 'threshold', 'max_iter', 'nan_method', 'nan_k', 'factors_per_block']:
+        for key in ['ar_lag', 'threshold', 'max_iter', 'nan_method', 'nan_k']:
             if key in dfm_cfg_dict and dfm_cfg_dict[key] is not None:
                 setattr(model_cfg, key, dfm_cfg_dict[key])
     

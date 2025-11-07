@@ -44,7 +44,10 @@ jobs:
           pip install uv
           uv venv .venv
           source .venv/bin/activate
-          uv sync
+          # Install dfm-python package with optional dependencies
+          uv pip install -e .[hydra,database]
+          # Install application-specific dependencies
+          uv pip install hydra-core>=1.3.0 omegaconf>=2.3.0
       
       - name: Download model weights (optional)
         uses: actions/download-artifact@v4

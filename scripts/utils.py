@@ -100,6 +100,31 @@ def load_model_config_from_hydra(
                 csv_file_like = io.BytesIO(csv_content)
                 model_config = load_config(csv_file_like)
                 
+                # CSV provides series info but NOT model-level config (factors_per_block, etc.)
+                # We need to merge model config from Hydra (cfg_model) if available
+                # Extract factors_per_block from cfg_model.blocks if available
+                if cfg_model and hasattr(cfg_model, 'get'):
+                    model_dict = OmegaConf.to_container(cfg_model, resolve=True) if hasattr(cfg_model, '__class__') else dict(cfg_model)
+                    blocks_dict = model_dict.get('blocks', {})
+                    
+                    # Extract factors_per_block from blocks dict
+                    # Format: {'Global': {'factors': 3}, 'Investment': {'factors': 2}}
+                    if blocks_dict and isinstance(blocks_dict, dict):
+                        factors_per_block = []
+                        block_names_from_blocks = []
+                        for block_name, block_cfg in blocks_dict.items():
+                            if isinstance(block_cfg, dict):
+                                factors = block_cfg.get('factors', 1)
+                            else:
+                                factors = 1
+                            factors_per_block.append(factors)
+                            block_names_from_blocks.append(block_name)
+                        
+                        if factors_per_block:
+                            # Update model_config with factors_per_block from Hydra
+                            model_config.factors_per_block = factors_per_block
+                            logger.info(f"Merged factors_per_block from Hydra: {factors_per_block}")
+                
                 # Save blocks to database
                 try:
                     from adapters.adapter_database import save_blocks_to_db
@@ -148,6 +173,26 @@ def load_model_config_from_hydra(
         if config_file.exists():
             logger.info(f"Loading config from local CSV file: {config_file}")
             model_config = load_config(config_file)
+            
+            # CSV provides series info but NOT model-level config (factors_per_block, etc.)
+            # Merge model config from Hydra (cfg_model) if available
+            if cfg_model and hasattr(cfg_model, 'get'):
+                model_dict = OmegaConf.to_container(cfg_model, resolve=True) if hasattr(cfg_model, '__class__') else dict(cfg_model)
+                blocks_dict = model_dict.get('blocks', {})
+                
+                # Extract factors_per_block from blocks dict
+                if blocks_dict and isinstance(blocks_dict, dict):
+                    factors_per_block = []
+                    for block_name, block_cfg in blocks_dict.items():
+                        if isinstance(block_cfg, dict):
+                            factors = block_cfg.get('factors', 1)
+                        else:
+                            factors = 1
+                        factors_per_block.append(factors)
+                    
+                    if factors_per_block:
+                        model_config.factors_per_block = factors_per_block
+                        logger.info(f"Merged factors_per_block from Hydra: {factors_per_block}")
             
             # Save blocks to database if enabled
             if use_db and config_file.suffix.lower() == '.csv':
