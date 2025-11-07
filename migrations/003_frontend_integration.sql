@@ -347,7 +347,7 @@ FROM forecasts f
 JOIN series s ON f.series_id = s.series_id
 ORDER BY f.series_id, f.forecast_date, f.run_type, f.created_at DESC;
 
-COMMENT ON VIEW latest_forecasts_view IS 'Latest forecast for each series and date combination with block information';
+COMMENT ON VIEW latest_forecasts_view IS 'Latest forecast for each series, date, and run_type combination with block information (replaces views from 001 and 002)';
 
 -- View for latest observations (most recent vintage only)
 DROP VIEW IF EXISTS latest_observations_view CASCADE;
