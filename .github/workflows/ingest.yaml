@@ -7,12 +7,6 @@ on:
         description: 'Hydra config name'
         required: false
         default: 'default'
-  push:
-    paths:
-      - 'app/jobs/ingest.py'
-      - 'app/database/**'
-      - 'app/services/**'
-      - '.github/workflows/ingest.yaml'
 
 jobs:
   ingest:

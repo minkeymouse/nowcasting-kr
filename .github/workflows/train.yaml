@@ -15,12 +15,6 @@ on:
         description: 'Maximum iterations'
         required: false
         default: '100'
-  push:
-    paths:
-      - 'app/jobs/train.py'
-      - 'app/adapters/**'
-      - 'app/config/**'
-      - '.github/workflows/train.yaml'
 
 jobs:
   train:

@@ -15,12 +15,6 @@ on:
         description: 'Forecast period'
         required: false
         default: '2'
-  push:
-    paths:
-      - 'app/jobs/nowcast.py'
-      - 'app/adapters/**'
-      - 'app/config/**'
-      - '.github/workflows/nowcast.yaml'
 
 jobs:
   nowcast:
