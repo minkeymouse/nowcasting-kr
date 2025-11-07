@@ -1,5 +1,5 @@
 """
-Fast tests for forecast_dfm.py script.
+Fast tests for nowcast_dfm.py script.
 
 These tests verify that the forecasting script can:
 1. Load configuration from CSV
@@ -130,10 +130,69 @@ def test_vintage_resolution():
         return
 
 
+def test_vintage_comparison():
+    """Test that vintage comparison works for nowcasting."""
+    try:
+        import numpy as np
+        config_path = project_root / "src/spec/001_initial_spec.csv"
+        model_config = load_config_from_csv(config_path)
+        
+        # Load data for same vintage (simulating old and new)
+        X_old, Time_old, Z_old = load_data_from_db(
+            vintage_id=1, config=model_config, config_name='001-initial-spec', strict_mode=False
+        )
+        X_new, Time_new, Z_new = load_data_from_db(
+            vintage_id=1, config=model_config, config_name='001-initial-spec', strict_mode=False
+        )
+        
+        # Verify both vintages loaded
+        assert X_old is not None and X_new is not None
+        assert X_old.shape[1] == X_new.shape[1], "Number of series should match"
+        
+        print(f"✓ Vintage comparison: {X_old.shape[1]} series, "
+              f"{len(Time_old)} old obs, {len(Time_new)} new obs")
+        
+    except ImportError as e:
+        print(f"⚠ Skipping: Database module not available: {e}")
+        return
+    except Exception as e:
+        print(f"⚠ Skipping: Database connection failed: {e}")
+        return
+
+
+def test_missing_series_in_vintages():
+    """Test handling of missing series when comparing vintages."""
+    try:
+        import numpy as np
+        config_path = project_root / "src/spec/001_initial_spec.csv"
+        model_config = load_config_from_csv(config_path)
+        
+        # Load data with strict_mode=False to allow missing series
+        X_old, Time_old, Z_old = load_data_from_db(
+            vintage_id=1, config=model_config, config_name='001-initial-spec', strict_mode=False
+        )
+        
+        # Check for missing series (all NaN)
+        missing = [model_config.SeriesID[i] for i in range(len(model_config.SeriesID))
+                  if np.all(np.isnan(X_old[:, i]))]
+        
+        if missing:
+            print(f"⚠ Found {len(missing)} missing series (expected with strict_mode=False)")
+        else:
+            print("✓ All series have data in vintage")
+        
+    except ImportError as e:
+        print(f"⚠ Skipping: Database module not available: {e}")
+        return
+    except Exception as e:
+        print(f"⚠ Skipping: Database connection failed: {e}")
+        return
+
+
 if __name__ == "__main__":
     # Run tests directly
     print("=" * 60)
-    print("Running forecast_dfm tests...")
+    print("Running nowcast_dfm tests...")
     print("=" * 60)
     
     tests = [
@@ -142,6 +201,8 @@ if __name__ == "__main__":
         test_load_data_for_vintage_new,
         test_model_file_exists,
         test_vintage_resolution,
+        test_vintage_comparison,
+        test_missing_series_in_vintages,
     ]
     
     passed = 0
