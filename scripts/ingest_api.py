@@ -17,7 +17,7 @@ from typing import Dict, Any, Optional, Set
 
 # Optional dotenv import (for local development only)
 try:
-from dotenv import load_dotenv
+    from dotenv import load_dotenv
     HAS_DOTENV = True
 except ImportError:
     HAS_DOTENV = False
@@ -37,7 +37,7 @@ sys.path.insert(0, str(project_root))
 # Load environment variables from .env file (local development only)
 # In GitHub Actions, environment variables come from secrets
 if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
-env_locations = [
+    env_locations = [
     project_root / '.env.local',
     Path('/home/minkeymouse/Nowcasting') / '.env.local',  # Main worktree
     Path.home() / '.env.local',
