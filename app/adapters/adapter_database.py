@@ -1240,7 +1240,8 @@ def cleanup_old_models(
                 'deleted_count': 0,
                 'deleted_factors': 0,
                 'deleted_factor_values': 0,
-                'deleted_factor_loadings': 0
+                'deleted_factor_loadings': 0,
+                'deleted_dfm_results': 0
             }
         
         # Group by model_id and find latest created_at for each
@@ -1494,6 +1495,15 @@ def cleanup_old_models(
             fl_result = db_client.table('factor_loadings').select('factor_id, series_id', count='exact').in_('factor_id', factor_ids).execute()
             factor_loadings_count = fl_result.count if hasattr(fl_result, 'count') else 0
         
+        # Delete old dfm_results first (before factors, as it references vintage_id)
+        dfm_results_deleted = 0
+        for model_id in deleted_model_ids:
+            try:
+                db_client.table('dfm_results').delete().eq('model_id', model_id).execute()
+                dfm_results_deleted += 1
+            except Exception as e:
+                logger.warning(f"Failed to delete dfm_results for model_id={model_id}: {e}")
+        
         # Delete old models (this will CASCADE to factor_values and factor_loadings)
         deleted_count = 0
         for model_id in deleted_model_ids:
@@ -1508,7 +1518,8 @@ def cleanup_old_models(
         logger.info(
             f"Cleaned up old models: kept {len(kept_model_ids)} latest models, "
             f"deleted {deleted_count} old models ({factor_count} factors, "
-            f"~{factor_values_count} factor_values, ~{factor_loadings_count} factor_loadings)"
+            f"~{factor_values_count} factor_values, ~{factor_loadings_count} factor_loadings, "
+            f"{dfm_results_deleted} dfm_results)"
         )
         
         return {
@@ -1518,7 +1529,8 @@ def cleanup_old_models(
             'deleted_count': deleted_count,
             'deleted_factors': factor_count,
             'deleted_factor_values': factor_values_count,
-            'deleted_factor_loadings': factor_loadings_count
+            'deleted_factor_loadings': factor_loadings_count,
+            'deleted_dfm_results': dfm_results_deleted
         }
         
     except ImportError:
@@ -2041,6 +2053,96 @@ def save_factors_to_db(
                     raise
             
             logger.info(f"Inserted {total_inserted} factor loadings for model_id={model_id}")
+        
+        # Save complete DFMResult to dfm_results table
+        try:
+            from app.database.helpers import serialize_dfm_result
+            import json
+            
+            # Serialize DFMResult to JSON
+            dfm_result_json = serialize_dfm_result(Res)
+            
+            # Add model statistics if available
+            model_stats = {}
+            if hasattr(Res, 'loglik'):
+                model_stats['log_likelihood'] = float(Res.loglik) if np.isfinite(Res.loglik) else None
+            if hasattr(Res, 'aic'):
+                model_stats['aic'] = float(Res.aic) if np.isfinite(Res.aic) else None
+            if hasattr(Res, 'bic'):
+                model_stats['bic'] = float(Res.bic) if np.isfinite(Res.bic) else None
+            if hasattr(Res, 'converged'):
+                model_stats['converged'] = bool(Res.converged)
+            if hasattr(Res, 'iterations'):
+                model_stats['iterations'] = int(Res.iterations) if np.isfinite(Res.iterations) else None
+            if hasattr(Res, 'threshold'):
+                model_stats['final_threshold'] = float(Res.threshold) if np.isfinite(Res.threshold) else None
+            
+            # Serialize config to JSON
+            config_json = None
+            try:
+                # Convert DFMConfig to dict for JSON serialization
+                config_dict = {}
+                if hasattr(config, 'SeriesID'):
+                    config_dict['SeriesID'] = config.SeriesID
+                if hasattr(config, 'Frequency'):
+                    config_dict['Frequency'] = config.Frequency
+                if hasattr(config, 'Transformation'):
+                    config_dict['Transformation'] = config.Transformation
+                if hasattr(config, 'Blocks'):
+                    config_dict['Blocks'] = config.Blocks
+                if hasattr(config, 'block_names'):
+                    config_dict['block_names'] = config.block_names
+                if hasattr(config, 'r'):
+                    config_dict['r'] = config.r.tolist() if hasattr(config.r, 'tolist') else list(config.r)
+                if hasattr(config, 'p'):
+                    config_dict['p'] = int(config.p)
+                if hasattr(config, 'ar_lag'):
+                    config_dict['ar_lag'] = int(config.ar_lag) if config.ar_lag else None
+                if hasattr(config, 'clock'):
+                    config_dict['clock'] = config.clock
+                config_json = config_dict if config_dict else None
+            except Exception as e:
+                logger.warning(f"Could not serialize config to JSON: {e}")
+            
+            # Prepare dfm_results record
+            dfm_result_record = {
+                'model_id': model_id,
+                'vintage_id': vintage_id,
+                'parameters_json': dfm_result_json.get('parameters_json', {}),
+                'factors_json': dfm_result_json.get('factors_json', {}),
+                'standardization_json': dfm_result_json.get('standardization_json'),
+                'initial_conditions_json': dfm_result_json.get('initial_conditions_json'),
+                'structure_json': dfm_result_json.get('structure_json'),
+                'log_likelihood': model_stats.get('log_likelihood'),
+                'aic': model_stats.get('aic'),
+                'bic': model_stats.get('bic'),
+                'converged': model_stats.get('converged'),
+                'iterations': model_stats.get('iterations'),
+                'final_threshold': model_stats.get('final_threshold'),
+                'config_json': config_json
+            }
+            
+            # Upsert dfm_results (update if exists, insert if not)
+            try:
+                # Check if record exists
+                existing = db_client.table('dfm_results').select('id').eq('model_id', model_id).eq('vintage_id', vintage_id).execute()
+                
+                if existing.data:
+                    # Update existing record
+                    result = db_client.table('dfm_results').update(dfm_result_record).eq('id', existing.data[0]['id']).execute()
+                    logger.info(f"Updated dfm_results for model_id={model_id}, vintage_id={vintage_id}")
+                else:
+                    # Insert new record
+                    result = db_client.table('dfm_results').insert(dfm_result_record).execute()
+                    logger.info(f"Inserted dfm_results for model_id={model_id}, vintage_id={vintage_id}")
+            except Exception as e:
+                logger.warning(f"Could not save dfm_results to database: {e}")
+                # Don't fail the whole operation if dfm_results save fails
+        
+        except ImportError:
+            logger.warning("Database helpers module not available. Cannot save complete DFMResult.")
+        except Exception as e:
+            logger.warning(f"Failed to save complete DFMResult to database: {e}")
         
         logger.info(
             f"Successfully saved factors, factor_values, and factor_loadings to database "

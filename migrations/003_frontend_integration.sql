@@ -13,6 +13,93 @@
 -- ============================================================================
 
 -- ============================================================================
+-- PART 0: DFM Results Table (Complete DFMResult Storage)
+-- ============================================================================
+
+-- Table to store complete DFMResult objects
+-- This stores all DFM estimation results including parameters, factors, and statistics
+DROP TABLE IF EXISTS dfm_results CASCADE;
+CREATE TABLE dfm_results (
+    id SERIAL PRIMARY KEY,
+    model_id INTEGER NOT NULL,  -- Model ID (matches factors.model_id)
+    vintage_id INTEGER NOT NULL REFERENCES data_vintages(vintage_id) ON DELETE CASCADE,
+    
+    -- Model parameters (JSONB for efficient querying)
+    parameters_json JSONB NOT NULL,  -- C, A, Q, R matrices
+    factors_json JSONB NOT NULL,  -- Z matrix (factors time series)
+    standardization_json JSONB,  -- Mx, Wx (mean and scale for standardization)
+    initial_conditions_json JSONB,  -- Z_0, V_0 (initial factor values and covariance)
+    structure_json JSONB,  -- r (factors per block), p (AR lag order)
+    
+    -- Model statistics
+    log_likelihood DOUBLE PRECISION,
+    aic DOUBLE PRECISION,
+    bic DOUBLE PRECISION,
+    converged BOOLEAN,
+    iterations INTEGER,
+    final_threshold DOUBLE PRECISION,
+    
+    -- Metadata
+    config_json JSONB,  -- Model configuration (DFMConfig as JSON)
+    created_at TIMESTAMP DEFAULT NOW(),
+    
+    CONSTRAINT unique_model_vintage UNIQUE (model_id, vintage_id)
+);
+
+CREATE INDEX idx_dfm_results_model_id ON dfm_results(model_id);
+CREATE INDEX idx_dfm_results_vintage_id ON dfm_results(vintage_id);
+CREATE INDEX idx_dfm_results_created_at ON dfm_results(created_at DESC);
+CREATE INDEX idx_dfm_results_model_vintage ON dfm_results(model_id, vintage_id);
+
+-- GIN index for JSONB queries
+CREATE INDEX idx_dfm_results_parameters_gin ON dfm_results USING GIN (parameters_json);
+CREATE INDEX idx_dfm_results_factors_gin ON dfm_results USING GIN (factors_json);
+
+COMMENT ON TABLE dfm_results IS 'Complete DFMResult storage - all model parameters, factors, and statistics';
+COMMENT ON COLUMN dfm_results.parameters_json IS 'Model parameters: C (loadings), A (AR coefficients), Q (state covariance), R (observation covariance)';
+COMMENT ON COLUMN dfm_results.factors_json IS 'Factor time series: Z matrix';
+COMMENT ON COLUMN dfm_results.standardization_json IS 'Standardization parameters: Mx (mean), Wx (scale)';
+COMMENT ON COLUMN dfm_results.initial_conditions_json IS 'Initial conditions: Z_0 (initial factors), V_0 (initial covariance)';
+COMMENT ON COLUMN dfm_results.structure_json IS 'Model structure: r (factors per block), p (AR lag order)';
+COMMENT ON COLUMN dfm_results.config_json IS 'Model configuration (DFMConfig) as JSON';
+
+-- View for latest DFM results (from most recent model)
+DROP VIEW IF EXISTS latest_dfm_results_view CASCADE;
+CREATE VIEW latest_dfm_results_view
+WITH (security_invoker=true) AS
+SELECT 
+    dr.id,
+    dr.model_id,
+    dr.vintage_id,
+    dr.parameters_json,
+    dr.factors_json,
+    dr.standardization_json,
+    dr.initial_conditions_json,
+    dr.structure_json,
+    dr.log_likelihood,
+    dr.aic,
+    dr.bic,
+    dr.converged,
+    dr.iterations,
+    dr.final_threshold,
+    dr.config_json,
+    dr.created_at,
+    dv.vintage_date
+FROM dfm_results dr
+JOIN data_vintages dv ON dr.vintage_id = dv.vintage_id
+WHERE dr.model_id = (
+    SELECT model_id
+    FROM factors
+    ORDER BY MAX(created_at) DESC
+    GROUP BY model_id
+    LIMIT 1
+)
+ORDER BY dr.created_at DESC
+LIMIT 1;
+
+COMMENT ON VIEW latest_dfm_results_view IS 'Latest DFM results from the most recent model (for frontend visualization)';
+
+-- ============================================================================
 -- PART 1: Cleanup Functions
 -- ============================================================================
 
@@ -266,17 +353,63 @@ COMMENT ON VIEW latest_observations_view IS 'Latest observations from the most r
 -- PART 3: Initial Data Cleanup (Run once)
 -- ============================================================================
 
+-- Function to cleanup old dfm_results (keeps only latest N models)
+CREATE OR REPLACE FUNCTION cleanup_old_dfm_results(keep_latest_models INTEGER DEFAULT 3)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    model_ids_to_delete INTEGER[];
+    deleted_count INTEGER := 0;
+BEGIN
+    -- Get model_ids to keep (latest N by created_at)
+    WITH latest_models AS (
+        SELECT DISTINCT model_id
+        FROM factors
+        ORDER BY MAX(created_at) DESC
+        LIMIT keep_latest_models
+    ),
+    all_models AS (
+        SELECT DISTINCT model_id
+        FROM factors
+    )
+    SELECT array_agg(am.model_id)
+    INTO model_ids_to_delete
+    FROM all_models am
+    WHERE am.model_id NOT IN (SELECT model_id FROM latest_models);
+    
+    -- If no models to delete, return early
+    IF model_ids_to_delete IS NULL OR array_length(model_ids_to_delete, 1) = 0 THEN
+        RETURN 0;
+    END IF;
+    
+    -- Delete old dfm_results
+    DELETE FROM dfm_results
+    WHERE model_id = ANY(model_ids_to_delete);
+    
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    RETURN deleted_count;
+END;
+$$;
+
+COMMENT ON FUNCTION cleanup_old_dfm_results IS 'Cleanup old dfm_results, keeping only latest N models.';
+
 -- Cleanup old factors (keeps only latest 3 models)
 -- This will delete old factors and cascade to factor_values and factor_loadings
 DO $$
 DECLARE
     cleanup_result RECORD;
+    dfm_results_deleted INTEGER;
 BEGIN
     SELECT * INTO cleanup_result FROM cleanup_old_factors(3);
-    RAISE NOTICE 'Cleanup completed: Deleted % factors, % factor_values, % factor_loadings',
+    SELECT cleanup_old_dfm_results(3) INTO dfm_results_deleted;
+    RAISE NOTICE 'Cleanup completed: Deleted % factors, % factor_values, % factor_loadings, % dfm_results',
         cleanup_result.deleted_factors,
         cleanup_result.deleted_factor_values,
-        cleanup_result.deleted_factor_loadings;
+        cleanup_result.deleted_factor_loadings,
+        dfm_results_deleted;
 END;
 $$;
 
