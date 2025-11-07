@@ -1325,6 +1325,7 @@ def cleanup_old_models(
             
             # Group factors by created_at (same timestamp = same training run)
             # Keep only the latest training run's factors
+            # If all have same timestamp, use factor_id as fallback (newest = highest id)
             from collections import defaultdict
             factors_by_time = defaultdict(list)
             for factor in all_factors.data:
@@ -1354,28 +1355,81 @@ def cleanup_old_models(
             # Sort by time (newest first)
             sorted_times = sorted(factors_by_time.keys(), reverse=True)
             
-            # Keep only the latest training run (factors with latest created_at)
-            if len(sorted_times) <= 1:
-                # Only one training run, keep all
-                logger.debug(f"Only one training run found for model_id {model_id}, keeping all factors")
-                return {
-                    'total_models': 1,
-                    'kept_models': [model_id],
-                    'deleted_models': [],
-                    'deleted_count': 0,
-                    'deleted_factors': 0,
-                    'deleted_factor_values': 0,
-                    'deleted_factor_loadings': 0
-                }
+            # If all factors have same timestamp, use factor_id to determine latest
+            # Count total factors per timestamp to see if we need factor_id-based cleanup
+            total_factors = len(all_factors.data)
+            latest_timestamp_factors = factors_by_time[sorted_times[0]]
             
-            # Keep latest training run, delete others
-            factors_to_keep = factors_by_time[sorted_times[0]]
-            factors_to_delete = []
-            for time_key in sorted_times[1:]:
-                factors_to_delete.extend(factors_by_time[time_key])
-            
-            kept_factor_ids = [f['id'] for f in factors_to_keep]
-            deleted_factor_ids = [f['id'] for f in factors_to_delete]
+            # If latest timestamp has all factors OR if we have too many factors, use factor_id-based cleanup
+            # Estimate: if we have more than ~20 factors, likely multiple training runs
+            if len(sorted_times) <= 1 or (total_factors > 20 and len(latest_timestamp_factors) == total_factors):
+                # All factors have same timestamp - use factor_id to keep only latest N factors
+                # Estimate number of factors per training run (e.g., 6-10 factors per run)
+                # Keep latest training run's factors (highest factor_ids)
+                logger.info(f"All factors have same timestamp or too many factors ({total_factors}). Using factor_id-based cleanup.")
+                
+                # Sort by factor_id (newest = highest id)
+                all_factors_sorted = sorted(all_factors.data, key=lambda x: x.get('id', 0), reverse=True)
+                
+                # Estimate factors per training run: if we have many factors, likely multiple runs
+                # Keep latest ~10 factors (typical for one training run with multiple factors)
+                # But if we have way more, keep only the latest batch
+                if total_factors <= 10:
+                    # Likely just one training run, keep all
+                    logger.debug(f"Only {total_factors} factors found, keeping all")
+                    return {
+                        'total_models': 1,
+                        'kept_models': [model_id],
+                        'deleted_models': [],
+                        'deleted_count': 0,
+                        'deleted_factors': 0,
+                        'deleted_factor_values': 0,
+                        'deleted_factor_loadings': 0
+                    }
+                
+                # Keep latest factors (estimate for one training run)
+                # Count unique factor_index values to estimate factors per run
+                # Typically one training run creates factors with indices 0, 1, 2, ..., n-1
+                factor_indices = set(f.get('factor_index', -1) for f in all_factors_sorted)
+                unique_factor_indices = len([idx for idx in factor_indices if idx >= 0])
+                
+                # If we can determine unique factor indices, use that
+                # Otherwise, estimate: keep latest batch that's likely one training run
+                if unique_factor_indices > 0 and unique_factor_indices < total_factors:
+                    # We have multiple training runs with same factor_index values
+                    # Keep latest factors for each unique factor_index
+                    factors_to_keep = []
+                    factors_to_delete = []
+                    for factor_idx in sorted(factor_indices):
+                        if factor_idx < 0:
+                            continue
+                        # Get all factors with this factor_index, sorted by id (newest first)
+                        factors_with_idx = [f for f in all_factors_sorted if f.get('factor_index') == factor_idx]
+                        if factors_with_idx:
+                            # Keep only the latest (highest id) for this factor_index
+                            factors_to_keep.append(factors_with_idx[0])
+                            factors_to_delete.extend(factors_with_idx[1:])
+                    
+                    kept_factor_ids = [f['id'] for f in factors_to_keep]
+                    deleted_factor_ids = [f['id'] for f in factors_to_delete]
+                else:
+                    # Can't determine factor_index pattern, use heuristic
+                    # Keep latest ~20 factors (estimate for one training run with multiple blocks)
+                    factors_per_run_estimate = min(20, total_factors // 2)  # Keep at least half, but max 20
+                    factors_to_keep = all_factors_sorted[:factors_per_run_estimate]
+                    factors_to_delete = all_factors_sorted[factors_per_run_estimate:]
+                    
+                    kept_factor_ids = [f['id'] for f in factors_to_keep]
+                    deleted_factor_ids = [f['id'] for f in factors_to_delete]
+            else:
+                # Multiple timestamps - keep latest training run
+                factors_to_keep = factors_by_time[sorted_times[0]]
+                factors_to_delete = []
+                for time_key in sorted_times[1:]:
+                    factors_to_delete.extend(factors_by_time[time_key])
+                
+                kept_factor_ids = [f['id'] for f in factors_to_keep]
+                deleted_factor_ids = [f['id'] for f in factors_to_delete]
             
             # Count factor_values and factor_loadings that will be deleted
             factor_values_count = 0
