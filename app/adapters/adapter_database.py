@@ -1228,10 +1228,10 @@ def cleanup_old_models(
         db_client = _get_db_client(client)
         
         # Get all unique model_ids with their latest creation time
-        # Use a subquery to get MAX(created_at) per model_id, or use id as fallback
-        factors_result = db_client.table('factors').select('id, model_id, created_at').order('created_at', desc=True).execute()
+        # First, get distinct model_ids to understand how many models we have
+        all_factors = db_client.table('factors').select('id, model_id, created_at').execute()
         
-        if not factors_result.data:
+        if not all_factors.data:
             logger.debug("No factors found in database")
             return {
                 'total_models': 0,
@@ -1249,7 +1249,7 @@ def cleanup_old_models(
         from datetime import datetime
         
         model_ages = defaultdict(lambda: (datetime.min, -1))  # (created_at, max_factor_id)
-        for row in factors_result.data:
+        for row in all_factors.data:
             model_id = row['model_id']
             factor_id = row.get('id', -1)
             created_at_raw = row.get('created_at')
@@ -1300,67 +1300,26 @@ def cleanup_old_models(
         # Sort by created_at (newest first), then by factor_id as tiebreaker
         model_list.sort(key=lambda x: (x[1], x[2]), reverse=True)
         
-        # Special case: if all factors have the same model_id, use factor_id-based cleanup instead
+        # Special case: if all factors have the same model_id, we need to check if this is
+        # actually multiple training runs with the same model_id, or just one model
         unique_model_ids = set(model_id for model_id, _, _ in model_list)
         if len(unique_model_ids) == 1:
-            # All factors belong to the same model_id - use factor_id-based cleanup
-            logger.warning(f"All factors belong to the same model_id {list(unique_model_ids)[0]}. Using factor_id-based cleanup.")
-            # Get all factors sorted by id (newest first, assuming id is auto-increment)
-            all_factors = db_client.table('factors').select('id, model_id').order('id', desc=True).execute()
-            if all_factors.data:
-                total_factors = len(all_factors.data)
-                if total_factors <= keep_latest:
-                    logger.debug(f"Only {total_factors} factors found, keeping all (limit: {keep_latest})")
-                    return {
-                        'total_models': 1,
-                        'kept_models': list(unique_model_ids),
-                        'deleted_models': [],
-                        'deleted_count': 0,
-                        'deleted_factors': 0,
-                        'deleted_factor_values': 0,
-                        'deleted_factor_loadings': 0
-                    }
-                
-                # Keep latest N factors by id
-                factors_to_keep = all_factors.data[:keep_latest]
-                factors_to_delete = all_factors.data[keep_latest:]
-                
-                kept_factor_ids = [f['id'] for f in factors_to_keep]
-                deleted_factor_ids = [f['id'] for f in factors_to_delete]
-                
-                # Delete old factors by id (CASCADE will handle factor_values and factor_loadings)
-                deleted_count = 0
-                for factor_id in deleted_factor_ids:
-                    try:
-                        db_client.table('factors').delete().eq('id', factor_id).execute()
-                        deleted_count += 1
-                    except Exception as e:
-                        logger.warning(f"Failed to delete factor id={factor_id}: {e}")
-                
-                # Count factor_values and factor_loadings that will be deleted
-                factor_values_count = 0
-                factor_loadings_count = 0
-                if deleted_factor_ids:
-                    fv_result = db_client.table('factor_values').select('id', count='exact').in_('factor_id', deleted_factor_ids).execute()
-                    factor_values_count = fv_result.count if hasattr(fv_result, 'count') else 0
-                    
-                    fl_result = db_client.table('factor_loadings').select('factor_id, series_id', count='exact').in_('factor_id', deleted_factor_ids).execute()
-                    factor_loadings_count = fl_result.count if hasattr(fl_result, 'count') else 0
-                
-                logger.info(
-                    f"Cleaned up factors by id: kept {len(kept_factor_ids)} latest factors, "
-                    f"deleted {deleted_count} old factors (~{factor_values_count} factor_values, ~{factor_loadings_count} factor_loadings)"
-                )
-                
-                return {
-                    'total_models': 1,
-                    'kept_models': list(unique_model_ids),
-                    'deleted_models': [],
-                    'deleted_count': deleted_count,
-                    'deleted_factors': deleted_count,
-                    'deleted_factor_values': factor_values_count,
-                    'deleted_factor_loadings': factor_loadings_count
-                }
+            # All factors belong to the same model_id
+            # This could mean:
+            # 1. Only one model has been trained (keep all)
+            # 2. Multiple training runs but same model_id (should keep all factors for that model)
+            # Since keep_latest refers to models, not factors, we should keep all factors
+            # if there's only one model_id
+            logger.info(f"All factors belong to the same model_id {list(unique_model_ids)[0]}. Keeping all factors (only one model).")
+            return {
+                'total_models': 1,
+                'kept_models': list(unique_model_ids),
+                'deleted_models': [],
+                'deleted_count': 0,
+                'deleted_factors': 0,
+                'deleted_factor_values': 0,
+                'deleted_factor_loadings': 0
+            }
         
         # Normal case: multiple model_ids - use model_id-based cleanup
         # Split into kept and deleted
