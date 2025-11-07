@@ -251,6 +251,31 @@ WHERE factor_block_id = variable_block_id;  -- 같은 block인 경우
 - `created_at` (TIMESTAMP): 생성 시간
 - `updated_at` (TIMESTAMP): 업데이트 시간
 
+#### `latest_block_stats_view` (신규)
+- `block_id` (INTEGER): Block ID
+- `block_name` (VARCHAR): Block 이름
+- `factor_count` (BIGINT): Factor 개수
+- `data_point_count` (BIGINT): 데이터 포인트 개수
+- `min_date` (DATE): 최소 날짜
+- `max_date` (DATE): 최대 날짜
+- `avg_abs_value` (DOUBLE PRECISION): 평균 절댓값
+- `std_value` (DOUBLE PRECISION): 표준편차
+
+#### `latest_factor_summary_view` (신규)
+- `id` (INTEGER): Factor ID
+- `name` (VARCHAR): Factor 이름
+- `description` (TEXT): Factor 설명
+- `factor_index` (INTEGER): Factor 인덱스
+- `block_name` (VARCHAR): Block 이름
+- `block_id` (INTEGER): Block ID
+- `data_point_count` (BIGINT): 데이터 포인트 개수
+- `min_date` (DATE): 최소 날짜
+- `max_date` (DATE): 최대 날짜
+- `avg_value` (DOUBLE PRECISION): 평균값
+- `std_value` (DOUBLE PRECISION): 표준편차
+- `min_value` (DOUBLE PRECISION): 최소값
+- `max_value` (DOUBLE PRECISION): 최대값
+
 ### 2. 예제 쿼리 제공
 
 #### 기본 조회
@@ -331,6 +356,269 @@ GROUP BY factor_block_name;
 - `latest_kpi_series_view`: < 100ms (KPI 시리즈 수에 따라)
 
 **실제 성능 측정 필요**: 프론트엔드에서 실제 데이터로 테스트해주세요.
+
+---
+
+## 🔍 추가 확인 사항 및 테스트 결과
+
+### 1. 해시 함수 확인 ✅
+
+**구현**: `abs(hashtext(block_name))::INTEGER`
+
+**테스트 쿼리**:
+```sql
+-- block_id 생성 확인
+SELECT 
+    block_name,
+    block_id,
+    abs(hashtext(block_name))::INTEGER as calculated_block_id
+FROM latest_factors_view
+WHERE block_name IS NOT NULL
+LIMIT 5;
+
+-- block_id 일관성 확인 (같은 block_name은 같은 block_id)
+SELECT 
+    block_name,
+    COUNT(DISTINCT block_id) as unique_block_ids
+FROM latest_factors_view
+WHERE block_name IS NOT NULL
+GROUP BY block_name
+HAVING COUNT(DISTINCT block_id) > 1;  -- 결과가 없어야 함 (일관성 확인)
+```
+
+**결과**: 같은 `block_name`은 항상 같은 `block_id`를 가집니다.
+
+---
+
+### 2. 배열 타입 (block_names) 테스트
+
+**타입**: PostgreSQL `TEXT[]` → Supabase JSON 배열
+
+**테스트 쿼리**:
+```sql
+-- 배열 반환 확인
+SELECT 
+    series_id,
+    block_names,
+    pg_typeof(block_names) as type_name,
+    array_length(block_names, 1) as array_length
+FROM latest_forecasts_view
+WHERE block_names IS NOT NULL
+LIMIT 5;
+
+-- 빈 배열 테스트
+SELECT 
+    series_id,
+    block_names,
+    CASE 
+        WHEN block_names = '{}' THEN 'empty_array'
+        WHEN block_names IS NULL THEN 'null'
+        ELSE 'has_values'
+    END as array_state
+FROM latest_forecasts_view
+LIMIT 10;
+```
+
+**예상 반환 형식** (Supabase):
+```json
+{
+  "block_names": ["Global", "Invest", "Extern"]  // JSON 배열
+}
+```
+
+**NULL vs 빈 배열**:
+- `block_names IS NULL`: 시리즈가 어떤 block에도 속하지 않는 경우
+- `block_names = '{}'`: 빈 배열 (현재 구현에서는 발생하지 않음)
+- 일반적으로: `block_names`는 NULL이거나 값이 있는 배열
+
+**프론트엔드 처리**:
+```typescript
+// 안전한 처리
+const blockNames: string[] = forecast.block_names ?? [];
+// 또는
+const blockNames = forecast.block_names || [];
+```
+
+---
+
+### 3. 날짜 형식 확인
+
+**타입**: PostgreSQL `DATE` → Supabase ISO 8601 문자열
+
+**테스트 쿼리**:
+```sql
+-- 날짜 형식 확인
+SELECT 
+    date,
+    forecast_date,
+    pg_typeof(date) as date_type,
+    date::text as date_text
+FROM latest_observations_view
+LIMIT 1;
+```
+
+**예상 반환 형식** (Supabase):
+```json
+{
+  "date": "2024-01-15",  // ISO 8601 날짜 형식 (YYYY-MM-DD)
+  "forecast_date": "2024-01-15"
+}
+```
+
+**참고**: 
+- Supabase는 `DATE` 타입을 ISO 8601 형식의 문자열로 반환합니다
+- 시간 정보는 포함되지 않습니다 (`YYYY-MM-DD`)
+- JavaScript에서 파싱: `new Date("2024-01-15")` 또는 `Date.parse("2024-01-15")`
+
+**프론트엔드 처리**:
+```typescript
+// 날짜 파싱
+const date = new Date(factorValue.date);  // "2024-01-15" → Date 객체
+// 또는
+const date = Date.parse(factorValue.date);  // → timestamp
+```
+
+---
+
+### 4. NULL 처리 확인
+
+**테스트 쿼리**:
+```sql
+-- block_names NULL 확인
+SELECT 
+    COUNT(*) as total_forecasts,
+    COUNT(block_names) as with_block_names,
+    COUNT(*) - COUNT(block_names) as null_block_names
+FROM latest_forecasts_view;
+
+-- block_id NULL 확인 (global factors)
+SELECT 
+    COUNT(*) as total_factors,
+    COUNT(block_id) as with_block_id,
+    COUNT(*) - COUNT(block_id) as null_block_id
+FROM latest_factors_view;
+```
+
+**예상 동작**:
+- `block_name IS NULL` → `block_id IS NULL` (global factors)
+- `block_names IS NULL` → 시리즈가 어떤 block에도 속하지 않음 (드물게 발생)
+
+---
+
+### 5. 빈 상태 처리
+
+#### 최신 모델이 없는 경우
+
+**시나리오**: 데이터베이스에 factors가 없거나 모든 factors가 삭제된 경우
+
+**현재 동작**: 뷰가 빈 결과 반환 (`[]`)
+
+**테스트 쿼리**:
+```sql
+-- 최신 모델 확인
+SELECT COUNT(*) as factor_count FROM latest_factors_view;
+
+-- 최신 모델 ID 확인
+SELECT model_id FROM latest_factors_view LIMIT 1;
+```
+
+**프론트엔드 처리**:
+```typescript
+const { data: factors, error } = await client
+  .from("latest_factors_view")
+  .select("*");
+
+if (error) {
+  // 에러 처리
+  console.error("Failed to fetch factors:", error);
+  return;
+}
+
+if (!factors || factors.length === 0) {
+  // 빈 상태 처리
+  return {
+    globalFactor: null,
+    localFactors: [],
+    message: "No factors available. Model may not be trained yet."
+  };
+}
+```
+
+#### 최신 vintage가 없는 경우
+
+**시나리오**: `latest_observations_view`에서 vintage가 없는 경우
+
+**현재 동작**: 뷰가 빈 결과 반환 (`[]`)
+
+**테스트 쿼리**:
+```sql
+-- 최신 vintage 확인
+SELECT COUNT(*) as observation_count FROM latest_observations_view;
+
+-- 최신 vintage ID 확인
+SELECT DISTINCT vintage_id FROM latest_observations_view LIMIT 1;
+```
+
+**프론트엔드 처리**: 위와 동일
+
+#### Global Factor 처리
+
+**시나리오**: `block_name`이 NULL인 global factor
+
+**현재 동작**: `block_id`도 NULL
+
+**테스트 쿼리**:
+```sql
+-- Global factors 확인
+SELECT 
+    id,
+    name,
+    block_name,
+    block_id
+FROM latest_factors_view
+WHERE block_id IS NULL;
+```
+
+**프론트엔드 처리**:
+```typescript
+// Global factor 필터링
+const globalFactors = factors.filter(f => f.block_id === null);
+
+// Block별 factor 그룹화
+const factorsByBlock = factors.reduce((acc, factor) => {
+  const blockId = factor.block_id ?? 'global';
+  if (!acc[blockId]) {
+    acc[blockId] = [];
+  }
+  acc[blockId].push(factor);
+  return acc;
+}, {} as Record<string | 'global', typeof factors>);
+```
+
+---
+
+### 6. 성능 테스트
+
+**테스트 쿼리**:
+```sql
+-- 각 뷰의 쿼리 성능 측정
+EXPLAIN ANALYZE SELECT * FROM latest_factors_view;
+EXPLAIN ANALYZE SELECT * FROM latest_factor_values_view LIMIT 1000;
+EXPLAIN ANALYZE SELECT * FROM latest_forecasts_view LIMIT 1000;
+EXPLAIN ANALYZE SELECT * FROM latest_observations_view LIMIT 1000;
+EXPLAIN ANALYZE SELECT * FROM latest_factor_loadings_view;
+EXPLAIN ANALYZE SELECT * FROM latest_kpi_series_view;
+```
+
+**예상 성능** (인덱스 적용 후):
+- `latest_factors_view`: < 10ms (소량 데이터)
+- `latest_factor_values_view`: < 50ms (중간 데이터, LIMIT 1000)
+- `latest_forecasts_view`: < 100ms (대량 데이터, LIMIT 1000)
+- `latest_observations_view`: < 200ms (대량 데이터, LIMIT 1000)
+- `latest_factor_loadings_view`: < 50ms (중간 데이터)
+- `latest_kpi_series_view`: < 100ms (KPI 시리즈 수에 따라)
+
+**실제 성능 측정**: 프론트엔드에서 실제 데이터로 테스트해주세요.
 
 ---
 

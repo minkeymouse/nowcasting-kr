@@ -651,3 +651,54 @@ ORDER BY s.series_name;
 
 COMMENT ON VIEW latest_kpi_series_view IS 'KPI series with latest observation values and metadata (for frontend dashboard)';
 
+-- ============================================================================
+-- PART 7: Additional Utility Views (Optional but useful)
+-- ============================================================================
+-- Views for aggregated statistics and summaries
+
+-- Block statistics view: summary statistics per block
+DROP VIEW IF EXISTS latest_block_stats_view CASCADE;
+CREATE VIEW latest_block_stats_view
+WITH (security_invoker=true) AS
+SELECT 
+    f.block_id,
+    f.block_name,
+    COUNT(DISTINCT f.id) as factor_count,
+    COUNT(DISTINCT fv.date) as data_point_count,
+    MIN(fv.date) as min_date,
+    MAX(fv.date) as max_date,
+    AVG(ABS(fv.value)) as avg_abs_value,
+    STDDEV(fv.value) as std_value
+FROM latest_factors_view f
+LEFT JOIN latest_factor_values_view fv ON f.id = fv.factor_id
+WHERE f.block_id IS NOT NULL
+GROUP BY f.block_id, f.block_name
+ORDER BY f.block_id;
+
+COMMENT ON VIEW latest_block_stats_view IS 'Block-level summary statistics (factor count, data points, date range, etc.)';
+
+-- Factor summary view: per-factor statistics
+DROP VIEW IF EXISTS latest_factor_summary_view CASCADE;
+CREATE VIEW latest_factor_summary_view
+WITH (security_invoker=true) AS
+SELECT 
+    f.id,
+    f.name,
+    f.description,
+    f.factor_index,
+    f.block_name,
+    f.block_id,
+    COUNT(fv.date) as data_point_count,
+    MIN(fv.date) as min_date,
+    MAX(fv.date) as max_date,
+    AVG(fv.value) as avg_value,
+    STDDEV(fv.value) as std_value,
+    MIN(fv.value) as min_value,
+    MAX(fv.value) as max_value
+FROM latest_factors_view f
+LEFT JOIN latest_factor_values_view fv ON f.id = fv.factor_id
+GROUP BY f.id, f.name, f.description, f.factor_index, f.block_name, f.block_id
+ORDER BY f.factor_index;
+
+COMMENT ON VIEW latest_factor_summary_view IS 'Per-factor summary statistics (data points, date range, value statistics)';
+
