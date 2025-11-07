@@ -59,34 +59,40 @@ def main(cfg: DictConfig) -> None:
         logger.info(f"GitHub Actions Run ID: {github_run_id}")
     
     try:
-        # Load model configuration from Hydra YAML structure
-        # New structure: cfg.series.series (dict) + cfg.model.blocks (dict)
+        # Load model configuration with priority: CSV from DB storage → Hydra YAML
+        # Application-specific: Try database storage first, then fallback to Hydra YAML
+        use_db_for_config = cfg.get('model', {}).get('use_db', True)
         try:
-            from dfm_python.config import DFMConfig
-            from omegaconf import OmegaConf
-            
-            # Combine series and model configs
-            series_dict = OmegaConf.to_container(cfg.series, resolve=True) if hasattr(cfg, 'series') else {}
-            model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
-            
-            # Merge: series from cfg.series.series, blocks from cfg.model.blocks
-            combined_dict = {
-                'series': series_dict.get('series', {}),
-                'blocks': model_dict.get('blocks', {}),
-                'block_names': model_dict.get('block_names', None),
-                'factors_per_block': model_dict.get('factors_per_block', None)
-            }
-            
-            # Try loading from combined structure
-            model_cfg = DFMConfig.from_dict(combined_dict)
-        except Exception as e:
-            # Fallback to original loader (for CSV/DB)
-            use_db_for_config = cfg.get('model', {}).get('use_db', True)
             model_cfg = load_model_config_from_hydra(
                 cfg.model,
                 use_db=use_db_for_config,
                 script_path=Path(__file__)
             )
+        except (ValueError, FileNotFoundError) as e:
+            # If CSV loading fails, try Hydra YAML structure
+            logger.info("CSV config not found, trying Hydra YAML structure...")
+            try:
+                from dfm_python.config import DFMConfig
+                from omegaconf import OmegaConf
+                
+                # Combine series and model configs
+                series_dict = OmegaConf.to_container(cfg.series, resolve=True) if hasattr(cfg, 'series') else {}
+                model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
+                
+                # Merge: series from cfg.series.series, blocks from cfg.model.blocks
+                combined_dict = {
+                    'series': series_dict.get('series', {}),
+                    'blocks': model_dict.get('blocks', {}),
+                    'block_names': model_dict.get('block_names', None),
+                    'factors_per_block': model_dict.get('factors_per_block', None)
+                }
+                
+                # Try loading from combined structure
+                model_cfg = DFMConfig.from_dict(combined_dict)
+                logger.info("✅ Loaded config from Hydra YAML structure")
+            except Exception as e2:
+                logger.error(f"Failed to load config from CSV storage and Hydra YAML: {e2}")
+                raise
         
         # Load data and DFM configs from Hydra
         data_cfg_dict = OmegaConf.to_container(cfg.data, resolve=True)
@@ -128,6 +134,7 @@ def main(cfg: DictConfig) -> None:
         period = cfg.get('period', data_cfg_dict.get('target_period', '2016q4'))
         config_id = data_cfg_dict.get('config_id')
         strict_mode = data_cfg_dict.get('strict_mode', False)
+        forecast_periods = cfg.get('forecast_periods', data_cfg_dict.get('forecast_periods', 2))
         
         logger.info("=" * 80)
         logger.info(f"Nowcasting - Series: {series}, Period: {period}")
@@ -341,8 +348,24 @@ def main(cfg: DictConfig) -> None:
             save_callback=save_callback
         )
         
+        # Generate forward forecasts if forecast_periods > 0
+        if forecast_periods > 0:
+            logger.info("=" * 80)
+            logger.info(f"Generating forward forecasts for {forecast_periods} periods ahead")
+            logger.info("=" * 80)
+            
+            # Generate forecasts
+            from scripts.utils import generate_forecasts
+            
+            generate_forecasts(
+                X_new, Time, model_cfg, Res, series, forecast_periods,
+                str(vintage_new), model_id=None, use_database=use_database
+            )
+        
         logger.info("=" * 80)
         logger.info("Nowcasting completed successfully")
+        if forecast_periods > 0:
+            logger.info(f"Forward forecasts generated for {forecast_periods} periods")
         logger.info("=" * 80)
         
     except Exception as e:

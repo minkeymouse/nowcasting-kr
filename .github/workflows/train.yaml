@@ -3,15 +3,20 @@ name: Train DFM Model
 on:
   workflow_dispatch:
     inputs:
-      config_path:
-        description: 'Model config CSV path (relative to src/spec/)'
+      config_name:
+        description: 'Hydra config name (e.g., default, test)'
         required: false
-        default: 'src/spec/001_initial_spec.csv'
+        default: 'default'
         type: string
       max_iter:
         description: 'Maximum EM iterations for training'
         required: false
         default: '100'
+        type: string
+      series_config:
+        description: 'Series config name (e.g., default, test_series)'
+        required: false
+        default: 'default'
         type: string
 
 jobs:
@@ -51,7 +56,8 @@ jobs:
         run: |
           source .venv/bin/activate
           python scripts/train_dfm.py \
-            "model.config_path=${{ inputs.config_path }}" \
+            --config-name=${{ inputs.config_name }} \
+            series=${{ inputs.series_config }} \
             "data.use_database=true" \
             "data.strict_mode=false" \
             "dfm.max_iter=${{ inputs.max_iter }}"

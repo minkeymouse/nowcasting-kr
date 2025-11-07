@@ -11,7 +11,7 @@ dfm:
   max_iter: 5000
   nan_method: 2
   nan_k: 3
-  ar_lag: 1  # AR lag for all blocks (model-wise)
+  ar_lag: 1
 
 # Model structure: block definitions
 model:

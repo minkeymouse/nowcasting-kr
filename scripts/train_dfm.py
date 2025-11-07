@@ -33,30 +33,35 @@ def main(cfg: DictConfig) -> None:
         python train_dfm.py data.vintage=2016-12-23  # Use different vintage
         python train_dfm.py --multirun dfm.threshold=1e-5,1e-4,1e-3  # Sweep
     """
-    # Load model configuration from Hydra YAML structure
-    # New structure: cfg.series.series (dict) + cfg.model.blocks (dict)
-    # Combine them for DFMConfig.from_dict()
+    # Load model configuration with priority: CSV from DB storage → Hydra YAML
+    # Application-specific: Try database storage first, then fallback to Hydra YAML
     try:
-        from dfm_python.config import DFMConfig
-        from omegaconf import OmegaConf
-        
-        # Combine series and model configs
-        series_dict = OmegaConf.to_container(cfg.series, resolve=True) if hasattr(cfg, 'series') else {}
-        model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
-        
-        # Merge: series from cfg.series.series, blocks from cfg.model.blocks
-        combined_dict = {
-            'series': series_dict.get('series', {}),
-            'blocks': model_dict.get('blocks', {}),
-            'block_names': model_dict.get('block_names', None),
-            'factors_per_block': model_dict.get('factors_per_block', None)
-        }
-        
-        # Try loading from combined structure
-        model_cfg = DFMConfig.from_dict(combined_dict)
-    except Exception as e:
-        # Fallback to original loader (for CSV/DB)
         model_cfg = load_model_config_from_hydra(cfg.model, script_path=Path(__file__))
+    except (ValueError, FileNotFoundError) as e:
+        # If CSV loading fails, try Hydra YAML structure
+        logger.info("CSV config not found, trying Hydra YAML structure...")
+        try:
+            from dfm_python.config import DFMConfig
+            from omegaconf import OmegaConf
+            
+            # Combine series and model configs
+            series_dict = OmegaConf.to_container(cfg.series, resolve=True) if hasattr(cfg, 'series') else {}
+            model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
+            
+            # Merge: series from cfg.series.series, blocks from cfg.model.blocks
+            combined_dict = {
+                'series': series_dict.get('series', {}),
+                'blocks': model_dict.get('blocks', {}),
+                'block_names': model_dict.get('block_names', None),
+                'factors_per_block': model_dict.get('factors_per_block', None)
+            }
+            
+            # Try loading from combined structure
+            model_cfg = DFMConfig.from_dict(combined_dict)
+            logger.info("✅ Loaded config from Hydra YAML structure")
+        except Exception as e2:
+            logger.error(f"Failed to load config from CSV storage and Hydra YAML: {e2}")
+            raise
     
     # Merge DFM estimation parameters from Hydra into model config
     dfm_cfg_dict = OmegaConf.to_container(cfg.dfm, resolve=True)

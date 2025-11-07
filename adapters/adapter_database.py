@@ -16,6 +16,7 @@ import logging
 import pickle
 import io
 import os
+import re
 
 # Import generic DFM module functions
 from dfm_python.config import DFMConfig
@@ -599,6 +600,105 @@ def load_data_from_db(
     return X_array, Time, Z_array
 
 
+def save_forecast_to_db(
+    model_id: int,
+    series_id: str,
+    forecast_date: pd.Timestamp,
+    forecast_value: float,
+    vintage_id_new: Optional[int] = None,
+    lower_bound: Optional[float] = None,
+    upper_bound: Optional[float] = None,
+    confidence_level: float = 0.95,
+    client: Optional[object] = None
+) -> None:
+    """Save forward forecast to database.
+    
+    Parameters
+    ----------
+    model_id : int
+        Model ID (required by schema, use 0 if models not in DB)
+    series_id : str
+        Series ID to forecast
+    forecast_date : pd.Timestamp
+        Target date for forecast (future period)
+    forecast_value : float
+        Forecast value
+    vintage_id_new : int, optional
+        Vintage ID used for forecasting (only new vintage, no old vintage)
+    lower_bound : float, optional
+        Lower confidence bound (not computed yet)
+    upper_bound : float, optional
+        Upper confidence bound (not computed yet)
+    confidence_level : float, default=0.95
+        Confidence level for bounds
+    client : object, optional
+        Supabase client. If None, will get from database module.
+    
+    Notes
+    -----
+    This saves forward forecasts (run_type='forecast') with:
+    - vintage_id_new only (vintage_id_old = NULL)
+    - Multiple rows per run (one per forecast period)
+    """
+    if not np.isfinite(forecast_value):
+        logger.warning(
+            f"Cannot save forecast to database: forecast_value is invalid "
+            f"(NaN or Inf) for series {series_id}. Skipping database save."
+        )
+        return
+    
+    # Validate forecast_date
+    try:
+        if isinstance(forecast_date, str):
+            forecast_date = pd.to_datetime(forecast_date)
+        elif not isinstance(forecast_date, pd.Timestamp):
+            forecast_date = pd.Timestamp(forecast_date)
+    except Exception as e:
+        logger.warning(
+            f"Cannot save forecast to database: invalid forecast_date "
+            f"for series {series_id}: {e}. Skipping database save."
+        )
+        return
+    
+    try:
+        from database import get_client, save_forecast
+        import os
+        db_client = client or _get_db_client(client)
+        
+        # Get GitHub run ID if available
+        github_run_id = os.getenv('GITHUB_RUN_ID')
+        
+        # Save forecast (run_type='forecast', vintage_id_old=NULL)
+        save_forecast(
+            model_id=model_id,
+            series_id=series_id,
+            forecast_date=forecast_date.date(),
+            forecast_value=forecast_value,
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
+            confidence_level=confidence_level,
+            run_type='forecast',  # ← FORECAST (not nowcast)
+            vintage_id_old=None,  # ← NULL for forecasts
+            vintage_id_new=vintage_id_new,
+            github_run_id=github_run_id,
+            metadata_json=None,  # No news decomposition for forecasts
+            client=db_client
+        )
+        
+        logger.info(
+            f"Saved forecast to database: series={series_id}, date={forecast_date.date()}, "
+            f"value={forecast_value:.4f}, period={forecast_date.date()}"
+        )
+        
+    except ImportError:
+        logger.warning("Database module not available. Cannot save forecast to database.")
+    except Exception as e:
+        logger.warning(
+            f"Failed to save forecast to database for series {series_id}: {e}. "
+            f"Continuing without saving."
+        )
+
+
 def save_nowcast_to_db(
     model_id: Optional[int],
     series: str,
@@ -1022,6 +1122,113 @@ def csv_spec_to_hydra_config(
         hydra_config['dfm']['factors_per_block'] = config.factors_per_block
     
     return hydra_config
+
+
+def list_spec_csv_files_from_storage(
+    bucket_name: str = "spec",
+    client: Optional[object] = None
+) -> List[str]:
+    """List all CSV files in the spec storage bucket.
+    
+    Parameters
+    ----------
+    bucket_name : str, default="spec"
+        Supabase storage bucket name for spec files
+    client : object, optional
+        Supabase client. If None, will get from database module.
+    
+    Returns
+    -------
+    List[str]
+        List of CSV filenames in the bucket, sorted by filename
+    
+    Raises
+    ------
+    ImportError
+        If database module not available
+    Exception
+        If listing fails
+    """
+    try:
+        db_client = _get_db_client(client)
+        
+        # List files in the bucket
+        files = db_client.storage.from_(bucket_name).list()
+        
+        if not files:
+            logger.debug(f"No files found in storage bucket: {bucket_name}")
+            return []
+        
+        # Filter for CSV files only
+        csv_files = [f['name'] for f in files if f.get('name', '').endswith('.csv')]
+        
+        logger.debug(f"Found {len(csv_files)} CSV files in storage bucket: {csv_files}")
+        return sorted(csv_files)
+        
+    except ImportError:
+        raise ImportError("Database module not available. Cannot list storage files.")
+    except Exception as e:
+        logger.debug(f"Failed to list files in storage bucket: {e}")
+        return []
+
+
+def get_latest_spec_csv_filename(
+    bucket_name: str = "spec",
+    client: Optional[object] = None
+) -> Optional[str]:
+    """Get the latest spec CSV filename (highest number prefix) from storage.
+    
+    Looks for files matching pattern: NNN_*.csv (e.g., 001_initial_spec.csv, 002_updated_spec.csv)
+    Returns the one with the highest NNN number.
+    
+    Parameters
+    ----------
+    bucket_name : str, default="spec"
+        Supabase storage bucket name for spec files
+    client : object, optional
+        Supabase client. If None, will get from database module.
+    
+    Returns
+    -------
+    str or None
+        Latest spec CSV filename, or None if no CSV files found
+    
+    Raises
+    ------
+    ImportError
+        If database module not available
+    """
+    try:
+        csv_files = list_spec_csv_files_from_storage(bucket_name=bucket_name, client=client)
+        
+        if not csv_files:
+            return None
+        
+        # Extract numbers from filenames (pattern: NNN_*.csv)
+        file_numbers = []
+        for filename in csv_files:
+            match = re.match(r'^(\d+)_', filename)
+            if match:
+                number = int(match.group(1))
+                file_numbers.append((number, filename))
+        
+        if not file_numbers:
+            # No numbered files found, return the last one alphabetically
+            logger.warning("No numbered spec files found (pattern: NNN_*.csv), using last file alphabetically")
+            return csv_files[-1]
+        
+        # Sort by number (descending) and return the highest
+        file_numbers.sort(key=lambda x: x[0], reverse=True)
+        latest_filename = file_numbers[0][1]
+        
+        logger.info(f"Latest spec CSV file: {latest_filename} (number: {file_numbers[0][0]})")
+        return latest_filename
+        
+    except ImportError:
+        raise ImportError("Database module not available. Cannot get latest spec filename.")
+    except Exception as e:
+        logger.debug(f"Failed to get latest spec filename: {e}")
+        return None
 
 
 def download_spec_csv_from_storage(

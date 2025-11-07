@@ -3,10 +3,25 @@ name: Nowcast DFM
 on:
   workflow_dispatch:
     inputs:
-      config_path:
-        description: 'Model config CSV path (relative to src/spec/)'
+      config_name:
+        description: 'Hydra config name (e.g., default, test)'
         required: false
-        default: 'src/spec/001_initial_spec.csv'
+        default: 'default'
+        type: string
+      series_config:
+        description: 'Series config name (e.g., default, test_series)'
+        required: false
+        default: 'default'
+        type: string
+      series:
+        description: 'Target series ID for nowcasting'
+        required: false
+        default: 'BOK_200Y106_1400'
+        type: string
+      period:
+        description: 'Target period (e.g., 2016q4)'
+        required: false
+        default: ''
         type: string
 
 jobs:
@@ -52,10 +67,14 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           source .venv/bin/activate
-          python scripts/nowcast_dfm.py \
-            "model.config_path=${{ inputs.config_path }}" \
-            "data.use_database=true" \
-            "data.strict_mode=false"
+          CMD="python scripts/nowcast_dfm.py --config-name=${{ inputs.config_name }} series=${{ inputs.series_config }} data.use_database=true data.strict_mode=false"
+          if [ -n "${{ inputs.series }}" ]; then
+            CMD="$CMD series=${{ inputs.series }}"
+          fi
+          if [ -n "${{ inputs.period }}" ]; then
+            CMD="$CMD period=${{ inputs.period }}"
+          fi
+          eval $CMD
       
       - name: Upload logs on failure
         if: failure()
