@@ -627,7 +627,7 @@ def main() -> None:
         config_name=config_name,
         config_json=config_json,
         block_names=block_names,
-        description=f"Macroeconomic forecasting model configuration from {csv_path.name}",
+        description=f"Macroeconomic forecasting model configuration from {spec_filename if spec_source == 'database_storage' else (csv_path.name if spec_source == 'local_file' else 'spec')}",
         country='KR',
         client=client
     )
