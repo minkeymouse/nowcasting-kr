@@ -1359,7 +1359,7 @@ def save_forecast(
         logger.info(f"Updated existing forecast: forecast_id={forecast_id}, series={series_id}, date={forecast_date}, run_type={run_type}")
     else:
         # Insert new forecast
-    result = client.table(TABLES['forecasts']).insert(data).execute()
+        result = client.table(TABLES['forecasts']).insert(data).execute()
         logger.info(f"Inserted new forecast: series={series_id}, date={forecast_date}, run_type={run_type}")
     
     return result.data[0] if result.data else None
