@@ -1,8 +1,0 @@
-[2025-11-06 23:51:35,733][httpx][INFO] - HTTP Request: DELETE https://wjuptcumvjshbegdqvqc.supabase.co/rest/v1/blocks?config_name=eq.001-initial-spec "HTTP/2 200 OK"
-[2025-11-06 23:51:35,816][httpx][INFO] - HTTP Request: POST https://wjuptcumvjshbegdqvqc.supabase.co/rest/v1/blocks?columns=%22config_name%22%2C%22block_name%22%2C%22series_id%22%2C%22series_order%22 "HTTP/2 201 Created"
-[2025-11-06 23:51:35,816][adapters.database][INFO] - Saved 26 block assignments to database for config_name=001-initial-spec
-[2025-11-06 23:51:35,817][__main__][ERROR] - Fatal error in nowcasting: Both vintage_old and vintage_new must be specified for nowcasting. Nowcasting compares forecasts between two vintages for the same period.
-Traceback (most recent call last):
-  File "/home/minkeymouse/.cursor/worktrees/Nowcasting__SSH__10.8.0.1_/2FxV7/scripts/forecast_dfm.py", line 196, in main
-    raise ValueError(
-ValueError: Both vintage_old and vintage_new must be specified for nowcasting. Nowcasting compares forecasts between two vintages for the same period.
