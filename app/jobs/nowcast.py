@@ -63,7 +63,8 @@ if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
     
     for env_path in env_locations:
         if env_path.exists():
-            load_dotenv(env_path, override=True)
+            if load_dotenv is not None:  # type: ignore
+                load_dotenv(env_path, override=True)
             logger.info(f"✅ Loaded environment from: {env_path}")
             env_loaded = True
             break
@@ -247,8 +248,26 @@ def main(cfg: DictConfig) -> None:
                 period = period_raw
         
         config_id = data_cfg_dict.get('config_id')
+        # Convert config_id to int if it's a string that represents a number
+        if config_id and isinstance(config_id, str) and config_id.isdigit():
+            config_id = int(config_id)
+        elif config_id and not isinstance(config_id, int):
+            config_id = None  # Invalid config_id, set to None
+        
         strict_mode = data_cfg_dict.get('strict_mode', False)
         forecast_periods = cfg.get('forecast_periods', data_cfg_dict.get('forecast_periods', 2))
+        
+        # Normalize vintage_old and vintage_new to strings for update_nowcast
+        if vintage_old:
+            if hasattr(vintage_old, 'isoformat') and callable(getattr(vintage_old, 'isoformat', None)):
+                vintage_old = vintage_old.isoformat()  # type: ignore
+            elif not isinstance(vintage_old, str):
+                vintage_old = str(vintage_old)
+        if vintage_new:
+            if hasattr(vintage_new, 'isoformat') and callable(getattr(vintage_new, 'isoformat', None)):
+                vintage_new = vintage_new.isoformat()  # type: ignore
+            elif not isinstance(vintage_new, str):
+                vintage_new = str(vintage_new)
         
         logger.info("=" * 80)
         logger.info(f"Nowcasting - Series: {series}, Period: {period}")
@@ -338,10 +357,12 @@ def main(cfg: DictConfig) -> None:
             logger.info('Estimating DFM model...')
             
             if use_database:
+                # Convert vintage_new to string if needed
+                vintage_new_for_estimation = str(vintage_new) if vintage_new else None
                 X, Time, Z = load_data_from_db(
-                    vintage_date=vintage_new,
+                    vintage_date=vintage_new_for_estimation,
                     config=model_cfg,
-                    config_id=config_id,
+                    config_id=config_id,  # type: ignore
                     strict_mode=strict_mode
                 )
                 # X and Z are already numpy arrays, no conversion needed
@@ -388,7 +409,7 @@ def main(cfg: DictConfig) -> None:
             if use_database:
                 try:
                     from app.adapters.adapter_database import save_factors_to_db
-            from app.database import get_latest_vintage_id
+                    from app.database.operations import get_latest_vintage_id
                     
                     # Get vintage_id for factor_values
                     vintage_id_new = None
@@ -397,7 +418,9 @@ def main(cfg: DictConfig) -> None:
                     else:
                         if db_client is None:
                             db_client = get_db_client()
-                        vintage_id_new = get_latest_vintage_id(vintage_date=vintage_new, client=db_client)
+                        # get_latest_vintage_id accepts date or str, but type hint says date
+                        # Convert vintage_new appropriately - function can handle string dates
+                        vintage_id_new = get_latest_vintage_id(vintage_date=vintage_new, client=db_client)  # type: ignore
                     
                     if vintage_id_new:
                         save_factors_to_db(
@@ -426,17 +449,21 @@ def main(cfg: DictConfig) -> None:
         
         if use_database:
             # Load old vintage
+            # Convert vintage_old to string if needed for load_data_from_db
+            vintage_old_for_load = str(vintage_old) if vintage_old else None
             X_old, Time_old, _ = load_data_from_db(
-                vintage_date=vintage_old,
+                vintage_date=vintage_old_for_load,
                 config=model_cfg,
-                config_id=config_id,
+                config_id=config_id,  # type: ignore
                 strict_mode=strict_mode
             )
             # Load new vintage
+            # Convert vintage_new to string if needed for load_data_from_db
+            vintage_new_for_load = str(vintage_new) if vintage_new else None
             X_new, Time, _ = load_data_from_db(
-                vintage_date=vintage_new,
+                vintage_date=vintage_new_for_load,
                 config=model_cfg,
-                config_id=config_id,
+                config_id=config_id,  # type: ignore
                 strict_mode=strict_mode
             )
             logger.info("Vintages loaded successfully from database")
@@ -467,9 +494,13 @@ def main(cfg: DictConfig) -> None:
         if use_database:
             save_callback = lambda **kwargs: save_nowcast_to_db(**kwargs)
         
+        # Ensure vintage_old and vintage_new are strings for update_nowcast
+        vintage_old_str = str(vintage_old) if vintage_old else ''
+        vintage_new_str = str(vintage_new) if vintage_new else ''
+        
         update_nowcast(
             X_old, X_new, Time, model_cfg, Res, series, period,
-            vintage_old, vintage_new,
+            vintage_old_str, vintage_new_str,
             model_id=None,  # Models are pkl files, not in DB
             save_callback=save_callback
         )
