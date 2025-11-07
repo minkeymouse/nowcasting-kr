@@ -14,7 +14,14 @@ import os
 from pathlib import Path
 from datetime import date
 from typing import Dict, Any, Optional, Set
-from dotenv import load_dotenv
+
+# Optional dotenv import (for local development only)
+try:
+    from dotenv import load_dotenv
+    HAS_DOTENV = True
+except ImportError:
+    HAS_DOTENV = False
+    load_dotenv = None
 
 # Configure logging first
 logging.basicConfig(
@@ -27,34 +34,43 @@ logger = logging.getLogger(__name__)
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
-# Load environment variables - check multiple locations
-env_locations = [
-    project_root / '.env.local',
-    Path('/home/minkeymouse/Nowcasting') / '.env.local',  # Main worktree
-    Path.home() / '.env.local',
-    Path('.env.local'),  # Current directory
-]
+# Load environment variables from .env file (local development only)
+# In GitHub Actions, environment variables come from secrets
+if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
+    env_locations = [
+        project_root / '.env.local',
+        Path('/home/minkeymouse/Nowcasting') / '.env.local',  # Main worktree
+        Path.home() / '.env.local',
+        Path('.env.local'),  # Current directory
+    ]
+    
+    env_loaded = False
+    for env_path in env_locations:
+        if env_path.exists():
+            load_dotenv(env_path, override=True)
+            logger.info(f"✅ Loaded environment from: {env_path}")
+            env_loaded = True
+            break
+    
+    if not env_loaded:
+        # Try loading from current directory's .env.local if it exists
+        try:
+            load_dotenv('.env.local', override=True)
+            logger.info("✅ Loaded environment from current directory .env.local")
+            env_loaded = True
+        except:
+            pass
+elif os.getenv('GITHUB_ACTIONS'):
+    logger.info("Running in GitHub Actions - using environment variables from secrets")
+    env_loaded = True  # In GitHub Actions, we use secrets, so consider it "loaded"
+elif not HAS_DOTENV:
+    logger.info("dotenv not available - using environment variables from system")
+    env_loaded = True  # If no dotenv, we rely on system env vars
 
-env_loaded = False
-for env_path in env_locations:
-    if env_path.exists():
-        load_dotenv(env_path, override=True)
-        logger.info(f"✅ Loaded environment from: {env_path}")
-        env_loaded = True
-        break
-
-if not env_loaded:
-    # Try loading from current directory's .env.local if it exists
-    try:
-        load_dotenv('.env.local', override=True)
-        logger.info("✅ Loaded environment from current directory .env.local")
-        env_loaded = True
-    except:
-        pass
-
-if not env_loaded:
+if not env_loaded and HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
     logger.warning("⚠️  .env.local not found in standard locations")
     logger.warning("   Checked: project root, main worktree, home directory, current directory")
+    logger.warning("   Will use environment variables from system")
 
 import pandas as pd
 
