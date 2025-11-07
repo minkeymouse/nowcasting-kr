@@ -161,15 +161,15 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           source .venv/bin/activate
-          CONFIG_NAME="${{ inputs.config_name }}"
-          SERIES_CONFIG="${{ inputs.series_config }}"
-          MAX_ITER="${{ inputs.max_iter }}"
-          python scripts/train_dfm.py \
-            --config-name=${CONFIG_NAME:-default} \
-            series=${SERIES_CONFIG:-default} \
-            "data.use_database=true" \
-            "data.strict_mode=false" \
-            "dfm.max_iter=${MAX_ITER:-100}"
+        CONFIG_NAME="${{ inputs.config_name }}"
+        SERIES_CONFIG="${{ inputs.series_config }}"
+        MAX_ITER="${{ inputs.max_iter }}"
+        python scripts/train_dfm.py \
+          --config-name=${CONFIG_NAME:-test} \
+          series=${SERIES_CONFIG:-test_series} \
+          "data.use_database=true" \
+          "data.strict_mode=false" \
+          "dfm.max_iter=${MAX_ITER:-100}"
       
       - name: Upload model weights
         if: success()
