@@ -312,15 +312,39 @@ def main() -> None:
             # Fetch data
             print(f"   🌐 Fetching data from {api_source} API (code: {api_code})...")
             logger.info(f"  Fetching data from {api_source} API (code: {api_code})...")
-            df_data = fetch_series_data(
-                series_id=series_id,
-                api_code=api_code,
-                api_client=api_client,
-                source=api_source,
-                frequency=frequency,
-                start_date=start_date,
-                end_date=end_date
-            )
+            
+            try:
+                df_data = fetch_series_data(
+                    series_id=series_id,
+                    api_code=api_code,
+                    api_client=api_client,
+                    source=api_source,
+                    frequency=frequency,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+            except Exception as api_error:
+                # Handle API-specific errors (wrong API code, invalid parameters, etc.)
+                error_msg = str(api_error)
+                if 'rate limit' in error_msg.lower() or '602' in error_msg:
+                    logger.error(f"  ❌ {series_id}: API rate limit error - {error_msg}")
+                    print(f"   ❌ API rate limit error")
+                    print(f"      → Please wait and retry later")
+                    stats['failed'] += 1
+                    stats['errors'].append(f"{series_id}: Rate limit error - {error_msg[:100]}")
+                elif 'invalid' in error_msg.lower() or 'not found' in error_msg.lower() or 'error' in error_msg.lower():
+                    logger.error(f"  ❌ {series_id}: Invalid API code or parameters - {error_msg}")
+                    print(f"   ❌ Invalid API code or parameters")
+                    print(f"      → Check spec file: api_source={api_source}, data_code={data_code}, item_id={item_id}")
+                    print(f"      → Error: {error_msg[:200]}")
+                    stats['failed'] += 1
+                    stats['errors'].append(f"{series_id}: Invalid API code - {error_msg[:100]}")
+                else:
+                    logger.error(f"  ❌ {series_id}: API error - {error_msg}")
+                    print(f"   ❌ API error: {error_msg[:200]}")
+                    stats['failed'] += 1
+                    stats['errors'].append(f"{series_id}: {error_msg[:100]}")
+                continue
             
             if df_data is None or df_data.empty:
                 # Determine reason for no data
@@ -334,6 +358,7 @@ def main() -> None:
                     logger.warning(f"  ⚠ {series_id}: {reason}")
                     print(f"   ⚠️  No data available from API")
                     print(f"      → API returned no data for this series")
+                    print(f"      → This may indicate wrong API code in spec file")
                 stats['skipped'] += 1
                 continue
             
