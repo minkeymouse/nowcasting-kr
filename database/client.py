@@ -19,7 +19,7 @@ def get_supabase_client(
     url : str, optional
         Supabase project URL. If None, reads from SUPABASE_URL environment variable.
     key : str, optional
-        Supabase service role key. If None, reads from SUPABASE_KEY environment variable.
+        Supabase service role key. If None, reads from SUPABASE_SECRET_KEY environment variable.
     options : ClientOptions, optional
         Additional client options.
         
