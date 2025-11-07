@@ -19,12 +19,6 @@ on:
         default: '100'
         type: string
   push:
-    paths:
-      - 'scripts/ingest_api.py'
-      - 'scripts/train_dfm.py'
-      - 'scripts/nowcast_dfm.py'
-      - 'src/spec/**/*.csv'
-      - 'config/**/*.yaml'
     branches:
       - main
       - master
