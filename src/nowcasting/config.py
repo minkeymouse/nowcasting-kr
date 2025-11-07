@@ -58,7 +58,7 @@ class SeriesConfig:
     """Configuration for a single time series.
     
     This is a generic DFM configuration - no API or database-specific fields.
-    For API/database integration, see adapters.database module.
+    For API/database integration, see adapters.adapter_database module.
     """
     series_id: str
     series_name: str

@@ -23,7 +23,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.nowcasting import load_data, dfm, update_nowcast, load_config, ModelConfig
-from adapters.database import load_data_from_db, save_nowcast_to_db
+from adapters.adapter_database import load_data_from_db, save_nowcast_to_db
 import pickle
 
 # Configure logging
@@ -128,7 +128,7 @@ def load_model_config_from_hydra(
         # If loading from CSV and use_db is enabled, save blocks to database
         if use_db and config_file.suffix.lower() == '.csv':
             try:
-                from adapters.database import save_blocks_to_db
+                from adapters.adapter_database import save_blocks_to_db
                 
                 # Derive config_name from CSV filename
                 # Example: '001_initial_spec.csv' → '001-initial-spec'
@@ -196,7 +196,7 @@ def main(cfg: DictConfig) -> None:
         if use_database and (not vintage_old or not vintage_new):
             try:
                 from database import get_latest_vintage_id, get_vintage
-                from adapters.database import _get_db_client
+                from adapters.adapter_database import _get_db_client
                 client = _get_db_client()
                 latest_vintage_id = get_latest_vintage_id(client=client)
                 if latest_vintage_id:

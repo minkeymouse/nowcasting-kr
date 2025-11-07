@@ -17,12 +17,12 @@ def test_adapter_imports_without_database():
     # The adapter should handle ImportError gracefully
     pass  # Actual import test done in syntax validation
 
-@patch('adapters.database._get_db_client')
-@patch('adapters.database._resolve_vintage_id')
-@patch('adapters.database._fetch_vintage_data')
+@patch('adapters.adapter_database._get_db_client')
+@patch('adapters.adapter_database._resolve_vintage_id')
+@patch('adapters.adapter_database._fetch_vintage_data')
 def test_load_data_from_db_mock(mock_fetch, mock_resolve, mock_client):
     """Test load_data_from_db with mocked database functions."""
-    from adapters.database import load_data_from_db
+    from adapters.adapter_database import load_data_from_db
     from src.nowcasting.config import ModelConfig, SeriesConfig
     
     # Create mock config
@@ -62,10 +62,10 @@ def test_load_data_from_db_mock(mock_fetch, mock_resolve, mock_client):
     mock_fetch.assert_called_once()
 
 
-@patch('adapters.database._get_db_client')
+@patch('adapters.adapter_database._get_db_client')
 def test_load_data_from_db_import_error(mock_client):
     """Test load_data_from_db handles ImportError when database module unavailable."""
-    from adapters.database import load_data_from_db
+    from adapters.adapter_database import load_data_from_db
     from src.nowcasting.config import ModelConfig, SeriesConfig
     
     # Mock ImportError
@@ -82,13 +82,13 @@ def test_load_data_from_db_import_error(mock_client):
         pass  # Expected
 
 
-@patch('adapters.database.get_client')
-@patch('adapters.database.save_forecast')
+@patch('adapters.adapter_database.get_client')
+@patch('adapters.adapter_database.save_forecast')
 def test_save_nowcast_to_db_mock(mock_save, mock_get_client):
     """Test save_nowcast_to_db with mocked database functions."""
     # First, mock the database module import
     with patch.dict('sys.modules', {'database': MagicMock()}):
-        from adapters.database import save_nowcast_to_db
+        from adapters.adapter_database import save_nowcast_to_db
         
         mock_get_client.return_value = Mock()
         mock_save.return_value = True
@@ -105,14 +105,14 @@ def test_save_nowcast_to_db_mock(mock_save, mock_get_client):
         mock_save.assert_called_once()
 
 
-@patch('adapters.database.get_client')
-@patch('adapters.database.get_latest_vintage_id')
-@patch('adapters.database.TABLES')
+@patch('adapters.adapter_database.get_client')
+@patch('adapters.adapter_database.get_latest_vintage_id')
+@patch('adapters.adapter_database.TABLES')
 def test_save_nowcast_to_db_model_id_lookup(mock_tables, mock_vintage, mock_client):
     """Test save_nowcast_to_db attempts to resolve model_id from Res."""
     # This tests the model_id resolution logic in the adapter
     with patch.dict('sys.modules', {'database': MagicMock()}):
-        from adapters.database import save_nowcast_to_db
+        from adapters.adapter_database import save_nowcast_to_db
         
         # Mock Res with model_id
         Res = Mock()
@@ -129,7 +129,7 @@ def test_save_nowcast_to_db_model_id_lookup(mock_tables, mock_vintage, mock_clie
 def test_adapter_imports():
     """Test that adapters can be imported."""
     try:
-        from adapters import load_data_from_db, save_nowcast_to_db
+        from adapters.adapter_database import load_data_from_db, save_nowcast_to_db
         assert True
     except ImportError as e:
         # It's ok if database module isn't available for testing

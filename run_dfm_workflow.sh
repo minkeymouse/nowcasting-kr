@@ -1,7 +1,7 @@
 #!/bin/bash
-# DFM Workflow Script - Train and Nowcast
-# This script runs train_dfm.py and nowcasting_dfm.py to populate the database
-# Designed for headless CLI execution (e.g., overnight runs)
+# DFM Workflow Script - Headless Overnight Debugging
+# This script runs train_dfm.py and nowcast_dfm.py for overnight debugging sessions
+# Designed for headless CLI execution to fully debug train_dfm.py and nowcast_dfm.py
 
 set -e  # Exit on error
 set -o pipefail  # Exit on pipe failure
@@ -112,7 +112,7 @@ log "----------------------------------------"
 
 python3 << 'PYTHON_EOF'
 import sys
-from adapters.database import _get_db_client
+from adapters.adapter_database import _get_db_client
 
 try:
     client = _get_db_client()
@@ -154,7 +154,7 @@ log "----------------------------------------"
 
 python3 << 'PYTHON_EOF'
 import sys
-from adapters.database import _get_db_client
+from adapters.adapter_database import _get_db_client
 
 try:
     client = _get_db_client()

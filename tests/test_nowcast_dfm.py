@@ -15,7 +15,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.nowcasting.data_loader import load_config_from_csv
-from adapters.database import load_data_from_db
+from adapters.adapter_database import load_data_from_db
 
 
 def test_load_config_from_csv():
@@ -107,7 +107,7 @@ def test_vintage_resolution():
     """Test that vintage can be resolved from date."""
     try:
         from database import get_latest_vintage_id, get_vintage
-        from adapters.database import _get_db_client
+        from adapters.adapter_database import _get_db_client
         
         client = _get_db_client()
         latest_vintage_id = get_latest_vintage_id(client=client)

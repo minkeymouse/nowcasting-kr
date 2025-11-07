@@ -84,7 +84,7 @@ def load_config_from_csv(configfile: Union[str, Path]) -> ModelConfig:
     - Block columns contain 0 or 1 (1 = series loads on that block)
     
     Note: API/database-specific columns (data_code, item_id, api_source, country, is_kpi, etc.)
-    are ignored by the generic DFM module. They should be handled by adapters.database module.
+    are ignored by the generic DFM module. They should be handled by adapters.adapter_database module.
     
     Example:
         id,series_name,frequency,transformation,category,units,Block_Global,Block_Consumption,Block_Invest,Block_Extern
@@ -435,7 +435,7 @@ def load_data(datafile: Union[str, Path], config: ModelConfig,
     This function reads data from a CSV file, sorts it to match the model
     configuration (from CSV or YAML), and applies the specified transformations.
     
-    Note: For production use with database, use `adapters.database.load_data_from_db()`
+    Note: For production use with database, use `adapters.adapter_database.load_data_from_db()`
     which loads data directly from the database.
     
     Parameters
@@ -494,6 +494,6 @@ def load_data(datafile: Union[str, Path], config: ModelConfig,
     return X, Time, Z
 
 
-# Database adapters have been moved to adapters/database.py
+# Database adapters have been moved to adapters/adapter_database.py
 # This keeps the DFM module generic and database-agnostic.
-# Use: from adapters.database import load_data_from_db
+# Use: from adapters.adapter_database import load_data_from_db

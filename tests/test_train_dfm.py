@@ -15,7 +15,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.nowcasting.data_loader import load_config_from_csv
-from adapters.database import load_data_from_db, save_blocks_to_db
+from adapters.adapter_database import load_data_from_db, save_blocks_to_db
 
 
 def test_load_config_from_csv():

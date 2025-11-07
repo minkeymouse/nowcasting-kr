@@ -113,7 +113,7 @@ def load_model_config_from_hydra(
         # If loading from CSV and use_db is enabled, save blocks to database
         if use_db and config_file.suffix.lower() == '.csv':
             try:
-                from adapters.database import save_blocks_to_db
+                from adapters.adapter_database import save_blocks_to_db
                 
                 # Derive config_name from CSV filename
                 # Example: '001_initial_spec.csv' → '001-initial-spec'
@@ -171,14 +171,14 @@ def main(cfg: DictConfig) -> None:
     
     # Load data
     if use_database:
-        from adapters.database import load_data_from_db
+        from adapters.adapter_database import load_data_from_db
         sample_start_dt = pd.to_datetime(sample_start) if sample_start else None
         
         # Use latest vintage if not specified
         if vintage is None:
             try:
                 from database import get_latest_vintage_id
-                from adapters.database import _get_db_client
+                from adapters.adapter_database import _get_db_client
                 client = _get_db_client()
                 latest_vintage_id = get_latest_vintage_id(client=client)
                 if latest_vintage_id:
@@ -198,7 +198,7 @@ def main(cfg: DictConfig) -> None:
                 config_name = config_file.stem.replace('_', '-')
                 # Check if blocks table has data for this config_name
                 try:
-                    from adapters.database import _get_db_client
+                    from adapters.adapter_database import _get_db_client
                     from database.helpers import get_series_ids_for_config
                     client = _get_db_client()
                     series_ids = get_series_ids_for_config(config_name, client=client)

@@ -133,7 +133,7 @@ def test_database_updates():
     print("=" * 60)
     
     try:
-        from adapters.database import _get_db_client
+        from adapters.adapter_database import _get_db_client
         
         client = _get_db_client()
         

@@ -5,7 +5,7 @@ This module provides adapters between the generic DFM module and the Supabase da
 All database-specific logic is isolated here, keeping the DFM module generic.
 """
 
-from .database import (
+from .adapter_database import (
     load_data_from_db,
     save_nowcast_to_db,
     save_blocks_to_db,
