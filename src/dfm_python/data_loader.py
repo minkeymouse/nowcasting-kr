@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import io
 import re
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
@@ -9,7 +10,9 @@ from datetime import date
 import warnings
 import logging
 
-from .config import ModelConfig
+from .config import DFMConfig
+# Backward compatibility
+ModelConfig = DFMConfig
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +34,7 @@ except ImportError:
 _MATLAB_DATENUM_OFFSET = 719529
 
 
-def load_config_from_yaml(configfile: Union[str, Path]) -> ModelConfig:
+def load_config_from_yaml(configfile: Union[str, Path]) -> DFMConfig:
     """Load model configuration from YAML file.
     
     Parameters
@@ -66,16 +69,16 @@ def load_config_from_yaml(configfile: Union[str, Path]) -> ModelConfig:
     # Handle nested structure (if config has @package model: directive)
     if 'series' in cfg_dict and 'block_names' in cfg_dict:
         # Direct model config structure
-        return ModelConfig.from_dict(cfg_dict)
+        return DFMConfig.from_dict(cfg_dict)
     elif 'model' in cfg_dict:
         # Nested under 'model' key (from @package model:)
-        return ModelConfig.from_dict(cfg_dict['model'])
+        return DFMConfig.from_dict(cfg_dict['model'])
     else:
         # Try to construct from top-level keys
-        return ModelConfig.from_dict(cfg_dict)
+        return DFMConfig.from_dict(cfg_dict)
 
 
-def load_config_from_csv(configfile: Union[str, Path]) -> ModelConfig:
+def load_config_from_csv(configfile: Union[str, Path]) -> DFMConfig:
     """Load model configuration from CSV file.
     
     CSV format should have columns:
@@ -84,7 +87,7 @@ def load_config_from_csv(configfile: Union[str, Path]) -> ModelConfig:
     - Block columns contain 0 or 1 (1 = series loads on that block)
     
     Note: API/database-specific columns (data_code, item_id, api_source, country, is_kpi, etc.)
-    are ignored by the generic DFM module. They should be handled by adapters.adapter_database module.
+    are ignored by the generic DFM module. They should be handled by application-specific adapters.
     
     Example:
         id,series_name,frequency,transformation,category,units,Block_Global,Block_Consumption,Block_Invest,Block_Extern
@@ -117,6 +120,22 @@ def load_config_from_csv(configfile: Union[str, Path]) -> ModelConfig:
     except Exception as e:
         raise ValueError(f"Failed to read CSV file {configfile}: {e}")
     
+    return _load_config_from_dataframe(df)
+
+
+def _load_config_from_dataframe(df: pd.DataFrame) -> DFMConfig:
+    """Load DFMConfig from a pandas DataFrame (shared by CSV and BytesIO loading).
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with CSV columns
+        
+    Returns
+    -------
+    DFMConfig
+        Model configuration
+    """
     # Handle 'id' as alias for 'series_id' (for backward compatibility)
     # If CSV has data_code, item_id, api_source, generate series_id from them
     # Otherwise, use 'id' as fallback
@@ -192,19 +211,19 @@ def load_config_from_csv(configfile: Union[str, Path]) -> ModelConfig:
             blocks=blocks
         ))
     
-    return ModelConfig(series=series_list, block_names=block_columns)
+    return DFMConfig(series=series_list, block_names=block_columns)
 
 
 # Note: Excel support removed - use CSV or YAML configs instead
 
 
-def load_config(configfile: Union[str, Path]) -> ModelConfig:
+def load_config(configfile: Union[str, Path, io.BytesIO]) -> DFMConfig:
     """Load model configuration from file (auto-detects YAML or CSV).
     
     Parameters
     ----------
-    configfile : str or Path
-        Path to configuration file (.yaml, .yml, or .csv)
+    configfile : str, Path, or BytesIO
+        Path to configuration file (.yaml, .yml, or .csv), or BytesIO object with CSV content
         
     Returns
     -------
@@ -214,10 +233,18 @@ def load_config(configfile: Union[str, Path]) -> ModelConfig:
     Raises
     ------
     FileNotFoundError
-        If configfile does not exist
+        If configfile does not exist (for file paths)
     ValueError
         If file format is not supported or configuration is invalid
     """
+    # Handle BytesIO (for database storage downloads)
+    if isinstance(configfile, io.BytesIO):
+        # Read CSV from BytesIO
+        configfile.seek(0)  # Reset to beginning
+        df = pd.read_csv(configfile)
+        # Use the same logic as load_config_from_csv but with DataFrame
+        return _load_config_from_dataframe(df)
+    
     configfile = Path(configfile)
     if not configfile.exists():
         raise FileNotFoundError(f"Configuration file not found: {configfile}")
@@ -276,7 +303,7 @@ def _transform_series(Z: np.ndarray, formula: str, freq: str, step: int) -> np.n
     return X
 
 
-def transform_data(Z: np.ndarray, Time: pd.DatetimeIndex, config: ModelConfig) -> Tuple[np.ndarray, pd.DatetimeIndex, np.ndarray]:
+def transform_data(Z: np.ndarray, Time: pd.DatetimeIndex, config: DFMConfig) -> Tuple[np.ndarray, pd.DatetimeIndex, np.ndarray]:
     """Transform each data series based on specification."""
     T, N = Z.shape
     X = np.full((T, N), np.nan)
@@ -318,7 +345,7 @@ def read_data(datafile: Union[str, Path]) -> Tuple[np.ndarray, pd.DatetimeIndex,
     return Z, Time, mnemonics
 
 
-def sort_data(Z: np.ndarray, Mnem: List[str], config: ModelConfig) -> Tuple[np.ndarray, List[str]]:
+def sort_data(Z: np.ndarray, Mnem: List[str], config: DFMConfig) -> Tuple[np.ndarray, List[str]]:
     """Sort series to match configuration order."""
     in_config = [m in config.SeriesID for m in Mnem]
     Mnem_filt = [m for m, in_c in zip(Mnem, in_config) if in_c]
@@ -428,15 +455,15 @@ def _save_to_mat_cache(Z: np.ndarray, Time: pd.DatetimeIndex, Mnem: List[str],
         warnings.warn(f"Failed to save .mat cache ({e}). Continuing without cache.")
 
 
-def load_data(datafile: Union[str, Path], config: ModelConfig,
+def load_data(datafile: Union[str, Path], config: DFMConfig,
               sample_start: Optional[Union[pd.Timestamp, str]] = None) -> Tuple[np.ndarray, pd.DatetimeIndex, np.ndarray]:
     """Load and transform data from CSV file.
     
     This function reads data from a CSV file, sorts it to match the model
     configuration (from CSV or YAML), and applies the specified transformations.
     
-    Note: For production use with database, use `adapters.adapter_database.load_data_from_db()`
-    which loads data directly from the database.
+    Note: For database-backed applications, create adapters that implement
+    the same interface (return X, Time, Z arrays).
     
     Parameters
     ----------
@@ -494,6 +521,5 @@ def load_data(datafile: Union[str, Path], config: ModelConfig,
     return X, Time, Z
 
 
-# Database adapters have been moved to adapters/adapter_database.py
+# Database adapters are application-specific and should be implemented separately.
 # This keeps the DFM module generic and database-agnostic.
-# Use: from adapters.adapter_database import load_data_from_db

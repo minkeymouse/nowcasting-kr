@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import Optional
 from omegaconf import DictConfig, OmegaConf
 
-from src.nowcasting import load_config, ModelConfig
+from dfm_python import load_config, DFMConfig
+# Backward compatibility alias
+ModelConfig = DFMConfig
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +78,10 @@ def load_model_config_from_hydra(
                 # Extract filename from path (e.g., "001_initial_spec.csv")
                 storage_filename = config_file.name
                 
-                # Try "specs" bucket (default for spec files)
+                # Try "spec" bucket (default for spec files)
                 csv_content = download_spec_csv_from_storage(
                     filename=storage_filename,
-                    bucket_name="specs",
+                    bucket_name="spec",
                     client=get_db_client()
                 )
                 

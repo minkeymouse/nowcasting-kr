@@ -1,0 +1,133 @@
+# Series definitions with their configurations and block memberships
+# Each series specifies which blocks it loads on
+
+defaults:
+  - _self_
+
+# Series definitions
+series:
+  # GDP and National Accounts
+  BOK_200Y106_1400:
+    series_name: "Real GDP (Quarterly)"
+    frequency: "q"
+    transformation: "pca"
+    units: "Billion Won"
+    category: "GDP"
+    blocks: [Global]
+
+  BOK_200Y129_10101:
+    series_name: "Gross Fixed Capital Formation (Quarterly)"
+    frequency: "q"
+    transformation: "pca"
+    units: "Billion Won"
+    category: "Investment"
+    blocks: [Global, Investment]
+  
+  # Financial Indicators
+  BOK_101Y019_BBLA00:
+    series_name: "M1 Money Supply (Monthly)"
+    frequency: "m"
+    transformation: "pch"
+    units: "Billion Won"
+    category: "Financial"
+    blocks: [Global, Investment]
+  
+  BOK_101Y004_BBHA00:
+    series_name: "M2 Money Supply (Monthly)"
+    frequency: "m"
+    transformation: "pch"
+    units: "Billion Won"
+    category: "Financial"
+    blocks: [Global, Investment]
+  
+  BOK_104Y016_BDCA1:
+    series_name: "Total Bank Loans (Monthly)"
+    frequency: "m"
+    transformation: "pch"
+    units: "Billion Won"
+    category: "Financial"
+    blocks: [Global, Investment]
+  
+  # Labor Market
+  KOSIS_101_DT_1DA7002S_T90:
+    series_name: "Employment Rate (Monthly)"
+    frequency: "m"
+    transformation: "lin"
+    units: "Percent"
+    category: "Labor"
+    blocks: [Global, Consumption]
+  
+  KOSIS_101_DT_1DA7002S_T80:
+    series_name: "Unemployment Rate (Monthly)"
+    frequency: "m"
+    transformation: "lin"
+    units: "Percent"
+    category: "Labor"
+    blocks: [Global, Consumption]
+  
+  # Investment Indicators
+  BOK_901Y033_A00:
+    series_name: "Industrial Production Index (Monthly)"
+    frequency: "m"
+    transformation: "pch"
+    units: "Index"
+    category: "Investment"
+    blocks: [Global]
+  
+  BOK_404Y014_*AA:
+    series_name: "Producer Price Index (Monthly)"
+    frequency: "m"
+    transformation: "pch"
+    units: "Index"
+    category: "Investment"
+    blocks: [Global, Consumption]
+  
+  BOK_901Y020_I42A:
+    series_name: "Domestic Construction Orders (Monthly)"
+    frequency: "m"
+    transformation: "pch"
+    units: "Million Won"
+    category: "Investment"
+    blocks: [Global]
+  
+  # External Sector
+  BOK_301Y013_100000:
+    series_name: "Balance of Payments - Goods (Monthly)"
+    frequency: "m"
+    transformation: "chg"
+    units: "Million Dollars"
+    category: "External"
+    blocks: [Global, Investment]
+  
+  BOK_901Y011_FIEE:
+    series_name: "Total Exports (Monthly)"
+    frequency: "m"
+    transformation: "pch"
+    units: "Thousand Dollars"
+    category: "External"
+    blocks: [Global]
+  
+  BOK_901Y012_FIEF:
+    series_name: "Total Imports (Monthly)"
+    frequency: "m"
+    transformation: "pch"
+    units: "Thousand Dollars"
+    category: "External"
+    blocks: [Global]
+  
+  BOK_731Y001_0000001:
+    series_name: "KRW/USD Exchange Rate (Daily)"
+    frequency: "d"
+    transformation: "pch"
+    units: "Won per Dollar"
+    category: "External"
+    blocks: [Global, Consumption, Investment]
+  
+  BOK_802Y001_0001000:
+    series_name: "KOSPI Index (Daily)"
+    frequency: "d"
+    transformation: "pch"
+    units: "Index"
+    category: "Financial"
+    blocks: [Global, Investment]
+

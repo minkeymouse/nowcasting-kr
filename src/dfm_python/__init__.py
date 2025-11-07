@@ -1,6 +1,6 @@
 """Core nowcasting modules for DFM estimation and forecasting."""
 
-from .config import ModelConfig, DataConfig, DFMConfig, AppConfig
+from .config import DFMConfig, AppConfig
 from .data_loader import (
     load_config, load_config_from_yaml, load_config_from_csv, load_data, transform_data
 )
@@ -9,11 +9,14 @@ from .kalman import run_kf, skf, fis, miss_data
 from .news import update_nowcast, news_dfm, para_const
 
 # Backward compatibility aliases
-ModelSpec = ModelConfig  # Deprecated: use ModelConfig
+ModelConfig = DFMConfig  # Deprecated: ModelConfig merged into DFMConfig
+ModelSpec = DFMConfig  # Deprecated: use DFMConfig
 load_spec = load_config  # Deprecated: use load_config
 
 __all__ = [
-    'ModelConfig', 'DataConfig', 'DFMConfig', 'AppConfig',
+    'DFMConfig', 'AppConfig',
+    # Backward compatibility
+    'ModelConfig',  # Alias for DFMConfig
     'load_config', 'load_config_from_yaml', 'load_config_from_csv',
     'load_data', 'transform_data',
     'DFMResult', 'dfm',

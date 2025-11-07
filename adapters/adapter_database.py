@@ -18,8 +18,10 @@ import io
 import os
 
 # Import generic DFM module functions
-from src.nowcasting.config import ModelConfig
-from src.nowcasting.data_loader import _transform_series
+from dfm_python.config import DFMConfig
+# Backward compatibility
+ModelConfig = DFMConfig
+from dfm_python.data_loader import _transform_series
 
 logger = logging.getLogger(__name__)
 
@@ -112,12 +114,12 @@ def _apply_transformations_from_metadata(
     Time: pd.DatetimeIndex,
     data_df: pd.DataFrame,
     series_metadata_df: pd.DataFrame,
-    config: Optional[ModelConfig] = None
+    config: Optional[DFMConfig] = None
 ) -> Tuple[np.ndarray, pd.DatetimeIndex]:
     """Apply transformations using series metadata, falling back to config if needed.
     
     This function consolidates transformation logic to work with both database
-    metadata and ModelConfig objects (from CSV or YAML).
+        metadata and DFMConfig objects (from CSV or YAML).
     """
     T, N = Z.shape
     X = np.full((T, N), np.nan)
@@ -207,7 +209,7 @@ def _handle_missing_series(
 def _fetch_vintage_data(
     vintage_id: int,
     config_series_ids: List[str],
-    config: Optional[ModelConfig] = None,
+    config: Optional[DFMConfig] = None,
     config_name: Optional[str] = None,
     config_id: Optional[int] = None,
     start_date: Optional[date] = None,
@@ -288,7 +290,7 @@ def export_data_to_csv(
     output_path: Union[str, Path],
     vintage_id: Optional[int] = None,
     vintage_date: Optional[Union[date, str, pd.Timestamp]] = None,
-    config: Optional[ModelConfig] = None,
+    config: Optional[DFMConfig] = None,
     config_name: Optional[str] = None,
     config_id: Optional[int] = None,
     start_date: Optional[Union[date, str, pd.Timestamp]] = None,
@@ -311,7 +313,7 @@ def export_data_to_csv(
         Specific vintage ID to load
     vintage_date : date, str, or pd.Timestamp, optional
         Specific vintage date to load (used if vintage_id not provided)
-    config : ModelConfig, optional
+    config : DFMConfig, optional
         Model configuration object
     config_name : str, optional
         Configuration name (preferred over config_id)
@@ -345,8 +347,7 @@ def export_data_to_csv(
     try:
         from database.operations import (
             get_latest_vintage_id,
-            get_vintage,
-            _normalize_date as normalize_date
+            get_vintage
         )
         from database.helpers import (
             get_model_config_series_ids,
@@ -360,7 +361,7 @@ def export_data_to_csv(
     # Resolve vintage
     if vintage_id is None:
         if vintage_date is not None:
-            vintage_date_normalized = normalize_date(vintage_date)
+            vintage_date_normalized = _normalize_date(vintage_date)
             vintage_info = get_vintage(vintage_date=vintage_date_normalized, client=client)
             if vintage_info:
                 vintage_id = vintage_info['vintage_id']
@@ -393,18 +394,28 @@ def export_data_to_csv(
     if not config_series_ids:
         raise ValueError("No series found in configuration")
     
-    # Load data from database
-    data_df, Time, Z_df, series_metadata_df = load_data_from_db(
+    # Load data from database (need DataFrames, not numpy arrays)
+    # Use _fetch_vintage_data directly since we need DataFrames for CSV export
+    data_df, Time, Z_df, series_metadata_df = _fetch_vintage_data(
         vintage_id=vintage_id,
+        config_series_ids=config_series_ids,
         config=config,
         config_name=config_name,
         config_id=config_id,
-        start_date=start_date,
-        end_date=end_date,
-        sample_start=sample_start,
+        start_date=_normalize_date(start_date) if start_date else None,
+        end_date=_normalize_date(end_date) if end_date else None,
         strict_mode=strict_mode,
         client=client
     )
+    
+    # Apply sample_start filter if needed
+    if sample_start is not None:
+        sample_start_dt = pd.to_datetime(sample_start) if isinstance(sample_start, str) else sample_start
+        mask = Time >= sample_start_dt
+        data_df = data_df[mask]
+        Time = Time[mask]
+        if Z_df is not None:
+            Z_df = Z_df[mask]
     
     # Prepare CSV data: combine data with series metadata
     # Create DataFrame with series_id as index, dates as columns
@@ -446,7 +457,7 @@ def export_data_to_csv(
 def load_data_from_db(
     vintage_id: Optional[int] = None,
     vintage_date: Optional[Union[date, str, pd.Timestamp]] = None,
-    config: Optional[ModelConfig] = None,
+    config: Optional[DFMConfig] = None,
     config_name: Optional[str] = None,
     config_id: Optional[int] = None,
     config_series_ids: Optional[List[str]] = None,
@@ -468,7 +479,7 @@ def load_data_from_db(
         Vintage ID (if None, uses vintage_date or latest vintage)
     vintage_date : date, str, or Timestamp, optional
         Vintage date (alternative to vintage_id)
-    config : ModelConfig, optional
+    config : DFMConfig, optional
         Model configuration object (required for transformations)
     config_name : str, optional
         Model configuration name (e.g., '001-initial-spec') - uses blocks table for ordering
@@ -741,20 +752,20 @@ def save_nowcast_to_db(
 
 
 def save_blocks_to_db(
-    config: ModelConfig,
+    config: DFMConfig,
     config_name: str,
     client: Optional[object] = None
 ) -> None:
-    """Save block assignments from ModelConfig to database blocks table.
+    """Save block assignments from DFMConfig to database blocks table.
     
-    This function extracts block information from a ModelConfig object and saves it
+    This function extracts block information from a DFMConfig object and saves it
     to the blocks table. The config_name should be derived from the CSV filename
     (e.g., '001_initial_spec.csv' → '001-initial-spec').
     
     Parameters
     ----------
-    config : ModelConfig
-        Model configuration with series and block information
+    config : DFMConfig
+        DFM configuration with series and block information
     config_name : str
         Configuration name identifier (e.g., '001-initial-spec')
         Derived from CSV filename by replacing underscores with hyphens and removing .csv
@@ -946,9 +957,76 @@ def download_model_weights_from_storage(
         raise
 
 
+def csv_spec_to_hydra_config(
+    config: DFMConfig,
+    dfm_config_overrides: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Convert DFMConfig from CSV spec to Hydra-compatible config dictionary.
+    
+    This function translates a DFMConfig loaded from CSV into a format that can be
+    merged with Hydra configuration. It extracts DFM-related parameters that can be
+    configured via Hydra.
+    
+    Parameters
+    ----------
+    config : DFMConfig
+        DFM configuration loaded from CSV spec file
+    dfm_config_overrides : dict, optional
+        Optional DFM config overrides (e.g., from CSV metadata or user preferences)
+        Keys: ar_lag, factors_per_block, threshold, max_iter, nan_method, nan_k
+    
+    Returns
+    -------
+    dict
+        Dictionary with 'model' and 'dfm' keys containing Hydra-compatible config
+        that can be merged with existing Hydra config via OmegaConf.merge()
+    
+    Examples
+    --------
+    >>> from dfm_python import load_config
+    >>> from adapters.adapter_database import csv_spec_to_hydra_config
+    >>> config = load_config('src/spec/001_initial_spec.csv')
+    >>> hydra_config = csv_spec_to_hydra_config(config)
+    >>> # Merge with existing Hydra config
+    >>> from omegaconf import OmegaConf
+    >>> merged = OmegaConf.merge(existing_config, hydra_config)
+    """
+    hydra_config = {
+        'model': {},
+        'dfm': {}
+    }
+    
+    # Extract model config (factors_per_block from ModelConfig)
+    if config.factors_per_block is not None:
+        hydra_config['model']['factors_per_block'] = config.factors_per_block
+    
+    # Extract DFM config (can come from CSV metadata or overrides)
+    dfm_defaults = {
+        'ar_lag': 1,
+        'factors_per_block': None,
+        'threshold': 1e-5,
+        'max_iter': 5000,
+        'nan_method': 2,
+        'nan_k': 3
+    }
+    
+    # Start with defaults
+    hydra_config['dfm'] = dfm_defaults.copy()
+    
+    # Apply overrides if provided
+    if dfm_config_overrides:
+        hydra_config['dfm'].update(dfm_config_overrides)
+    
+    # If factors_per_block is in model config but not in dfm config, use model's
+    if config.factors_per_block is not None and hydra_config['dfm']['factors_per_block'] is None:
+        hydra_config['dfm']['factors_per_block'] = config.factors_per_block
+    
+    return hydra_config
+
+
 def download_spec_csv_from_storage(
     filename: str,
-    bucket_name: str = "specs",
+    bucket_name: str = "spec",
     client: Optional[object] = None
 ) -> Optional[bytes]:
     """Download spec CSV file from Supabase storage.
@@ -957,7 +1035,7 @@ def download_spec_csv_from_storage(
     ----------
     filename : str
         Filename in storage (e.g., "001_initial_spec.csv")
-    bucket_name : str, default="specs"
+    bucket_name : str, default="spec"
         Supabase storage bucket name for spec files
     client : object, optional
         Supabase client. If None, will get from database module.
@@ -1004,7 +1082,7 @@ def download_spec_csv_from_storage(
 def save_factors_to_db(
     Res: Any,  # DFMResult
     model_id: int,
-    config: ModelConfig,
+    config: DFMConfig,
     vintage_id: int,
     Time: pd.DatetimeIndex,
     client: Optional[object] = None

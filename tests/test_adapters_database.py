@@ -52,7 +52,7 @@ def test_load_data_from_db_mock(mock_fetch, mock_resolve, mock_client):
     mock_client.return_value = Mock()
     mock_resolve.return_value = 1  # vintage_id
     # _fetch_vintage_data returns (data_df, Time, Z_df, series_metadata_df) - 4 values
-    # (despite type hint saying 3, load_data_from_db expects 4)
+    # load_data_from_db converts these to numpy arrays and returns 3 values: (X, Time, Z)
     mock_fetch.return_value = (
         pd.DataFrame({'TEST1': [1.0, 2.0, 3.0], 'TEST2': [4.0, 5.0, 6.0]}),
         pd.DatetimeIndex(['2024-01-01', '2024-02-01', '2024-03-01']),

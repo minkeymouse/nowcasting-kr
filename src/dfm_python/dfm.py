@@ -5,12 +5,58 @@ from scipy.linalg import inv, pinv, block_diag
 from scipy.sparse.linalg import eigs
 from scipy.sparse import csc_matrix
 from dataclasses import dataclass
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 import warnings
 import logging
 
 from .kalman import run_kf
-from ..utils.data_utils import rem_nans_spline
+from .config import DFMConfig
+
+# Import utility function (moved inline to avoid external dependency)
+try:
+    from scipy.interpolate import CubicSpline
+    from scipy.signal import lfilter
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+
+def _rem_nans_spline(X: np.ndarray, method: int = 2, k: int = 3):
+    """Treat NaNs in dataset for DFM estimation (inline utility)."""
+    from scipy.interpolate import CubicSpline
+    from scipy.signal import lfilter
+    
+    T, N = X.shape
+    indNaN = np.isnan(X)
+    
+    def _remove_leading_trailing(threshold: float):
+        rem = np.sum(indNaN, axis=1) > (N * threshold if threshold < 1 else threshold)
+        nan_lead = np.cumsum(rem) == np.arange(1, T + 1)
+        nan_end = np.cumsum(rem[::-1]) == np.arange(1, T + 1)[::-1]
+        return ~(nan_lead | nan_end)
+    
+    def _fill_missing(x: np.ndarray, mask: np.ndarray):
+        non_nan = np.where(~mask)[0]
+        if len(non_nan) < 2:
+            return x
+        spline = CubicSpline(non_nan, x[non_nan], extrapolate=True)
+        x_filled = spline(np.arange(len(x)))
+        # Moving average filter
+        b = np.ones(k) / k
+        x_filled = lfilter(b, 1, x_filled)
+        return x_filled
+    
+    if method == 2:
+        keep = _remove_leading_trailing(0.5)
+        X_clean = X[keep, :].copy()
+        indNaN_clean = indNaN[keep, :]
+        
+        for i in range(N):
+            if np.any(indNaN_clean[:, i]):
+                X_clean[:, i] = _fill_missing(X_clean[:, i], indNaN_clean[:, i])
+        
+        return X_clean, keep
+    else:
+        return X, np.ones(T, dtype=bool)
 
 # Set up logger for fallback tracking (optional - only if logging is enabled)
 _logger = logging.getLogger(__name__)
@@ -38,7 +84,7 @@ def _validate_dfm_inputs(X: np.ndarray, config, threshold: float) -> None:
     ----------
     X : np.ndarray
         Data matrix (T x N)
-    config : ModelConfig
+    config : DFMConfig
         Model configuration
     threshold : float
         EM convergence threshold
@@ -440,10 +486,11 @@ def init_conditions(x: np.ndarray, r: np.ndarray, p: int, blocks: np.ndarray,
       
     Examples
     --------
-    >>> from src.nowcasting import load_config, load_data
-    >>> config = load_config('config/model/kr_dfm_v1.yaml')
-    >>> from adapters.adapter_database import load_data_from_db
-    >>> X, Time, Z = load_data_from_db(config=config, vintage_date='2024-01-01')
+    >>> from dfm_python import load_config, load_data, dfm
+    >>> # Load configuration from YAML or CSV
+    >>> config = load_config('config.yaml')
+    >>> # Load data from CSV file
+    >>> X, Time, Z = load_data('data.csv', config)
     >>> # Standardize data
     >>> x = (X - np.nanmean(X, axis=0)) / np.nanstd(X, axis=0)
     >>> # Set up parameters
@@ -468,7 +515,7 @@ def init_conditions(x: np.ndarray, r: np.ndarray, p: int, blocks: np.ndarray,
     n_b = blocks.shape[1]  # Number of blocks
     
     # Spline without NaNs
-    xBal, indNaN = rem_nans_spline(x, method=opt_nan['method'], k=opt_nan['k'])
+    xBal, indNaN = _rem_nans_spline(x, method=opt_nan['method'], k=opt_nan['k'])
     
     T, N = xBal.shape
     nM = N - nQ  # Number of monthly series
@@ -1931,7 +1978,7 @@ def em_step(y: np.ndarray, A: np.ndarray, C: np.ndarray, Q: np.ndarray,
     return C_new, R_new, A_new, Q_new, Z_0, V_0_new, loglik
 
 
-def dfm(X: np.ndarray, config, threshold: float = 1e-5, max_iter: Optional[int] = None) -> DFMResult:
+def dfm(X: np.ndarray, config: DFMConfig, threshold: Optional[float] = None, max_iter: Optional[int] = None) -> DFMResult:
     """Estimate dynamic factor model using EM algorithm.
     
     This is the main function for estimating a Dynamic Factor Model (DFM). It implements
@@ -1961,19 +2008,20 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5, max_iter: Optional[int] 
         Data matrix (T x N), where T is time periods and N is number of series.
         Data can contain missing values (NaN), which are handled via spline interpolation.
         Missing values are allowed but excessive missing data (>50%) will trigger warnings.
-    config : ModelConfig
-        Model configuration object containing:
-        - Blocks: (N x n_blocks) block loading structure
-        - Frequency: List of frequencies ('m' for monthly, 'q' for quarterly)
-        - SeriesID, SeriesName, etc.: Series metadata
+    config : DFMConfig
+        Unified DFM configuration object containing:
+        - Model structure: Blocks (N x n_blocks), Frequency (per series), 
+          Transformation (per series), factors_per_block
+        - Estimation parameters: ar_lag, threshold, max_iter, nan_method, nan_k
         Typically obtained from `load_config()`.
     threshold : float, optional
-        EM convergence threshold (default 1e-5). Convergence is declared when:
+        EM convergence threshold. If None, uses config.threshold (default: 1e-5).
+        Convergence is declared when:
         |loglik_current - loglik_previous| / avg(|loglik_current|, |loglik_previous|) < threshold.
         Smaller values require more iterations but provide more precise convergence.
         Typical range: 1e-5 to 1e-3.
     max_iter : int, optional
-        Maximum EM iterations (default 5000). If None, uses 5000.
+        Maximum EM iterations. If None, uses config.max_iter (default: 5000).
         For testing, use smaller values like 10-20.
         
     Returns
@@ -2005,14 +2053,12 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5, max_iter: Optional[int] 
     
     Examples
     --------
-    >>> from src.nowcasting import load_config, load_data, dfm
+    >>> from dfm_python import load_config, load_data, dfm
     >>> import pandas as pd
     >>> # Load configuration (CSV or YAML both work)
-    >>> config = load_config('src/spec/001_initial_spec.csv')  # or 'config/model/kr_dfm_v1.yaml'
-    >>> # Load data from database
-    >>> from adapters.adapter_database import load_data_from_db
-    >>> X, Time, Z = load_data_from_db(config=config, vintage_date='2016-06-29',
-    ...                                 sample_start=pd.Timestamp('2000-01-01'))
+    >>> config = load_config('config.yaml')  # or 'config.csv'
+    >>> # Load data from CSV file
+    >>> X, Time, Z = load_data('data.csv', config, sample_start=pd.Timestamp('2000-01-01'))
     >>> # Estimate DFM
     >>> Res = dfm(X, config, threshold=1e-4)
     >>> # Access results
@@ -2042,8 +2088,16 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5, max_iter: Optional[int] 
     # Store model parameters
     blocks = config.Blocks
     nQ = np.sum(np.array(config.Frequency) == 'q')  # Number of quarterly series
-    p = 1  # Number of lags in AR of factor
-    r = np.ones(blocks.shape[1])  # Number of common factors for each block
+    
+    # Get configurable parameters from unified DFMConfig
+    p = config.ar_lag
+    r = (np.array(config.factors_per_block) 
+         if config.factors_per_block is not None 
+         else np.ones(blocks.shape[1]))
+    nan_method = config.nan_method
+    nan_k = config.nan_k
+    threshold = threshold if threshold is not None else config.threshold
+    max_iter = max_iter if max_iter is not None else config.max_iter
     
     # Display blocks (Table 3: Block Loading Structure)
     try:
@@ -2074,17 +2128,13 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5, max_iter: Optional[int] 
     ])
     q = np.zeros(4)
     
-    # Use provided max_iter or default to 5000
-    if max_iter is None:
-        max_iter = 5000
-    
     # Prepare data
     Mx = np.nanmean(X, axis=0)
     Wx = np.nanstd(X, axis=0)
     xNaN = (X - Mx) / Wx  # Standardize series
     
-    # Initial conditions
-    optNaN = {'method': 2, 'k': 3}
+    # Initial conditions - use configurable nan_method and nan_k
+    optNaN = {'method': nan_method, 'k': nan_k}
     i_idio = np.concatenate([np.ones(N - nQ), np.zeros(nQ)])
     
     A, C, Q, R, Z_0, V_0 = init_conditions(
@@ -2106,7 +2156,7 @@ def dfm(X: np.ndarray, config, threshold: float = 1e-5, max_iter: Optional[int] 
     
     # Remove leading and ending NaNs for estimation
     optNaN['method'] = 3
-    xNaN_est, _ = rem_nans_spline(xNaN, method=optNaN['method'], k=optNaN['k'])
+    xNaN_est, _ = _rem_nans_spline(xNaN, method=optNaN['method'], k=optNaN['k'])
     y_est = xNaN_est.T  # n x T
     
     # EM loop

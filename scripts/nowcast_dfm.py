@@ -22,7 +22,7 @@ import numpy as np
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.nowcasting import load_data, dfm, update_nowcast
+from dfm_python import load_data, dfm, update_nowcast
 from adapters.adapter_database import load_data_from_db, save_nowcast_to_db
 from scripts.utils import load_model_config_from_hydra, get_db_client
 
@@ -34,7 +34,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-@hydra.main(version_base=None, config_path="../config", config_name="defaults")
+@hydra.main(version_base=None, config_path="../config", config_name="default")
 def main(cfg: DictConfig) -> None:
     """Run nowcasting with Hydra configuration (MATLAB-compatible).
     
@@ -59,14 +59,34 @@ def main(cfg: DictConfig) -> None:
         logger.info(f"GitHub Actions Run ID: {github_run_id}")
     
     try:
-        # Load model configuration - try DB first, then CSV/YAML
-        # Researchers update spec in DB or src/spec/001_initial_spec.csv
-        use_db_for_config = cfg.get('model', {}).get('use_db', True)
-        model_cfg = load_model_config_from_hydra(
-            cfg.model,
-            use_db=use_db_for_config,
-            script_path=Path(__file__)
-        )
+        # Load model configuration from Hydra YAML structure
+        # New structure: cfg.series.series (dict) + cfg.model.blocks (dict)
+        try:
+            from dfm_python.config import DFMConfig
+            from omegaconf import OmegaConf
+            
+            # Combine series and model configs
+            series_dict = OmegaConf.to_container(cfg.series, resolve=True) if hasattr(cfg, 'series') else {}
+            model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
+            
+            # Merge: series from cfg.series.series, blocks from cfg.model.blocks
+            combined_dict = {
+                'series': series_dict.get('series', {}),
+                'blocks': model_dict.get('blocks', {}),
+                'block_names': model_dict.get('block_names', None),
+                'factors_per_block': model_dict.get('factors_per_block', None)
+            }
+            
+            # Try loading from combined structure
+            model_cfg = DFMConfig.from_dict(combined_dict)
+        except Exception as e:
+            # Fallback to original loader (for CSV/DB)
+            use_db_for_config = cfg.get('model', {}).get('use_db', True)
+            model_cfg = load_model_config_from_hydra(
+                cfg.model,
+                use_db=use_db_for_config,
+                script_path=Path(__file__)
+            )
         
         # Load data and DFM configs from Hydra
         data_cfg_dict = OmegaConf.to_container(cfg.data, resolve=True)
@@ -188,15 +208,13 @@ def main(cfg: DictConfig) -> None:
             logger.info('Estimating DFM model...')
             
             if use_database:
-                data_df, Time, Z_df, _ = load_data_from_db(
+                X, Time, Z = load_data_from_db(
                     vintage_date=vintage_new,
                     config=model_cfg,
                     config_id=config_id,
                     strict_mode=strict_mode
                 )
-                # Convert DataFrame to numpy array for DFM
-                X = data_df.values
-                Z = Z_df.values if Z_df is not None else None
+                # X and Z are already numpy arrays, no conversion needed
             else:
                 data_file = base_dir / 'data' / data_cfg_dict.get('country', 'KR') / f'{vintage_new}.csv'
                 if not data_file.exists():
@@ -276,15 +294,14 @@ def main(cfg: DictConfig) -> None:
         
         if use_database:
             # Load old vintage
-            data_df_old, Time_old, _, _ = load_data_from_db(
+            X_old, Time_old, _ = load_data_from_db(
                 vintage_date=vintage_old,
                 config=model_cfg,
                 config_id=config_id,
                 strict_mode=strict_mode
             )
-            X_old = data_df_old.values
             # Load new vintage
-            data_df_new, Time, _, _ = load_data_from_db(
+            X_new, Time, _ = load_data_from_db(
                 vintage_date=vintage_new,
                 config=model_cfg,
                 config_id=config_id,

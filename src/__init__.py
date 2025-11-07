@@ -1,45 +1,17 @@
-"""FRBNY Nowcasting Framework - Python Implementation
+"""Application-specific utilities and wrappers.
 
-This package implements the Federal Reserve Bank of New York's nowcasting framework
-for forecasting macroeconomic variables using dynamic factor models with mixed-frequency data.
+Note: The core DFM module is now available as the 'dfm-python' package on PyPI.
+Import it directly: from dfm_python import DFMConfig, dfm, load_config
+
+This src/ package now only contains application-specific utilities.
 """
 
 __version__ = "0.1.0"
 
-# Import main modules for easy access
-from .nowcasting import (
-    ModelConfig,
-    DataConfig,
-    DFMConfig,
-    AppConfig,
-    load_config,
-    load_config_from_yaml,
-    load_config_from_csv,
-    load_data,
-    dfm,
-    DFMResult,
-    update_nowcast,
-    # Deprecated aliases
-    ModelSpec,
-    load_spec,
-)
+# Only export utilities - DFM module is now in dfm_python package
 from .utils import summarize
 
 __all__ = [
-    'ModelConfig',
-    'DataConfig',
-    'DFMConfig',
-    'AppConfig',
-    'load_config',
-    'load_config_from_yaml',
-    'load_config_from_csv',
-    'load_data',
-    'dfm',
-    'DFMResult',
-    'update_nowcast',
     'summarize',
-    # Deprecated aliases
-    'ModelSpec',
-    'load_spec',
 ]
 

@@ -17,12 +17,12 @@ import numpy as np
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.nowcasting import load_data, dfm
+from dfm_python import load_data, dfm
 from src.utils import summarize
 from scripts.utils import load_model_config_from_hydra, get_db_client
 
 
-@hydra.main(version_base=None, config_path="../config", config_name="defaults")
+@hydra.main(version_base=None, config_path="../config", config_name="default")
 def main(cfg: DictConfig) -> None:
     """Run DFM estimation with Hydra configuration.
     
@@ -33,13 +33,41 @@ def main(cfg: DictConfig) -> None:
         python train_dfm.py data.vintage=2016-12-23  # Use different vintage
         python train_dfm.py --multirun dfm.threshold=1e-5,1e-4,1e-3  # Sweep
     """
-    # Load model configuration - prefer CSV if config_path provided, otherwise use YAML
-    # Researchers update src/spec/001_initial_spec.csv for model specifications
-    model_cfg = load_model_config_from_hydra(cfg.model, script_path=Path(__file__))
+    # Load model configuration from Hydra YAML structure
+    # New structure: cfg.series.series (dict) + cfg.model.blocks (dict)
+    # Combine them for DFMConfig.from_dict()
+    try:
+        from dfm_python.config import DFMConfig
+        from omegaconf import OmegaConf
+        
+        # Combine series and model configs
+        series_dict = OmegaConf.to_container(cfg.series, resolve=True) if hasattr(cfg, 'series') else {}
+        model_dict = OmegaConf.to_container(cfg.model, resolve=True) if hasattr(cfg, 'model') else {}
+        
+        # Merge: series from cfg.series.series, blocks from cfg.model.blocks
+        combined_dict = {
+            'series': series_dict.get('series', {}),
+            'blocks': model_dict.get('blocks', {}),
+            'block_names': model_dict.get('block_names', None),
+            'factors_per_block': model_dict.get('factors_per_block', None)
+        }
+        
+        # Try loading from combined structure
+        model_cfg = DFMConfig.from_dict(combined_dict)
+    except Exception as e:
+        # Fallback to original loader (for CSV/DB)
+        model_cfg = load_model_config_from_hydra(cfg.model, script_path=Path(__file__))
     
-    # Load data and DFM configs (use OmegaConf directly, no Pydantic classes needed)
-    data_cfg_dict = OmegaConf.to_container(cfg.data, resolve=True)
+    # Merge DFM estimation parameters from Hydra into model config
     dfm_cfg_dict = OmegaConf.to_container(cfg.dfm, resolve=True)
+    if dfm_cfg_dict:
+        # Update model_cfg with estimation parameters from Hydra
+        for key in ['ar_lag', 'threshold', 'max_iter', 'nan_method', 'nan_k', 'factors_per_block']:
+            if key in dfm_cfg_dict and dfm_cfg_dict[key] is not None:
+                setattr(model_cfg, key, dfm_cfg_dict[key])
+    
+    # Load data config (use OmegaConf directly, no Pydantic classes needed)
+    data_cfg_dict = OmegaConf.to_container(cfg.data, resolve=True)
     
     print(f"\n{'='*70}")
     print(f"DFM Estimation - Experiment: {cfg.get('experiment_name', 'default')}")
@@ -56,6 +84,14 @@ def main(cfg: DictConfig) -> None:
     threshold = dfm_cfg_dict.get('threshold', 1e-5)
     max_iter = dfm_cfg_dict.get('max_iter', 5000)
     
+    # Initialize database client (reused throughout script if needed)
+    db_client = None
+    if use_database:
+        try:
+            db_client = get_db_client()
+        except Exception:
+            pass  # Will handle errors in specific operations
+    
     # Load data
     if use_database:
         from adapters.adapter_database import load_data_from_db
@@ -65,8 +101,9 @@ def main(cfg: DictConfig) -> None:
         if vintage is None:
             try:
                 from database import get_latest_vintage_id
-                client = get_db_client()
-                latest_vintage_id = get_latest_vintage_id(client=client)
+                if db_client is None:
+                    db_client = get_db_client()
+                latest_vintage_id = get_latest_vintage_id(client=db_client)
                 if latest_vintage_id:
                     print(f"   Using latest vintage_id: {latest_vintage_id}")
                     vintage = latest_vintage_id  # Use vintage_id instead
@@ -85,8 +122,9 @@ def main(cfg: DictConfig) -> None:
                 # Check if blocks table has data for this config_name
                 try:
                     from database.helpers import get_series_ids_for_config
-                    client = get_db_client()
-                    series_ids = get_series_ids_for_config(config_name, client=client)
+                    if db_client is None:
+                        db_client = get_db_client()
+                    series_ids = get_series_ids_for_config(config_name, client=db_client)
                     if not series_ids:
                         # No blocks data, don't use config_name
                         config_name = None
@@ -94,7 +132,7 @@ def main(cfg: DictConfig) -> None:
                     # If check fails, don't use config_name
                     config_name = None
         
-        data_df, Time, Z_df, series_metadata = load_data_from_db(
+        X, Time, Z = load_data_from_db(
             vintage_id=vintage if isinstance(vintage, int) else None,
             vintage_date=vintage if not isinstance(vintage, int) else None,
             config=model_cfg,
@@ -103,9 +141,7 @@ def main(cfg: DictConfig) -> None:
             sample_start=sample_start_dt,
             strict_mode=strict_mode
         )
-        # Convert DataFrame to numpy array for DFM
-        X = data_df.values
-        Z = Z_df.values if Z_df is not None else None
+        # X and Z are already numpy arrays, no conversion needed
     else:
         # File-based loading
         if data_path:
@@ -124,7 +160,9 @@ def main(cfg: DictConfig) -> None:
         X, Time, Z = load_data(data_file, model_cfg, sample_start=sample_start_dt)
     
     # Summarize data
-    summarize(X, Time, model_cfg, vintage)
+    # Convert vintage to string if it's an int (vintage_id)
+    vintage_str = str(vintage) if vintage is not None else None
+    summarize(X, Time, model_cfg, vintage_str)
     
     # Pre-flight data validation
     print(f"\n{'='*70}")
@@ -139,8 +177,10 @@ def main(cfg: DictConfig) -> None:
     
     # Check minimum observations per series
     min_obs = 20
+    # Ensure we don't exceed X dimensions (in case of missing series)
+    n_series = min(len(model_cfg.SeriesID), X.shape[1])
     insufficient = [(model_cfg.SeriesID[i], np.sum(np.isfinite(X[:, i]))) 
-                     for i in range(len(model_cfg.SeriesID))
+                     for i in range(n_series)
                      if np.sum(np.isfinite(X[:, i])) < min_obs]
     
     if insufficient:
@@ -168,7 +208,8 @@ def main(cfg: DictConfig) -> None:
     
     print(f"{'='*70}\n")
     
-    # Run DFM estimation
+    # Run DFM estimation - config already contains all parameters (merged ModelConfig + DFMConfig)
+    # Override threshold and max_iter if provided via Hydra command line
     Res = dfm(X, model_cfg, threshold=threshold, max_iter=max_iter)
     
     # Save results to pickle file (legacy support)
@@ -198,10 +239,13 @@ def main(cfg: DictConfig) -> None:
             if isinstance(vintage, int):
                 vintage_id = vintage
             else:
-                client = get_db_client()
-                vintage_info = get_vintage(vintage_id=vintage if isinstance(vintage, int) else None,
-                                         vintage_date=vintage if not isinstance(vintage, int) else None,
-                                         client=client)
+                if db_client is None:
+                    db_client = get_db_client()
+                vintage_info = get_vintage(
+                    vintage_id=None,
+                    vintage_date=vintage,
+                    client=db_client
+                )
                 if vintage_info:
                     vintage_id = vintage_info['vintage_id']
             
@@ -212,7 +256,7 @@ def main(cfg: DictConfig) -> None:
                     config=model_cfg,
                     vintage_id=vintage_id,
                     Time=Time,
-                    client=get_db_client()
+                    client=db_client if db_client else get_db_client()
                 )
                 print(f'✅ Saved factors, factor_values, and factor_loadings to database for model_id={model_id}')
             else:
@@ -231,9 +275,10 @@ def main(cfg: DictConfig) -> None:
             # If vintage is an ID, get the date
             try:
                 from database import get_vintage
-                client = get_db_client()
-                vintage_info = get_vintage(vintage_id=vintage, client=client)
-                vintage_str = vintage_info['vintage_date'] if vintage_info else str(vintage)
+                if db_client is None:
+                    db_client = get_db_client()
+                vintage_info = get_vintage(vintage_id=vintage, client=db_client)
+                vintage_str = vintage_info.get('vintage_date', str(vintage)) if vintage_info else str(vintage)
             except Exception:
                 vintage_str = str(vintage)
         else:
@@ -265,7 +310,7 @@ def main(cfg: DictConfig) -> None:
             model_weights=model_weights,
             filename=model_filename,
             bucket_name="model-weights",
-            client=get_db_client()
+            client=db_client if db_client else get_db_client()
         )
         
         print(f'Model weights uploaded to Supabase storage: {storage_url}')

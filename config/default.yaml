@@ -1,0 +1,33 @@
+# Main Hydra configuration
+# References series from config/series/default.yaml
+
+defaults:
+  - series: default
+  - _self_
+
+# DFM estimation parameters
+dfm:
+  threshold: 1e-5
+  max_iter: 5000
+  nan_method: 2
+  nan_k: 3
+  ar_lag: 1  # AR lag for all blocks (model-wise)
+
+# Model structure: block definitions
+model:
+  # Block definitions with their factor dimensions
+  blocks:
+    Global:
+      factors: 3
+    Investment:
+      factors: 2
+    Consumption:
+      factors: 2
+  
+  # Optional: factors_per_block as list (auto-generated from blocks if null)
+  factors_per_block: null  # Will be [1, 1, 1] from blocks above
+
+# Experiment metadata
+experiment_name: default
+output_dir: outputs
+

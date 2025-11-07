@@ -318,9 +318,8 @@ def news_dfm(X_old: np.ndarray, X_new: np.ndarray, Res, t_fcst: int,
     return y_old, y_new, singlenews, actual, forecast, weight, t_miss, v_miss, innov
 
 
-# Database saving function moved to adapters/adapter_database.py
+# Database saving is application-specific and should be implemented in adapters.
 # This keeps the DFM module generic and database-agnostic.
-# Use: from adapters.adapter_database import save_nowcast_to_db
 def update_nowcast(X_old: np.ndarray, X_new: np.ndarray, Time: pd.DatetimeIndex,
                   config, Res, series: str, period: str,
                   vintage_old: str, vintage_new: str,
@@ -336,7 +335,7 @@ def update_nowcast(X_old: np.ndarray, X_new: np.ndarray, Time: pd.DatetimeIndex,
         New vintage data (T_new x N)
     Time : pd.DatetimeIndex
         Time index
-    config : ModelConfig
+    config : DFMConfig
         Model configuration
     Res : DFMResult or dict
         DFM estimation results. If dict, must contain 'Res' and optionally 'Spec'.
@@ -354,7 +353,7 @@ def update_nowcast(X_old: np.ndarray, X_new: np.ndarray, Time: pd.DatetimeIndex,
     save_callback : Callable, optional
         Optional callback function to save nowcast results.
         If provided, will be called with nowcast parameters.
-        Example: from adapters.adapter_database import save_nowcast_to_db
+        Example: Implement save_callback in your application adapter
                  save_callback=lambda **kwargs: save_nowcast_to_db(**kwargs)
         
     Notes:
