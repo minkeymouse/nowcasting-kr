@@ -172,13 +172,14 @@ BEGIN
     -- Get model_ids to keep (latest N by created_at)
     WITH latest_models AS (
         SELECT DISTINCT model_id
-        FROM factors
+        FROM public.factors
+        GROUP BY model_id
         ORDER BY MAX(created_at) DESC
         LIMIT keep_latest_models
     ),
     all_models AS (
         SELECT DISTINCT model_id
-        FROM factors
+        FROM public.factors
     )
     SELECT array_agg(am.model_id)
     INTO model_ids_to_delete
@@ -194,22 +195,22 @@ BEGIN
     -- Get factor_ids to delete
     SELECT array_agg(id)
     INTO factor_ids_to_delete
-    FROM factors
+    FROM public.factors
     WHERE model_id = ANY(model_ids_to_delete);
     
     -- Count factor_values and factor_loadings that will be deleted
     IF factor_ids_to_delete IS NOT NULL AND array_length(factor_ids_to_delete, 1) > 0 THEN
         SELECT COUNT(*) INTO deleted_factor_values_count
-        FROM factor_values
+        FROM public.factor_values
         WHERE factor_id = ANY(factor_ids_to_delete);
         
         SELECT COUNT(*) INTO deleted_factor_loadings_count
-        FROM factor_loadings
+        FROM public.factor_loadings
         WHERE factor_id = ANY(factor_ids_to_delete);
     END IF;
     
     -- Delete factors (CASCADE will delete factor_values and factor_loadings)
-    DELETE FROM factors
+    DELETE FROM public.factors
     WHERE model_id = ANY(model_ids_to_delete);
     
     GET DIAGNOSTICS deleted_factors_count = ROW_COUNT;
@@ -517,13 +518,14 @@ BEGIN
     -- Get model_ids to keep (latest N by created_at)
     WITH latest_models AS (
         SELECT DISTINCT model_id
-        FROM factors
+        FROM public.factors
+        GROUP BY model_id
         ORDER BY MAX(created_at) DESC
         LIMIT keep_latest_models
     ),
     all_models AS (
         SELECT DISTINCT model_id
-        FROM factors
+        FROM public.factors
     )
     SELECT array_agg(am.model_id)
     INTO model_ids_to_delete
@@ -536,7 +538,7 @@ BEGIN
     END IF;
     
     -- Delete old dfm_results
-    DELETE FROM dfm_results
+    DELETE FROM public.dfm_results
     WHERE model_id = ANY(model_ids_to_delete);
     
     GET DIAGNOSTICS deleted_count = ROW_COUNT;
