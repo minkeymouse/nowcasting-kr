@@ -138,8 +138,8 @@ JOIN data_vintages dv ON dr.vintage_id = dv.vintage_id
 WHERE dr.model_id = (
     SELECT model_id
     FROM factors
-    ORDER BY MAX(created_at) DESC
     GROUP BY model_id
+    ORDER BY MAX(created_at) DESC
     LIMIT 1
 )
 ORDER BY dr.created_at DESC
@@ -279,8 +279,8 @@ FROM factors f
 WHERE f.model_id = (
     SELECT model_id
     FROM factors
-    ORDER BY MAX(created_at) DESC
     GROUP BY model_id
+    ORDER BY MAX(created_at) DESC
     LIMIT 1
 )
 ORDER BY f.factor_index;
@@ -312,8 +312,8 @@ JOIN factors f ON fv.factor_id = f.id
 WHERE f.model_id = (
     SELECT model_id
     FROM factors
-    ORDER BY MAX(created_at) DESC
     GROUP BY model_id
+    ORDER BY MAX(created_at) DESC
     LIMIT 1
 )
 ORDER BY f.factor_index, fv.date;
@@ -367,8 +367,8 @@ JOIN series s ON fl.series_id = s.series_id
 WHERE f.model_id = (
     SELECT model_id
     FROM factors
-    ORDER BY MAX(created_at) DESC
     GROUP BY model_id
+    ORDER BY MAX(created_at) DESC
     LIMIT 1
 )
 ORDER BY f.factor_index, s.series_name;
