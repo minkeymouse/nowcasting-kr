@@ -1300,25 +1300,115 @@ def cleanup_old_models(
         # Sort by created_at (newest first), then by factor_id as tiebreaker
         model_list.sort(key=lambda x: (x[1], x[2]), reverse=True)
         
-        # Special case: if all factors have the same model_id, we need to check if this is
-        # actually multiple training runs with the same model_id, or just one model
+        # Special case: if all factors have the same model_id
         unique_model_ids = set(model_id for model_id, _, _ in model_list)
         if len(unique_model_ids) == 1:
             # All factors belong to the same model_id
-            # This could mean:
-            # 1. Only one model has been trained (keep all)
-            # 2. Multiple training runs but same model_id (should keep all factors for that model)
-            # Since keep_latest refers to models, not factors, we should keep all factors
-            # if there's only one model_id
-            logger.info(f"All factors belong to the same model_id {list(unique_model_ids)[0]}. Keeping all factors (only one model).")
+            # Even though it's one model, we should still cleanup old factors
+            # based on created_at to prevent accumulation from multiple training runs
+            model_id = list(unique_model_ids)[0]
+            logger.info(f"All factors belong to the same model_id {model_id}. Cleaning up old factors by created_at.")
+            
+            # Get all factors for this model_id, sorted by created_at (newest first)
+            all_factors = db_client.table('factors').select('id, model_id, created_at').eq('model_id', model_id).order('created_at', desc=True).execute()
+            
+            if not all_factors.data:
+                return {
+                    'total_models': 1,
+                    'kept_models': [model_id],
+                    'deleted_models': [],
+                    'deleted_count': 0,
+                    'deleted_factors': 0,
+                    'deleted_factor_values': 0,
+                    'deleted_factor_loadings': 0
+                }
+            
+            # Group factors by created_at (same timestamp = same training run)
+            # Keep only the latest training run's factors
+            from collections import defaultdict
+            factors_by_time = defaultdict(list)
+            for factor in all_factors.data:
+                created_at_raw = factor.get('created_at')
+                # Use created_at as key, or factor id if created_at is missing
+                if created_at_raw:
+                    try:
+                        if isinstance(created_at_raw, datetime):
+                            time_key = created_at_raw
+                        elif isinstance(created_at_raw, str):
+                            if 'T' in created_at_raw:
+                                if created_at_raw.endswith('Z'):
+                                    time_key = datetime.fromisoformat(created_at_raw.replace('Z', '+00:00'))
+                                else:
+                                    time_key = datetime.fromisoformat(created_at_raw)
+                            else:
+                                time_key = datetime.fromisoformat(created_at_raw)
+                        else:
+                            time_key = pd.to_datetime(created_at_raw).to_pydatetime()
+                    except Exception:
+                        time_key = factor.get('id', 0)  # Fallback to id
+                else:
+                    time_key = factor.get('id', 0)  # Fallback to id
+                
+                factors_by_time[time_key].append(factor)
+            
+            # Sort by time (newest first)
+            sorted_times = sorted(factors_by_time.keys(), reverse=True)
+            
+            # Keep only the latest training run (factors with latest created_at)
+            if len(sorted_times) <= 1:
+                # Only one training run, keep all
+                logger.debug(f"Only one training run found for model_id {model_id}, keeping all factors")
+                return {
+                    'total_models': 1,
+                    'kept_models': [model_id],
+                    'deleted_models': [],
+                    'deleted_count': 0,
+                    'deleted_factors': 0,
+                    'deleted_factor_values': 0,
+                    'deleted_factor_loadings': 0
+                }
+            
+            # Keep latest training run, delete others
+            factors_to_keep = factors_by_time[sorted_times[0]]
+            factors_to_delete = []
+            for time_key in sorted_times[1:]:
+                factors_to_delete.extend(factors_by_time[time_key])
+            
+            kept_factor_ids = [f['id'] for f in factors_to_keep]
+            deleted_factor_ids = [f['id'] for f in factors_to_delete]
+            
+            # Count factor_values and factor_loadings that will be deleted
+            factor_values_count = 0
+            factor_loadings_count = 0
+            if deleted_factor_ids:
+                fv_result = db_client.table('factor_values').select('id', count='exact').in_('factor_id', deleted_factor_ids).execute()
+                factor_values_count = fv_result.count if hasattr(fv_result, 'count') else 0
+                
+                fl_result = db_client.table('factor_loadings').select('factor_id, series_id', count='exact').in_('factor_id', deleted_factor_ids).execute()
+                factor_loadings_count = fl_result.count if hasattr(fl_result, 'count') else 0
+            
+            # Delete old factors (CASCADE will handle factor_values and factor_loadings)
+            deleted_count = 0
+            for factor_id in deleted_factor_ids:
+                try:
+                    db_client.table('factors').delete().eq('id', factor_id).execute()
+                    deleted_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to delete factor id={factor_id}: {e}")
+            
+            logger.info(
+                f"Cleaned up old factors for model_id {model_id}: kept {len(kept_factor_ids)} latest factors, "
+                f"deleted {deleted_count} old factors (~{factor_values_count} factor_values, ~{factor_loadings_count} factor_loadings)"
+            )
+            
             return {
                 'total_models': 1,
-                'kept_models': list(unique_model_ids),
+                'kept_models': [model_id],
                 'deleted_models': [],
-                'deleted_count': 0,
-                'deleted_factors': 0,
-                'deleted_factor_values': 0,
-                'deleted_factor_loadings': 0
+                'deleted_count': deleted_count,
+                'deleted_factors': deleted_count,
+                'deleted_factor_values': factor_values_count,
+                'deleted_factor_loadings': factor_loadings_count
             }
         
         # Normal case: multiple model_ids - use model_id-based cleanup
