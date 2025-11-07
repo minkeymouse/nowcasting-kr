@@ -54,8 +54,11 @@ DROP VIEW IF EXISTS latest_dfm_results_view CASCADE;
 -- PART 1: Cleanup Functions
 -- ============================================================================
 
--- Function to cleanup old factors (keeps only latest N models)
-CREATE OR REPLACE FUNCTION cleanup_old_factors(keep_latest_models INTEGER DEFAULT 3)
+-- Function to cleanup old factors (keeps only latest training run per model)
+-- This handles both cases: multiple model_ids and single model_id with multiple training runs
+-- Strategy: For each model_id, keep only the latest training run (by created_at)
+-- If multiple model_ids exist, keep latest N model_ids; if single model_id, keep only its latest run
+CREATE OR REPLACE FUNCTION cleanup_old_factors(keep_latest_models INTEGER DEFAULT 1)
 RETURNS TABLE(
     deleted_factors INTEGER,
     deleted_factor_values BIGINT,
@@ -66,55 +69,82 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-    model_ids_to_delete INTEGER[];
+    factor_ids_to_keep INTEGER[];
     factor_ids_to_delete INTEGER[];
     deleted_factors_count INTEGER := 0;
     deleted_factor_values_count BIGINT := 0;
     deleted_factor_loadings_count BIGINT := 0;
+    distinct_model_count INTEGER;
 BEGIN
-    -- Get model_ids to keep (latest N by created_at)
-    WITH latest_models AS (
-        SELECT model_id, MAX(created_at) as max_created_at
-        FROM public.factors
-        GROUP BY model_id
-        ORDER BY max_created_at DESC
-        LIMIT keep_latest_models
-    ),
-    all_models AS (
-        SELECT DISTINCT model_id
-        FROM public.factors
-    )
-    SELECT array_agg(am.model_id)
-    INTO model_ids_to_delete
-    FROM all_models am
-    WHERE am.model_id NOT IN (SELECT model_id FROM latest_models);
+    -- Count distinct model_ids
+    SELECT COUNT(DISTINCT model_id) INTO distinct_model_count FROM public.factors;
     
-    -- If no models to delete, return early
-    IF model_ids_to_delete IS NULL OR array_length(model_ids_to_delete, 1) = 0 THEN
+    IF distinct_model_count = 0 THEN
         RETURN QUERY SELECT 0, 0::BIGINT, 0::BIGINT;
         RETURN;
     END IF;
     
-    -- Get factor_ids to delete
+    -- Strategy: Keep only the latest training run (by created_at) for each model_id
+    -- Then, if multiple model_ids exist, keep only the latest N model_ids
+    
+    WITH model_training_runs AS (
+        -- Group factors by model_id and created_at (each group is a training run)
+        SELECT 
+            model_id,
+            created_at,
+            COUNT(*) as factor_count
+        FROM public.factors
+        GROUP BY model_id, created_at
+    ),
+    latest_runs_per_model AS (
+        -- For each model_id, get the latest training run (by created_at)
+        SELECT DISTINCT ON (model_id)
+            model_id,
+            created_at
+        FROM model_training_runs
+        ORDER BY model_id, created_at DESC
+    ),
+    model_ids_to_keep AS (
+        -- If multiple model_ids, keep latest N; if single model_id, keep it
+        SELECT model_id
+        FROM latest_runs_per_model
+        ORDER BY created_at DESC
+        LIMIT keep_latest_models
+    ),
+    factors_to_keep AS (
+        -- Get all factor_ids from the latest training runs of kept model_ids
+        SELECT f.id
+        FROM public.factors f
+        INNER JOIN latest_runs_per_model lr ON f.model_id = lr.model_id AND f.created_at = lr.created_at
+        INNER JOIN model_ids_to_keep mk ON f.model_id = mk.model_id
+    )
+    SELECT array_agg(id) INTO factor_ids_to_keep
+    FROM factors_to_keep;
+    
+    -- Get all factor_ids to delete (everything not in factor_ids_to_keep)
     SELECT array_agg(id)
     INTO factor_ids_to_delete
     FROM public.factors
-    WHERE model_id = ANY(model_ids_to_delete);
+    WHERE id != ALL(COALESCE(factor_ids_to_keep, ARRAY[]::INTEGER[]));
+    
+    -- If no factors to delete, return early
+    IF factor_ids_to_delete IS NULL OR array_length(factor_ids_to_delete, 1) = 0 THEN
+        RETURN QUERY SELECT 0, 0::BIGINT, 0::BIGINT;
+        RETURN;
+    END IF;
     
     -- Count factor_values and factor_loadings that will be deleted
-    IF factor_ids_to_delete IS NOT NULL AND array_length(factor_ids_to_delete, 1) > 0 THEN
-        SELECT COUNT(*) INTO deleted_factor_values_count
-        FROM public.factor_values
-        WHERE factor_id = ANY(factor_ids_to_delete);
-        
-        SELECT COUNT(*) INTO deleted_factor_loadings_count
-        FROM public.factor_loadings
-        WHERE factor_id = ANY(factor_ids_to_delete);
-    END IF;
+    SELECT COUNT(*) INTO deleted_factor_values_count
+    FROM public.factor_values
+    WHERE factor_id = ANY(factor_ids_to_delete);
+    
+    SELECT COUNT(*) INTO deleted_factor_loadings_count
+    FROM public.factor_loadings
+    WHERE factor_id = ANY(factor_ids_to_delete);
     
     -- Delete factors (CASCADE will delete factor_values and factor_loadings)
     DELETE FROM public.factors
-    WHERE model_id = ANY(model_ids_to_delete);
+    WHERE id = ANY(factor_ids_to_delete);
     
     GET DIAGNOSTICS deleted_factors_count = ROW_COUNT;
     
@@ -122,7 +152,7 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION cleanup_old_factors IS 'Cleanup old factors, keeping only latest N models. Returns counts of deleted records.';
+COMMENT ON FUNCTION cleanup_old_factors IS 'Cleanup old factors, keeping only latest training run per model. Handles both multiple model_ids and single model_id with multiple training runs. Returns counts of deleted records.';
 
 -- Function to cleanup old forecasts (keeps only latest N forecasts per series/date)
 CREATE OR REPLACE FUNCTION cleanup_old_forecasts(keep_latest_per_series INTEGER DEFAULT 1)
