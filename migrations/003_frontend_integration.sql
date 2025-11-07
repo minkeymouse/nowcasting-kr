@@ -441,106 +441,64 @@ WHERE s.is_active = TRUE;
 COMMENT ON VIEW series_with_blocks IS 'Active series with their block information from the most recent config (from 002, ensured current)';
 
 -- ============================================================================
--- PART 4: Initial Data Cleanup (Run once - AGGRESSIVE CLEANUP)
+-- PART 4: Initial Data Cleanup (Run once - COMPLETE TRUNCATE)
 -- ============================================================================
--- This section performs aggressive cleanup to reduce database size:
--- 1. Keep only the LATEST training run (keep_latest_models=1)
--- 2. Clean up old observations (keep only latest 2 vintages)
--- 3. Clean up old forecasts
+-- This section completely truncates all data tables to start fresh.
+-- Ingest job will repopulate observations, train job will repopulate factors.
+-- This is the cleanest approach when data has accumulated incorrectly.
 
--- Step 1: Cleanup old factors (keeps only LATEST training run)
--- This will delete old factors and cascade to factor_values and factor_loadings
+-- Step 1: Truncate all factor-related tables (CASCADE handles dependencies)
 DO $$
 DECLARE
-    cleanup_result RECORD;
-    before_count BIGINT;
-    after_count BIGINT;
+    factors_count BIGINT;
+    factor_values_count BIGINT;
+    factor_loadings_count BIGINT;
 BEGIN
-    -- Count before cleanup
-    SELECT COUNT(*) INTO before_count FROM public.factors;
-    SELECT COUNT(*) INTO before_count FROM public.factor_values;
+    -- Count before truncate
+    SELECT COUNT(*) INTO factors_count FROM public.factors;
+    SELECT COUNT(*) INTO factor_values_count FROM public.factor_values;
+    SELECT COUNT(*) INTO factor_loadings_count FROM public.factor_loadings;
     
-    -- Perform cleanup (keep only latest 1 training run)
-    SELECT * INTO cleanup_result FROM cleanup_old_factors(1);
+    -- Truncate in order (CASCADE will handle foreign keys)
+    TRUNCATE TABLE public.factors CASCADE;
     
-    -- Count after cleanup
-    SELECT COUNT(*) INTO after_count FROM public.factors;
-    SELECT COUNT(*) INTO after_count FROM public.factor_values;
-    
-    RAISE NOTICE 'Factor cleanup completed: Deleted % factors, % factor_values, % factor_loadings',
-        cleanup_result.deleted_factors,
-        cleanup_result.deleted_factor_values,
-        cleanup_result.deleted_factor_loadings;
-    RAISE NOTICE 'Factor values: Before % rows, After % rows (Deleted % rows)',
-        before_count, after_count, before_count - after_count;
+    RAISE NOTICE 'Truncated factors table: Deleted % factors, % factor_values, % factor_loadings',
+        factors_count, factor_values_count, factor_loadings_count;
 END;
 $$;
 
--- Step 2: Cleanup old observations (keep only latest 2 vintages)
--- This reduces observations table size significantly
+-- Step 2: Truncate observations table
 DO $$
 DECLARE
-    vintage_ids_to_keep INTEGER[];
-    vintage_ids_to_delete INTEGER[];
-    deleted_obs_count BIGINT := 0;
-    before_count BIGINT;
-    after_count BIGINT;
+    observations_count BIGINT;
 BEGIN
-    -- Count before cleanup
-    SELECT COUNT(*) INTO before_count FROM public.observations;
+    -- Count before truncate
+    SELECT COUNT(*) INTO observations_count FROM public.observations;
     
-    -- Get vintage_ids to keep (latest 2 vintages)
-    SELECT array_agg(vintage_id)
-    INTO vintage_ids_to_keep
-    FROM (
-        SELECT vintage_id
-        FROM public.data_vintages
-        ORDER BY vintage_date DESC
-        LIMIT 2
-    ) latest_vintages;
+    -- Truncate observations
+    TRUNCATE TABLE public.observations;
     
-    -- Get vintage_ids to delete
-    SELECT array_agg(vintage_id)
-    INTO vintage_ids_to_delete
-    FROM public.data_vintages
-    WHERE vintage_id != ALL(COALESCE(vintage_ids_to_keep, ARRAY[]::INTEGER[]));
-    
-    -- Delete old observations
-    IF vintage_ids_to_delete IS NOT NULL AND array_length(vintage_ids_to_delete, 1) > 0 THEN
-        DELETE FROM public.observations
-        WHERE vintage_id = ANY(vintage_ids_to_delete);
-        
-        GET DIAGNOSTICS deleted_obs_count = ROW_COUNT;
-    END IF;
-    
-    -- Count after cleanup
-    SELECT COUNT(*) INTO after_count FROM public.observations;
-    
-    RAISE NOTICE 'Observation cleanup completed: Deleted % observations (Before: %, After: %)',
-        deleted_obs_count, before_count, after_count;
+    RAISE NOTICE 'Truncated observations table: Deleted % observations', observations_count;
 END;
 $$;
 
--- Step 3: Cleanup old forecasts (keeps only latest 1 per series/date/run_type)
+-- Step 3: Truncate forecasts table
 DO $$
 DECLARE
-    deleted_count INTEGER;
-    before_count BIGINT;
-    after_count BIGINT;
+    forecasts_count BIGINT;
 BEGIN
-    -- Count before cleanup
-    SELECT COUNT(*) INTO before_count FROM public.forecasts;
+    -- Count before truncate
+    SELECT COUNT(*) INTO forecasts_count FROM public.forecasts;
     
-    -- Perform cleanup
-    SELECT cleanup_old_forecasts(1) INTO deleted_count;
+    -- Truncate forecasts
+    TRUNCATE TABLE public.forecasts;
     
-    -- Count after cleanup
-    SELECT COUNT(*) INTO after_count FROM public.forecasts;
-    
-    RAISE NOTICE 'Forecast cleanup completed: Deleted % old forecasts (Before: %, After: %)',
-        deleted_count, before_count, after_count;
+    RAISE NOTICE 'Truncated forecasts table: Deleted % forecasts', forecasts_count;
 END;
 $$;
+
+-- Note: We keep data_vintages, series, and blocks tables as they contain configuration data
+-- that should persist. Ingest job will create new vintages and observations.
 
 -- ============================================================================
 -- PART 5: Indexes for Performance
