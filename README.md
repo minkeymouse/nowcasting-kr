@@ -24,10 +24,12 @@ uv pip install -e .[all]
 
 ## Dependencies
 
-- **dfm-python**: Core DFM module (installed from PyPI)
+- **dfm-python**: Core DFM module (installed from PyPI as external dependency)
 - **supabase**: Database backend
 - **hydra-core**: Configuration management
 - **pandas, numpy, scipy**: Data processing and modeling
+
+Note: The DFM module is now a separate PyPI package (`dfm-python`). All DFM-related functionality is imported from `dfm_python`, not from local code.
 
 ## Project Structure
 

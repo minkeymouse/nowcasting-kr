@@ -14,7 +14,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.nowcasting.data_loader import load_config_from_csv
+from dfm_python import load_config
 from adapters.adapter_database import load_data_from_db
 
 
@@ -26,7 +26,7 @@ def test_load_config_from_csv():
         print(f"⚠ Skipping: Config file not found: {config_path}")
         return
     
-    model_config = load_config_from_csv(config_path)
+    model_config = load_config(config_path)
     
     # Verify basic structure
     assert model_config is not None
@@ -40,7 +40,7 @@ def test_load_data_for_vintage_old():
     """Test loading data for old vintage."""
     try:
         config_path = project_root / "src/spec/001_initial_spec.csv"
-        model_config = load_config_from_csv(config_path)
+        model_config = load_config(config_path)
         
         # Load data for vintage_id=1 (old vintage)
         X_old, Time_old, Z_old = load_data_from_db(
@@ -68,7 +68,7 @@ def test_load_data_for_vintage_new():
     """Test loading data for new vintage."""
     try:
         config_path = project_root / "src/spec/001_initial_spec.csv"
-        model_config = load_config_from_csv(config_path)
+        model_config = load_config(config_path)
         
         # Load data for latest vintage (new vintage)
         X_new, Time_new, Z_new = load_data_from_db(
@@ -135,7 +135,7 @@ def test_vintage_comparison():
     try:
         import numpy as np
         config_path = project_root / "src/spec/001_initial_spec.csv"
-        model_config = load_config_from_csv(config_path)
+        model_config = load_config(config_path)
         
         # Load data for same vintage (simulating old and new)
         X_old, Time_old, Z_old = load_data_from_db(
@@ -165,7 +165,7 @@ def test_missing_series_in_vintages():
     try:
         import numpy as np
         config_path = project_root / "src/spec/001_initial_spec.csv"
-        model_config = load_config_from_csv(config_path)
+        model_config = load_config(config_path)
         
         # Load data with strict_mode=False to allow missing series
         X_old, Time_old, Z_old = load_data_from_db(

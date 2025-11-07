@@ -17,7 +17,7 @@ from typing import Dict, Any, Optional, Set
 
 # Optional dotenv import (for local development only)
 try:
-    from dotenv import load_dotenv
+from dotenv import load_dotenv
     HAS_DOTENV = True
 except ImportError:
     HAS_DOTENV = False
@@ -37,29 +37,29 @@ sys.path.insert(0, str(project_root))
 # Load environment variables from .env file (local development only)
 # In GitHub Actions, environment variables come from secrets
 if HAS_DOTENV and not os.getenv('GITHUB_ACTIONS'):
-    env_locations = [
-        project_root / '.env.local',
-        Path('/home/minkeymouse/Nowcasting') / '.env.local',  # Main worktree
-        Path.home() / '.env.local',
-        Path('.env.local'),  # Current directory
-    ]
-    
-    env_loaded = False
-    for env_path in env_locations:
-        if env_path.exists():
-            load_dotenv(env_path, override=True)
-            logger.info(f"✅ Loaded environment from: {env_path}")
-            env_loaded = True
-            break
-    
-    if not env_loaded:
-        # Try loading from current directory's .env.local if it exists
-        try:
-            load_dotenv('.env.local', override=True)
-            logger.info("✅ Loaded environment from current directory .env.local")
-            env_loaded = True
-        except:
-            pass
+env_locations = [
+    project_root / '.env.local',
+    Path('/home/minkeymouse/Nowcasting') / '.env.local',  # Main worktree
+    Path.home() / '.env.local',
+    Path('.env.local'),  # Current directory
+]
+
+env_loaded = False
+for env_path in env_locations:
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+        logger.info(f"✅ Loaded environment from: {env_path}")
+        env_loaded = True
+        break
+
+if not env_loaded:
+    # Try loading from current directory's .env.local if it exists
+    try:
+        load_dotenv('.env.local', override=True)
+        logger.info("✅ Loaded environment from current directory .env.local")
+        env_loaded = True
+    except:
+        pass
 elif os.getenv('GITHUB_ACTIONS'):
     logger.info("Running in GitHub Actions - using environment variables from secrets")
     env_loaded = True  # In GitHub Actions, we use secrets, so consider it "loaded"
@@ -161,7 +161,7 @@ def main() -> None:
     
     # Priority 2: Fallback to local file (for local development or if DB unavailable)
     if csv_df is None or csv_df.empty:
-        csv_path = project_root / 'src' / 'spec' / '001_initial_spec.csv'
+    csv_path = project_root / 'src' / 'spec' / '001_initial_spec.csv'
         if csv_path.exists():
             try:
                 csv_df = pd.read_csv(csv_path)

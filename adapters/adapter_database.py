@@ -20,8 +20,6 @@ import re
 
 # Import generic DFM module functions
 from dfm_python.config import DFMConfig
-# Backward compatibility
-ModelConfig = DFMConfig
 from dfm_python.data_loader import _transform_series
 
 logger = logging.getLogger(__name__)
@@ -1096,7 +1094,7 @@ def csv_spec_to_hydra_config(
         'dfm': {}
     }
     
-    # Extract model config (factors_per_block from ModelConfig)
+    # Extract model config (factors_per_block from DFMConfig)
     if config.factors_per_block is not None:
         hydra_config['model']['factors_per_block'] = config.factors_per_block
     
@@ -1373,7 +1371,7 @@ def save_factors_to_db(
         DFM estimation results containing factors (Z), loadings (C), etc.
     model_id : int
         Model identifier (used as model_id in factors table)
-    config : ModelConfig
+    config : DFMConfig
         Model configuration with SeriesID, block_names, etc.
     vintage_id : int
         Vintage ID for factor values

@@ -15,7 +15,7 @@ import numpy as np
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.nowcasting.data_loader import load_config_from_csv
+from dfm_python import load_config
 from adapters.adapter_database import load_data_from_db, save_blocks_to_db
 
 
@@ -27,7 +27,7 @@ def test_load_config_from_csv():
         print(f"⚠ Skipping: Config file not found: {config_path}")
         return
     
-    model_config = load_config_from_csv(config_path)
+    model_config = load_config(config_path)
     
     # Verify basic structure
     assert model_config is not None
@@ -48,7 +48,7 @@ def test_load_data_from_db():
     """Test loading data from database (quick check only)."""
     try:
         config_path = project_root / "src/spec/001_initial_spec.csv"
-        model_config = load_config_from_csv(config_path)
+        model_config = load_config(config_path)
         
         # Load data with minimal parameters
         X, Time, Z = load_data_from_db(
@@ -84,7 +84,7 @@ def test_save_blocks_to_db():
     """Test saving blocks to database."""
     try:
         config_path = project_root / "src/spec/001_initial_spec.csv"
-        model_config = load_config_from_csv(config_path)
+        model_config = load_config(config_path)
         
         # Save blocks
         save_blocks_to_db(
@@ -111,7 +111,7 @@ def test_config_series_id_generation():
         print(f"⚠ Skipping: Config file not found: {config_path}")
         return
     
-    model_config = load_config_from_csv(config_path)
+    model_config = load_config(config_path)
     
     # Check that series_id follows the pattern: {api_source}_{data_code}_{item_id}
     for series in model_config.series:
@@ -131,7 +131,7 @@ def test_missing_series_handling():
     """Test that missing series are handled gracefully with strict_mode=False."""
     try:
         config_path = project_root / "src/spec/001_initial_spec.csv"
-        model_config = load_config_from_csv(config_path)
+        model_config = load_config(config_path)
         
         # Load data with strict_mode=False (should fill missing series with NaN)
         X, Time, Z = load_data_from_db(
@@ -175,7 +175,7 @@ def test_data_completeness_check():
     """Test data completeness validation."""
     try:
         config_path = project_root / "src/spec/001_initial_spec.csv"
-        model_config = load_config_from_csv(config_path)
+        model_config = load_config(config_path)
         
         # Load data
         X, Time, Z = load_data_from_db(

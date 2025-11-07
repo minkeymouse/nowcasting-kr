@@ -13,17 +13,75 @@ import numpy as np
 import pandas as pd
 
 from dfm_python import load_config, DFMConfig
-# Backward compatibility alias
-ModelConfig = DFMConfig
 
 logger = logging.getLogger(__name__)
+
+
+def summarize(X: np.ndarray, Time, config: DFMConfig, vintage: Optional[str] = None) -> None:
+    """Print summary statistics for data matrix.
+    
+    Parameters
+    ----------
+    X : np.ndarray
+        Data matrix (T x N)
+    Time : pd.DatetimeIndex or similar
+        Time index
+    config : DFMConfig
+        Model configuration
+    vintage : str, optional
+        Vintage identifier for display
+    """
+    T, N = X.shape
+    
+    print("\n" + "=" * 80)
+    print("Table 2: Data Summary")
+    print("=" * 80)
+    print(f"N = {N:4d} data series")
+    print(f"T = {T:4d} observations from {Time[0]} to {Time[-1]}")
+    
+    if vintage:
+        print(f"Vintage: {vintage}")
+    
+    print(f"{'Data Series':<40} | {'Observations':<20} {'Units':<15} {'Frequency':<12} {'Mean':<10} {'Std. Dev.':<10} {'Min':<10} {'Max':<10}")
+    print("-" * 80)
+    
+    for i in range(N):
+        series_id = config.SeriesID[i] if hasattr(config, 'SeriesID') and i < len(config.SeriesID) else f"Series_{i}"
+        series_name = config.SeriesName[i] if hasattr(config, 'SeriesName') and i < len(config.SeriesName) else series_id
+        freq = config.Frequency[i] if hasattr(config, 'Frequency') and i < len(config.Frequency) else "N/A"
+        units = getattr(config, 'Units', [None] * N)[i] if hasattr(config, 'Units') and i < len(getattr(config, 'Units', [])) else "N/A"
+        
+        x_series = X[:, i]
+        non_nan = ~np.isnan(x_series)
+        n_obs = np.sum(non_nan)
+        
+        if n_obs > 0:
+            x_valid = x_series[non_nan]
+            mean_val = np.mean(x_valid)
+            std_val = np.std(x_valid)
+            min_val = np.min(x_valid)
+            max_val = np.max(x_valid)
+            
+            # Format time range
+            time_range = f"{Time[non_nan][0]} - {Time[non_nan][-1]}" if n_obs > 0 else "N/A"
+        else:
+            mean_val = std_val = min_val = max_val = np.nan
+            time_range = "N/A"
+        
+        # Truncate long names
+        display_name = (series_name[:37] + "...") if len(series_name) > 40 else series_name
+        print(f"{display_name:<40} | {n_obs:>10} obs    {str(units):<15} {freq:<12} {mean_val:>10.1f} {std_val:>10.1f} {min_val:>10.1f} {max_val:>10.1f}")
+        if series_id != series_name:
+            print(f"[{series_id}]".rjust(42) + " | " + time_range)
+    
+    print("=" * 80)
 
 
 def load_model_config_from_hydra(
     cfg_model: DictConfig,
     use_db: bool = True,
     script_path: Optional[Path] = None
-) -> ModelConfig:
+) -> DFMConfig:
     """Load model configuration with priority: CSV from DB storage → Hydra YAML.
     
     Application-specific config loader for Hydra workflows.
@@ -41,7 +99,7 @@ def load_model_config_from_hydra(
     
     Returns
     -------
-    ModelConfig
+    DFMConfig
         Loaded model configuration
     
     Raises
@@ -168,8 +226,8 @@ def load_model_config_from_hydra(
                 if script_path:
                     config_file = script_path.parent.parent / model_config_path
                 else:
-                    config_file = Path(model_config_path)
-        
+                        config_file = Path(model_config_path)
+            
         if config_file.exists():
             logger.info(f"Loading config from local CSV file: {config_file}")
             model_config = load_config(config_file)
@@ -210,7 +268,7 @@ def load_model_config_from_hydra(
     try:
         # Try to construct from Hydra YAML structure
         # This requires cfg.series and cfg.model to be available
-        return ModelConfig.from_dict(OmegaConf.to_container(cfg_model, resolve=True))
+        return DFMConfig.from_dict(OmegaConf.to_container(cfg_model, resolve=True))
     except Exception:
         # If that fails, try to get from parent config (if called from script)
         # This is a last resort fallback
@@ -287,7 +345,7 @@ def load_model_config_with_hydra_fallback(
     cfg: DictConfig,
     script_path: Optional[Path] = None,
     use_db: bool = True
-) -> ModelConfig:
+) -> DFMConfig:
     """Load model config with CSV → Hydra YAML fallback.
     
     Consolidated config loading logic used by train_dfm.py and nowcast_dfm.py.
@@ -303,7 +361,7 @@ def load_model_config_with_hydra_fallback(
     
     Returns
     -------
-    ModelConfig
+    DFMConfig
         Loaded model configuration
     
     Raises
@@ -376,7 +434,7 @@ def extract_hydra_config_dicts(
 
 
 def merge_factors_per_block_from_hydra(
-    model_cfg: ModelConfig,
+    model_cfg: DFMConfig,
     cfg_model: DictConfig
 ) -> None:
     """Merge factors_per_block from Hydra config into model config.

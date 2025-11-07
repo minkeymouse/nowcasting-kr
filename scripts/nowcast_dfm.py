@@ -355,7 +355,7 @@ def main(cfg: DictConfig) -> None:
             generate_forecasts(
                 X_new, Time, model_cfg, Res, series, forecast_periods,
                 str(vintage_new), model_id=None, use_database=use_database
-            )
+        )
         
         logger.info("=" * 80)
         logger.info("Nowcasting completed successfully")

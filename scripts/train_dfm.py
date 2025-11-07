@@ -18,7 +18,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from dfm_python import load_data, dfm
-from src.utils import summarize
+from scripts.utils import summarize
 from scripts.utils import (
     load_model_config_with_hydra_fallback,
     get_db_client,

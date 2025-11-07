@@ -23,7 +23,7 @@ def test_adapter_imports_without_database():
 def test_load_data_from_db_mock(mock_fetch, mock_resolve, mock_client):
     """Test load_data_from_db with mocked database functions."""
     from adapters.adapter_database import load_data_from_db
-    from src.nowcasting.config import ModelConfig, SeriesConfig
+    from dfm_python import DFMConfig, SeriesConfig
     
     # Create mock config
     series_configs = [
@@ -46,7 +46,7 @@ def test_load_data_from_db_mock(mock_fetch, mock_resolve, mock_client):
             blocks=[1]  # Must start with global block (1)
         ),
     ]
-    config = ModelConfig(series=series_configs, block_names=['block1'])
+    config = DFMConfig(series=series_configs, block_names=['block1'])
     
     # Mock database responses
     mock_client.return_value = Mock()
@@ -85,7 +85,7 @@ def test_load_data_from_db_mock(mock_fetch, mock_resolve, mock_client):
 def test_load_data_from_db_import_error(mock_client):
     """Test load_data_from_db handles ImportError when database module unavailable."""
     from adapters.adapter_database import load_data_from_db
-    from src.nowcasting.config import ModelConfig, SeriesConfig
+    from dfm_python import DFMConfig, SeriesConfig
     
     # Mock ImportError
     mock_client.side_effect = ImportError("Database module not available")
@@ -102,7 +102,7 @@ def test_load_data_from_db_import_error(mock_client):
             blocks=[1]
         )
     ]
-    config = ModelConfig(series=series_configs, block_names=['block1'])
+    config = DFMConfig(series=series_configs, block_names=['block1'])
     
     try:
         load_data_from_db(vintage_date='2024-01-01', config=config)
