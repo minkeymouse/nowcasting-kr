@@ -27,6 +27,19 @@ model:
   # Optional: factors_per_block as list (auto-generated from blocks if null)
   factors_per_block: null  # Will be [1, 1, 1] from blocks above
 
+# Data loading configuration
+data:
+  use_database: true
+  strict_mode: false
+  country: KR
+  vintage: null
+  vintage_old: null
+  vintage_new: null
+  sample_start: null
+  config_id: null
+  data_path: null
+  forecast_periods: 2  # For nowcast_dfm.py: number of forward forecast periods
+
 # Experiment metadata
 experiment_name: default
 output_dir: outputs
