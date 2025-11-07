@@ -239,9 +239,9 @@ BEGIN
                 PARTITION BY series_id, forecast_date, run_type 
                 ORDER BY created_at DESC
             ) AS rn
-        FROM forecasts
+        FROM public.forecasts
     )
-    DELETE FROM forecasts
+    DELETE FROM public.forecasts
     WHERE forecast_id IN (
         SELECT forecast_id
         FROM ranked_forecasts
