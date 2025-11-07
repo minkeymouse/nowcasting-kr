@@ -345,6 +345,29 @@ FROM latest_factor_loadings_view
 GROUP BY factor_block_name;
 ```
 
+#### Block 통계 조회
+```sql
+-- Block별 요약 통계
+SELECT * FROM latest_block_stats_view
+ORDER BY block_id;
+
+-- 특정 block의 통계
+SELECT * FROM latest_block_stats_view
+WHERE block_id = 123456789;  -- 예시 block_id
+```
+
+#### Factor 요약 조회
+```sql
+-- Factor별 요약 통계
+SELECT * FROM latest_factor_summary_view
+ORDER BY factor_index;
+
+-- 특정 block의 factor 요약
+SELECT * FROM latest_factor_summary_view
+WHERE block_id = 123456789
+ORDER BY factor_index;
+```
+
 ### 3. 성능 벤치마크
 
 **예상 성능** (인덱스 적용 후):
