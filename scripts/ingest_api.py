@@ -10,6 +10,7 @@ Usage:
 
 import sys
 import logging
+import os
 from pathlib import Path
 from datetime import date
 from typing import Dict, Any, Optional, Set
@@ -344,6 +345,14 @@ def main() -> None:
             # Insert/update series metadata (only for new series)
             if not series_exists:
                 print(f"   💾 Saving series metadata...")
+                
+                # Get is_kpi from CSV if available
+                is_kpi = csv_row.get('is_kpi', False)
+                if isinstance(is_kpi, str):
+                    is_kpi = is_kpi.lower() in ('true', '1', 'yes', 'y')
+                elif isinstance(is_kpi, (int, float)):
+                    is_kpi = bool(is_kpi)
+                
                 series_model = SeriesModel(
                     series_id=series_id,
                     series_name=series_name,
@@ -352,8 +361,10 @@ def main() -> None:
                     units=units,
                     category=category,
                     api_source=api_source,
-                    api_code=api_code,
-                    is_active=True
+                    data_code=data_code,
+                    item_id=item_id,
+                    is_active=True,
+                    is_kpi=is_kpi
                 )
                 
                 # Workaround for trigger issue - use insert for new, skip for existing
@@ -364,8 +375,8 @@ def main() -> None:
                     data.pop('updated_at', None)
                     data.pop('created_at', None)
                     client.table('series').insert(data).execute()
-                    print(f"   ✅ Series metadata saved (new series)")
-                    logger.info(f"  ✓ Inserted series metadata for new series")
+                    print(f"   ✅ Series metadata saved (new series, is_kpi={is_kpi})")
+                    logger.info(f"  ✓ Inserted series metadata for new series (is_kpi={is_kpi})")
             
             # Add to observations list
             df_data['vintage_id'] = vintage_id
@@ -515,21 +526,46 @@ def main() -> None:
         print("   ⚠️  No block assignments to save (no series were successfully processed)")
         logger.warning("No block assignments to save - no series were successfully processed")
     
-    # Update status
+    # Update status with full statistics
     print("\n" + "=" * 80)
     print("📝 UPDATING STATUS")
     print("=" * 80)
-    print("   📅 Updating vintage status to 'completed'...")
-    update_vintage_status(
+    print("   📅 Finalizing ingestion job with statistics...")
+    
+    # Get GitHub run ID if available
+    github_run_id = os.getenv('GITHUB_RUN_ID')
+    github_workflow_run_url = os.getenv('GITHUB_SERVER_URL') and os.getenv('GITHUB_REPOSITORY') and os.getenv('GITHUB_RUN_ID') and \
+        f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+    
+    # Prepare error message if there are failures
+    error_message = None
+    if stats['errors']:
+        error_message = f"{len(stats['errors'])} series failed: " + "; ".join(stats['errors'][:3])
+        if len(stats['errors']) > 3:
+            error_message += f" ... and {len(stats['errors']) - 3} more"
+    
+    # Finalize ingestion job with full statistics
+    finalize_ingestion_job(
         vintage_id=vintage_id,
-        status='completed',
+        status='completed' if stats['failed'] == 0 else 'partial',
+        total_series=stats['total'],
+        successful_series=stats['successful'],
+        failed_series=stats['failed'],
+        error_message=error_message,
         client=client
     )
-    print("   ✅ Vintage status updated")
     
-    # Update vintage status (job tracking is integrated into data_vintages)
-    # Status update is already done above, but we can add statistics if needed
-    print("   ✅ Ingestion completed")
+    # Update GitHub workflow URL if available
+    if github_workflow_run_url:
+        try:
+            client.table('data_vintages').update({
+                'github_workflow_run_url': github_workflow_run_url
+            }).eq('vintage_id', vintage_id).execute()
+        except Exception as e:
+            logger.debug(f"Could not update github_workflow_run_url: {e}")
+    
+    print("   ✅ Vintage status updated with full statistics")
+    print(f"      Total: {stats['total']}, Successful: {stats['successful']}, Failed: {stats['failed']}")
     
     # Print summary
     print("\n" + "=" * 80)

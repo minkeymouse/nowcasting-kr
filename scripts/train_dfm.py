@@ -171,7 +171,7 @@ def main(cfg: DictConfig) -> None:
     # Run DFM estimation
     Res = dfm(X, model_cfg, threshold=threshold, max_iter=max_iter)
     
-    # Save results to pickle file
+    # Save results to pickle file (legacy support)
     output_dir = Path(cfg.get('output_dir', '.'))
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / 'ResDFM.pkl'
@@ -181,39 +181,119 @@ def main(cfg: DictConfig) -> None:
     
     print(f'\nResults saved to {output_file}')
     
-    # Save model weights to model/ directory
-    base_dir = Path(__file__).parent.parent.parent
-    model_dir = base_dir / 'model'
-    model_dir.mkdir(parents=True, exist_ok=True)
+    # Save factors, factor_values, and factor_loadings to database for frontend visualization
+    if use_database:
+        try:
+            from adapters.adapter_database import save_factors_to_db
+            from database import get_vintage
+            
+            # Generate model_id from config_id or hash
+            if config_id:
+                model_id = int(config_id) if isinstance(config_id, (int, str)) and str(config_id).isdigit() else hash(str(config_id)) % 2147483647
+            else:
+                model_id = hash(str(model_cfg.SeriesID)) % 2147483647
+            
+            # Get vintage_id for factor_values
+            vintage_id = None
+            if isinstance(vintage, int):
+                vintage_id = vintage
+            else:
+                client = get_db_client()
+                vintage_info = get_vintage(vintage_id=vintage if isinstance(vintage, int) else None,
+                                         vintage_date=vintage if not isinstance(vintage, int) else None,
+                                         client=client)
+                if vintage_info:
+                    vintage_id = vintage_info['vintage_id']
+            
+            if vintage_id:
+                save_factors_to_db(
+                    Res=Res,
+                    model_id=model_id,
+                    config=model_cfg,
+                    vintage_id=vintage_id,
+                    Time=Time,
+                    client=get_db_client()
+                )
+                print(f'✅ Saved factors, factor_values, and factor_loadings to database for model_id={model_id}')
+            else:
+                print(f'⚠️  Could not resolve vintage_id for {vintage}. Skipping factor save.')
+        except ImportError:
+            print('⚠️  Warning: Database module not available. Cannot save factors to database.')
+        except Exception as e:
+            print(f'⚠️  Warning: Failed to save factors to database: {e}')
     
-    # Create model filename based on vintage and config
-    model_filename = f"dfm_{vintage or 'default'}.pkl"
-    if config_id:
-        model_filename = f"dfm_config_{config_id}_{vintage or 'default'}.pkl"
+    # Save model weights to Supabase storage
+    try:
+        from adapters.adapter_database import upload_model_weights_to_storage
+        
+        # Create model filename based on vintage and config
+        if isinstance(vintage, int):
+            # If vintage is an ID, get the date
+            try:
+                from database import get_vintage
+                client = get_db_client()
+                vintage_info = get_vintage(vintage_id=vintage, client=client)
+                vintage_str = vintage_info['vintage_date'] if vintage_info else str(vintage)
+            except Exception:
+                vintage_str = str(vintage)
+        else:
+            vintage_str = str(vintage) if vintage else 'default'
+        
+        model_filename = f"dfm_{vintage_str}.pkl"
+        if config_id:
+            model_filename = f"dfm_config_{config_id}_{vintage_str}.pkl"
+        
+        # Prepare model weights (parameters only, not full results)
+        model_weights = {
+            'C': Res.C,
+            'R': Res.R,
+            'A': Res.A,
+            'Q': Res.Q,
+            'Z_0': Res.Z_0,
+            'V_0': Res.V_0,
+            'Mx': Res.Mx,
+            'Wx': Res.Wx,
+            'threshold': threshold,
+            'vintage': vintage_str,
+            'config_id': config_id,
+            'convergence_iter': getattr(Res, 'convergence_iter', None),
+            'log_likelihood': getattr(Res, 'loglik', None),
+        }
+        
+        # Upload to Supabase storage
+        storage_url = upload_model_weights_to_storage(
+            model_weights=model_weights,
+            filename=model_filename,
+            bucket_name="model-weights",
+            client=get_db_client()
+        )
+        
+        print(f'Model weights uploaded to Supabase storage: {storage_url}')
+        
+    except ImportError:
+        print('⚠️  Warning: Could not upload model weights to storage (database module not available)')
+        # Fallback to local save
+        base_dir = Path(__file__).parent.parent.parent
+        model_dir = base_dir / 'model'
+        model_dir.mkdir(parents=True, exist_ok=True)
+        model_filename = f"dfm_{vintage or 'default'}.pkl"
+        if config_id:
+            model_filename = f"dfm_config_{config_id}_{vintage or 'default'}.pkl"
+        model_file = model_dir / model_filename
+        model_weights = {
+            'C': Res.C, 'R': Res.R, 'A': Res.A, 'Q': Res.Q,
+            'Z_0': Res.Z_0, 'V_0': Res.V_0, 'Mx': Res.Mx, 'Wx': Res.Wx,
+            'threshold': threshold, 'vintage': vintage, 'config_id': config_id,
+            'convergence_iter': getattr(Res, 'convergence_iter', None),
+            'log_likelihood': getattr(Res, 'loglik', None),
+        }
+        with open(model_file, 'wb') as f:
+            pickle.dump(model_weights, f)
+        print(f'Model weights saved locally to {model_file}')
+    except Exception as e:
+        print(f'⚠️  Warning: Failed to upload model weights to storage: {e}')
+        print('   Continuing with local save only...')
     
-    model_file = model_dir / model_filename
-    
-    # Save model weights (parameters only, not full results)
-    model_weights = {
-        'C': Res.C,
-        'R': Res.R,
-        'A': Res.A,
-        'Q': Res.Q,
-        'Z_0': Res.Z_0,
-        'V_0': Res.V_0,
-        'Mx': Res.Mx,
-        'Wx': Res.Wx,
-        'threshold': threshold,
-        'vintage': vintage,
-        'config_id': config_id,
-        'convergence_iter': getattr(Res, 'convergence_iter', None),
-        'log_likelihood': getattr(Res, 'loglik', None),
-    }
-    
-    with open(model_file, 'wb') as f:
-        pickle.dump(model_weights, f)
-    
-    print(f'Model weights saved to {model_file}')
     print(f"Output directory: {output_dir}")
     print(f"\n{'='*70}\n")
 

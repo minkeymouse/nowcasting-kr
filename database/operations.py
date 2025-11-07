@@ -1021,31 +1021,39 @@ def save_model_weights(
     log_likelihood: Optional[float] = None,
     client: Optional[Client] = None
 ) -> Dict[str, Any]:
-    """Save trained model weights (DFMResult)."""
+    """
+    Save trained model weights (DFMResult).
     
-    # Serialize numpy arrays to lists
-    def serialize_array(arr):
-        if isinstance(arr, np.ndarray):
-            return arr.tolist()
-        return arr
-    
-    data = {
-        'config_id': config_id,
-        'vintage_id': vintage_id,
-        'parameters_json': {k: serialize_array(v) for k, v in parameters.items()},
-        'threshold': threshold,
-        'convergence_iter': convergence_iter,
-        'log_likelihood': log_likelihood,
-    }
-    
-    result = client.table(TABLES['trained_models']).insert(data).execute()
-    return result.data[0] if result.data else None
+    DEPRECATED: Model weights are now stored in Supabase storage (model-weights bucket).
+    This function is kept for backward compatibility but will raise an error if called.
+    Use adapters.adapter_database.upload_model_weights_to_storage() instead.
+    """
+    logger.warning(
+        "save_model_weights() is deprecated. Model weights are stored in Supabase storage. "
+        "Use adapters.adapter_database.upload_model_weights_to_storage() instead."
+    )
+    raise NotImplementedError(
+        "trained_models table does not exist. Model weights are stored in Supabase storage. "
+        "Use adapters.adapter_database.upload_model_weights_to_storage() instead."
+    )
 
 
 def load_model_weights(model_id: int, client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
+    """
+    Load trained model weights.
     
-    result = client.table(TABLES['trained_models']).select('*').eq('model_id', model_id).execute()
-    return result.data[0] if result.data else None
+    DEPRECATED: Model weights are now stored in Supabase storage (model-weights bucket).
+    This function is kept for backward compatibility but will raise an error if called.
+    Use adapters.adapter_database.download_model_weights_from_storage() instead.
+    """
+    logger.warning(
+        "load_model_weights() is deprecated. Model weights are stored in Supabase storage. "
+        "Use adapters.adapter_database.download_model_weights_from_storage() instead."
+    )
+    raise NotImplementedError(
+        "trained_models table does not exist. Model weights are stored in Supabase storage. "
+        "Use adapters.adapter_database.download_model_weights_from_storage() instead."
+    )
 
 
 # ============================================================================
