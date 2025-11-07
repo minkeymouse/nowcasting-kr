@@ -1310,7 +1310,8 @@ def cleanup_old_models(
             logger.info(f"All factors belong to the same model_id {model_id}. Cleaning up old factors by created_at.")
             
             # Get all factors for this model_id, sorted by created_at (newest first)
-            all_factors = db_client.table('factors').select('id, model_id, created_at').eq('model_id', model_id).order('created_at', desc=True).execute()
+            # Also get factor_index to identify duplicates from multiple training runs
+            all_factors = db_client.table('factors').select('id, model_id, created_at, factor_index').eq('model_id', model_id).order('created_at', desc=True).execute()
             
             if not all_factors.data:
                 return {
