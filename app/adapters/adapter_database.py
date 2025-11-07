@@ -1295,7 +1295,8 @@ def cleanup_old_models(
                 'deleted_count': 0,
                 'deleted_factors': 0,
                 'deleted_factor_values': 0,
-                'deleted_factor_loadings': 0
+                'deleted_factor_loadings': 0,
+                'deleted_dfm_results': 0
             }
         
         # Sort by created_at (newest first), then by factor_id as tiebreaker
@@ -1322,7 +1323,8 @@ def cleanup_old_models(
                     'deleted_count': 0,
                     'deleted_factors': 0,
                     'deleted_factor_values': 0,
-                    'deleted_factor_loadings': 0
+                    'deleted_factor_loadings': 0,
+                    'deleted_dfm_results': 0
                 }
             
             # Group factors by created_at (same timestamp = same training run)
@@ -1386,7 +1388,8 @@ def cleanup_old_models(
                         'deleted_count': 0,
                         'deleted_factors': 0,
                         'deleted_factor_values': 0,
-                        'deleted_factor_loadings': 0
+                        'deleted_factor_loadings': 0,
+                        'deleted_dfm_results': 0
                     }
                 
                 # Keep latest factors (estimate for one training run)
