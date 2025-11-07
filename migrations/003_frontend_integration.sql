@@ -569,11 +569,14 @@ SELECT
         ORDER BY date DESC 
         LIMIT 1
     ) AS latest_date,
-    -- Block information
-    (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
-     FROM blocks b
-     WHERE b.series_id = s.series_id
-     AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = s.series_id)
+    -- Block information (NULL 대신 빈 배열 반환 보장)
+    COALESCE(
+        (SELECT array_agg(DISTINCT b.block_name ORDER BY b.block_name)
+         FROM blocks b
+         WHERE b.series_id = s.series_id
+         AND b.config_name = (SELECT MAX(config_name) FROM blocks WHERE series_id = s.series_id)
+        ),
+        ARRAY[]::TEXT[]
     ) AS block_names,
     s.created_at,
     s.updated_at
