@@ -30,7 +30,4 @@ matlab/**/*.xls
 # Allow requirements files (needed for workflows)
 !requirements*.txt
 
-outputs/PR_REVIEW.md
-PR_DESCRIPTION.md
-
 outputs/

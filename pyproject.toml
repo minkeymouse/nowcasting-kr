@@ -1,0 +1,12 @@
+[project]
+name = "nowcasting"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.123.0",
+    "langchain>=1.1.0",
+    "langgraph>=1.0.4",
+    "pydantic>=2.12.5",
+]
