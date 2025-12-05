@@ -669,6 +669,36 @@ def log_with_index(X):
         return log_transform(X)
 
 
+def cha_with_index(X, step: int = 1, annual_factor: float = 12.0):
+    """Change annual rate transformation preserving pandas index (for FunctionTransformer).
+    
+    This is a module-level function to avoid pickle errors when saving transformers.
+    
+    Parameters
+    ----------
+    X : pd.Series or array-like
+        Input data
+    step : int, default 1
+        Number of periods to difference
+    annual_factor : float, default 12.0
+        Annualization factor (periods_per_year / step)
+        
+    Returns
+    -------
+    pd.Series or np.ndarray
+        Change annual rate transformed data, preserving index if Series
+    """
+    import pandas as pd
+    import numpy as np
+    if isinstance(X, pd.Series):
+        # cha_transform_func returns 2D array, flatten to 1D
+        result_2d = cha_transform_func(X.values, step=step, annual_factor=annual_factor)
+        result_values = result_2d.flatten()
+        return pd.Series(result_values, index=X.index, name=X.name)
+    else:
+        return cha_transform_func(X, step=step, annual_factor=annual_factor)
+
+
 def cha_transform_func(X, step: int = 1, annual_factor: float = 12.0) -> np.ndarray:
     """Change annual rate transformation.
     
@@ -858,19 +888,12 @@ def make_cha_transformer(step: int, annual_factor: float):
     FunctionTransformer
         Configured FunctionTransformer for change annual rate
     """
+    import functools
     FunctionTransformer = _get_function_transformer()
-    def cha_with_index(X, step=step, annual_factor=annual_factor):
-        """Wrapper that preserves index when transforming."""
-        import pandas as pd
-        import numpy as np  # Ensure np is available in closure
-        if isinstance(X, pd.Series):
-            # cha_transform_func returns 2D array, flatten to 1D
-            result_2d = cha_transform_func(X.values, step=step, annual_factor=annual_factor)
-            result_values = result_2d.flatten()
-            return pd.Series(result_values, index=X.index, name=X.name)
-        else:
-            return cha_transform_func(X, step=step, annual_factor=annual_factor)
-    return FunctionTransformer(func=lambda X: cha_with_index(X, step=step, annual_factor=annual_factor))
+    # Use functools.partial with module-level function for proper pickle serialization
+    # This avoids lambda closure issues that cause pickle errors
+    cha_func = functools.partial(cha_with_index, step=step, annual_factor=annual_factor)
+    return FunctionTransformer(func=cha_func)
 
 
 # Index-Preserving Column Ensemble Transformer

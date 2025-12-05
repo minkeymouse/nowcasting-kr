@@ -136,6 +136,16 @@ def calculate_standardized_metrics(
     # Create mask for valid (non-NaN) values
     mask = np.isfinite(y_true_arr) & np.isfinite(y_pred_arr)
     
+    # Debug logging for mask calculation
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.debug(f"calculate_standardized_metrics: y_true_arr shape={y_true_arr.shape}, y_pred_arr shape={y_pred_arr.shape}")
+    logger.debug(f"calculate_standardized_metrics: mask sum={np.sum(mask)}, mask shape={mask.shape}, n_valid={int(np.sum(mask))}")
+    if np.sum(mask) == 0:
+        logger.warning(f"calculate_standardized_metrics: mask is all False! y_true_arr finite={np.sum(np.isfinite(y_true_arr))}, y_pred_arr finite={np.sum(np.isfinite(y_pred_arr))}")
+        logger.warning(f"calculate_standardized_metrics: y_true_arr has NaN={np.sum(np.isnan(y_true_arr))}, y_pred_arr has NaN={np.sum(np.isnan(y_pred_arr))}")
+        logger.warning(f"calculate_standardized_metrics: y_true_arr has Inf={np.sum(np.isinf(y_true_arr))}, y_pred_arr has Inf={np.sum(np.isinf(y_pred_arr))}")
+    
     # Calculate raw metrics per series
     n_series = y_true_arr.shape[1]
     mse_per_series = np.zeros(n_series)
@@ -339,20 +349,32 @@ def evaluate_forecaster(
         try:
             # Predict for this specific horizon
             # Try both fh=[h] (list) and fh=h (int) for compatibility
+            import logging
+            logger = logging.getLogger(__name__)
+            
             try:
                 y_pred_h = forecaster.predict(fh=[h])
-            except (TypeError, ValueError):
+                logger.info(f"Horizon {h}: predict(fh=[{h}]) succeeded, type={type(y_pred_h)}, shape={getattr(y_pred_h, 'shape', 'N/A')}, length={len(y_pred_h) if hasattr(y_pred_h, '__len__') else 'N/A'}")
+            except (TypeError, ValueError) as e:
                 # Some forecasters might not accept list, try int
-                y_pred_h = forecaster.predict(fh=h)
+                logger.debug(f"Horizon {h}: predict(fh=[{h}]) failed with {type(e).__name__}: {e}, trying fh={h}")
+                try:
+                    y_pred_h = forecaster.predict(fh=h)
+                    logger.info(f"Horizon {h}: predict(fh={h}) succeeded, type={type(y_pred_h)}, shape={getattr(y_pred_h, 'shape', 'N/A')}, length={len(y_pred_h) if hasattr(y_pred_h, '__len__') else 'N/A'}")
+                except Exception as e2:
+                    logger.error(f"Horizon {h}: Both predict(fh=[{h}]) and predict(fh={h}) failed. Last error: {type(e2).__name__}: {e2}")
+                    raise
             
             # Extract corresponding test data point using position-based matching
             # This is more reliable than index matching since test data is created by splitting
             test_pos = h - 1
             
-            # Debug logging
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.debug(f"Horizon {h}: test_pos={test_pos}, y_test length={len(y_test)}, y_pred_h type={type(y_pred_h)}, y_pred_h length={len(y_pred_h) if hasattr(y_pred_h, '__len__') else 'N/A'}")
+            # Enhanced debug logging
+            logger.info(f"Horizon {h}: test_pos={test_pos}, y_test length={len(y_test)}, y_test type={type(y_test)}, y_test shape={getattr(y_test, 'shape', 'N/A')}")
+            if hasattr(y_pred_h, 'index'):
+                logger.debug(f"Horizon {h}: y_pred_h index type={type(y_pred_h.index)}, y_pred_h index length={len(y_pred_h.index) if hasattr(y_pred_h.index, '__len__') else 'N/A'}")
+            if hasattr(y_test, 'index'):
+                logger.debug(f"Horizon {h}: y_test index type={type(y_test.index)}, y_test index length={len(y_test.index) if hasattr(y_test.index, '__len__') else 'N/A'}")
             
             # Extract prediction value(s) - handle both Series and DataFrame
             # For predict(fh=[h]), we want the prediction at horizon h
@@ -409,6 +431,13 @@ def evaluate_forecaster(
             # Check if we have valid data
             has_pred = len(y_pred_h) > 0 if hasattr(y_pred_h, '__len__') else (y_pred_h.size > 0 if hasattr(y_pred_h, 'size') else False)
             has_true = len(y_true_h) > 0 if hasattr(y_true_h, '__len__') else (y_true_h.size > 0 if hasattr(y_true_h, 'size') else False)
+            
+            # Enhanced logging for debugging n_valid=0 issue
+            logger.info(f"Horizon {h}: After extraction - has_pred={has_pred}, has_true={has_true}")
+            if not has_pred:
+                logger.warning(f"Horizon {h}: y_pred_h is empty or invalid. Type={type(y_pred_h)}, length={len(y_pred_h) if hasattr(y_pred_h, '__len__') else 'N/A'}, size={getattr(y_pred_h, 'size', 'N/A')}")
+            if not has_true:
+                logger.warning(f"Horizon {h}: y_true_h is empty or invalid. Type={type(y_true_h)}, length={len(y_true_h) if hasattr(y_true_h, '__len__') else 'N/A'}, size={getattr(y_true_h, 'size', 'N/A')}, test_pos={test_pos}, y_test length={len(y_test)}")
             
             # Additional check: ensure shapes are compatible
             if has_pred and has_true:
