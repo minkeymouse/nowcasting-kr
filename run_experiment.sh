@@ -343,7 +343,7 @@ echo "Aggregating Results"
 echo "=========================================="
 echo ""
 
-if python3 -m src.eval.aggregator 2>&1; then
+if python3 -c "from src.eval import main_aggregator; main_aggregator()" 2>&1; then
     echo ""
     echo "✓ Aggregation completed successfully"
 else

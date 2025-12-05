@@ -143,8 +143,12 @@ class DFMForecaster(BaseForecaster):
             data_index = None
             data_columns = None
         
-        # Save data to temporary file for DFM (DFM expects file path)
-        # This is a workaround until DFM wrapper supports in-memory arrays
+        # Save data to temporary file for DFM
+        # Note: DFMDataModule supports in-memory data (data parameter), but the current
+        # create_data_module() function only accepts data_path. The DFM wrapper's train()
+        # method can accept a data_module parameter, but we use the simplified data_path
+        # API here for consistency with the sktime interface pattern.
+        # TODO: Refactor to create data_module with in-memory data to avoid temporary files
         import tempfile
         import os
         
@@ -340,6 +344,11 @@ class DDFMForecaster(BaseForecaster):
             data_columns = None
         
         # Save data to temporary file for DDFM
+        # Note: DFMDataModule supports in-memory data (data parameter), but the current
+        # create_data_module() function only accepts data_path. The DDFM wrapper's train()
+        # method can accept a data_module parameter, but we use the simplified data_path
+        # API here for consistency with the sktime interface pattern.
+        # TODO: Refactor to create data_module with in-memory data to avoid temporary files
         import tempfile
         import os
         
