@@ -420,9 +420,24 @@ def evaluate_forecaster(
                     # Extract target series if specified
                     if target_series is not None and target_series in y_pred_h.columns:
                         y_pred_h = y_pred_h[[target_series]]
+                    elif target_series is not None and isinstance(y_test, pd.DataFrame) and target_series in y_test.columns:
+                        # target_series not in y_pred_h.columns but in y_test.columns
+                        # Use column index from y_test to extract from y_pred_h
+                        col_idx = y_test.columns.get_loc(target_series)
+                        if col_idx < y_pred_h.shape[1]:
+                            y_pred_h = y_pred_h.iloc[:, [col_idx]]
+                            logger.debug(f"Horizon {h}: Extracted target_series '{target_series}' from y_pred_h using column index {col_idx} (from y_test.columns)")
+                        else:
+                            logger.warning(f"Horizon {h}: Column index {col_idx} for target_series '{target_series}' out of bounds for y_pred_h (shape: {y_pred_h.shape})")
+                            y_pred_h = pd.DataFrame()
                     elif isinstance(y_test, pd.DataFrame) and len(y_test.columns) == 1:
                         # Single column, use it
                         y_pred_h = y_pred_h.iloc[:, [0]]
+                    elif target_series is not None:
+                        # target_series specified but not found in either y_pred_h or y_test
+                        logger.warning(f"Horizon {h}: target_series '{target_series}' not found in y_pred_h.columns={list(y_pred_h.columns)} or y_test.columns={list(y_test.columns) if isinstance(y_test, pd.DataFrame) else 'N/A'}")
+                        # Try to keep all columns and let calculate_standardized_metrics handle it
+                        pass
                 else:
                     logger.warning(f"Horizon {h}: y_pred_h DataFrame is empty.")
                     y_pred_h = pd.DataFrame()

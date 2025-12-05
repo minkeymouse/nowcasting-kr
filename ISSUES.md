@@ -1,30 +1,32 @@
 # Issues and Action Plan
 
-## Executive Summary (2025-12-06 - Status Review Complete)
+## Executive Summary (2025-01-XX)
 
-**Current State**: All critical code fixes applied and verified. Pickle error FIXED (DFM/DDFM complete training). ARIMA/VAR target_series handling FIXED. Test data size check FIXED. Debug logging added. Ready for experimental validation.  
+**Current State**: ARIMA working (9 combinations). VAR/DFM/DDFM fixes applied, need testing. Code quality reviewed, report reviewed.  
 **Goal**: Complete 20-30 page report with actual results, finalize dfm-python package  
-**Critical Path**: Test fixes → Re-run experiments → Generate results → Update report  
-**Latest Run**: 20251206_080003 - All models show n_valid=0 (fixes applied after this run, need re-testing)  
-**Next Action**: Test minimal case (ARIMA on KOGFCF..D with horizon=1) to verify fixes work, then re-run full experiments
+**Critical Path**: Test VAR/DFM/DDFM fixes → Re-run experiments → Generate results → Update report  
+**Next Action**: Re-run experiments to verify VAR/DDFM fixes, then investigate DFM numerical instability
 
 ## Improvement Plan Summary
 
 ### Code Fixes (COMPLETED - Verified in Code, Ready for Testing)
-1. ✅ **ARIMA n_valid=0**: Simplified prediction extraction logic (evaluation.py) - VERIFIED
-2. ✅ **VAR pandas API**: Enhanced asfreq() error handling with fallback chain (training.py) - VERIFIED
-3. ✅ **DFM/DDFM pickle (identity_with_index/log_with_index)**: Use globals() for module-level function references (preprocess/utils.py) - VERIFIED
-4. ✅ **DFM/DDFM pickle (make_cha_transformer)**: Refactored lambda to use module-level function with functools.partial (preprocess/utils.py) - VERIFIED
-5. ✅ **fillna() deprecation**: Replaced fillna(method='ffill') with ffill() (training.py) - VERIFIED
-6. ✅ **ARIMA/VAR target_series handling**: Fixed calculate_standardized_metrics() to handle Series input robustly (evaluation.py) - VERIFIED
-7. ✅ **Test data size check**: Skip horizon 28 if test_pos >= len(y_test) (evaluation.py) - VERIFIED
-8. ✅ **Debug logging**: Added enhanced INFO/DEBUG logging to evaluation.py - VERIFIED
+1. ✅ **ARIMA/VAR target_series handling**: Fixed calculate_standardized_metrics() to handle Series input (evaluation.py) - VERIFIED (ARIMA working)
+2. ✅ **VAR/DDFM prediction extraction**: Added fallback to check y_test.columns when target_series not in y_pred_h.columns (evaluation.py lines 416-425) - VERIFIED
+3. ✅ **DFM/DDFM pickle errors**: Fixed make_cha_transformer and identity_with_index/log_with_index (preprocess/utils.py) - VERIFIED
+4. ✅ **Test data size check**: Skip horizon 28 if test set too small (evaluation.py) - VERIFIED
+5. ✅ **Debug logging**: Added enhanced INFO/DEBUG logging to evaluation.py - VERIFIED
 
-### Code Quality Improvements (INCREMENTAL - After Experiments)
+### Critical Issues to Fix (PRIORITY 1 - Blocking Experiments)
+1. **VAR n_valid=0**: ARIMA fix works but VAR still fails. Root cause: VAR predictions return DataFrame with all columns, but target_series extraction may fail. Need to verify VAR prediction format and fix extraction logic in evaluation.py (lines 416-425).
+2. **DFM Numerical Instability**: Parameters (A or C) contain NaN/Inf for KOGDP...D/KOCNPER.D. Root cause: EM algorithm convergence issues. Need to review EM regularization (em.py), check initialization, verify data quality (high missing data ratio).
+3. **DDFM n_valid=0**: All targets show n_valid=0. Root cause: Prediction extraction or test data alignment issue. Need to investigate DDFM prediction format and verify evaluation.py handles it correctly.
+
+### Code Quality Improvements (PRIORITY 2 - After Critical Fixes)
 1. **dfm-python Numerical Stability**: 
    - Review EM regularization constants (1e-6, 1e-8) - verify appropriate for edge cases (T < N, near-singular)
    - Check Kalman filter safe_inverse() fallbacks handle all failure modes
    - Verify eigenvalue checks catch all ill-conditioned matrices
+   - Add early stopping if parameters become NaN/Inf during EM iterations
 2. **dfm-python Theoretical Correctness**: 
    - Verify EM algorithm matches standard references (Durbin-Koopman, Harvey)
    - Check Kalman gain calculation: K = P_{t|t-1} C' (C P_{t|t-1} C' + R)^{-1}
@@ -65,21 +67,12 @@
    - Check no made-up references or incorrect citation keys
 
 ### Experiment Status
-- **Latest Runs**: 20251206_073336 (all 3 targets) - Most recent run
-- **Valid Results**: NONE (ARIMA/VAR complete but n_valid=0 for all horizons)
-- **Action**: Investigate why fixes aren't working → Debug prediction extraction → Fix root cause
-
-**Experiments Status**: 
-- ⚠️ Latest run (20251206_080003): All 3 targets attempted
-  - **ARIMA**: Status "completed" but n_valid=0 - Error: "target_series must be int if y_true is not DataFrame"
-  - **VAR**: Status "completed" but n_valid=0 - Same error as ARIMA
-  - **DFM**: Status "completed" for all targets but predictions fail (KOGDP...D/KOCNPER.D: NaN/Inf in parameters, KOGFCF..D: n_valid=0)
-  - **DDFM**: Status "completed" for all targets but n_valid=0 for all horizons
-- ✅ **ISSUE RESOLVED**: make_cha_transformer pickle error - FIXED and VERIFIED (DFM/DDFM now complete training for all targets)
-- ✅ **CRITICAL ISSUE 1 RESOLVED**: ARIMA/VAR target_series handling - calculate_standardized_metrics() now handles Series input robustly (2025-12-06)
-- ⚠️ **CRITICAL ISSUE 2**: DFM numerical instability - parameters (A or C) contain NaN/Inf or predictions contain NaN/Inf
-- ⚠️ **CRITICAL ISSUE 3**: Test data size - for horizon 28, test_pos=27 but y_test only has 19-21 elements (test set too small)
-- ✅ run_experiment.sh: Already checks for valid results (n_valid > 0), will re-run all since current results invalid
+- **Latest Runs**: 20251206_082502 (all 3 targets)
+  - **ARIMA**: ✅ WORKING - n_valid=1 for all horizons across all 3 targets (9 combinations)
+  - **VAR**: ❌ n_valid=0 - Fix applied but needs testing
+  - **DFM**: ❌ Numerical instability (NaN/Inf in parameters) or n_valid=0
+  - **DDFM**: ❌ n_valid=0 - Fix applied but needs testing
+- **Action**: Re-run experiments to verify VAR/DDFM fixes, then investigate DFM numerical issues
 
 **Code Status**: 
 - ✅ dfm-python: Finalized (consistent naming, clean code)
@@ -93,151 +86,73 @@
 - ⚠️ Tables: 4 tables with "---" placeholders (blocked by experiments)
 - ⚠️ Plots: Not generated (blocked by experiments)
 
-## Concrete Action Plan (Step-by-Step, Incremental)
+## Concrete Action Plan (Incremental, Prioritized)
 
-### PHASE 1: Debug n_valid=0 Issue and Fix Root Cause [CURRENT PRIORITY]
+### PHASE 1: Fix Remaining Model Issues [CURRENT PRIORITY]
 
-**Goal**: Understand why fixes aren't working, identify root cause, fix it, then re-run experiments  
-**Expected**: At least 2 models per target produce valid results (n_valid > 0), minimum 6 successful combinations  
-**Status**: ⚠️ Fixes in code but latest experiments (20251206_073336) still show n_valid=0 - need investigation
+**Goal**: Fix VAR/DFM/DDFM to get at least 6 successful model-target-horizon combinations (n_valid > 0)  
+**Success Criteria**: Minimum 2 models per target produce valid results for at least one horizon  
+**Status**: ARIMA working (9 combinations), VAR/DFM/DDFM need fixes
 
-**Experiments Status**: 
-- **Total Required**: 3 targets × 4 models × 3 horizons = 36 combinations
-- **Latest Run**: 20251206_073336 (all 3 targets)
-- **Current Results**: ARIMA/VAR complete but n_valid=0 for ALL horizons across all targets
-- **Action Required**: Investigate why prediction extraction is failing despite fixes
+**Current Status**:
+- ✅ ARIMA: Working (n_valid=1 for all horizons, 3 targets) - 9 successful combinations
+- ✅ VAR: Fix applied - prediction extraction now handles case when target_series not in y_pred_h.columns but in y_test.columns (evaluation.py lines 416-425)
+- ❌ DFM: Numerical instability (NaN/Inf in parameters for KOGDP...D/KOCNPER.D, n_valid=0 for KOGFCF..D)
+- ✅ DDFM: Fix applied - same fix as VAR (both return DataFrames with all columns, fix applies to both)
 
-#### Task 1.1: Fix ARIMA n_valid=0 [COMPLETED]
-**Issue**: n_valid=0 for all horizons despite model training successfully  
-**Root Cause**: Prediction extraction logic was too complex, not always extracting the correct horizon h prediction  
-**Location**: `src/eval/evaluation.py:336-411`  
-**Fix Applied**:
-1. ✅ Simplified prediction extraction: always take last element from predict() output (should be horizon h)
-2. ✅ Improved compatibility: handle both `predict(fh=[h])` and `predict(fh=h)` formats
-3. ✅ Better shape handling: ensure consistent DataFrame/Series extraction with .copy() to avoid view issues
-4. ✅ Enhanced error handling: catch both TypeError and ValueError for predict() calls
-**Status**: ✅ Fix applied, ready for testing
+#### Task 1.1: Fix VAR Prediction Extraction [COMPLETED - 2025-01-XX]
+**Priority**: HIGH - Blocking experiments  
+**Root Cause**: VAR predictions return DataFrame with all columns, but target_series extraction fails when target_series not in y_pred_h.columns  
+**Action**: 
+1. ✅ Fixed evaluation.py lines 416-425: Added fallback to check y_test.columns when target_series not in y_pred_h.columns
+2. ✅ Use column index from y_test to extract from y_pred_h when column names don't match
+3. ⏳ Test: Verify n_valid > 0 for VAR on at least one target/horizon (pending test run)
+**Files**: `src/eval/evaluation.py` (lines 416-425)
 
-#### Task 1.2: Fix VAR pandas asfreq() API Error [NEEDS VERIFICATION]
-**Issue**: "NDFrame.asfreq() got an unexpected keyword argument 'fill_method'"  
-**Root Cause**: pandas 2.3.3 uses `method` parameter, but error handling wasn't catching all exception types  
-**Location**: `src/core/training.py:310-343`  
-**Fix Applied**:
-1. ✅ Enhanced error handling: catch both TypeError and ValueError (not just TypeError)
-2. ✅ Fallback chain: try `method='ffill'` → try `fill_method='ffill'` → manual `fillna(method='ffill')`
-3. ✅ Applied to both inferred_freq and default 'D' frequency cases
-**Status**: ⚠️ Fix in code but error log shows line 322 using fill_method - suggests experiments ran before fix OR different code path
-**Additional Issue**: ✅ Fixed - `fillna(method='ffill')` replaced with `ffill()` on lines 331, 343
+#### Task 1.2: Fix DFM Numerical Instability [AFTER 1.1]
+**Priority**: HIGH - Blocking experiments  
+**Root Cause**: EM algorithm produces NaN/Inf in parameters (A or C matrices)  
+**Action**:
+1. Review EM algorithm convergence: Check em.py for early stopping when parameters become NaN/Inf
+2. Check initialization: Verify PCA initialization in dfm-python handles edge cases (T < N, high missing data)
+3. Add parameter validation: Check A/C matrices after each EM iteration, stop if NaN/Inf detected
+4. Review regularization: Verify 1e-6, 1e-8 constants are appropriate for edge cases
+5. Test: Verify DFM produces valid predictions for at least one target
+**Files**: `dfm-python/src/dfm_python/ssm/em.py`, `dfm-python/src/dfm_python/models/dfm.py` (lines 672-677)
 
-#### Task 1.3: Fix DFM/DDFM Pickle Error [COMPLETED - 2025-12-06]
-**Issue**: "Can't pickle local object 'make_cha_transformer.<locals>.<lambda>'" (line 873)  
-**Root Cause**: make_cha_transformer uses lambda that captures local variables (step, annual_factor), making it unpicklable  
-**Location**: `src/preprocess/utils.py:846-873` (lambda at line 873)  
-**Previous Fix**: ✅ identity_with_index/log_with_index fixed using globals()['function_name'] pattern  
-**Fix Applied**: ✅ Created module-level function `cha_with_index(X, step, annual_factor)` and refactored `make_cha_transformer` to use `functools.partial(cha_with_index, step=step, annual_factor=annual_factor)` instead of lambda  
-**Affected Targets**: KOGDP...D, KOCNPER.D (use 'cha'), NOT KOGFCF..D (uses 'log')  
-**Status**: ✅ FIXED - Ready for testing
+#### Task 1.3: Fix DDFM n_valid=0 [COMPLETED - 2025-01-XX]
+**Priority**: MEDIUM - After VAR/DFM fixed  
+**Root Cause**: Prediction extraction issue - same as VAR (both return DataFrames with all columns)  
+**Action**:
+1. ✅ Verified DDFM prediction format: DDFMForecaster returns DataFrame with all columns (sktime_forecaster.py line 430-434)
+2. ✅ Fixed evaluation.py: VAR fix applies to DDFM since both use same prediction extraction logic
+3. ⏳ Test: Verify n_valid > 0 for DDFM on at least one target/horizon (pending test run)
+**Files**: `src/eval/evaluation.py` (same fix as VAR), `src/model/sktime_forecaster.py`
 
-#### Task 1.4: Fix fillna() Deprecation [COMPLETED]
-**Issue**: `fillna(method='ffill')` is deprecated in pandas 2.x  
-**Location**: `src/core/training.py:331, 343`  
-**Fix Applied**: Replaced `fillna(method='ffill')` with `ffill()`  
-**Status**: ✅ Fixed - ready for testing
+#### Task 1.4: Re-run Full Experiments [AFTER 1.1-1.3 SUCCEED]
+**Action**: `bash run_experiment.sh`
+- What it does: Runs all 3 targets in parallel (max 5 processes), checks for valid results before skipping
+- Expected duration: Several hours
+- Output: `outputs/comparisons/{target}_{timestamp}/comparison_results.json` for each target
+- Verification: Check n_valid > 0 for at least 6 combinations (2 models × 3 targets minimum)
+- Note: run_experiment.sh already checks for valid results (n_valid > 0) before skipping
 
-#### Task 1.5: Investigate Why n_valid=0 Persists [ROOT CAUSES IDENTIFIED - 2025-12-06]
-
-**Issue**: Latest experiments (20251206_080003) show ARIMA/VAR/DFM/DDFM complete training but n_valid=0 for all horizons. Root causes identified from log analysis.
-
-**Step 1: Inspect Latest Results in Detail** [COMPLETED - 2025-12-06]
-- **Action**: ✅ Read full comparison_results.json and log files from 20251206_080003 for all 3 targets
-- **Findings**: 
-  - ✅ Pickle error FIXED: DFM/DDFM now complete training for all targets (no longer failing)
-  - ARIMA/VAR: Status "completed" but error: "target_series must be int if y_true is not DataFrame"
-  - DFM: KOGDP...D/KOCNPER.D predictions fail: "model parameters (A or C) contain NaN or Inf values" or "produced NaN/Inf values in forecast"
-  - DFM (KOGFCF..D): Status "completed" (converged, loglik=135.76) but n_valid=0 for all horizons
-  - DDFM: Status "completed" for all targets but n_valid=0 for all horizons
-  - Test data size: For horizon 28, "test_pos 27 >= y_test length 19/21" - test set too small
-- **Conclusion**: Multiple root causes identified:
-  1. ARIMA/VAR: target_series handling issue (string vs int/None when y_test is Series)
-  2. DFM: Numerical instability (NaN/Inf in parameters or predictions)
-  3. Test data size: Test set too small for horizon 28 evaluation
-
-**Step 2: Debug Prediction Extraction Logic** [COMPLETED - 2025-12-06]
-- **Action**: ✅ Added enhanced debug logging to `src/eval/evaluation.py` around prediction extraction (lines 339-452) and calculate_standardized_metrics (line 137)
-- **Logging Added**:
-  - INFO level logging for predict() return values (type, shape, length)
-  - INFO level logging for y_test properties (length, type, shape, index)
-  - INFO level logging for has_pred/has_true flags with detailed warnings when False
-  - DEBUG level logging for mask calculation in calculate_standardized_metrics (shows NaN/Inf counts)
-- **Check**:
-  - What does `forecaster.predict(fh=[h])` actually return? (type, shape, values) - ✅ LOGGED
-  - What is the shape of y_test? (length, type, index) - ✅ LOGGED
-  - Is test_pos calculation correct? (test_pos = h - 1, but is y_test indexed correctly?) - ✅ LOGGED
-  - Are has_pred and has_true being set correctly? (lines 410-411) - ✅ LOGGED with warnings
-  - Is the mask calculation working correctly? (line 137 in calculate_standardized_metrics) - ✅ LOGGED with NaN/Inf counts
-  - Are predictions and y_test aligned properly? (index matching vs position-based) - ✅ LOGGED
-- **Status**: ✅ Enhanced logging added - Ready for testing to identify root cause
-
-**Step 3: Root Causes Identified from Logs** [COMPLETED - 2025-12-06]
-- **Action**: ✅ Analyzed log files from 20251206_080003 run
-- **Root Causes Identified**:
-  1. **ARIMA/VAR**: Error "target_series must be int if y_true is not DataFrame" in calculate_standardized_metrics()
-     - Location: `src/eval/evaluation.py:calculate_standardized_metrics()` 
-     - Issue: When y_test is Series (single column), target_series should be None or int, not string
-     - Fix: Don't pass string target_series when y_test is Series, or convert Series to DataFrame first
-  2. **DFM**: Predictions fail with NaN/Inf in parameters or forecast values
-     - KOGDP...D/KOCNPER.D: "model parameters (A or C) contain NaN or Inf values"
-     - KOCNPER.D: "produced NaN/Inf values in forecast"
-     - Issue: Numerical instability in EM algorithm or prediction step
-     - Fix: Review EM algorithm regularization, check for division by zero, add NaN/Inf checks
-  3. **Test data size**: For horizon 28, test_pos=27 but y_test only has 19-21 elements
-     - Issue: 20% test split may not provide enough data for horizon 28 evaluation
-     - Fix: Either increase test set size, skip horizon 28 if test set too small, or use rolling window evaluation
-- **Next Action**: Fix ARIMA/VAR target_series handling first (simplest fix), then investigate DFM numerical stability
-
-**Step 4: Fix Root Cause**
-- **Action**: Based on Step 2-3 findings, fix the actual root cause
-- **Possible Issues**:
-  - Prediction shape mismatch (predict() returns wrong format)
-  - Index alignment issues (predictions and y_test have different indices)
-  - Mask calculation bug (valid mask is all False)
-  - Data type issues (predictions are NaN or wrong type)
-- **Goal**: Fix the actual bug causing n_valid=0
-
-**Step 5: Verify Fix Works**
-- **Action**: Re-run single test from Step 3 after fix
-- **Check**: n_valid > 0 in results
-- **Goal**: Confirm fix resolves the issue
-
-**Step 6: Re-run Full Experiments**
-- **Action**: `bash run_experiment.sh` (after Step 5 succeeds)
-- **What It Does**: Runs all 3 targets in parallel (max 5 processes), automatically checks for valid results
-- **Expected Duration**: Several hours (depends on model training time)
-- **Output**: `outputs/comparisons/{target}_{timestamp}/comparison_results.json` for each target
-
-**Step 7: Verify Results**
-- **Check Each Target**: `outputs/comparisons/KOGDP...D_*/comparison_results.json`, `KOCNPER.D_*/`, `KOGFCF..D_*/`
-- **Check n_valid**: For each model/horizon combination, verify n_valid > 0
-- **Success Criteria**:
-  - At least 2 models per target have n_valid > 0 for at least one horizon
-  - Minimum 6 total successful model-target-horizon combinations
-  - If not met, investigate remaining failures
-
-**Step 8: Generate Aggregated Results**
-- **Action**: `python3 -c "from src.eval import main_aggregator; main_aggregator()"`
-- **Output**: `outputs/experiments/aggregated_results.csv`
-- **Expected**: 36 rows (3 targets × 4 models × 3 horizons), fewer if some models failed
-- **Verification**: File exists, contains non-NaN values for successful models
+#### Task 1.5: Generate Aggregated Results [AFTER 1.4 SUCCEEDS]
+**Action**: `python3 -c "from src.eval import main_aggregator; main_aggregator()"`
+- Prerequisite: At least 6 successful combinations with n_valid > 0
+- Output: `outputs/experiments/aggregated_results.csv`
+- Expected: 36 rows (3 targets × 4 models × 3 horizons), fewer if some models failed
+- Verification: File exists, contains non-NaN values for successful models
 
 **Note on run_experiment.sh**: 
-- ✅ Already checks for valid results (n_valid > 0) before skipping experiments
+- ✅ Already checks for valid results (n_valid > 0) before skipping
 - ✅ Will re-run all targets since current results have n_valid=0
-- ⚠️ May need updates after fixing root cause if experiment structure changes
+- ⚠️ May need updates if experiment structure changes (e.g., different targets/models/horizons)
 
 ### PHASE 2: Code Quality Improvements [INCREMENTAL - AFTER PHASE 1]
 
 **Goal**: Improve dfm-python package and src/ code quality incrementally  
-**Priority**: Medium - proceed after Phase 1 succeeds or in parallel if experiments take long
+**Priority**: Low - proceed after Phase 1 succeeds or in parallel if experiments take long
 
 #### Task 2.1: Review dfm-python Numerical Stability [INCREMENTAL]
 **Status**: Code has stability measures but needs review  
@@ -282,9 +197,9 @@
    - Check for generic names (no hardcoded assumptions)
    - Verify function names match their purpose
 
-### PHASE 3: Generate Results [BLOCKED by Phase 1 - REQUIRES VALID EXPERIMENT RESULTS]
+### PHASE 3: Generate Results for Report [BLOCKED by Phase 1]
 
-**Prerequisites**: Phase 1 complete with at least 6 successful model-target combinations AND aggregated_results.csv exists
+**Prerequisites**: Phase 1 complete (aggregated_results.csv exists with valid data)
 
 **Current Status**: ⚠️ BLOCKED - No valid results yet (all n_valid=0 in latest runs)
 
@@ -333,9 +248,9 @@
 - Numbers formatted correctly (consistent decimal places)
 - All tables reference correct data from aggregated_results.csv
 
-### PHASE 4: Report Improvements [BLOCKED by Phase 3 - REQUIRES TABLES AND PLOTS]
+### PHASE 4: Update Report with Results [BLOCKED by Phase 3]
 
-**Prerequisites**: Phase 3 complete with all tables updated and plots generated
+**Prerequisites**: Phase 2 complete (tables updated, plots generated)
 
 **Current Status**: ⚠️ BLOCKED - Tables have "---" placeholders, plots not generated
 
@@ -415,9 +330,9 @@
 ## Current Status Summary
 
 **Experiments**:
-- Latest run: 20251206_080003 (all 3 targets attempted)
-- Valid results: NONE (all models show n_valid=0)
-- Outputs: comparison_results.json exists but invalid, aggregated_results.csv MISSING
+- Latest run: 20251206_082502 (all 3 targets attempted)
+- Valid results: PARTIAL - ARIMA working (9 combinations: 3 targets × 3 horizons with n_valid=1)
+- Outputs: comparison_results.json exists, ARIMA has valid metrics, VAR/DFM/DDFM have n_valid=0, aggregated_results.csv MISSING
 
 **Code**:
 - ✅ All fixes applied (ARIMA, VAR, DFM/DDFM pickle, fillna deprecation)
@@ -437,105 +352,61 @@
 - ✅ Will re-run all targets since current results have n_valid=0
 - ⚠️ May need updates later if experiment structure changes
 
-## Experiments Needed for Report
+## Experiments Status and Requirements
 
+### Required Experiments for Report
 **Configuration**: 3 targets × 4 models × 3 horizons = 36 combinations
-- Targets: KOGDP...D (GDP, 55 series), KOCNPER.D (Consumption, 50 series), KOGFCF..D (Investment, 19 series)
-- Models: ARIMA, VAR, DFM, DDFM
-- Horizons: 1, 7, 28 days
+- **Targets**: KOGDP...D (GDP, 55 series), KOCNPER.D (Consumption, 50 series), KOGFCF..D (Investment, 19 series)
+- **Models**: ARIMA, VAR, DFM, DDFM
+- **Horizons**: 1, 7, 28 days
 
-**Status**:
-- ✅ All 3 targets attempted (latest: 20251206_080003)
-- ❌ NO VALID RESULTS: All runs show n_valid=0 (all metrics NaN)
-- ❌ aggregated_results.csv: MISSING
+### Current Status (Latest Run: 20251206_082502)
+- ✅ **All 3 targets attempted**: KOGDP...D, KOCNPER.D, KOGFCF..D
+- ✅ **All 4 models attempted**: ARIMA, VAR, DFM, DDFM
+- ✅ **All models complete training**: No training failures
+- ✅ **ARIMA WORKING**: 9 successful combinations (3 targets × 3 horizons with n_valid=1)
+- ❌ **VAR/DFM/DDFM FAILING**: All show n_valid=0 or prediction errors
+- ❌ **aggregated_results.csv**: MISSING (need at least 2 models per target for report)
 
-**Still Needed**:
-- ⚠️ ALL 36 combinations need to be re-run after n_valid=0 root cause is fixed
-- ⚠️ Minimum viable: 6 successful combinations (2 models × 3 targets)
-- ⚠️ Ideal: All 36 combinations succeed
+### Experiments Still Needed
+- ⚠️ **VAR/DFM/DDFM need fixes** before re-running (ARIMA already working)
+- ⚠️ **Minimum viable for report**: 6 successful combinations (2 models × 3 targets, or equivalent)
+  - Current: 9 ARIMA combinations (need at least 1 more model working)
+- ⚠️ **Ideal**: All 36 combinations succeed (currently 9/36 = 25%)
+
+### What's Complete vs What's Missing
+**Complete**:
+- Experiment infrastructure (run_experiment.sh, configs, data)
+- Model training (all models complete without errors)
+- Result structure (comparison_results.json files exist)
+
+**Missing**:
+- Valid predictions for VAR/DFM/DDFM (ARIMA has 9 working combinations)
+- Aggregated results CSV (cannot generate with only ARIMA results)
+- Plots and tables for report (need at least 2 models per target)
 
 
-## Incremental Task Priority
+## Task Priority Summary
 
-**IMMEDIATE (Critical Path - Fix Root Causes)**:
-1. ✅ **Fix ARIMA/VAR target_series handling** (src/eval/evaluation.py:464-475, 281-284) - COMPLETED
-   - Issue: When y_test is Series, target_series should be None (not string)
-   - Fix: In evaluate_forecaster() and calculate_metrics_per_horizon(), check if y_true_h is Series and set target_series=None before calling calculate_standardized_metrics()
-   - Location: src/eval/evaluation.py lines 464-475 (evaluate_forecaster), lines 281-284 (calculate_metrics_per_horizon)
-2. ⏳ **Fix DFM numerical stability** (dfm-python/src/dfm_python/models/dfm.py:672-677)
-   - Issue: Parameters A or C contain NaN/Inf after EM training
-   - Fix: Review EM algorithm regularization (1e-6, 1e-8), add early stopping for NaN/Inf, check for division by zero
-   - Location: dfm-python/src/dfm_python/ssm/em.py, dfm-python/src/dfm_python/models/dfm.py
-3. ✅ **Fix test data size for horizon 28** (src/eval/evaluation.py:370-380) - COMPLETED
-   - Issue: test_pos=27 but y_test only has 19-21 elements (20% split too small)
-   - Fix: Skip horizon 28 if test_pos >= len(y_test) before attempting to extract test data
-   - Location: src/eval/evaluation.py:370-380
-4. ⏳ **Verify fixes work** (re-run minimal test: ARIMA, KOGFCF..D, horizon=1)
-5. ⏳ **Re-run full experiments** (`bash run_experiment.sh` - already checks for n_valid > 0)
-6. ⏳ **Generate aggregated CSV** (`python3 -c "from src.eval import main_aggregator; main_aggregator()"`)
+### IMMEDIATE (Critical Path)
+1. ⏳ **Task 1.1**: Fix VAR prediction extraction (evaluation.py)
+2. ⏳ **Task 1.2**: Fix DFM numerical instability (em.py, dfm.py)
+3. ⏳ **Task 1.3**: Fix DDFM n_valid=0 (evaluation.py, ddfm.py)
+4. ⏳ **Task 1.4**: Re-run full experiments (`bash run_experiment.sh`)
+5. ⏳ **Task 1.5**: Generate aggregated CSV (after valid results available)
 
-**BLOCKED (Requires Valid Results)**:
-- Generate plots (`python3 nowcasting-report/code/plot.py`)
-- Update LaTeX tables (replace "---" with numbers)
-- Update results section (5_result.tex) with actual numbers
-- Update discussion section (6_discussion.tex) with real findings
-- Finalize report (compile PDF, verify 20-30 pages)
+### BLOCKED (Requires Valid Results)
+- **Task 3.1-3.3**: Generate plots, update LaTeX tables
+- **Task 4.2-4.4**: Update results/discussion sections, finalize report
 
-**INCREMENTAL IMPROVEMENTS (Can Do in Parallel)**:
+### INCREMENTAL (Can Do in Parallel)
+- **Task 4.1**: Review report sections 1-4, 6-7 (hallucination check, citations) - See "Report Improvements" section above
+- **Task 2.1-2.2**: Code quality improvements (dfm-python, src/) - See "Code Quality Improvements" section above
 
-**Code Quality (dfm-python)**:
-1. **Numerical Stability Review**:
-   - Review EM regularization constants (1e-6, 1e-8) in em.py - verify appropriate for T < N, near-singular cases
-   - Check Kalman filter safe_inverse() fallbacks handle all failure modes (kalman.py)
-   - Verify eigenvalue checks catch all ill-conditioned matrices
-   - Test edge cases: T < N, near-singular matrices, extreme eigenvalues
-2. **Theoretical Correctness**:
-   - Verify EM algorithm matches standard references (Durbin-Koopman, Harvey) - use neo4j MCP for knowledge
-   - Check Kalman gain: K = P_{t|t-1} C' (C P_{t|t-1} C' + R)^{-1}
-   - Verify innovation covariance structure matches theory
-3. **Code Patterns**:
-   - Check for redundant validation logic across models (dfm.py, ddfm.py)
-   - Verify no monkey patches or temporal fixes remain
-   - Ensure generic naming (no hardcoded assumptions)
+## Notes
 
-**Code Quality (src/)**:
-1. **Redundancies**:
-   - Consolidate duplicate logic in dfm.py, ddfm.py, sktime_forecaster.py (load_config, train_model functions)
-   - Remove duplicate preprocessing steps if present
-   - Consolidate common error handling patterns
-2. **Error Handling**:
-   - Verify all exceptions caught and logged (especially evaluation.py)
-   - Check for silent failures (NaN propagation, empty predictions not logged)
-   - Ensure debug logging available for troubleshooting
-3. **Inefficient Logic**:
-   - Review data loading loops in training.py (check for unnecessary iterations)
-   - Check preprocessing pipeline for redundant transformations
-   - Verify evaluation.py doesn't recalculate metrics unnecessarily
-
-**Report Quality**:
-1. **Hallucination Check** (sections 1-4, 6-7):
-   - Verify all theoretical claims match references.bib (use neo4j MCP for additional knowledge)
-   - Check methods section matches actual src/ implementation
-   - Remove unsupported claims (anything not in references.bib or results)
-2. **Detail Level**:
-   - Ensure 4_method_and_experiment.tex matches actual preprocessing in src/preprocess/utils.py
-   - Verify DFM/DDFM description matches dfm-python implementation
-   - Check evaluation metrics calculation matches src/eval/evaluation.py
-3. **Redundancy**:
-   - Remove repeated statements about data preprocessing across sections
-   - Consolidate model descriptions (avoid repeating same info in intro/method/results)
-   - Remove duplicate explanations of nowcasting concept
-4. **Flow**:
-   - Ensure logical progression: intro → lit review → theory → method → results → discussion → conclusion
-   - Check transitions between sections are smooth
-   - Verify results section references method section correctly
-5. **Citations**:
-   - Verify all \cite{} exist in references.bib (21 references verified)
-   - Add citations for new knowledge from neo4j MCP (add to references.bib first)
-   - Check no made-up references or incorrect citation keys
-
-**Notes**:
-- Minimum viable: 6 successful combinations for report (2 models × 3 targets)
-- run_experiment.sh already checks for valid results (n_valid > 0), will re-run all since current results invalid
-- Report sections 5 (results) and parts of 6 (discussion) blocked until experiments succeed
-- Work incrementally: fix critical issues first, then improve code quality, then improve report
+- **Minimum viable**: 6 successful combinations for report (2 models × 3 targets, or equivalent)
+- **run_experiment.sh**: Already checks for valid results (n_valid > 0). ARIMA results are valid, but VAR/DFM/DDFM need fixes before re-running
+- **Report sections**: Section 5 (results) and parts of section 6 (discussion) blocked until experiments succeed
+- **Work incrementally**: Verify fixes → Get valid results → Generate outputs → Update report
+- **If run_experiment.sh needs updates**: Only if experiment structure changes (different targets/models/horizons)
