@@ -328,7 +328,7 @@ def _train_forecaster(
                         except (TypeError, ValueError):
                             # Last resort: asfreq without fill, then forward-fill manually
                             y_train = y_train.asfreq(inferred_freq)
-                            y_train = y_train.fillna(method='ffill')
+                            y_train = y_train.ffill()
                 else:
                     # Default to daily frequency for daily data
                     try:
@@ -340,7 +340,7 @@ def _train_forecaster(
                         except (TypeError, ValueError):
                             # Last resort: asfreq without fill, then forward-fill manually
                             y_train = y_train.asfreq('D')
-                            y_train = y_train.fillna(method='ffill')
+                            y_train = y_train.ffill()
         
         # Final imputation check: asfreq() may have introduced new NaNs, so re-impute if needed
         if y_train.isnull().any().any():
