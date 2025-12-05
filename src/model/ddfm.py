@@ -24,9 +24,12 @@ except ImportError:
     DFMDataModule = None
 
 try:
-    from preprocess.utils import create_transformer_from_config
+    from ..preprocess.utils import create_transformer_from_config
 except ImportError:
-    create_transformer_from_config = None
+    try:
+        from preprocess.utils import create_transformer_from_config
+    except ImportError:
+        create_transformer_from_config = None
 
 # Import shared utilities
 from ._common import (
@@ -229,7 +232,15 @@ class DDFM:
         Raises:
             RuntimeError: If config has not been loaded yet. Call load_config() first.
         """
-        return self._model.get_config()
+        # dfm-python uses config attribute, not get_config method
+        if hasattr(self._model, 'config') and self._model.config is not None:
+            return self._model.config
+        elif hasattr(self._model, '_config') and self._model._config is not None:
+            return self._model._config
+        elif hasattr(self._model, 'get_config'):
+            return self._model.get_config()
+        else:
+            raise RuntimeError("Config not loaded. Call load_config() first.")
     
     def get_metadata(self) -> Dict[str, Any]:
         """Get model metadata.

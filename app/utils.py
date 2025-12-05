@@ -273,3 +273,57 @@ def load_model_file(model_path: Path) -> Dict[str, Any]:
     
     return model_data
 
+
+# ===== File Upload Utilities =====
+
+def validate_csv_file(filename: Optional[str]) -> None:
+    """Validate that filename is a CSV file.
+    
+    Args:
+        filename: Filename to validate
+        
+    Raises:
+        ValidationError: If filename is not a CSV file
+    """
+    if not filename or not filename.endswith('.csv'):
+        raise ValidationError("File must be a CSV file")
+
+
+def ensure_csv_extension(filename: str) -> str:
+    """Ensure filename has .csv extension.
+    
+    Args:
+        filename: Filename to check
+        
+    Returns:
+        Filename with .csv extension
+    """
+    return filename if filename.endswith('.csv') else f"{filename}.csv"
+
+
+def validate_csv_columns(file_path: Path, required_columns: List[str]) -> None:
+    """Validate that CSV file has required columns.
+    
+    Args:
+        file_path: Path to CSV file
+        required_columns: List of required column names
+        
+    Raises:
+        ValidationError: If required columns are missing
+    """
+    import pandas as pd
+    
+    try:
+        df = pd.read_csv(file_path, nrows=1)
+        missing_cols = [col for col in required_columns if col not in df.columns]
+        if missing_cols:
+            available = ', '.join(df.columns)
+            raise ValidationError(
+                f"Missing required columns: {', '.join(missing_cols)}. "
+                f"Available columns: {available}"
+            )
+    except Exception as e:
+        if isinstance(e, ValidationError):
+            raise
+        raise ValidationError(f"Failed to validate CSV: {str(e)}") from e
+

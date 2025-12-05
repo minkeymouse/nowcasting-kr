@@ -3,7 +3,6 @@
 This service integrates with src.config module for CSV import and config management.
 """
 
-import warnings
 import yaml
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
@@ -113,58 +112,6 @@ class ConfigManager:
             return ModelType.DDFM
         return ModelType.DFM
     
-    def get_config(self, config_name: str) -> str:
-        """Get config file content (legacy method - deprecated).
-        
-        .. deprecated:: 0.1.0
-            Use :meth:`get_experiment` for experiment configs or access BaseConfigManager
-            methods for series/block configs.
-        """
-        warnings.warn(
-            f"get_config() is deprecated. Use get_experiment('{config_name}') for experiments "
-            "or use BaseConfigManager methods for series/block configs.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        config_path = self.config_dir / f"{config_name}.yaml"
-        return self._read_yaml_file(config_path)
-    
-    def update_config(self, config_name: str, content: str):
-        """Update config file (legacy method - deprecated).
-        
-        .. deprecated:: 0.1.0
-            Use :meth:`update_experiment` for experiment configs or access BaseConfigManager
-            methods for series/block configs.
-        """
-        warnings.warn(
-            f"update_config() is deprecated. Use update_experiment('{config_name}', content) "
-            "for experiments or use BaseConfigManager methods for series/block configs.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        # Validate YAML
-        self.validate_config(content, config_type="config")
-        
-        config_path = self.config_dir / f"{config_name}.yaml"
-        self._write_yaml_file(config_path, content)
-    
-    def list_configs(self) -> List[str]:
-        """List available config files (legacy method - deprecated).
-        
-        .. deprecated:: 0.1.0
-            Use :meth:`list_experiments` for experiment configs or access BaseConfigManager
-            methods for series/block configs.
-        """
-        warnings.warn(
-            "list_configs() is deprecated. Use list_experiments() for experiments "
-            "or use BaseConfigManager methods for series/block configs.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        configs = []
-        for path in self.config_dir.glob("*.yaml"):
-            configs.append(path.stem)
-        return configs
     
     def validate_config(self, content: str, config_type: Optional[str] = None):
         """Validate YAML content.

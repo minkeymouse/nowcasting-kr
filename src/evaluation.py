@@ -289,3 +289,271 @@ def evaluate_forecaster(
     )
     
     return results
+
+
+# ========================================================================
+# Model Comparison Functions
+# ========================================================================
+
+def compare_multiple_models(
+    model_results: Dict[str, Dict[str, Any]],
+    horizons: List[int],
+    target_series: Optional[str] = None
+) -> Dict[str, Any]:
+    """Compare results from multiple forecasting models.
+    
+    This function takes results from multiple model training runs and
+    generates a comparison table with standardized metrics for each horizon.
+    
+    Parameters
+    ----------
+    model_results : dict
+        Dictionary mapping model name to experiment results.
+        Each result should have:
+        - 'status': 'completed' or 'failed'
+        - 'metrics': Dictionary with training metrics (converged, num_iter, loglik, etc.)
+        - 'result': Model result object (optional, for extracting forecasts)
+        - 'metadata': Model metadata (optional)
+    horizons : List[int]
+        List of forecast horizons to compare (e.g., [1, 7, 28])
+    target_series : str, optional
+        Target series name (for context and filtering)
+        
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - 'metrics_table': pd.DataFrame with metrics per model and horizon
+        - 'summary': Summary statistics dictionary
+        - 'best_model_per_horizon': Dictionary mapping horizon to best model name
+        - 'best_model_overall': Best model across all horizons
+        
+    Notes
+    -----
+    - Only models with status='completed' and valid metrics are included
+    - Metrics are extracted from training results (converged, num_iter, loglik)
+    - For forecast metrics, models need to have prediction results available
+    - Standardized metrics (sMSE, sMAE, sRMSE) are preferred for comparison
+    """
+    # Filter successful models
+    successful_models = {
+        name: result for name, result in model_results.items()
+        if result.get('status') == 'completed' and result.get('metrics') is not None
+    }
+    
+    if len(successful_models) == 0:
+        return {
+            'metrics_table': None,
+            'summary': 'No successful models to compare',
+            'best_model_per_horizon': {},
+            'best_model_overall': None
+        }
+    
+    # Extract metrics for each model
+    comparison_data = []
+    
+    for model_name, result in successful_models.items():
+        metrics = result.get('metrics', {})
+        forecast_metrics = metrics.get('forecast_metrics', {})
+        
+        # Extract training metrics
+        row = {
+            'model': model_name,
+            'converged': metrics.get('converged', False),
+            'num_iter': metrics.get('num_iter', 0),
+            'loglik': metrics.get('loglik', np.nan),
+            'model_type': metrics.get('model_type', 'unknown')
+        }
+        
+        # Extract forecast metrics for each horizon
+        for horizon in horizons:
+            horizon_metrics = forecast_metrics.get(horizon, {})
+            if horizon_metrics:
+                row[f'sMSE_h{horizon}'] = horizon_metrics.get('sMSE', np.nan)
+                row[f'sMAE_h{horizon}'] = horizon_metrics.get('sMAE', np.nan)
+                row[f'sRMSE_h{horizon}'] = horizon_metrics.get('sRMSE', np.nan)
+            else:
+                row[f'sMSE_h{horizon}'] = np.nan
+                row[f'sMAE_h{horizon}'] = np.nan
+                row[f'sRMSE_h{horizon}'] = np.nan
+        
+        comparison_data.append(row)
+    
+    # Create DataFrame
+    metrics_df = pd.DataFrame(comparison_data)
+    
+    # Generate summary statistics
+    summary = {
+        'total_models': len(successful_models),
+        'converged_models': int(metrics_df['converged'].sum()),
+        'avg_loglik': float(metrics_df['loglik'].mean()) if not metrics_df['loglik'].isna().all() else np.nan,
+        'best_loglik': float(metrics_df['loglik'].max()) if not metrics_df['loglik'].isna().all() else np.nan,
+        'best_model_by_loglik': metrics_df.loc[metrics_df['loglik'].idxmax(), 'model'] if not metrics_df['loglik'].isna().all() else None
+    }
+    
+    # Determine best model per horizon based on sMSE (lower is better)
+    best_model_per_horizon = {}
+    for horizon in horizons:
+        sMSE_col = f'sMSE_h{horizon}'
+        if sMSE_col in metrics_df.columns:
+            valid_models = metrics_df[metrics_df[sMSE_col].notna()]
+            if len(valid_models) > 0:
+                best_idx = valid_models[sMSE_col].idxmin()
+                best_model_per_horizon[horizon] = metrics_df.loc[best_idx, 'model']
+    
+    # Best model overall (lowest average sMSE across all horizons)
+    sMSE_cols = [f'sMSE_h{h}' for h in horizons if f'sMSE_h{h}' in metrics_df.columns]
+    if sMSE_cols:
+        metrics_df['avg_sMSE'] = metrics_df[sMSE_cols].mean(axis=1)
+        valid_models = metrics_df[metrics_df['avg_sMSE'].notna()]
+        if len(valid_models) > 0:
+            best_model_overall = valid_models.loc[valid_models['avg_sMSE'].idxmin(), 'model']
+        else:
+            best_model_overall = summary.get('best_model_by_loglik')
+    else:
+        best_model_overall = summary.get('best_model_by_loglik')
+    
+    return {
+        'metrics_table': metrics_df,
+        'summary': summary,
+        'best_model_per_horizon': best_model_per_horizon,
+        'best_model_overall': best_model_overall,
+        'target_series': target_series,
+        'horizons': horizons
+    }
+
+
+def generate_comparison_table(
+    comparison_results: Dict[str, Any],
+    output_path: Optional[str] = None
+) -> pd.DataFrame:
+    """Generate a formatted comparison table from comparison results.
+    
+    Parameters
+    ----------
+    comparison_results : dict
+        Results from compare_multiple_models() function
+    output_path : str, optional
+        Path to save the comparison table (CSV format)
+        
+    Returns
+    -------
+    pd.DataFrame
+        Formatted comparison table
+    """
+    metrics_table = comparison_results.get('metrics_table')
+    
+    if metrics_table is None:
+        return pd.DataFrame()
+    
+    # Format table for better readability
+    formatted_table = metrics_table.copy()
+    
+    # Round numeric columns
+    numeric_cols = formatted_table.select_dtypes(include=[np.number]).columns
+    formatted_table[numeric_cols] = formatted_table[numeric_cols].round(4)
+    
+    # Save if output path provided
+    if output_path:
+        output_path_obj = Path(output_path)
+        output_path_obj.parent.mkdir(parents=True, exist_ok=True)
+        formatted_table.to_csv(output_path_obj, index=False, encoding='utf-8')
+    
+    return formatted_table
+
+
+def save_comparison_plots(
+    comparison_results: Dict[str, Any],
+    output_dir: str,
+    target_series: str
+) -> List[Path]:
+    """Save comparison plots for model results.
+    
+    This function generates and saves visualization plots comparing
+    multiple models' performance across different horizons.
+    
+    Parameters
+    ----------
+    comparison_results : dict
+        Results from compare_multiple_models() function
+    output_dir : str
+        Output directory for saving plots
+    target_series : str
+        Target series name (for plot titles)
+        
+    Returns
+    -------
+    List[Path]
+        List of paths to saved plot files
+        
+    Note
+    ----
+    This function requires matplotlib. Plots are saved to nowcasting-report/images/
+    if output_dir is set appropriately, otherwise to the specified output_dir.
+    """
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use('Agg')  # Non-interactive backend
+    except ImportError:
+        print("Warning: matplotlib not available, skipping plot generation")
+        return []
+    
+    metrics_table = comparison_results.get('metrics_table')
+    if metrics_table is None or len(metrics_table) == 0:
+        print("Warning: No metrics table available for plotting")
+        return []
+    
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    saved_plots = []
+    
+    # Plot 1: Log-likelihood comparison
+    if 'loglik' in metrics_table.columns and not metrics_table['loglik'].isna().all():
+        fig, ax = plt.subplots(figsize=(10, 6))
+        models = metrics_table['model']
+        logliks = metrics_table['loglik']
+        
+        ax.bar(models, logliks)
+        ax.set_xlabel('Model')
+        ax.set_ylabel('Log-Likelihood')
+        ax.set_title(f'Model Comparison: Log-Likelihood ({target_series})')
+        ax.tick_params(axis='x', rotation=45)
+        plt.tight_layout()
+        
+        plot_path = output_path / f"comparison_loglik_{target_series}.png"
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        saved_plots.append(plot_path)
+    
+    # Plot 2: Convergence status
+    if 'converged' in metrics_table.columns:
+        fig, ax = plt.subplots(figsize=(8, 6))
+        models = metrics_table['model']
+        converged = metrics_table['converged'].astype(int)
+        
+        ax.bar(models, converged, color=['red' if not c else 'green' for c in metrics_table['converged']])
+        ax.set_xlabel('Model')
+        ax.set_ylabel('Converged (1=Yes, 0=No)')
+        ax.set_title(f'Model Comparison: Convergence Status ({target_series})')
+        ax.set_ylim([-0.1, 1.1])
+        ax.tick_params(axis='x', rotation=45)
+        plt.tight_layout()
+        
+        plot_path = output_path / f"comparison_convergence_{target_series}.png"
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        saved_plots.append(plot_path)
+    
+    # Also save to nowcasting-report/images/ if possible
+    try:
+        report_images_dir = Path(__file__).parent.parent / "nowcasting-report" / "images"
+        if report_images_dir.exists():
+            for plot_path in saved_plots:
+                import shutil
+                shutil.copy(plot_path, report_images_dir / plot_path.name)
+    except Exception as e:
+        print(f"Warning: Could not copy plots to nowcasting-report/images/: {e}")
+    
+    return saved_plots

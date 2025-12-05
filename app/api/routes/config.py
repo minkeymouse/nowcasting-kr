@@ -1,7 +1,6 @@
 """API endpoints for configuration, models, and file uploads."""
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from pathlib import Path
+from fastapi import APIRouter, UploadFile, File
 import shutil
 import pandas as pd
 from typing import List, Dict, Any
@@ -13,7 +12,10 @@ from api.schemas import (
     UnifiedConfigResponse, UnifiedConfigUpdateRequest,
     ModelInfo
 )
-from app.utils import DATA_DIR
+from app.utils import (
+    DATA_DIR,
+    validate_csv_file, ensure_csv_extension, validate_csv_columns
+)
 
 router = APIRouter()
 
@@ -32,7 +34,7 @@ async def list_experiments():
                 experiment_id=exp_data["experiment_id"],
                 model_type=exp_data["model_type"]
             ))
-        except:
+        except Exception:
             continue
     return experiments
 
@@ -80,11 +82,8 @@ async def upload_data(
     filename: str = "sample_data.csv"
 ) -> Dict[str, Any]:
     """Upload CSV data file with date column specification."""
-    if not file.filename or not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="File must be a CSV file")
-    
-    if not filename.endswith('.csv'):
-        filename = filename + '.csv'
+    validate_csv_file(file.filename)
+    filename = ensure_csv_extension(filename)
     
     file_path = DATA_DIR / filename
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -92,17 +91,7 @@ async def upload_data(
     with open(file_path, 'wb') as f:
         shutil.copyfileobj(file.file, f)
     
-    try:
-        df = pd.read_csv(file_path, nrows=1)
-        if date_column not in df.columns:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Date column '{date_column}' not found in CSV. Available columns: {', '.join(df.columns)}"
-            )
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise
-        raise HTTPException(status_code=500, detail=f"Failed to validate CSV: {str(e)}")
+    validate_csv_columns(file_path, [date_column])
     
     return {
         "message": "Data uploaded successfully",
@@ -120,11 +109,8 @@ async def upload_config(
     filename: str = "metadata.csv"
 ) -> Dict[str, Any]:
     """Upload config CSV file with series metadata."""
-    if not file.filename or not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="File must be a CSV file")
-    
-    if not filename.endswith('.csv'):
-        filename = filename + '.csv'
+    validate_csv_file(file.filename)
+    filename = ensure_csv_extension(filename)
     
     file_path = DATA_DIR / filename
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -132,20 +118,10 @@ async def upload_config(
     with open(file_path, 'wb') as f:
         shutil.copyfileobj(file.file, f)
     
-    try:
-        df = pd.read_csv(file_path)
-        required_cols = ['series_name', 'series_description', 'frequency', 'release']
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Missing required columns: {', '.join(missing_cols)}. Found columns: {', '.join(df.columns)}"
-            )
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise
-        raise HTTPException(status_code=500, detail=f"Failed to validate CSV: {str(e)}")
+    required_cols = ['series_name', 'series_description', 'frequency', 'release']
+    validate_csv_columns(file_path, required_cols)
     
+    df = pd.read_csv(file_path)
     return {
         "message": "Config uploaded successfully",
         "filename": filename,

@@ -44,21 +44,9 @@ def handle_exceptions(func: Callable) -> Callable:
 def to_http_exception(e: Exception) -> HTTPException:
     """Convert custom exceptions to HTTPException.
     
-    Converts application-specific exceptions (ConfigError, ValidationError,
-    ModelNotFoundError, TrainingError) to appropriate HTTPException instances
-    with correct status codes. Also logs the exception for debugging purposes.
-    
-    Args:
-        e: Exception to convert. Can be HTTPException (returned as-is),
-           ConfigError or ModelNotFoundError (404), ValidationError (400),
-           TrainingError (500), or any other Exception (500).
-    
-    Returns:
-        HTTPException: HTTP exception with appropriate status code and detail message.
-            - 404 for ConfigError or ModelNotFoundError
-            - 400 for ValidationError
-            - 500 for TrainingError or unexpected exceptions
-            - Returns e unchanged if it's already an HTTPException
+    Converts application-specific exceptions to appropriate HTTPException instances.
+    This function is kept for backward compatibility but is not actively used
+    since @handle_exceptions decorator handles this automatically.
     """
     if isinstance(e, HTTPException):
         return e

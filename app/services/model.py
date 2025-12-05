@@ -76,53 +76,21 @@ class ModelService:
             pickle.dump(model, f)
     
     def _get_nowcast_manager(self, model: Any, model_name: str) -> Any:
-        """Get nowcast manager from model.
-        
-        Args:
-            model: Model instance
-            model_name: Name of the model (for error messages)
-            
-        Returns:
-            Nowcast manager instance
-            
-        Raises:
-            TrainingError: If nowcast manager cannot be retrieved
-        """
-        if not hasattr(model, 'nowcast'):
-            raise TrainingError(f"Model '{model_name}' does not have nowcast attribute")
-        
-        nowcast = model.nowcast
-        if nowcast is None:
-            raise TrainingError(f"Nowcast manager is None for model '{model_name}'")
-        
-        return nowcast
+        """Get nowcast manager from model."""
+        if not hasattr(model, 'nowcast') or model.nowcast is None:
+            raise TrainingError(f"Model '{model_name}' does not support nowcasting")
+        return model.nowcast
     
     def _extract_nowcast_value(self, result: Any) -> float:
-        """Extract nowcast value from result object.
-        
-        Args:
-            result: Nowcast result object
-            
-        Returns:
-            Nowcast value as float
-        """
+        """Extract nowcast value from result object."""
         if hasattr(result, 'nowcast_value'):
             return float(result.nowcast_value)
-        elif isinstance(result, (int, float)):
+        if isinstance(result, (int, float)):
             return float(result)
-        else:
-            return float(result) if result else 0.0
+        return float(result) if result else 0.0
     
     def _format_date(self, date_obj: Any, fallback: str) -> str:
-        """Format date object to ISO string.
-        
-        Args:
-            date_obj: Date object (may have isoformat method)
-            fallback: Fallback string if formatting fails
-            
-        Returns:
-            ISO formatted date string
-        """
+        """Format date object to ISO string."""
         if hasattr(date_obj, 'isoformat'):
             return date_obj.isoformat()
         return str(date_obj) if date_obj else fallback

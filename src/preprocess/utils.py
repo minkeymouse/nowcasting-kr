@@ -455,18 +455,25 @@ def create_transformer_from_config(config: Any) -> Any:
         If config is invalid, missing required fields, or contains invalid
         transformation types, frequency codes, or duplicate series IDs
     """
-    # Import sktime components
-    from .sktime import (
-        ColumnTransformer,
-        TransformerPipeline,
-        FunctionTransformer,
-        StandardScaler,
-        Differencer,
-        check_sktime_available
-    )
-    # All transformer functions are now in this module, no need to import
-    
+    # Import sktime components - re-import at runtime to ensure availability
+    from .sktime import check_sktime_available
     check_sktime_available()
+    
+    # Import components, handling version differences
+    try:
+        from sktime.transformations.compose import TransformerPipeline
+    except ImportError:
+        raise ImportError("TransformerPipeline not available in sktime")
+    
+    try:
+        from sktime.transformations.compose import ColumnTransformer
+    except ImportError:
+        # Fallback to sklearn's ColumnTransformer for sktime 0.40+
+        from sklearn.compose import ColumnTransformer
+    
+    from sktime.transformations.series.func_transform import FunctionTransformer
+    from sktime.transformations.series.difference import Differencer
+    from sklearn.preprocessing import StandardScaler
     
     # Validate config
     if config is None:
