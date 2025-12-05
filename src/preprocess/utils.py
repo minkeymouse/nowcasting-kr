@@ -11,6 +11,7 @@ from typing import List, Optional, Tuple, Union, Any, Callable
 from datetime import datetime
 
 import numpy as np
+import pandas as pd
 import polars as pl
 
 # Set up paths using centralized utility (relative import since we're in src/)
@@ -828,167 +829,171 @@ def make_cha_transformer(step: int, annual_factor: float):
 
 # Index-Preserving Column Ensemble Transformer
 
-class IndexPreservingColumnEnsembleTransformer(BaseTransformer):
-    """Wrapper for ColumnEnsembleTransformer that preserves index type.
-    
-    ColumnEnsembleTransformer uses pd.concat internally, which can convert
-    DatetimeIndex to base Index when concatenating Series with different index types.
-    This wrapper ensures the output always has a compatible index type
-    (DatetimeIndex, PeriodIndex, or RangeIndex).
-    """
-    
-    _tags = {
-        "scitype:transform-input": "Series",
-        "scitype:transform-output": "Series",
-        "scitype:instancewise": False,
-        "X_inner_mtype": "pd.DataFrame",
-        "y_inner_mtype": "pd.DataFrame",
-        "univariate-only": False,
-        "requires-y": False,
-        "enforce_index_type": None,
-        "fit_is_empty": False,  # Must be False to call _fit
-        "transform-returns-same-time-index": True,
-    }
-    
-    def __init__(self, transformers, remainder="drop", feature_names_out="auto"):
-        """Initialize IndexPreservingColumnEnsembleTransformer.
+if HAS_SKTIME:
+    class IndexPreservingColumnEnsembleTransformer(BaseTransformer):
+        """Wrapper for ColumnEnsembleTransformer that preserves index type.
         
-        Parameters
-        ----------
-        transformers : list of tuples
-            Same as ColumnEnsembleTransformer.transformers
-        remainder : str or estimator, default "drop"
-            Same as ColumnEnsembleTransformer.remainder
-        feature_names_out : str, default "auto"
-            Same as ColumnEnsembleTransformer.feature_names_out
+        ColumnEnsembleTransformer uses pd.concat internally, which can convert
+        DatetimeIndex to base Index when concatenating Series with different index types.
+        This wrapper ensures the output always has a compatible index type
+        (DatetimeIndex, PeriodIndex, or RangeIndex).
         """
-        super().__init__()
-        self.transformers = transformers
-        self.remainder = remainder
-        self.feature_names_out = feature_names_out
-        self._column_transformer = ColumnEnsembleTransformer(
-            transformers=transformers,
-            remainder=remainder,
-            feature_names_out=feature_names_out
-        )
-    
-    def _fit(self, X: pd.DataFrame, y: Optional[pd.DataFrame] = None):
-        """Fit the transformer."""
-        # Store original index type for transform (before fitting)
-        if isinstance(X.index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)):
-            self._original_index_type = type(X.index)
-            self._original_index = X.index.copy()
-        else:
-            # Try to convert to DatetimeIndex
-            try:
-                self._original_index = pd.to_datetime(X.index)
-                self._original_index_type = pd.DatetimeIndex
-            except (ValueError, TypeError):
-                # Fallback to RangeIndex
-                self._original_index = pd.RangeIndex(start=0, stop=len(X))
-                self._original_index_type = pd.RangeIndex
         
-        # Fit the underlying transformer
-        self._column_transformer.fit(X, y)
-        return self
-    
-    def _transform(self, X: pd.DataFrame, y: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-        """Transform X and ensure output has compatible index.
+        _tags = {
+            "scitype:transform-input": "Series",
+            "scitype:transform-output": "Series",
+            "scitype:instancewise": False,
+            "X_inner_mtype": "pd.DataFrame",
+            "y_inner_mtype": "pd.DataFrame",
+            "univariate-only": False,
+            "requires-y": False,
+            "enforce_index_type": None,
+            "fit_is_empty": False,  # Must be False to call _fit
+            "transform-returns-same-time-index": True,
+        }
         
-        This method intercepts the transform call and ensures each transformer's
-        output has the same index type before concatenation, preventing pd.concat
-        from creating a base Index.
-        """
-        # Get transformers and transform each column separately
-        # This allows us to ensure each output has compatible index before concat
-        Xts = []
-        keys = []
-        
-        # Get fitted transformers
-        # ColumnEnsembleTransformer stores fitted transformers in transformers_ attribute
-        fitted_transformers = getattr(self._column_transformer, 'transformers_', [])
-        
-        for name, est, index in fitted_transformers:
-            # Transform this column
-            Xt_col = est.transform(X.loc[:, index], y)
+        def __init__(self, transformers, remainder="drop", feature_names_out="auto"):
+            """Initialize IndexPreservingColumnEnsembleTransformer.
             
-            # Ensure output has compatible index (same as input X.index)
-            # Always use input X.index to ensure all outputs have same index
-            if isinstance(Xt_col, pd.Series):
-                # Use input index if length matches, otherwise align
-                if len(Xt_col) == len(X.index):
-                    Xt_col.index = X.index
-                else:
-                    # Length mismatch - try to align or use RangeIndex
-                    if len(Xt_col) <= len(X.index):
-                        Xt_col.index = X.index[:len(Xt_col)]
-                    else:
-                        # Output longer than input - use RangeIndex
-                        Xt_col.index = pd.RangeIndex(start=0, stop=len(Xt_col))
-                Xts.append(Xt_col)
-            elif isinstance(Xt_col, pd.DataFrame):
-                # Use input index if length matches
-                if len(Xt_col) == len(X.index):
-                    Xt_col.index = X.index
-                else:
-                    if len(Xt_col) <= len(X.index):
-                        Xt_col.index = X.index[:len(Xt_col)]
-                    else:
-                        Xt_col.index = pd.RangeIndex(start=0, stop=len(Xt_col))
-                Xts.append(Xt_col)
+            Parameters
+            ----------
+            transformers : list of tuples
+                Same as ColumnEnsembleTransformer.transformers
+            remainder : str or estimator, default "drop"
+                Same as ColumnEnsembleTransformer.remainder
+            feature_names_out : str, default "auto"
+                Same as ColumnEnsembleTransformer.feature_names_out
+            """
+            super().__init__()
+            self.transformers = transformers
+            self.remainder = remainder
+            self.feature_names_out = feature_names_out
+            self._column_transformer = ColumnEnsembleTransformer(
+                transformers=transformers,
+                remainder=remainder,
+                feature_names_out=feature_names_out
+            )
+        
+        def _fit(self, X: "pd.DataFrame", y: Optional["pd.DataFrame"] = None):
+            """Fit the transformer."""
+            # Store original index type for transform (before fitting)
+            if isinstance(X.index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)):
+                self._original_index_type = type(X.index)
+                self._original_index = X.index.copy()
             else:
-                # Convert numpy array to Series/DataFrame with input index
-                Xt_col = np.asarray(Xt_col)
-                if len(Xt_col) == len(X.index):
-                    if Xt_col.ndim == 1:
-                        Xt_col = pd.Series(Xt_col, index=X.index)
-                    else:
-                        col_names = [f'{name}_{i}' for i in range(Xt_col.shape[1])]
-                        Xt_col = pd.DataFrame(Xt_col, index=X.index, columns=col_names)
-                else:
-                    # Length mismatch - use RangeIndex
-                    if Xt_col.ndim == 1:
-                        Xt_col = pd.Series(Xt_col, index=pd.RangeIndex(start=0, stop=len(Xt_col)))
-                    else:
-                        col_names = [f'{name}_{i}' for i in range(Xt_col.shape[1])]
-                        Xt_col = pd.DataFrame(Xt_col, index=pd.RangeIndex(start=0, stop=len(Xt_col)), columns=col_names)
-                Xts.append(Xt_col)
+                # Try to convert to DatetimeIndex
+                try:
+                    self._original_index = pd.to_datetime(X.index)
+                    self._original_index_type = pd.DatetimeIndex
+                except (ValueError, TypeError):
+                    # Fallback to RangeIndex
+                    self._original_index = pd.RangeIndex(start=0, stop=len(X))
+                    self._original_index_type = pd.RangeIndex
             
-            keys.append(name)
+            # Fit the underlying transformer
+            self._column_transformer.fit(X, y)
+            return self
         
-        # Concatenate with compatible indices (all should have same index now)
-        if Xts:
-            # Ensure all have same index before concat
-            # Use the first transformer's index (or input index) as reference
-            reference_index = X.index if isinstance(X.index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)) else pd.RangeIndex(start=0, stop=len(X))
+        def _transform(self, X: "pd.DataFrame", y: Optional["pd.DataFrame"] = None) -> "pd.DataFrame":
+            """Transform X and ensure output has compatible index.
             
-            # Align all outputs to reference index
-            aligned_Xts = []
-            for i, Xt_col in enumerate(Xts):
-                if len(Xt_col) == len(reference_index):
-                    if isinstance(Xt_col, pd.Series):
-                        Xt_col.index = reference_index
-                    elif isinstance(Xt_col, pd.DataFrame):
-                        Xt_col.index = reference_index
-                aligned_Xts.append(Xt_col)
+            This method intercepts the transform call and ensures each transformer's
+            output has the same index type before concatenation, preventing pd.concat
+            from creating a base Index.
+            """
+            # Get transformers and transform each column separately
+            # This allows us to ensure each output has compatible index before concat
+            Xts = []
+            keys = []
             
-            Xt = pd.concat(aligned_Xts, axis=1, keys=keys)
+            # Get fitted transformers
+            # ColumnEnsembleTransformer stores fitted transformers in transformers_ attribute
+            fitted_transformers = getattr(self._column_transformer, 'transformers_', [])
             
-            # Final check: ensure output index is compatible and sorted
-            if not isinstance(Xt.index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)):
-                Xt.index = reference_index
-            elif not Xt.index.is_monotonic_increasing:
-                # Index is not sorted - reindex to sorted version
-                if isinstance(Xt.index, pd.DatetimeIndex):
-                    Xt = Xt.sort_index()
+            for name, est, index in fitted_transformers:
+                # Transform this column
+                Xt_col = est.transform(X.loc[:, index], y)
+                
+                # Ensure output has compatible index (same as input X.index)
+                # Always use input X.index to ensure all outputs have same index
+                if isinstance(Xt_col, pd.Series):
+                    # Use input index if length matches, otherwise align
+                    if len(Xt_col) == len(X.index):
+                        Xt_col.index = X.index
+                    else:
+                        # Length mismatch - try to align or use RangeIndex
+                        if len(Xt_col) <= len(X.index):
+                            Xt_col.index = X.index[:len(Xt_col)]
+                        else:
+                            # Output longer than input - use RangeIndex
+                            Xt_col.index = pd.RangeIndex(start=0, stop=len(Xt_col))
+                    Xts.append(Xt_col)
+                elif isinstance(Xt_col, pd.DataFrame):
+                    # Use input index if length matches
+                    if len(Xt_col) == len(X.index):
+                        Xt_col.index = X.index
+                    else:
+                        if len(Xt_col) <= len(X.index):
+                            Xt_col.index = X.index[:len(Xt_col)]
+                        else:
+                            Xt_col.index = pd.RangeIndex(start=0, stop=len(Xt_col))
+                    Xts.append(Xt_col)
                 else:
-                    # For non-DatetimeIndex, use reference index
+                    # Convert numpy array to Series/DataFrame with input index
+                    Xt_col = np.asarray(Xt_col)
+                    if len(Xt_col) == len(X.index):
+                        if Xt_col.ndim == 1:
+                            Xt_col = pd.Series(Xt_col, index=X.index)
+                        else:
+                            col_names = [f'{name}_{i}' for i in range(Xt_col.shape[1])]
+                            Xt_col = pd.DataFrame(Xt_col, index=X.index, columns=col_names)
+                    else:
+                        # Length mismatch - use RangeIndex
+                        if Xt_col.ndim == 1:
+                            Xt_col = pd.Series(Xt_col, index=pd.RangeIndex(start=0, stop=len(Xt_col)))
+                        else:
+                            col_names = [f'{name}_{i}' for i in range(Xt_col.shape[1])]
+                            Xt_col = pd.DataFrame(Xt_col, index=pd.RangeIndex(start=0, stop=len(Xt_col)), columns=col_names)
+                    Xts.append(Xt_col)
+                
+                keys.append(name)
+            
+            # Concatenate with compatible indices (all should have same index now)
+            if Xts:
+                # Ensure all have same index before concat
+                # Use the first transformer's index (or input index) as reference
+                reference_index = X.index if isinstance(X.index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)) else pd.RangeIndex(start=0, stop=len(X))
+                
+                # Align all outputs to reference index
+                aligned_Xts = []
+                for i, Xt_col in enumerate(Xts):
+                    if len(Xt_col) == len(reference_index):
+                        if isinstance(Xt_col, pd.Series):
+                            Xt_col.index = reference_index
+                        elif isinstance(Xt_col, pd.DataFrame):
+                            Xt_col.index = reference_index
+                    aligned_Xts.append(Xt_col)
+                
+                Xt = pd.concat(aligned_Xts, axis=1, keys=keys)
+                
+                # Final check: ensure output index is compatible and sorted
+                if not isinstance(Xt.index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)):
                     Xt.index = reference_index
-        else:
-            # No transformers - return empty DataFrame with compatible index
-            Xt = pd.DataFrame(index=X.index if isinstance(X.index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)) else pd.RangeIndex(start=0, stop=len(X)))
-        
-        return Xt
+                elif not Xt.index.is_monotonic_increasing:
+                    # Index is not sorted - reindex to sorted version
+                    if isinstance(Xt.index, pd.DatetimeIndex):
+                        Xt = Xt.sort_index()
+                    else:
+                        # For non-DatetimeIndex, use reference index
+                        Xt.index = reference_index
+            else:
+                # No transformers - return empty DataFrame with compatible index
+                Xt = pd.DataFrame(index=X.index if isinstance(X.index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)) else pd.RangeIndex(start=0, stop=len(X)))
+            
+            return Xt
+else:
+    # Fallback when sktime is not available
+    IndexPreservingColumnEnsembleTransformer = None
 
 
 # ============================================================================
