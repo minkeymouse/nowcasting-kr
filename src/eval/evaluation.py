@@ -4,7 +4,8 @@ This module provides standardized metric calculation functions for evaluating
 forecasting model performance, including standardized MSE, MAE, and RMSE.
 """
 
-from typing import Union, Dict, Optional, Tuple
+from typing import Union, Dict, Optional, Tuple, Any, List
+from pathlib import Path
 import numpy as np
 import pandas as pd
 
@@ -229,12 +230,24 @@ def calculate_metrics_per_horizon(
         else:
             y_true_h = y_true[h-1:h] if h <= len(y_true) else np.array([])
         
+        # Check if we have valid data
+        has_pred = len(y_pred_h) > 0 if hasattr(y_pred_h, '__len__') else y_pred_h.size > 0
+        has_true = len(y_true_h) > 0 if hasattr(y_true_h, '__len__') else y_true_h.size > 0
+        
         # Calculate metrics for this horizon
-        if len(y_pred_h) > 0 and len(y_true_h) > 0:
-            metrics = calculate_standardized_metrics(
-                y_true_h, y_pred_h, y_train=y_train, target_series=target_series
-            )
-            results[h] = metrics
+        if has_pred and has_true:
+            try:
+                metrics = calculate_standardized_metrics(
+                    y_true_h, y_pred_h, y_train=y_train, target_series=target_series
+                )
+                results[h] = metrics
+            except Exception as e:
+                # If calculation fails, return NaN metrics
+                results[h] = {
+                    'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,
+                    'MSE': np.nan, 'MAE': np.nan, 'RMSE': np.nan,
+                    'sigma': np.nan, 'n_valid': 0
+                }
         else:
             results[h] = {
                 'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,

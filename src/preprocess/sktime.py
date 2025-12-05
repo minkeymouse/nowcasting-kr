@@ -5,17 +5,12 @@ error handling for when sktime is not installed.
 """
 
 try:
-    # sktime 0.40+ uses ColumnwiseTransformer instead of ColumnTransformer
+    # sktime 0.40+ uses ColumnEnsembleTransformer instead of ColumnTransformer
     from sktime.transformations.compose import (
         TransformerPipeline,
-        ColumnwiseTransformer
+        ColumnwiseTransformer,
+        ColumnEnsembleTransformer
     )
-    # Try to import ColumnTransformer - may not exist in newer versions
-    try:
-        from sktime.transformations.compose import ColumnTransformer
-    except ImportError:
-        # Fallback to sklearn's ColumnTransformer
-        from sklearn.compose import ColumnTransformer
     
     from sktime.transformations.series.log import LogTransformer
     from sktime.transformations.series.difference import Differencer
@@ -24,7 +19,7 @@ try:
     HAS_SKTIME = True
 except ImportError:
     HAS_SKTIME = False
-    ColumnTransformer = None
+    ColumnEnsembleTransformer = None
     TransformerPipeline = None
     ColumnwiseTransformer = None
     LogTransformer = None

@@ -1,6 +1,10 @@
 """API routes module."""
 
-from .config import router
+from fastapi import APIRouter
+from .config import router as config_router
+from .experiment import router as experiment_router
 
-# All routes are now consolidated in config.py
+router = APIRouter()
+router.include_router(config_router)
+router.include_router(experiment_router)
 

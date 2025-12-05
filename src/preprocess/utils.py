@@ -430,9 +430,9 @@ from .transformations import (
 # ============================================================================
 
 def create_transformer_from_config(config: Any) -> Any:
-    """Create sktime ColumnTransformer from DFMConfig.
+    """Create sktime ColumnEnsembleTransformer from DFMConfig.
     
-    This function creates a ColumnTransformer that applies per-series
+    This function creates a ColumnEnsembleTransformer that applies per-series
     transformations based on the DFMConfig, followed by standardization.
     The transformer is wrapped in a TransformerPipeline with StandardScaler.
     
@@ -444,7 +444,7 @@ def create_transformer_from_config(config: Any) -> Any:
     Returns
     -------
     TransformerPipeline
-        Transformer pipeline with ColumnTransformer and StandardScaler.
+        Transformer pipeline with ColumnEnsembleTransformer and StandardScaler.
         Supports Polars output via set_output(transform="polars").
         
     Raises
@@ -457,22 +457,21 @@ def create_transformer_from_config(config: Any) -> Any:
     """
     # Import sktime components - re-import at runtime to ensure availability
     from .sktime import check_sktime_available
-    check_sktime_available()
+    check_sktime_available()  # Keep public API for preprocess module
     
     # Import components, handling version differences
     try:
-        from sktime.transformations.compose import TransformerPipeline
+        from sktime.transformations.compose import (
+            TransformerPipeline,
+            ColumnEnsembleTransformer
+        )
     except ImportError:
-        raise ImportError("TransformerPipeline not available in sktime")
-    
-    try:
-        from sktime.transformations.compose import ColumnTransformer
-    except ImportError:
-        # Fallback to sklearn's ColumnTransformer for sktime 0.40+
-        from sklearn.compose import ColumnTransformer
+        raise ImportError("TransformerPipeline or ColumnEnsembleTransformer not available in sktime")
     
     from sktime.transformations.series.func_transform import FunctionTransformer
     from sktime.transformations.series.difference import Differencer
+    from sktime.transformations.series.impute import Imputer
+    from sktime.forecasting.naive import NaiveForecaster
     from sklearn.preprocessing import StandardScaler
     
     # Validate config
@@ -496,6 +495,13 @@ def create_transformer_from_config(config: Any) -> Any:
     # Validate series IDs are unique
     validate_series_ids_unique(series_ids)
     
+    # Get global imputation method (fallback if series-specific is null)
+    global_impute = None
+    if hasattr(config, 'preprocess') and hasattr(config.preprocess, 'global_preprocessing'):
+        global_preproc = config.preprocess.global_preprocessing
+        if hasattr(global_preproc, 'imputation') and hasattr(global_preproc.imputation, 'method'):
+            global_impute = global_preproc.imputation.method
+    
     # Create per-series transformers
     transformers = []
     for i, series_config in enumerate(config.series):
@@ -503,46 +509,89 @@ def create_transformer_from_config(config: Any) -> Any:
         freq = series_config.frequency.lower() if hasattr(series_config, 'frequency') else 'm'
         series_id = series_ids[i] if i < len(series_ids) else f"series_{i}"
         
+        # Get series-specific imputation method
+        series_impute = None
+        try:
+            # Check if series_config has impute attribute
+            if hasattr(series_config, 'impute'):
+                series_impute = series_config.impute
+            # Also check if it's a dict-like object
+            elif isinstance(series_config, dict) and 'impute' in series_config:
+                series_impute = series_config['impute']
+        except (AttributeError, TypeError):
+            pass
+        
+        # Use global or default if series-specific is null/None
+        if series_impute is None or series_impute == 'null' or series_impute == '':
+            if global_impute:
+                series_impute = global_impute
+            else:
+                # Default: ffill_bfill (use ffill then bfill)
+                series_impute = 'ffill_bfill'
+        
+        # Create imputation transformer(s) for this series
+        imputation_steps = []
+        if series_impute:
+            if series_impute == 'ffill_bfill':
+                # Use both ffill and bfill
+                imputation_steps.append(Imputer(method="ffill"))
+                imputation_steps.append(Imputer(method="bfill"))
+            elif series_impute == 'ffill':
+                imputation_steps.append(Imputer(method="ffill"))
+            elif series_impute == 'bfill':
+                imputation_steps.append(Imputer(method="bfill"))
+            elif series_impute == 'naive' or series_impute == 'forecaster':
+                # Use naive forecaster for imputation
+                imputation_steps.append(Imputer(
+                    method="forecaster",
+                    forecaster=NaiveForecaster(strategy="last")
+                ))
+                # Add bfill as safety net
+                imputation_steps.append(Imputer(method="bfill"))
+            else:
+                # Unknown method, use default ffill_bfill
+                imputation_steps.append(Imputer(method="ffill"))
+                imputation_steps.append(Imputer(method="bfill"))
+        
         # Validate transformation type and frequency code
         validate_transformation_type(trans, series_id)
         validate_frequency_code(freq, series_id)
         
         # Create transformer based on transformation type
         if trans == 'lin':
-            # Identity transformation (no-op)
-            transformer = FunctionTransformer(func=identity_transform)
+            # Identity transformation (no-op) - preserve index
+            def identity_with_index(X):
+                import pandas as pd
+                if isinstance(X, pd.Series):
+                    result_values = identity_transform(X.values)
+                    return pd.Series(result_values, index=X.index, name=X.name)
+                else:
+                    return identity_transform(X)
+            transformer = FunctionTransformer(func=identity_with_index)
         elif trans == 'log':
-            # Log transformation
-            transformer = FunctionTransformer(func=log_transform)
+            # Log transformation - preserve index
+            def log_with_index(X):
+                import pandas as pd
+                if isinstance(X, pd.Series):
+                    result_values = log_transform(X.values)
+                    return pd.Series(result_values, index=X.index, name=X.name)
+                else:
+                    return log_transform(X)
+            transformer = FunctionTransformer(func=log_with_index)
         elif trans == 'chg':
             # Change (difference)
             lag = FREQ_TO_LAG_STEP.get(freq, 1)
-            transformer = Differencer(lags=[lag])
+            transformer = Differencer(lags=lag)  # Differencer accepts int, not list
         elif trans == 'ch1':
             # Year over year change
             lag = FREQ_TO_LAG_YOY.get(freq, 12)
-            transformer = Differencer(lags=[lag])
+            transformer = Differencer(lags=lag)  # Differencer accepts int, not list
         elif trans == 'cha':
             # Change (annual rate) - custom function transformer
             step = FREQ_TO_LAG_STEP.get(freq, 1)
             annual_factor = get_annual_factor(freq, step)
-            
-            def cha_transform_func(X):
-                """Change annual rate transformation."""
-                X = np.asarray(X)
-                # Ensure 2D input for transformer compatibility
-                if X.ndim == 1:
-                    X = X.reshape(-1, 1)
-                X_flat = X.flatten()
-                T = len(X_flat)
-                result = np.full((T, 1), np.nan)
-                if T > step:
-                    # Annualized change: (X[t] / X[t-step])^(1/n) - 1
-                    ratio = X_flat[step:] / (np.abs(X_flat[:-step]) + 1e-10)
-                    result[step:, 0] = 100.0 * (np.power(ratio, 1.0 / annual_factor) - 1.0)
-                return result
-            
-            transformer = FunctionTransformer(func=cha_transform_func)
+            from .transformations import make_cha_transformer
+            transformer = make_cha_transformer(step, annual_factor)
         elif trans == 'pch':
             # Percent change
             step = FREQ_TO_LAG_STEP.get(freq, 1)
@@ -565,21 +614,43 @@ def create_transformer_from_config(config: Any) -> Any:
                 f"Valid values: {', '.join(VALID_TRANSFORMATION_TYPES)}"
             )
         
+        # Combine imputation and transformation into a pipeline for this series
+        if imputation_steps:
+            # Create a pipeline: imputation → transformation
+            series_pipeline_steps = []
+            for j, impute_step in enumerate(imputation_steps):
+                series_pipeline_steps.append((f"impute_{j}", impute_step))
+            series_pipeline_steps.append(("transform", transformer))
+            series_transformer = TransformerPipeline(series_pipeline_steps)
+        else:
+            # No imputation, just transformation
+            series_transformer = transformer
+        
         # Add to transformers list: (name, transformer, column_index)
-        transformers.append((series_id, transformer, i))
+        # ColumnEnsembleTransformer accepts column index (int) or column name (str/list)
+        transformers.append((series_id, series_transformer, i))
     
-    # Create ColumnTransformer
-    column_transformer = ColumnTransformer(transformers)
+    # Create ColumnEnsembleTransformer with index preservation wrapper
+    # ColumnEnsembleTransformer uses pd.concat internally, which can convert
+    # DatetimeIndex to base Index when concatenating Series with different index types.
+    # We wrap it to ensure output always has compatible index (DatetimeIndex, PeriodIndex, or RangeIndex).
+    try:
+        from .transformations import IndexPreservingColumnEnsembleTransformer
+        column_transformer = IndexPreservingColumnEnsembleTransformer(transformers=transformers)
+    except ImportError:
+        # Fallback to standard ColumnEnsembleTransformer if wrapper not available
+        column_transformer = ColumnEnsembleTransformer(transformers=transformers)
     
-    # Create full pipeline: ColumnTransformer → StandardScaler
+    # Create full pipeline: ColumnEnsembleTransformer → StandardScaler
     pipeline = TransformerPipeline([
         ("transform", column_transformer),
         ("scaler", StandardScaler())
     ])
     
-    # Set Polars output (required for DFMDataModule)
+    # Set pandas output (required for sktime mtype compatibility)
+    # pandas output ensures index is preserved (DatetimeIndex, PeriodIndex, or RangeIndex)
     try:
-        pipeline.set_output(transform="polars")
+        pipeline.set_output(transform="pandas")
     except AttributeError:
         # Older sktime versions might not support set_output
         # This is okay - DFMDataModule will handle it

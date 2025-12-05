@@ -5,9 +5,9 @@ import shutil
 import pandas as pd
 from typing import List, Dict, Any
 
-from api.dependencies import config_manager, model_registry
-from api.error_handlers import handle_exceptions
-from api.schemas import (
+from app.api.dependencies import config_manager, model_registry
+from app.api.error_handlers import handle_exceptions
+from app.api.schemas import (
     ExperimentInfo,
     UnifiedConfigResponse, UnifiedConfigUpdateRequest,
     ModelInfo
@@ -67,9 +67,24 @@ async def list_series():
 @router.get("/models", response_model=List[ModelInfo])
 @handle_exceptions
 async def list_models():
-    """List all trained models."""
+    """List all trained models and available model types."""
     models = model_registry.list_models()
-    return [ModelInfo(**model) for model in models]
+    model_list = [ModelInfo(**model) for model in models]
+    
+    # Always include available model types for selection
+    from app.utils import ModelType
+    available_types = [
+        ModelInfo(model_name="DFM", model_type=ModelType.DFM),
+        ModelInfo(model_name="DDFM", model_type=ModelType.DDFM)
+    ]
+    
+    # Add trained models if they exist, avoiding duplicates
+    existing_types = {m.model_type for m in model_list}
+    for model_type in available_types:
+        if model_type.model_type not in existing_types:
+            model_list.append(model_type)
+    
+    return model_list if model_list else available_types
 
 
 # File upload endpoints

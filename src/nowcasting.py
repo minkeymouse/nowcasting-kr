@@ -252,7 +252,20 @@ def simulate_nowcasting_evaluation(
                 y_pred_nowcast = forecaster(y_train_masked, fh=horizons)
             
             # Calculate nowcasting metrics
-            from .evaluation import calculate_metrics_per_horizon
+            try:
+                from src.eval.evaluation import calculate_metrics_per_horizon
+            except ImportError:
+                try:
+                    from eval.evaluation import calculate_metrics_per_horizon
+                except ImportError:
+                    try:
+                        from .eval.evaluation import calculate_metrics_per_horizon
+                    except ImportError:
+                        # Fallback for different import contexts
+                        import sys
+                        from pathlib import Path
+                        sys.path.insert(0, str(Path(__file__).parent))
+                        from eval.evaluation import calculate_metrics_per_horizon
             nowcast_metrics = calculate_metrics_per_horizon(
                 y_test, y_pred_nowcast, horizons, y_train=y_train_masked,
                 target_series=target_series

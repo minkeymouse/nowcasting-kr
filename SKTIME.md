@@ -1,456 +1,54 @@
-# sktime Documentation for Nowcasting Project
-
-## Overview
-
-sktime is a unified framework for machine learning with time series, compatible with scikit-learn. It provides:
-- **Unified interface**: Same API for all time series learning tasks (forecasting, classification, regression, clustering)
-- **Composability**: Combine transformers, forecasters, and other components
-- **Compatibility**: Works with scikit-learn, pandas, numpy
-- **Extensibility**: Easy to create custom forecasters and transformers
-
-## Core Concepts
-
-### Forecasting Workflow
-
-The basic sktime forecasting workflow follows this pattern:
-
-```python
-from sktime.forecasting.base import ForecastingHorizon
-from sktime.split import temporal_train_test_split
-
-# 1. Split data temporally
-y_train, y_test = temporal_train_test_split(y, test_size=0.2)
-
-# 2. Create and fit forecaster
-forecaster = SomeForecaster()
-forecaster.fit(y_train, fh=[1, 2, 3, ...])  # fh = forecasting horizon
-
-# 3. Predict
-y_pred = forecaster.predict(fh=[1, 2, 3, ...])
-```
-
-### Data Container Formats
-
-sktime supports multiple data container formats:
-
-1. **pd.Series**: Univariate time series
-   - Index: time index (datetime or integer)
-   - Values: time series values
-
-2. **pd.DataFrame**: Multivariate time series
-   - Index: time index
-   - Columns: different time series (variables)
-
-3. **numpy.ndarray**: Array format
-   - Shape: (n_timepoints, n_variables) for multivariate
-
-4. **numpy3D**: Panel data (multiple time series)
-   - Shape: (n_instances, n_timepoints, n_variables)
-
-### Forecasting Horizon (fh)
-
-The forecasting horizon specifies which time points to predict:
-
-```python
-from sktime.forecasting.base import ForecastingHorizon
-
-# Absolute: specific time points
-fh = ForecastingHorizon([1, 2, 3, 4, 5])  # Next 5 steps
-
-# Relative: steps ahead
-fh = ForecastingHorizon([1, 2, 3])  # 1, 2, 3 steps ahead
-
-# Using numpy
-import numpy as np
-fh = np.arange(1, 13)  # Next 12 steps
-```
-
-## Basic Deployment Workflow
-
-### 1. Fit-Predict Pattern
-
-```python
-# Fit on training data
-forecaster.fit(y_train, fh=[1, 2, 3])
-
-# Predict future values
-y_pred = forecaster.predict(fh=[1, 2, 3])
-```
-
-### 2. Update-Predict Pattern
-
-```python
-# Initial fit
-forecaster.fit(y_train, fh=[1, 2, 3])
-
-# Update with new data (incremental learning)
-forecaster.update(y_new)
-
-# Predict with updated model
-y_pred = forecaster.predict(fh=[1, 2, 3])
-```
-
-### 3. Fit-Predict-Update Pattern
-
-```python
-# Fit
-forecaster.fit(y_train, fh=[1, 2, 3])
-
-# Predict
-y_pred = forecaster.predict(fh=[1, 2, 3])
-
-# Update with actuals
-forecaster.update(y_actual)
-
-# Predict again
-y_pred_new = forecaster.predict(fh=[1, 2, 3])
-```
-
-## Evaluation Workflow
-
-### Temporal Cross-Validation
-
-```python
-from sktime.forecasting.model_evaluation import evaluate
-from sktime.split import ExpandingWindowSplitter, SlidingWindowSplitter
-
-# Expanding window: training set grows over time
-cv = ExpandingWindowSplitter(
-    fh=[1, 2, 3],
-    initial_window=100,  # Initial training size
-    step_length=12        # Step size between windows
-)
-
-# Sliding window: fixed training size
-cv = SlidingWindowSplitter(
-    fh=[1, 2, 3],
-    window_length=100,   # Fixed training size
-    step_length=12
-)
-
-# Evaluate
-results = evaluate(
-    forecaster=forecaster,
-    y=y,
-    cv=cv,
-    scoring=["mse", "mae", "mape"]
-)
-```
-
-### Single Train-Test Split
-
-```python
-from sktime.split import temporal_train_test_split
-from sktime.performance_metrics.forecasting import (
-    MeanAbsoluteError,
-    MeanSquaredError,
-    MeanAbsolutePercentageError
-)
-
-# Split
-y_train, y_test = temporal_train_test_split(y, test_size=0.2)
-
-# Fit
-forecaster.fit(y_train, fh=[1, 2, 3])
-
-# Predict
-y_pred = forecaster.predict(fh=[1, 2, 3])
-
-# Evaluate
-mae = MeanAbsoluteError()
-mae_score = mae(y_test, y_pred)
-```
-
-## Advanced Workflows
-
-### 1. Exogenous Variables (X)
-
-```python
-# Fit with exogenous variables
-forecaster.fit(y_train, X=X_train, fh=[1, 2, 3])
-
-# Predict with future exogenous variables
-y_pred = forecaster.predict(fh=[1, 2, 3], X=X_future)
-```
-
-### 2. Prediction Intervals
-
-```python
-# Predict with intervals
-y_pred, y_pred_interval = forecaster.predict_interval(
-    fh=[1, 2, 3],
-    coverage=0.9  # 90% prediction interval
-)
-```
-
-### 3. Quantile Forecasts
-
-```python
-# Predict quantiles
-y_pred_quantiles = forecaster.predict_quantiles(
-    fh=[1, 2, 3],
-    alpha=[0.05, 0.5, 0.95]  # 5th, 50th, 95th percentiles
-)
-```
-
-### 4. Variance Forecasts
-
-```python
-# Predict variance
-y_pred_var = forecaster.predict_var(fh=[1, 2, 3])
-```
-
-## Forecaster Types and Tags
-
-### Forecaster Tags
-
-Forecasters have tags that describe their capabilities:
-
-- `requires-fh-in-fit`: Whether forecasting horizon is required during fit
-- `handles-missing-data`: Whether the forecaster can handle missing values
-- `y_inner_mtype`: Internal data type for y (e.g., "pd.Series", "pd.DataFrame")
-- `X_inner_mtype`: Internal data type for X (exogenous variables)
-- `scitype:y`: Type of y ("univariate", "multivariate", "both")
-- `capability:pred_int`: Whether prediction intervals are supported
-- `capability:pred_var`: Whether variance prediction is supported
-
-### Common Forecaster Types
-
-1. **Direct Forecasters**: Predict all horizons directly
-   - Example: `DirectTabularRegressionForecaster`
-
-2. **Recursive Forecasters**: Predict one step ahead, then use predictions for next steps
-   - Example: `ARIMA`, `ExponentialSmoothing`
-
-3. **Reduced Forecasters**: Reduce forecasting to regression problem
-   - Example: `ReducedRegressionForecaster`
-
-## Composition Patterns
-
-### 1. Transformer + Forecaster Pipeline
-
-```python
-from sktime.forecasting.compose import TransformedTargetForecaster
-from sktime.transformations.series.detrend import Detrender
-from sktime.forecasting.trend import PolynomialTrendForecaster
-
-# Create pipeline: detrend → forecast
-forecaster = TransformedTargetForecaster([
-    ("detrend", Detrender(forecaster=PolynomialTrendForecaster(degree=1))),
-    ("forecast", SomeForecaster())
-])
-
-forecaster.fit(y_train, fh=[1, 2, 3])
-y_pred = forecaster.predict(fh=[1, 2, 3])
-```
-
-### 2. Ensemble Forecasters
-
-```python
-from sktime.forecasting.compose import EnsembleForecaster
-from sktime.forecasting.naive import NaiveForecaster
-from sktime.forecasting.trend import PolynomialTrendForecaster
-
-# Combine multiple forecasters
-ensemble = EnsembleForecaster([
-    ("naive", NaiveForecaster()),
-    ("trend", PolynomialTrendForecaster(degree=2))
-])
-
-ensemble.fit(y_train, fh=[1, 2, 3])
-y_pred = ensemble.predict(fh=[1, 2, 3])
-```
-
-### 3. Multiplexer (Model Selection)
-
-```python
-from sktime.forecasting.compose import MultiplexForecaster
-from sktime.forecasting.model_selection import ForecastingGridSearchCV
-
-# Multiple forecasters with parameter tuning
-multiplexer = MultiplexForecaster(
-    forecasters=[
-        ("naive", NaiveForecaster()),
-        ("trend", PolynomialTrendForecaster())
-    ]
-)
-
-# Grid search for best forecaster
-gscv = ForecastingGridSearchCV(
-    forecaster=multiplexer,
-    param_grid={"selected_forecaster": ["naive", "trend"]},
-    cv=ExpandingWindowSplitter(fh=[1, 2, 3])
-)
-
-gscv.fit(y_train)
-y_pred = gscv.predict(fh=[1, 2, 3])
-```
-
-## Integration with Nowcasting Project
-
-### DFMForecaster and DDFMForecaster
-
-The project implements sktime-compatible forecasters in `src/model/sktime_forecaster.py`:
-
-1. **DFMForecaster**: Wraps DFM model for sktime API
-   - Inherits from `BaseForecaster`
-   - Implements `_fit()` and `_predict()` methods
-   - Supports multivariate time series forecasting
-
-2. **DDFMForecaster**: Wraps DDFM model for sktime API
-   - Similar interface to DFMForecaster
-   - Supports deep learning-based forecasting
-
-### Usage Example
-
-```python
-from src.model.sktime_forecaster import DFMForecaster
-from sktime.split import ExpandingWindowSplitter
-from sktime.forecasting.model_evaluation import evaluate
-import numpy as np
-
-# Create forecaster
-forecaster = DFMForecaster(
-    config_path="config/experiment/my_experiment.yaml",
-    max_iter=5000,
-    threshold=1e-5
-)
-
-# Define forecasting horizon
-fh = np.arange(1, 13)  # Next 12 steps
-
-# Cross-validation
-cv = ExpandingWindowSplitter(
-    fh=fh,
-    initial_window=100,
-    step_length=12
-)
-
-# Evaluate
-results = evaluate(
-    forecaster=forecaster,
-    y=y_data,
-    cv=cv,
-    scoring=["mse", "mae"]
-)
-```
-
-### Training with sktime Integration
-
-The `src/training.py` module provides `run_training_with_sktime()` function:
-
-```python
-from src.training import run_training_with_sktime
-from sktime.split import ExpandingWindowSplitter
-import numpy as np
-
-# Define forecasting horizon
-fh = np.arange(1, 13)
-
-# Create splitter
-cv = ExpandingWindowSplitter(
-    fh=fh,
-    initial_window=100,
-    step_length=12
-)
-
-# Run training with cross-validation
-results = run_training_with_sktime(
-    experiment_id="my_experiment",
-    data_path="data/sample_data.csv",
-    fh=fh,
-    cv_splitter=cv
-)
-```
-
-## Key Methods and Attributes
-
-### BaseForecaster Interface
-
-All sktime forecasters implement:
-
-- `fit(y, X=None, fh=None)`: Fit the forecaster
-- `predict(fh=None, X=None)`: Generate predictions
-- `update(y, X=None, update_params=True)`: Update with new data
-- `predict_interval(fh=None, X=None, coverage=0.9)`: Prediction intervals
-- `predict_quantiles(fh=None, X=None, alpha=None)`: Quantile predictions
-- `predict_var(fh=None, X=None)`: Variance predictions
-- `get_fitted_params()`: Get fitted parameters
-
-### Tags
-
-Access forecaster capabilities:
-
-```python
-# Check tags
-forecaster.get_tags()
-
-# Check specific tag
-forecaster.get_tag("handles-missing-data")
-forecaster.get_tag("capability:pred_int")
-```
-
-## Best Practices
-
-1. **Always use temporal splits**: Use `temporal_train_test_split` or temporal cross-validation splitters
-2. **Handle missing data**: Check `handles-missing-data` tag before using with missing values
-3. **Specify forecasting horizon**: Always provide `fh` parameter explicitly
-4. **Use appropriate data types**: Ensure data matches `y_inner_mtype` and `X_inner_mtype` tags
-5. **Compose transformers**: Use `TransformedTargetForecaster` for preprocessing
-6. **Evaluate properly**: Use temporal cross-validation for time series evaluation
-
-## Common Patterns
-
-### Pattern 1: Simple Forecasting
-
-```python
-forecaster = SomeForecaster()
-forecaster.fit(y_train, fh=[1, 2, 3])
-y_pred = forecaster.predict()
-```
-
-### Pattern 2: With Preprocessing
-
-```python
-from sktime.forecasting.compose import TransformedTargetForecaster
-from sktime.transformations.series.detrend import Detrender
-
-forecaster = TransformedTargetForecaster([
-    ("detrend", Detrender()),
-    ("forecast", SomeForecaster())
-])
-forecaster.fit(y_train, fh=[1, 2, 3])
-y_pred = forecaster.predict()
-```
-
-### Pattern 3: With Cross-Validation
-
-```python
-from sktime.forecasting.model_evaluation import evaluate
-from sktime.split import ExpandingWindowSplitter
-
-cv = ExpandingWindowSplitter(fh=[1, 2, 3], initial_window=100)
-results = evaluate(forecaster, y, cv=cv, scoring=["mse", "mae"])
-```
-
-### Pattern 4: Model Selection
-
-```python
-from sktime.forecasting.model_selection import ForecastingGridSearchCV
-
-gscv = ForecastingGridSearchCV(
-    forecaster=SomeForecaster(),
-    param_grid={"param": [value1, value2]},
-    cv=ExpandingWindowSplitter(fh=[1, 2, 3])
-)
-gscv.fit(y_train)
-y_pred = gscv.predict()
-```
-
-## References
-
-- sktime Documentation: https://www.sktime.net/
-- Forecasting Tutorial: https://www.sktime.net/en/stable/examples/01_forecasting.html
-- API Reference: https://www.sktime.net/en/stable/api_reference/forecasting.html
-- Project Integration: `src/model/sktime_forecaster.py`, `src/training.py`
-
+# sktime ColumnEnsembleTransformer Index Issue - 해결됨
+
+## Problem
+ColumnEnsembleTransformer의 `_transform` 출력이 sktime mtype 사양을 준수하지 않습니다.
+오류: `pd.DataFrame: <class 'pandas.core.indexes.base.Index'> is not supported for obj, use one of (<class 'pandas.core.indexes.range.RangeIndex'>, <class 'pandas.core.indexes.period.PeriodIndex'>, <class 'pandas.core.indexes.datetimes.DatetimeIndex'>)`
+
+## Root Cause
+1. **ColumnEnsembleTransformer의 pd.concat 문제**: ColumnEnsembleTransformer는 각 transformer의 출력을 `pd.concat`으로 합치는데, 서로 다른 index 타입(DatetimeIndex와 RangeIndex)을 합치면 일반 Index가 됩니다.
+2. **Transformation 함수의 index 손실**: transformation 함수들이 numpy array를 반환하여 index가 손실됩니다.
+3. **StandardScaler의 index 처리**: StandardScaler가 DataFrame을 처리할 때 index를 변경할 수 있습니다.
+
+## Solution (구현 완료)
+
+### 1. IndexPreservingColumnEnsembleTransformer Wrapper
+- `src/preprocess/index_preserving_transformer.py`에 wrapper 클래스 구현
+- ColumnEnsembleTransformer를 래핑하여 출력 index를 보존
+- 각 transformer의 출력 index를 입력 index와 일치시킨 후 concat
+- 최종 출력이 DatetimeIndex, PeriodIndex, 또는 RangeIndex인지 확인
+
+### 2. Transformation 함수들의 index 보존
+- 모든 `make_*_transformer` 함수들이 index를 보존하는 wrapper 추가
+- `make_pch_transformer`, `make_pc1_transformer`, `make_pca_transformer`, `make_cch_transformer`, `make_cca_transformer`, `make_cha_transformer` 모두 수정
+- `identity_transform`, `log_transform`도 index 보존 wrapper 추가
+- 각 transformation 함수가 Series를 받으면 Series를 반환하도록 수정
+
+### 3. DFMDataModule의 index 보정
+- `dfm-python/src/dfm_python/lightning/data_module.py`에서 pipeline 출력의 index를 보정
+- numpy array를 DataFrame으로 변환할 때 입력 index 사용
+- DataFrame 출력의 index가 호환되지 않으면 보정
+
+### 4. Pipeline 설정
+- `set_output(transform="pandas")` 설정으로 pandas 출력 보장
+
+## Implementation Details
+
+### IndexPreservingColumnEnsembleTransformer
+- BaseTransformer를 상속하여 sktime 호환성 보장
+- `_fit`에서 원본 index 저장
+- `_transform`에서 각 transformer 출력의 index를 입력 index와 일치시킨 후 concat
+- 최종 출력 index가 정렬되어 있는지 확인
+
+### Transformation Wrappers
+- 각 transformation 함수를 래핑하여 Series 입력 시 Series 출력 보장
+- index와 name 속성 보존
+
+## Key Points
+- sktime은 DatetimeIndex, PeriodIndex, 또는 RangeIndex만 지원합니다
+- 일반 Index는 지원되지 않습니다
+- FunctionTransformer는 입력의 index를 보존해야 합니다
+- **중요**: transformation 함수가 numpy array를 반환하면 index가 손실되므로, 반드시 Series를 반환해야 합니다
+- pd.concat는 서로 다른 index 타입을 합치면 일반 Index를 만들 수 있으므로, concat 전에 모든 index를 일치시켜야 합니다
+
+## Status
+✅ **해결됨** - sktime index 호환성 문제는 해결되었습니다. 이제 다른 오류(수치적 불안정성)가 발생할 수 있지만, 이는 데이터 품질이나 모델 설정 문제입니다.

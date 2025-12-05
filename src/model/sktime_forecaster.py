@@ -29,8 +29,8 @@ from .dfm import DFM
 from .ddfm import DDFM
 
 
-def check_sktime_available():
-    """Check if sktime is available and raise ImportError if not."""
+def _check_sktime_available():
+    """Check if sktime is available and raise ImportError if not (internal use)."""
     if not HAS_SKTIME:
         raise ImportError(
             "sktime is required for sktime forecasters. "
@@ -92,7 +92,7 @@ class DFMForecaster(BaseForecaster):
         threshold: float = 1e-5,
         **kwargs
     ):
-        check_sktime_available()
+        _check_sktime_available()
         super().__init__()
         
         self.config_path = config_path
@@ -294,7 +294,7 @@ class DDFMForecaster(BaseForecaster):
         batch_size: int = 32,
         **kwargs
     ):
-        check_sktime_available()
+        _check_sktime_available()
         super().__init__()
         
         self.config_path = config_path

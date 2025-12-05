@@ -35,7 +35,7 @@ from .sktime import check_sktime_available
 # Optional sktime imports (may be None if sktime is not installed)
 try:
     from .sktime import (
-        ColumnTransformer,
+        ColumnEnsembleTransformer,
         TransformerPipeline,
         FunctionTransformer,
         StandardScaler,
@@ -43,7 +43,7 @@ try:
     _has_sktime_imports = True
 except ImportError:
     _has_sktime_imports = False
-    ColumnTransformer = None
+    ColumnEnsembleTransformer = None
     TransformerPipeline = None
     FunctionTransformer = None
     StandardScaler = None
@@ -73,7 +73,7 @@ __all__ = [
     'create_transformer_from_config',
     # Sktime utilities
     'check_sktime_available',
-    'ColumnTransformer',
+    'ColumnEnsembleTransformer',
     'TransformerPipeline',
     'FunctionTransformer',
     'StandardScaler',

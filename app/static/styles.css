@@ -5,7 +5,10 @@
 }
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    background: #f5f5f5;
+    background: #ffffff;
+    color: #1B3C53;
+    margin: 0;
+    padding: 0;
 }
 .container {
     max-width: 1200px;
@@ -33,7 +36,7 @@ body {
     font-size: 16px;
 }
 .tab.active {
-    background: #007bff;
+    background: #1B3C53;
     color: white;
 }
 .tab-content {
@@ -44,10 +47,11 @@ body {
 }
 .card {
     background: white;
-    padding: 20px;
+    padding: 24px;
     border-radius: 8px;
     margin-bottom: 20px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px rgba(27, 60, 83, 0.08);
+    border: 1px solid #E3E3E3;
 }
 .form-group {
     margin-bottom: 15px;
@@ -59,10 +63,18 @@ label {
 }
 input, select, textarea {
     width: 100%;
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    padding: 10px 12px;
+    border: 1px solid #E3E3E3;
+    border-radius: 6px;
     font-size: 14px;
+    background: white;
+    color: #1B3C53;
+    transition: all 0.2s ease;
+}
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: #1B3C53;
+    box-shadow: 0 0 0 3px rgba(27, 60, 83, 0.1);
 }
 textarea {
     min-height: 200px;
@@ -70,15 +82,19 @@ textarea {
 }
 button {
     padding: 10px 20px;
-    background: #007bff;
+    background: #1B3C53;
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
-    font-size: 16px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
 }
 button:hover {
-    background: #0056b3;
+    background: #234C6A;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(27, 60, 83, 0.2);
 }
 button:disabled {
     background: #ccc;
@@ -125,7 +141,7 @@ button:disabled {
     box-shadow: 0 2px 4px rgba(0,0,0,0.08);
 }
 .config-section-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #1B3C53 0%, #234C6A 100%);
     padding: 18px 24px;
     margin: 0;
 }
@@ -151,10 +167,10 @@ button:disabled {
     text-align: left;
     font-weight: 600;
     font-size: 12px;
-    color: #4a5568;
+    color: #1B3C53;
     text-transform: uppercase;
     letter-spacing: 0.8px;
-    border-bottom: 2px solid #e2e8f0;
+    border-bottom: 2px solid #E3E3E3;
     width: 35%;
 }
 .config-table th:first-child {
@@ -175,14 +191,14 @@ button:disabled {
 .config-table tbody tr:hover {
     background: #f0f4f8 !important;
     transform: translateX(2px);
-    box-shadow: -2px 0 0 0 #667eea;
+    box-shadow: -2px 0 0 0 #1B3C53;
 }
 .config-table tbody tr:last-child td {
     border-bottom: none;
 }
 .config-param-name {
     font-weight: 600;
-    color: #2d3748;
+    color: #1B3C53;
     font-size: 14px;
     margin-bottom: 6px;
     display: flex;
@@ -193,39 +209,39 @@ button:disabled {
     content: '';
     width: 4px;
     height: 16px;
-    background: #667eea;
+    background: #1B3C53;
     border-radius: 2px;
     display: inline-block;
 }
 .config-param-control {
     width: 100%;
     padding: 10px 14px;
-    border: 1.5px solid #cbd5e0;
+    border: 1.5px solid #E3E3E3;
     border-radius: 6px;
     font-size: 14px;
     background: white;
     transition: all 0.2s ease;
-    color: #2d3748;
+    color: #1B3C53;
 }
 .config-param-control:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: #1B3C53;
+    box-shadow: 0 0 0 3px rgba(27, 60, 83, 0.1);
     background: #fafbfc;
 }
 .config-param-control:hover {
-    border-color: #a0aec0;
+    border-color: #456882;
 }
 .config-param-control[type="checkbox"] {
     width: 20px;
     height: 20px;
     margin-right: 10px;
     cursor: pointer;
-    accent-color: #667eea;
+    accent-color: #1B3C53;
 }
 .config-param-help {
     font-size: 12px;
-    color: #718096;
+    color: #456882;
     margin-top: 6px;
     line-height: 1.5;
     font-style: italic;
@@ -240,7 +256,7 @@ button:disabled {
     font-weight: 500;
     cursor: pointer;
     user-select: none;
-    color: #4a5568;
+    color: #1B3C53;
     font-size: 14px;
 }
 .config-badge {
@@ -333,9 +349,9 @@ button:disabled {
 }
 
 .sidebar-menu-item.active a {
-    background: #006BB4;
+    background: #1B3C53;
     color: white;
-    border-left: 3px solid #00A69B;
+    border-left: 3px solid #234C6A;
 }
 
 .main-content {
@@ -358,7 +374,7 @@ button:disabled {
     align-items: center;
     justify-content: space-between;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    border-bottom: 1px solid #D3DAE6;
+    border-bottom: 1px solid #E3E3E3;
 }
 
 .dashboard-header-left {
@@ -370,13 +386,13 @@ button:disabled {
 .dashboard-title {
     font-size: 20px;
     font-weight: 600;
-    color: #1a1a1a;
+    color: #1B3C53;
     margin: 0;
 }
 
 .dashboard-search {
     padding: 8px 12px;
-    border: 1px solid #D3DAE6;
+    border: 1px solid #E3E3E3;
     border-radius: 4px;
     font-size: 14px;
     width: 300px;
@@ -390,7 +406,7 @@ button:disabled {
 
 .dashboard-btn {
     padding: 8px 16px;
-    background: #006BB4;
+    background: #1B3C53;
     color: white;
     border: none;
     border-radius: 4px;
@@ -402,17 +418,17 @@ button:disabled {
 }
 
 .dashboard-btn:hover {
-    background: #005a9e;
+    background: #234C6A;
 }
 
 .dashboard-btn.secondary {
     background: #F5F7FA;
-    color: #1a1a1a;
-    border: 1px solid #D3DAE6;
+    color: #1B3C53;
+    border: 1px solid #E3E3E3;
 }
 
 .dashboard-btn.secondary:hover {
-    background: #e8e8e8;
+    background: #f0f0f0;
 }
 
 .dashboard-grid {
@@ -432,7 +448,7 @@ button:disabled {
 .panel-header {
     background: #F5F7FA;
     padding: 12px 16px;
-    border-bottom: 1px solid #D3DAE6;
+    border-bottom: 1px solid #E3E3E3;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -469,13 +485,13 @@ button:disabled {
 
 .kpi-label {
     font-size: 14px;
-    color: #718096;
+    color: #456882;
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
 .kpi-card.success .kpi-value {
-    color: #00A69B;
+    color: #234C6A;
 }
 
 .kpi-card.error .kpi-value {
@@ -483,20 +499,20 @@ button:disabled {
 }
 
 .kpi-card.warning .kpi-value {
-    color: #F5A700;
+    color: #456882;
 }
 
 .kpi-progress {
     margin-top: 10px;
     height: 4px;
-    background: #e2e8f0;
+    background: #E3E3E3;
     border-radius: 2px;
     overflow: hidden;
 }
 
 .kpi-progress-fill {
     height: 100%;
-    background: #00A69B;
+    background: #234C6A;
     transition: width 0.3s ease;
 }
 
@@ -504,7 +520,7 @@ button:disabled {
     display: flex;
     align-items: center;
     padding: 12px 0;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #E3E3E3;
     position: relative;
     padding-left: 30px;
 }
@@ -520,15 +536,15 @@ button:disabled {
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #D3DAE6;
+    background: #E3E3E3;
 }
 
 .timeline-item.completed::before {
-    background: #00A69B;
+    background: #234C6A;
 }
 
 .timeline-item.running::before {
-    background: #006BB4;
+    background: #1B3C53;
     animation: pulse 2s infinite;
 }
 
@@ -553,13 +569,13 @@ button:disabled {
 
 .timeline-item-meta {
     font-size: 12px;
-    color: #718096;
+    color: #456882;
 }
 
 .timeline-progress {
     width: 100px;
     height: 6px;
-    background: #e2e8f0;
+    background: #E3E3E3;
     border-radius: 3px;
     overflow: hidden;
     margin-left: 10px;
@@ -567,12 +583,12 @@ button:disabled {
 
 .timeline-progress-fill {
     height: 100%;
-    background: #006BB4;
+    background: #1B3C53;
     transition: width 0.3s ease;
 }
 
 .timeline-progress-fill.completed {
-    background: #00A69B;
+    background: #234C6A;
 }
 
 .timeline-progress-fill.failed {
@@ -619,13 +635,13 @@ button:disabled {
 .bar-chart-label {
     min-width: 100px;
     font-size: 12px;
-    color: #4a5568;
+    color: #1B3C53;
 }
 
 .bar-chart-bar {
     flex: 1;
     height: 24px;
-    background: #e2e8f0;
+    background: #E3E3E3;
     border-radius: 4px;
     overflow: hidden;
     position: relative;
@@ -633,7 +649,7 @@ button:disabled {
 
 .bar-chart-fill {
     height: 100%;
-    background: #006BB4;
+    background: #1B3C53;
     transition: width 0.3s ease;
     display: flex;
     align-items: center;
@@ -645,7 +661,7 @@ button:disabled {
 }
 
 .bar-chart-fill.ddfm {
-    background: #00A69B;
+    background: #234C6A;
 }
 
 @media (max-width: 1024px) {
@@ -713,7 +729,7 @@ button:disabled {
     justify-content: space-between;
     align-items: center;
     padding: 12px 16px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #E3E3E3;
     background: #f7fafc;
 }
 
@@ -732,7 +748,7 @@ button:disabled {
 
 .config-section {
     margin-bottom: 12px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #E3E3E3;
     border-radius: 6px;
     background: white;
 }
@@ -740,7 +756,7 @@ button:disabled {
 .section-header {
     padding: 10px 12px;
     background: #f7fafc;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #E3E3E3;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -754,12 +770,12 @@ button:disabled {
 
 .section-header strong {
     font-size: 14px;
-    color: #2d3748;
+    color: #1B3C53;
 }
 
 .toggle-icon {
     font-size: 12px;
-    color: #718096;
+    color: #456882;
     width: 16px;
     text-align: center;
 }
@@ -771,7 +787,7 @@ button:disabled {
 .config-subsection {
     margin-top: 8px;
     margin-left: 16px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #E3E3E3;
     border-radius: 4px;
     background: #fafbfc;
 }
@@ -779,7 +795,7 @@ button:disabled {
 .subsection-header {
     padding: 8px 10px;
     background: #f7fafc;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #E3E3E3;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -803,28 +819,28 @@ button:disabled {
     display: block;
     font-size: 12px;
     font-weight: 600;
-    color: #4a5568;
+    color: #1B3C53;
     margin-bottom: 4px;
 }
 
 .field-value {
     padding: 6px 10px;
     background: white;
-    border: 1px solid #cbd5e0;
+    border: 1px solid #E3E3E3;
     border-radius: 4px;
     font-size: 13px;
-    color: #2d3748;
+    color: #1B3C53;
     cursor: pointer;
     min-height: 20px;
 }
 
 .field-value:hover {
     background: #f7fafc;
-    border-color: #a0aec0;
+    border-color: #456882;
 }
 
 .field-value em {
-    color: #a0aec0;
+    color: #456882;
     font-style: normal;
 }
 
@@ -832,7 +848,7 @@ button:disabled {
 .edit-field select {
     width: 100%;
     padding: 6px 10px;
-    border: 2px solid #667eea;
+    border: 2px solid #1B3C53;
     border-radius: 4px;
     font-size: 13px;
 }
@@ -849,7 +865,7 @@ button:disabled {
     margin-bottom: 8px;
     padding: 8px;
     background: white;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #E3E3E3;
     border-radius: 4px;
 }
 
@@ -862,7 +878,7 @@ button:disabled {
 .array-item-content input {
     flex: 1;
     padding: 4px 8px;
-    border: 1px solid #cbd5e0;
+    border: 1px solid #E3E3E3;
     border-radius: 4px;
     font-size: 12px;
 }
@@ -879,7 +895,7 @@ button:disabled {
 
 .series-item {
     margin-bottom: 8px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #E3E3E3;
     border-radius: 4px;
     background: white;
 }
@@ -887,7 +903,7 @@ button:disabled {
 .series-header {
     padding: 8px 10px;
     background: #f7fafc;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #E3E3E3;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -901,7 +917,7 @@ button:disabled {
 
 .series-header strong {
     font-size: 13px;
-    color: #2d3748;
+    color: #1B3C53;
 }
 
 .series-content {
@@ -913,12 +929,12 @@ button:disabled {
 .config-tree-empty {
     padding: 20px;
     text-align: center;
-    color: #718096;
+    color: #456882;
 }
 
 .field-value.selected {
     background: #e6f3ff;
-    border-color: #006BB4;
+    border-color: #1B3C53;
     border-width: 2px;
 }
 
@@ -950,12 +966,12 @@ button:disabled {
 }
 
 .empty-state h3 {
-    color: #4a5568;
+    color: #1B3C53;
     margin-bottom: 10px;
 }
 
 .empty-state p {
-    color: #718096;
+    color: #456882;
     font-size: 14px;
 }
 
@@ -965,7 +981,7 @@ button:disabled {
     align-items: center;
     margin-bottom: 20px;
     padding-bottom: 10px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #E3E3E3;
 }
 
 .config-editor-header h3 {
@@ -997,7 +1013,7 @@ button:disabled {
 
 .config-editor-label {
     font-weight: 600;
-    color: #4a5568;
+    color: #1B3C53;
     font-size: 14px;
 }
 
@@ -1006,22 +1022,22 @@ button:disabled {
     background: #f7fafc;
     padding: 8px 12px;
     border-radius: 4px;
-    color: #2d3748;
+    color: #1B3C53;
     font-size: 13px;
     word-break: break-all;
 }
 
 .config-editor-label-value {
-    color: #2d3748;
+    color: #1B3C53;
     font-size: 14px;
 }
 
 .config-editor-description {
-    background: #f0f9ff;
-    border-left: 3px solid #006BB4;
+    background: #f0f4f8;
+    border-left: 3px solid #1B3C53;
     padding: 12px 16px;
     border-radius: 4px;
-    color: #1e40af;
+    color: #234C6A;
     font-size: 13px;
     line-height: 1.6;
     margin-top: 4px;
@@ -1035,7 +1051,7 @@ button:disabled {
 .config-editor-input {
     width: 100%;
     padding: 10px 12px;
-    border: 2px solid #cbd5e0;
+    border: 2px solid #E3E3E3;
     border-radius: 6px;
     font-size: 14px;
     transition: all 0.2s ease;
@@ -1044,8 +1060,8 @@ button:disabled {
 
 .config-editor-input:focus {
     outline: none;
-    border-color: #006BB4;
-    box-shadow: 0 0 0 3px rgba(0, 107, 180, 0.1);
+    border-color: #1B3C53;
+    box-shadow: 0 0 0 3px rgba(27, 60, 83, 0.1);
 }
 
 .config-editor-textarea {
@@ -1061,8 +1077,8 @@ button:disabled {
 }
 
 .option-tag {
-    background: #e2e8f0;
-    color: #4a5568;
+    background: #E3E3E3;
+    color: #1B3C53;
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 12px;
@@ -1074,13 +1090,13 @@ button:disabled {
     gap: 10px;
     margin-top: 10px;
     padding-top: 20px;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid #E3E3E3;
 }
 
 .config-editor-save-btn {
     flex: 1;
     padding: 10px 20px;
-    background: #006BB4;
+    background: #1B3C53;
     color: white;
     border: none;
     border-radius: 6px;
@@ -1091,11 +1107,11 @@ button:disabled {
 }
 
 .config-editor-save-btn:hover:not(:disabled) {
-    background: #005a9e;
+    background: #234C6A;
 }
 
 .config-editor-save-btn:disabled {
-    background: #cbd5e0;
+    background: #E3E3E3;
     cursor: not-allowed;
 }
 
@@ -1103,8 +1119,8 @@ button:disabled {
     flex: 1;
     padding: 10px 20px;
     background: #f7fafc;
-    color: #4a5568;
-    border: 1px solid #cbd5e0;
+    color: #1B3C53;
+    border: 1px solid #E3E3E3;
     border-radius: 6px;
     font-size: 14px;
     font-weight: 600;
@@ -1114,7 +1130,7 @@ button:disabled {
 
 .config-editor-cancel-btn:hover:not(:disabled) {
     background: #edf2f7;
-    border-color: #a0aec0;
+    border-color: #456882;
 }
 
 .config-editor-cancel-btn:disabled {

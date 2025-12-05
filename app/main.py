@@ -9,7 +9,7 @@ from pathlib import Path
 from src.utils.path_setup import setup_paths
 setup_paths(include_app=True)
 
-from api.routes import router
+from app.api.routes import router
 
 app = FastAPI(title="Nowcasting API", version="0.1.0")
 
@@ -38,7 +38,7 @@ async def read_root():
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup."""
-    from utils import OUTPUTS_DIR, CONFIG_DIR
+    from app.utils import OUTPUTS_DIR, CONFIG_DIR
     
     # Ensure directories exist
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)

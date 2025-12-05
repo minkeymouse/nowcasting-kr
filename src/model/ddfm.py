@@ -187,7 +187,8 @@ class DDFM:
         if hasattr(result, 'num_iter'):
             self._metadata["num_iter"] = result.num_iter
         if hasattr(result, 'loglik'):
-            self._metadata["loglik"] = float(result.loglik)
+            import numpy as np
+        self._metadata["loglik"] = float(result.loglik) if result.loglik is not None else np.nan
     
     def predict(self, horizon: Optional[int] = None) -> Any:
         """Generate forecasts using the trained model.

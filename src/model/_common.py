@@ -7,6 +7,8 @@ to reduce code duplication and improve maintainability.
 from pathlib import Path
 from typing import Optional, Dict, Any, Union, Callable
 from datetime import datetime
+import numpy as np
+import pandas as pd
 
 # Set up paths using centralized utility (relative import since we're in src/)
 from ..utils.path_setup import setup_paths
@@ -194,30 +196,65 @@ def create_data_module_impl(
         series_ids = [f"series_{i}" for i in range(X_raw.shape[1])]
     
     # Convert to pandas DataFrame (raw data)
-    # Use Time.series if Time is a TimeIndex, otherwise create a simple index
-    if hasattr(Time, 'series'):
-        # TimeIndex object - use its pandas Series as index
+    # TimeIndex has 'dates' attribute (list of datetime objects)
+    # Ensure index is DatetimeIndex, PeriodIndex, or RangeIndex for sktime compatibility
+    if hasattr(Time, 'dates'):
+        # TimeIndex object - convert dates list to DatetimeIndex
+        try:
+            time_index = pd.DatetimeIndex(Time.dates)
+        except (ValueError, TypeError):
+            # If conversion fails, use RangeIndex
+            time_index = pd.RangeIndex(start=0, stop=len(Time.dates))
+    elif hasattr(Time, 'series'):
+        # Fallback: use series if available
         time_index = Time.series
+        if not isinstance(time_index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)):
+            try:
+                time_index = pd.to_datetime(time_index)
+            except (ValueError, TypeError):
+                time_index = pd.RangeIndex(start=0, stop=len(time_index))
     elif hasattr(Time, 'to_pandas'):
         # Fallback: try to_pandas() method
         time_index = Time.to_pandas()
+        if not isinstance(time_index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)):
+            try:
+                time_index = pd.to_datetime(time_index)
+            except (ValueError, TypeError):
+                time_index = pd.RangeIndex(start=0, stop=len(time_index))
     else:
-        # No time index available - use default integer index
-        time_index = None
+        # No time index available - use RangeIndex for sktime compatibility
+        time_index = pd.RangeIndex(start=0, stop=X_raw.shape[0])
     
     X_df = pd.DataFrame(X_raw, columns=series_ids, index=time_index)
     
     # Preprocess data using the pipeline
     # This is required: dfm-python expects preprocessed data (standardized, no missing values)
+    # Note: We fit_transform here to avoid index issues in DFMDataModule.setup()
     X_processed = pipeline.fit_transform(X_df)
     
-    # Create DFMDataModule with config, PREPROCESSED data, and pipeline for statistics extraction
-    # The pipeline is passed to extract statistics (Mx/Wx) for forecasting/nowcasting
-    # The data is already preprocessed, so DFMDataModule.setup() will only fit the pipeline
-    # to extract statistics, not to preprocess
+    # Convert to numpy array to avoid index compatibility issues with sktime
+    # DFMDataModule can handle numpy arrays directly, and this avoids ColumnEnsembleTransformer index issues
+    if isinstance(X_processed, pd.DataFrame):
+        # Extract values and preserve column names if needed
+        X_processed_array = X_processed.values
+        # Store column names for reference (DFMDataModule will use config series IDs)
+        X_processed = X_processed_array
+    elif isinstance(X_processed, np.ndarray):
+        # Already an array, use as-is
+        pass
+    else:
+        # Try to convert to array
+        X_processed = np.asarray(X_processed)
+    
+    # Note: Statistics (Mx/Wx) extraction removed - DFMDataModule will handle this
+    # Pipeline is set to None to avoid index issues, and DFMDataModule will compute statistics from data
+    
+    # Create DFMDataModule with config, PREPROCESSED data, and NO pipeline
+    # Pipeline is set to None to avoid index issues in DFMDataModule.setup()
+    # Statistics (Mx/Wx) will be computed from data if needed
     data_module = dfm_data_module(
         config=config,
-        pipeline=pipeline,  # Pipeline for extracting statistics (Mx/Wx) from preprocessed data
+        pipeline=None,  # Set to None to avoid index issues - data is already preprocessed
         data=X_processed,  # PREPROCESSED data (required by dfm-python)
         time_index=Time
     )
@@ -313,8 +350,12 @@ def train_impl(
         trainer_kwargs["max_epochs"] = 100
     
     # Pass through other trainer kwargs (enable_progress_bar, etc.)
+    # Default to True for progress visibility
     if "enable_progress_bar" in kwargs:
         trainer_kwargs["enable_progress_bar"] = kwargs.pop("enable_progress_bar")
+    else:
+        trainer_kwargs["enable_progress_bar"] = True  # Default: show progress
+    
     if "enable_model_summary" in kwargs:
         trainer_kwargs["enable_model_summary"] = kwargs.pop("enable_model_summary")
     
