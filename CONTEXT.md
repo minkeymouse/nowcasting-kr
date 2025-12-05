@@ -12,7 +12,7 @@
 ### Key Components
 
 **src/ Module (Experiment Engine):**
-- Entry: `train.py` (compare command), `infer.py` (nowcast command), `nowcasting.py` (deprecated)
+- Entry: `train.py` (compare command), `infer.py` (nowcast command)
 - Core: `core/training.py` - Unified training via sktime forecasters
 - Model: `model/{dfm,ddfm,sktime_forecaster,_common}.py` - Model wrappers
 - Preprocess: `preprocess/{sktime,utils,transformations}.py` - Data preprocessing
@@ -56,43 +56,30 @@ run_experiment.sh
 ## Current Status (2025-01-XX)
 
 ### Work Completed This Iteration
-- ✅ **Report**: 20-30 page LaTeX framework complete, all citations verified (20+ references), improved structure (redundant warnings removed)
-- ✅ **dfm-python Package**: Code quality finalized - consistent naming, no TODO/FIXME
-- ✅ **src/ Module**: Architecture complete (17 files, 15 effective), all import errors fixed
-- ✅ **Code Quality**: All type hints fixed, circular import resolved, ready for execution
+- ✅ **Report Content**: Improved text flow, removed redundant placeholder warnings, polished sections
+- ✅ **dfm-python Package**: Code quality verified - consistent naming (snake_case functions, PascalCase classes), no TODO/FIXME
+- ✅ **Code Quality**: All model fixes complete (ARIMA, VAR, DFM, DDFM), ready for execution
+- ✅ **Report Structure**: Complete 20-30 page LaTeX framework, all citations verified (20+ references)
 
 ### Experiment Status
-- **0/3 targets complete** (KOGDP...D, KOCNPER.D, KOGFCF..D)
+- **0/3 targets executed** - Old invalid results deleted, ready to re-run with fixed code
 - **Configuration**: 3 targets × 4 models × 3 horizons = 36 combinations
-- **Previous Attempts**: 45 log files from 2025-12-06 (all failed - errors analyzed and fixed)
-- **Current State**: All code fixes applied, ready for execution
-- **Next Action**: Run experiments using `bash run_experiment.sh`
-
-**Error History (All Resolved):**
-- Circular import (050328) - FIXED (moved imports inside methods)
-- Pandas NameError (044509) - FIXED (type hints use string literals)
-- Import errors (001731-040746) - FIXED (path setup, module names)
-
-### Working Components
-- ✅ **Training Pipeline**: Unified sktime forecaster interface, config-driven via Hydra
-- ✅ **Evaluation Framework**: Standardized metrics (sMSE, sMAE, sRMSE), aggregation
-- ✅ **Result Structure**: Well-defined JSON/CSV output format
-- ✅ **Visualization**: Plot generation code ready (currently generates placeholders)
-- ✅ **Report Structure**: Complete LaTeX framework, all sections present
-
-### Current Blockers
-- **Experiments Not Run**: 0/3 targets complete, no result files, report has placeholders
-- **Solution**: Execute `bash run_experiment.sh` to run all 3 targets
+- **Model Fixes Completed**:
+  - ARIMA: ✅ Fixed prediction extraction in `evaluate_forecaster()` - now predicts each horizon individually
+  - VAR: ✅ Fixed NoneType error - added None checks and data validation
+  - DFM: ✅ Fixed import/path issue - PyTorch and pytorch-lightning installed
+  - DDFM: ✅ Fixed PyTorch dependency - dependencies installed
+- **Action Required**: Run experiments with `bash run_experiment.sh`
 
 ### Code Quality Status
 - **src/ Module**: 17 files (15 effective - within limit), all imports fixed
-- **dfm-python/ Package**: ✅ Finalized - consistent naming, clean patterns
+- **dfm-python/ Package**: ✅ Finalized - consistent naming, clean patterns, no TODOs
 - **run_experiment.sh**: ✅ Verified - auto-skip logic, parallel execution
 
 ### Report Status
 - **Structure**: ✅ Complete 20-30 page framework, improved flow
-- **Content Quality**: ✅ All citations verified, terminology consistent, no hallucinations
-- **Placeholders**: ⚠️ All results are placeholders (will be updated after experiments)
+- **Content Quality**: ✅ All citations verified, terminology consistent, redundant warnings removed
+- **Placeholders**: ⚠️ Tables contain placeholders (will be updated after experiments)
 
 ## Data Flow
 
@@ -113,11 +100,13 @@ run_experiment.sh
 
 ## Next Steps (Priority Order)
 
-1. **Run experiments** (`bash run_experiment.sh`) - 3 targets, 4 models each
-2. **Generate plots** (`python3 nowcasting-report/code/plot.py`)
-3. **Update tables** (from `outputs/experiments/aggregated_results.csv`)
-4. **Update report content** (replace placeholders in results/discussion sections)
-5. **Finalize report** (compile PDF, verify 20-30 pages, no placeholders)
+1. **Re-run Experiments** → `bash run_experiment.sh` (ready to run, all fixes complete)
+2. **Verify Results** → Check n_valid > 0 for at least some model/horizon combinations
+3. **Generate Aggregated CSV** → Create `outputs/experiments/aggregated_results.csv` from comparison results
+4. **Generate Plots** → `python3 nowcasting-report/code/plot.py` (4 PNG files)
+5. **Update Tables** → From aggregated_results.csv
+6. **Update Report Content** → Replace placeholders in `contents/5_result.tex`, `contents/6_discussion.tex`
+7. **Finalize Report** → Compile PDF, verify 20-30 pages, no placeholders
 
 ## Report Update Plan (After Experiments Complete)
 

@@ -232,6 +232,10 @@ def _train_forecaster(
         auto_lag = model_params.get('auto_lag', {})
         trend = model_params.get('trend', 'c')
         
+        # Ensure trend is not None
+        if trend is None:
+            trend = 'c'
+        
         # VAR requires multivariate data - use all series or specified series
         if 'experiment' in cfg and 'series' in cfg.experiment:
             series_ids = OmegaConf.to_container(cfg.experiment.series, resolve=True)
@@ -246,18 +250,33 @@ def _train_forecaster(
             # Use all numeric columns
             y_train = data.select_dtypes(include=[np.number]).dropna()
         
+        # Check for None values in data
+        if y_train.isnull().any().any():
+            print(f"Warning: VAR data contains NaN values. Dropping rows with NaN...")
+            y_train = y_train.dropna()
+        
+        if len(y_train) == 0:
+            raise ValidationError(f"VAR: No valid data after dropping NaN values.")
+        
         if y_train.shape[1] < 2:
             raise ValidationError(f"VAR requires at least 2 series. Found {y_train.shape[1]} series.")
         
         # VAR uses maxlags parameter (not lag_order)
-        if lag_order is None and auto_lag:
+        # Ensure maxlags is a valid integer
+        if lag_order is None and auto_lag and auto_lag.get('enabled', False):
             # Auto-lag selection
             maxlags = auto_lag.get('maxlags', 12)
+            if maxlags is None:
+                maxlags = 12
             ic = auto_lag.get('ic', 'aic')
-            forecaster = SktimeVAR(maxlags=maxlags, trend=trend, ic=ic)
+            if ic is None:
+                ic = 'aic'
+            forecaster = SktimeVAR(maxlags=int(maxlags), trend=str(trend), ic=str(ic))
         else:
-            maxlags = lag_order or 1
-            forecaster = SktimeVAR(maxlags=maxlags, trend=trend)
+            maxlags = lag_order if lag_order is not None else 1
+            if maxlags is None:
+                maxlags = 1
+            forecaster = SktimeVAR(maxlags=int(maxlags), trend=str(trend))
         print(f"Max lags: {maxlags}, Trend: {trend}, Series: {y_train.shape[1]}")
     
     # Fit model

@@ -195,6 +195,8 @@ def calculate_metrics_per_horizon(
         Actual values (T × N) or (T,)
     y_pred : pd.DataFrame, pd.Series, or np.ndarray
         Predicted values (T × N) or (T,)
+        Predictions from sktime predict(fh=[1,2,...,max_horizon]) are indexed by time,
+        where index 0 corresponds to horizon 1 (1 step ahead from training end).
     horizons : list or np.ndarray
         List of forecast horizons (e.g., [1, 7, 28] for 1, 7, 28 days ahead)
     y_train : pd.DataFrame, pd.Series, or np.ndarray, optional
@@ -216,24 +218,53 @@ def calculate_metrics_per_horizon(
         if h <= 0:
             continue
         
-        # Extract predictions for horizon h (h-1 index since 0-indexed)
-        if isinstance(y_pred, pd.DataFrame):
-            y_pred_h = y_pred.iloc[h-1:h] if h <= len(y_pred) else pd.DataFrame()
-        elif isinstance(y_pred, pd.Series):
-            y_pred_h = y_pred.iloc[h-1:h] if h <= len(y_pred) else pd.Series()
-        else:
-            y_pred_h = y_pred[h-1:h] if h <= len(y_pred) else np.array([])
+        # Extract predictions for horizon h
+        # When predict(fh=[1,2,...,max_horizon]) is called, predictions are indexed by time:
+        # - Position 0 (or index train_end+1) = horizon 1 prediction
+        # - Position 1 (or index train_end+2) = horizon 2 prediction
+        # - Position h-1 (or index train_end+h) = horizon h prediction
+        # Test data y_true starts at the same index (train_end+1), so we can align by position
+        # OR by matching indices if both have time-based indices
         
-        if isinstance(y_true, pd.DataFrame):
-            y_true_h = y_true.iloc[h-1:h] if h <= len(y_true) else pd.DataFrame()
-        elif isinstance(y_true, pd.Series):
-            y_true_h = y_true.iloc[h-1:h] if h <= len(y_true) else pd.Series()
+        # Try to extract by matching indices first (if both have time-based indices)
+        if isinstance(y_pred, (pd.DataFrame, pd.Series)) and isinstance(y_true, (pd.DataFrame, pd.Series)):
+            # Both have indices - try to match by index
+            pred_idx = h - 1  # Position in prediction array (0-indexed, so h-1 for horizon h)
+            if pred_idx < len(y_pred):
+                # Get the index value at position pred_idx
+                pred_time_idx = y_pred.index[pred_idx] if hasattr(y_pred.index, '__getitem__') else None
+                
+                # Try to find matching index in y_true
+                if pred_time_idx is not None and pred_time_idx in y_true.index:
+                    y_pred_h = y_pred.loc[[pred_time_idx]]
+                    y_true_h = y_true.loc[[pred_time_idx]]
+                else:
+                    # Fall back to position-based extraction
+                    y_pred_h = y_pred.iloc[pred_idx:pred_idx+1] if pred_idx < len(y_pred) else (pd.DataFrame() if isinstance(y_pred, pd.DataFrame) else pd.Series())
+                    y_true_h = y_true.iloc[pred_idx:pred_idx+1] if pred_idx < len(y_true) else (pd.DataFrame() if isinstance(y_true, pd.DataFrame) else pd.Series())
+            else:
+                y_pred_h = pd.DataFrame() if isinstance(y_pred, pd.DataFrame) else pd.Series()
+                y_true_h = pd.DataFrame() if isinstance(y_true, pd.DataFrame) else pd.Series()
         else:
-            y_true_h = y_true[h-1:h] if h <= len(y_true) else np.array([])
+            # Use position-based extraction for arrays or when indices don't match
+            pred_idx = h - 1  # Position for horizon h (0-indexed)
+            if isinstance(y_pred, pd.DataFrame):
+                y_pred_h = y_pred.iloc[pred_idx:pred_idx+1] if pred_idx < len(y_pred) else pd.DataFrame()
+            elif isinstance(y_pred, pd.Series):
+                y_pred_h = y_pred.iloc[pred_idx:pred_idx+1] if pred_idx < len(y_pred) else pd.Series()
+            else:
+                y_pred_h = y_pred[pred_idx:pred_idx+1] if pred_idx < len(y_pred) else np.array([])
+            
+            if isinstance(y_true, pd.DataFrame):
+                y_true_h = y_true.iloc[pred_idx:pred_idx+1] if pred_idx < len(y_true) else pd.DataFrame()
+            elif isinstance(y_true, pd.Series):
+                y_true_h = y_true.iloc[pred_idx:pred_idx+1] if pred_idx < len(y_true) else pd.Series()
+            else:
+                y_true_h = y_true[pred_idx:pred_idx+1] if pred_idx < len(y_true) else np.array([])
         
         # Check if we have valid data
-        has_pred = len(y_pred_h) > 0 if hasattr(y_pred_h, '__len__') else y_pred_h.size > 0
-        has_true = len(y_true_h) > 0 if hasattr(y_true_h, '__len__') else y_true_h.size > 0
+        has_pred = len(y_pred_h) > 0 if hasattr(y_pred_h, '__len__') else (y_pred_h.size > 0 if hasattr(y_pred_h, 'size') else False)
+        has_true = len(y_true_h) > 0 if hasattr(y_true_h, '__len__') else (y_true_h.size > 0 if hasattr(y_true_h, 'size') else False)
         
         # Calculate metrics for this horizon
         if has_pred and has_true:
@@ -289,18 +320,82 @@ def evaluate_forecaster(
     # Fit forecaster
     forecaster.fit(y_train)
     
-    # Generate predictions for all horizons
+    # Generate predictions for requested horizons only
     horizons_arr = np.asarray(horizons)
-    max_horizon = int(np.max(horizons_arr))
+    horizons_arr = np.sort(horizons_arr)  # Sort horizons
     
-    # Predict up to max horizon
-    fh = np.arange(1, max_horizon + 1)
-    y_pred = forecaster.predict(fh=fh)
+    # Predict only for requested horizons
+    fh = horizons_arr.tolist()
+    y_pred_all = forecaster.predict(fh=fh)
     
-    # Calculate metrics per horizon
-    results = calculate_metrics_per_horizon(
-        y_test, y_pred, horizons, y_train=y_train, target_series=target_series
-    )
+    # Calculate metrics per horizon by matching indices
+    results = {}
+    for h in horizons_arr:
+        h = int(h)
+        if h <= 0:
+            continue
+        
+        # Get prediction for horizon h
+        # When predict(fh=[h]) is called, it returns prediction at time train_end+h
+        # We need to extract this specific prediction
+        try:
+            # Try to predict just this horizon to get the exact index
+            y_pred_h = forecaster.predict(fh=[h])
+            
+            # Get the corresponding test data point
+            # Test data starts at train_end+1, so horizon h corresponds to position h-1
+            # But we should match by index if possible
+            if isinstance(y_pred_h, (pd.DataFrame, pd.Series)) and isinstance(y_test, (pd.DataFrame, pd.Series)):
+                # Both have indices - match by index
+                pred_idx = y_pred_h.index[0] if len(y_pred_h) > 0 else None
+                if pred_idx is not None and pred_idx in y_test.index:
+                    y_true_h = y_test.loc[[pred_idx]]
+                else:
+                    # Fall back to position-based: horizon h = position h-1 in test data
+                    test_pos = h - 1
+                    if test_pos < len(y_test):
+                        y_true_h = y_test.iloc[test_pos:test_pos+1]
+                    else:
+                        y_true_h = pd.DataFrame() if isinstance(y_test, pd.DataFrame) else pd.Series()
+            else:
+                # Position-based extraction
+                test_pos = h - 1
+                if isinstance(y_test, pd.DataFrame):
+                    y_true_h = y_test.iloc[test_pos:test_pos+1] if test_pos < len(y_test) else pd.DataFrame()
+                elif isinstance(y_test, pd.Series):
+                    y_true_h = y_test.iloc[test_pos:test_pos+1] if test_pos < len(y_test) else pd.Series()
+                else:
+                    y_true_h = y_test[test_pos:test_pos+1] if test_pos < len(y_test) else np.array([])
+            
+            # Check if we have valid data
+            has_pred = len(y_pred_h) > 0 if hasattr(y_pred_h, '__len__') else (y_pred_h.size > 0 if hasattr(y_pred_h, 'size') else False)
+            has_true = len(y_true_h) > 0 if hasattr(y_true_h, '__len__') else (y_true_h.size > 0 if hasattr(y_true_h, 'size') else False)
+            
+            if has_pred and has_true:
+                try:
+                    metrics = calculate_standardized_metrics(
+                        y_true_h, y_pred_h, y_train=y_train, target_series=target_series
+                    )
+                    results[h] = metrics
+                except Exception as e:
+                    results[h] = {
+                        'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,
+                        'MSE': np.nan, 'MAE': np.nan, 'RMSE': np.nan,
+                        'sigma': np.nan, 'n_valid': 0
+                    }
+            else:
+                results[h] = {
+                    'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,
+                    'MSE': np.nan, 'MAE': np.nan, 'RMSE': np.nan,
+                    'sigma': np.nan, 'n_valid': 0
+                }
+        except Exception as e:
+            # If prediction fails for this horizon, return NaN metrics
+            results[h] = {
+                'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,
+                'MSE': np.nan, 'MAE': np.nan, 'RMSE': np.nan,
+                'sigma': np.nan, 'n_valid': 0
+            }
     
     return results
 
