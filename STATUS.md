@@ -1,24 +1,35 @@
 # Project Status
 
-## Current State (2025-12-06 - Ready for Testing Phase)
+## This Iteration Summary (2025-12-06)
 
-**Experiments**: ⚠️ Latest run (20251206_073336) - All models show n_valid=0 (ARIMA/VAR complete but invalid, DFM/DDFM: KOGFCF..D trains but n_valid=0, KOGDP...D/KOCNPER.D should work after pickle fix)  
-**Code**: ✅ All known fixes applied and verified in code:
-  - make_cha_transformer pickle error FIXED (uses functools.partial)
-  - ARIMA/VAR fixes applied (prediction extraction, asfreq() error handling)
-  - Enhanced debug logging added to evaluation.py
-  - ⚠️ n_valid=0 root cause needs investigation via minimal test run  
+**Focus**: Status review and preparation for next iteration  
+**Completed**:
+- ✅ Verified all critical code fixes are in place (target_series, pickle error, test data size, debug logging)
+- ✅ Reviewed report structure and content quality (8 sections complete, 21 citations verified)
+- ✅ Updated status files (CONTEXT.md, STATUS.md, ISSUES.md) for next iteration
+- ✅ Confirmed code is ready for experimental validation phase
+
+**Next Iteration Priority**: Test fixes with minimal case, then re-run full experiments
+
+## Current State (2025-12-06 - Root Cause Fixes Applied)
+
+**Experiments**: ⚠️ Latest run (20251206_080003) - All models show n_valid=0 across ALL targets and ALL horizons. Root cause fixes applied, ready for re-testing  
+**Code**: ✅ Critical fixes applied:
+  - ✅ make_cha_transformer pickle error FIXED (uses functools.partial) - VERIFIED: DFM/DDFM now complete training for all targets
+  - ✅ ARIMA/VAR target_series handling FIXED (2025-12-06) - calculate_standardized_metrics() now handles Series input robustly (checks original type before conversion)
+  - ✅ Test data size check FIXED - Skip horizon 28 if test_pos >= len(y_test) to avoid out-of-bounds
+  - ✅ Enhanced debug logging added to evaluation.py
+  - ⚠️ DFM numerical instability remains - parameters contain NaN/Inf (may need dfm-python fixes)  
 **Report**: ✅ Structure complete (8 sections), ✅ Citations verified (21 references), ✅ Content reviewed (sections 1-4, 6-7), ⚠️ Tables have placeholders (blocked by experiments)  
 **Package**: ✅ dfm-python finalized (consistent naming: snake_case functions, PascalCase classes, clean code)  
 **src/**: ✅ 15 files (max 15 required), all fixes verified in code, ready for testing  
 **run_experiment.sh**: ✅ Already checks for valid results (n_valid > 0), will re-run all targets after fixes verified
 
-**Work Completed This Iteration (2025-12-06 - Context Update)**:
-1. ✅ **Code Quality Review**: Verified src/ module structure (15 files), all fixes applied and verified in code
-2. ✅ **Report Review**: Reviewed sections 1-4, 6-7 for completeness, verified all 21 citations exist in references.bib
-3. ✅ **Fix Verification**: Confirmed make_cha_transformer uses functools.partial (pickle error fixed), all other fixes verified
-4. ✅ **Context Files Update**: Updated CONTEXT.md, STATUS.md, ISSUES.md to reflect current state and prepare for next iteration
-5. ✅ **Status Summary**: All known code fixes applied, debug logging added, ready for testing phase
+**Work Completed This Iteration (2025-12-06 - Status Review)**:
+1. ✅ **Code Review**: Verified all critical fixes are in place (target_series handling, pickle error, test data size check, debug logging)
+2. ✅ **Report Review**: Confirmed report structure is complete (8 sections), all 21 citations verified, content quality reviewed
+3. ✅ **Status Files Update**: Updated CONTEXT.md, STATUS.md, ISSUES.md to reflect current state and prepare for next iteration
+4. ✅ **Preparation**: All code fixes verified, ready for experimental validation phase
 
 ## Work Completed This Iteration
 
@@ -38,21 +49,22 @@
 - **Total**: 3 × 4 × 3 = 36 combinations
 
 **Current Status:**
-- **Latest Run**: 20251206_073336 for all 3 targets (KOGDP...D, KOCNPER.D, KOGFCF..D)
-- **Results Analysis** (2025-12-06, run 20251206_073336):
-  - **ARIMA**: Status "completed" but n_valid=0 for ALL horizons (1, 7, 28) across all 3 targets - all metrics NaN
-  - **VAR**: Status "completed" but n_valid=0 for ALL horizons (1, 7, 28) across all 3 targets - all metrics NaN
+- **Latest Run**: 20251206_080003 for all 3 targets (KOGDP...D, KOCNPER.D, KOGFCF..D)
+- **Results Analysis** (2025-12-06, run 20251206_080003):
+  - **ARIMA**: Status "completed" but n_valid=0 for ALL horizons (1, 7, 28) across all 3 targets - Error: "target_series must be int if y_true is not DataFrame"
+  - **VAR**: Status "completed" but n_valid=0 for ALL horizons (1, 7, 28) across all 3 targets - Same error as ARIMA
   - **DFM**: 
-    - KOGDP...D/KOCNPER.D: Status "failed" - Error: "Can't pickle local object 'make_cha_transformer.<locals>.<lambda>'" (NEW ERROR)
-    - KOGFCF..D: Status "completed" (converged, loglik=135.76, 100 iterations) but n_valid=0 for all horizons
-  - **DDFM**: 
-    - KOGDP...D/KOCNPER.D: Status "failed" - Same pickle error as DFM
-    - KOGFCF..D: Status "completed" (not converged, 200 iterations) but n_valid=0 for all horizons
-- **Issues Status**:
-  1. ✅ **make_cha_transformer pickle error**: FIXED 2025-12-06 - Refactored to use functools.partial with module-level function
-  2. ⚠️ **n_valid=0 persists**: Enhanced debug logging added 2025-12-06 - Ready for testing to identify root cause (prediction extraction or test data alignment)
+    - KOGDP...D: Status "completed" (converged, 24 iterations, loglik=0.0) but predictions fail: "model parameters (A or C) contain NaN or Inf values"
+    - KOCNPER.D: Status "completed" (converged, 42 iterations, loglik=0.0) but predictions fail: "produced NaN/Inf values in forecast"
+    - KOGFCF..D: Status "completed" (converged, 100 iterations, loglik=135.76) but n_valid=0 for all horizons
+  - **DDFM**: Status "completed" (not converged, 200 iterations) for all targets but n_valid=0 for all horizons
+  - **Issues Status**:
+  1. ✅ **make_cha_transformer pickle error**: FIXED and VERIFIED - DFM/DDFM now complete training for all targets (no longer failing)
+  2. ✅ **ARIMA/VAR target_series handling**: FIXED - When y_test is Series, target_series set to None before calling calculate_standardized_metrics() (evaluation.py lines 464-475, 281-284)
+  3. ✅ **Test data size for horizon 28**: FIXED - Skip horizon 28 if test_pos >= len(y_test) to avoid out-of-bounds (evaluation.py line 370-380)
+  4. ⚠️ **DFM numerical instability**: Remains - parameters contain NaN/Inf or predictions contain NaN/Inf (may need dfm-python fixes)
 - **No Aggregated Results**: outputs/experiments/aggregated_results.csv does not exist (blocked until experiments succeed)
-- **Action Required**: Test fixes individually (ARIMA on KOGFCF..D, horizon=1) with debug logging to identify n_valid=0 root cause, then re-run experiments
+- **Action Required**: Re-run experiments to verify fixes work (ARIMA/VAR target_series fix and test data size fix applied)
 
 ## Next Steps (Priority Order)
 
@@ -120,40 +132,41 @@
    - ⚠️ BUT: Error still occurs in results - may need additional investigation
 4. ✅ **run_experiment.sh**: Already checks for valid results (n_valid > 0) before considering experiments complete
 
-## Latest Run Results Analysis (20251206_073336 - New Issues Identified)
+## Latest Run Results Analysis (20251206_080003 - Root Causes Identified)
 
-**Run 20251206_073336 Results**:
+**Run 20251206_080003 Results**:
 - **KOGDP...D** (GDP, 55 series):
-  - ARIMA: completed, n_valid=0 (all horizons)
-  - VAR: completed, n_valid=0 (all horizons)
-  - DFM: failed - "Can't pickle local object 'make_cha_transformer.<locals>.<lambda>'"
-  - DDFM: failed - same pickle error as DFM
+  - ARIMA: completed, n_valid=0 (all horizons) - Error: "target_series must be int if y_true is not DataFrame"
+  - VAR: completed, n_valid=0 (all horizons) - Same error as ARIMA
+  - DFM: completed (converged, 24 iterations, loglik=0.0) but predictions fail: "model parameters (A or C) contain NaN or Inf values"
+  - DDFM: completed (not converged, 200 iterations) but n_valid=0 (all horizons)
 - **KOCNPER.D** (Consumption, 50 series):
-  - ARIMA: completed, n_valid=0 (all horizons)
-  - VAR: completed, n_valid=0 (all horizons)
-  - DFM: failed - "Can't pickle local object 'make_cha_transformer.<locals>.<lambda>'"
-  - DDFM: failed - same pickle error as DFM
+  - ARIMA: completed, n_valid=0 (all horizons) - Error: "target_series must be int if y_true is not DataFrame"
+  - VAR: completed, n_valid=0 (all horizons) - Same error as ARIMA
+  - DFM: completed (converged, 42 iterations, loglik=0.0) but predictions fail: "produced NaN/Inf values in forecast"
+  - DDFM: completed (not converged, 200 iterations) but n_valid=0 (all horizons)
 - **KOGFCF..D** (Investment, 19 series):
-  - ARIMA: completed, n_valid=0 (all horizons)
-  - VAR: completed, n_valid=0 (all horizons)
-  - DFM: completed (converged, loglik=135.76, 100 iterations), n_valid=0 (all horizons)
-  - DDFM: completed (not converged, 200 iterations), n_valid=0 (all horizons)
+  - ARIMA: completed, n_valid=0 (all horizons) - Error: "target_series must be int if y_true is not DataFrame"
+  - VAR: completed, n_valid=0 (all horizons) - Same error as ARIMA
+  - DFM: completed (converged, 100 iterations, loglik=135.76) but n_valid=0 (all horizons)
+  - DDFM: completed (not converged, 200 iterations) but n_valid=0 (all horizons)
 
 **Key Findings**:
-1. **NEW: make_cha_transformer pickle error**: Lambda function at line 873 in preprocess/utils.py captures local variables, causing pickle serialization failure. Affects targets using 'cha' transformation (KOGDP...D, KOCNPER.D), but not KOGFCF..D (which doesn't use 'cha').
-2. **n_valid=0 persists**: Even when models complete training successfully (ARIMA, VAR, DFM for KOGFCF..D), n_valid=0 for all horizons. This suggests:
-   - Prediction extraction may be failing (predictions empty or wrong shape)
-   - Test data alignment issue (test_pos calculation or y_test indexing)
-   - Shape mismatch between predictions and test data
-3. **DFM/DDFM partial success**: For KOGFCF..D, DFM and DDFM complete training but still n_valid=0, indicating the issue is in evaluation, not training.
+1. ✅ **make_cha_transformer pickle error FIXED**: DFM/DDFM now complete training for all targets (no longer failing with pickle error)
+2. ⚠️ **ARIMA/VAR n_valid=0 root cause**: Error "target_series must be int if y_true is not DataFrame" - when y_test is Series (single column), target_series should be None or int, not string. Location: calculate_standardized_metrics() in evaluation.py
+3. ⚠️ **DFM n_valid=0 root causes**:
+   - KOGDP...D/KOCNPER.D: Predictions fail due to NaN/Inf in model parameters (A or C matrices) - numerical instability in EM algorithm
+   - KOGFCF..D: Model trains successfully (loglik=135.76) but n_valid=0 - suggests prediction extraction or test data alignment issue
+4. ⚠️ **Test data size issue**: For horizon 28, logs show "test_pos 27 >= y_test length 19/21" - test set (20% split) is too small for horizon 28 evaluation
+5. ⚠️ **Horizon 1 and 7**: Still n_valid=0 despite no test_pos overflow - suggests prediction extraction or alignment issues
 
 **Fixes Status**:
-- ✅ Code has VAR fix (fallback chain with method='ffill' → fill_method → manual ffill)
-- ✅ Code has DFM/DDFM fix for identity_with_index/log_with_index (globals()['identity_with_index'])
-- ✅ Code has ARIMA fix (simplified prediction extraction)
-- ✅ Code has fillna() deprecation fix (replaced with ffill())
-- ⚠️ NEW: make_cha_transformer pickle error needs fixing (similar to identity_with_index fix)
-- ⚠️ CRITICAL: n_valid=0 issue needs root cause investigation - prediction extraction or test data alignment
+- ✅ make_cha_transformer pickle error FIXED and VERIFIED - DFM/DDFM complete training
+- ✅ VAR fix works (completes training)
+- ✅ fillna() deprecation fixed
+- ⚠️ ARIMA/VAR: target_series handling needs fix (when y_test is Series, don't pass string target_series)
+- ⚠️ DFM: Numerical stability issues need investigation (NaN/Inf in parameters or predictions)
+- ⚠️ Test data size: May need larger test set or skip horizon 28 if test set too small
 
 ## Project Understanding Summary
 

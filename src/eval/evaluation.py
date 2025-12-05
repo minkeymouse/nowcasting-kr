@@ -65,11 +65,14 @@ def calculate_standardized_metrics(
     - Missing values (NaN) are automatically excluded from calculations
     - If all values are NaN, returns NaN for all metrics
     """
-    # Convert to numpy arrays
-    if isinstance(y_true, pd.DataFrame):
+    # Convert to numpy arrays and track original types
+    is_y_true_series = isinstance(y_true, pd.Series)
+    is_y_true_dataframe = isinstance(y_true, pd.DataFrame)
+    
+    if is_y_true_dataframe:
         y_true_arr = y_true.values
         columns = y_true.columns
-    elif isinstance(y_true, pd.Series):
+    elif is_y_true_series:
         y_true_arr = y_true.values.reshape(-1, 1)
         columns = [y_true.name] if y_true.name else [0]
     else:
@@ -97,10 +100,19 @@ def calculate_standardized_metrics(
     # Select target series if specified
     if target_series is not None:
         if isinstance(target_series, str):
-            if isinstance(y_true, pd.DataFrame):
+            if is_y_true_dataframe:
+                # DataFrame: look up column name
                 col_idx = y_true.columns.get_loc(target_series)
+            elif is_y_true_series:
+                # Series: check if name matches, otherwise use index 0
+                if y_true.name == target_series:
+                    col_idx = 0
+                else:
+                    # Name doesn't match, but Series has only one column - use 0
+                    col_idx = 0
             else:
-                raise ValueError("target_series must be int if y_true is not DataFrame")
+                # Not DataFrame or Series - can't use string index
+                raise ValueError("target_series must be int if y_true is not DataFrame or Series")
         else:
             col_idx = target_series
         
@@ -279,8 +291,19 @@ def calculate_metrics_per_horizon(
         # Calculate metrics for this horizon
         if has_pred and has_true:
             try:
+                # Fix: If y_true_h is Series (not DataFrame), target_series must be None or int, not string
+                target_series_for_metrics = target_series
+                if isinstance(y_true_h, pd.Series) and isinstance(target_series, str):
+                    # y_true_h is Series but target_series is string - set to None
+                    target_series_for_metrics = None
+                elif isinstance(y_true_h, pd.DataFrame) and len(y_true_h.columns) == 1:
+                    # Single column DataFrame - can use None or column name
+                    if isinstance(target_series, str) and target_series not in y_true_h.columns:
+                        # target_series string doesn't match column name - set to None
+                        target_series_for_metrics = None
+                
                 metrics = calculate_standardized_metrics(
-                    y_true_h, y_pred_h, y_train=y_train, target_series=target_series
+                    y_true_h, y_pred_h, y_train=y_train, target_series=target_series_for_metrics
                 )
                 results[h] = metrics
             except Exception as e:
@@ -369,6 +392,16 @@ def evaluate_forecaster(
             # This is more reliable than index matching since test data is created by splitting
             test_pos = h - 1
             
+            # Fix: Check if test data has enough points for this horizon
+            if test_pos >= len(y_test):
+                logger.warning(f"Horizon {h}: test_pos {test_pos} >= y_test length {len(y_test)}. Skipping horizon {h} - test set too small.")
+                results[h] = {
+                    'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,
+                    'MSE': np.nan, 'MAE': np.nan, 'RMSE': np.nan,
+                    'sigma': np.nan, 'n_valid': 0
+                }
+                continue
+            
             # Enhanced debug logging
             logger.info(f"Horizon {h}: test_pos={test_pos}, y_test length={len(y_test)}, y_test type={type(y_test)}, y_test shape={getattr(y_test, 'shape', 'N/A')}")
             if hasattr(y_pred_h, 'index'):
@@ -409,24 +442,19 @@ def evaluate_forecaster(
                     logger.warning(f"Horizon {h}: y_pred_h is empty or unsupported type: {type(y_pred_h)}")
                     y_pred_h = pd.Series()
             
-            # Extract corresponding test data
-            if test_pos < len(y_test):
-                if isinstance(y_test, pd.DataFrame):
-                    y_true_h = y_test.iloc[test_pos:test_pos+1].copy()
-                    # Extract target series if specified
-                    if target_series is not None and target_series in y_true_h.columns:
-                        y_true_h = y_true_h[[target_series]]
-                    elif len(y_test.columns) == 1:
-                        # Single column, use it
-                        y_true_h = y_true_h.iloc[:, [0]]
-                elif isinstance(y_test, pd.Series):
-                    y_true_h = y_test.iloc[test_pos:test_pos+1]
-                else:
-                    y_true_h = y_test[test_pos:test_pos+1]
+            # Extract corresponding test data (test_pos already validated above)
+            if isinstance(y_test, pd.DataFrame):
+                y_true_h = y_test.iloc[test_pos:test_pos+1].copy()
+                # Extract target series if specified
+                if target_series is not None and target_series in y_true_h.columns:
+                    y_true_h = y_true_h[[target_series]]
+                elif len(y_test.columns) == 1:
+                    # Single column, use it
+                    y_true_h = y_true_h.iloc[:, [0]]
+            elif isinstance(y_test, pd.Series):
+                y_true_h = y_test.iloc[test_pos:test_pos+1]
             else:
-                # Test data doesn't have enough points for this horizon
-                logger.warning(f"Horizon {h}: test_pos {test_pos} >= y_test length {len(y_test)}. No valid test data.")
-                y_true_h = pd.DataFrame() if isinstance(y_test, pd.DataFrame) else (pd.Series() if isinstance(y_test, pd.Series) else np.array([]))
+                y_true_h = y_test[test_pos:test_pos+1]
             
             # Check if we have valid data
             has_pred = len(y_pred_h) > 0 if hasattr(y_pred_h, '__len__') else (y_pred_h.size > 0 if hasattr(y_pred_h, 'size') else False)
@@ -461,8 +489,22 @@ def evaluate_forecaster(
             
             if has_pred and has_true:
                 try:
+                    # Fix: If y_true_h is Series (not DataFrame), target_series must be None or int, not string
+                    # When y_test is Series, we don't need to specify target_series since there's only one column
+                    target_series_for_metrics = target_series
+                    if isinstance(y_true_h, pd.Series) and isinstance(target_series, str):
+                        # y_true_h is Series but target_series is string - set to None
+                        target_series_for_metrics = None
+                        logger.debug(f"Horizon {h}: y_true_h is Series, setting target_series=None (was string: {target_series})")
+                    elif isinstance(y_true_h, pd.DataFrame) and len(y_true_h.columns) == 1:
+                        # Single column DataFrame - can use None or column name
+                        if isinstance(target_series, str) and target_series not in y_true_h.columns:
+                            # target_series string doesn't match column name - set to None
+                            target_series_for_metrics = None
+                            logger.debug(f"Horizon {h}: y_true_h has 1 column but target_series '{target_series}' not in columns, setting target_series=None")
+                    
                     metrics = calculate_standardized_metrics(
-                        y_true_h, y_pred_h, y_train=y_train, target_series=target_series
+                        y_true_h, y_pred_h, y_train=y_train, target_series=target_series_for_metrics
                     )
                     results[h] = metrics
                 except Exception as e:
