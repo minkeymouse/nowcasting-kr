@@ -11,7 +11,7 @@ import sys
 from ..utils.config_parser import setup_paths
 setup_paths(include_dfm_python=True, include_src=True, include_app=True)
 
-from app.utils import (
+from ..utils.config_parser import (
     ValidationError,
     DEFAULT_DDFM_ENCODER_LAYERS, DEFAULT_DDFM_NUM_FACTORS, DEFAULT_DDFM_EPOCHS
 )

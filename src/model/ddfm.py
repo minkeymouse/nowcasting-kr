@@ -9,7 +9,7 @@ from ..utils.config_parser import setup_paths
 setup_paths(include_dfm_python=True, include_src=True, include_app=True)
 
 # Import custom exceptions for error handling
-from app.utils import ValidationError
+from ..utils.config_parser import ValidationError
 
 try:
     from dfm_python import DDFM as DDFMBase

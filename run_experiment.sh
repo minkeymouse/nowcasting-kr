@@ -256,7 +256,8 @@ run_experiment() {
     echo ""
     
     # Run experiment with timeout (24 hours max per experiment)
-    timeout 86400 python3 src/train.py compare \
+    # Use venv Python explicitly since background processes don't inherit venv activation
+    timeout 86400 .venv/bin/python3 src/train.py compare \
         --config-name "$config_name" \
         > "$log_file" 2>&1
     
@@ -343,7 +344,7 @@ echo "Aggregating Results"
 echo "=========================================="
 echo ""
 
-if python3 -c "from src.eval import main_aggregator; main_aggregator()" 2>&1; then
+if .venv/bin/python3 -c "from src.eval import main_aggregator; main_aggregator()" 2>&1; then
     echo ""
     echo "✓ Aggregation completed successfully"
 else

@@ -12,6 +12,34 @@ except ImportError as e:
     raise ImportError(f"Required dependencies not available: {e}")
 
 # ============================================================================
+# Exception Classes
+# ============================================================================
+
+class ValidationError(Exception):
+    """Custom exception for validation errors."""
+    pass
+
+
+class ConfigError(Exception):
+    """Custom exception for configuration errors."""
+    pass
+
+
+# ============================================================================
+# DDFM Default Constants
+# ============================================================================
+
+# Default DDFM encoder layers
+DEFAULT_DDFM_ENCODER_LAYERS = [64, 32]
+
+# Default DDFM number of factors
+DEFAULT_DDFM_NUM_FACTORS = 5
+
+# Default DDFM training epochs
+DEFAULT_DDFM_EPOCHS = 100
+
+
+# ============================================================================
 # Path Setup Utilities
 # ============================================================================
 
@@ -229,6 +257,23 @@ def validate_data_path(data_path: str) -> bool:
         True if file exists
     """
     return Path(data_path).exists()
+
+
+def validate_data_file(data_path: Path) -> None:
+    """Validate that data file exists, raising ValidationError if not.
+    
+    Parameters
+    ----------
+    data_path : Path
+        Path to data file
+        
+    Raises
+    ------
+    ValidationError
+        If file does not exist
+    """
+    if not data_path.exists():
+        raise ValidationError(f"Data file not found: {data_path}")
 
 
 def get_series_list_from_config(config: Dict[str, Any]) -> List[str]:

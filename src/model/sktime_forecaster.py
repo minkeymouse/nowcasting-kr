@@ -23,7 +23,7 @@ except ImportError:
     BaseForecaster = None
     ForecastingHorizon = None
 
-from app.utils import ValidationError
+from ..utils.config_parser import ValidationError
 
 # Import model wrappers
 from .dfm import DFM

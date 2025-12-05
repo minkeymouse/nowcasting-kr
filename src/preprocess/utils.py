@@ -18,7 +18,7 @@ from ..utils.config_parser import setup_paths
 setup_paths(include_app=True)
 
 # Import custom exceptions for error handling
-from app.utils import ValidationError, ConfigError
+from ..utils.config_parser import ValidationError, ConfigError
 
 # ============================================================================
 # Sktime Optional Dependency Handling
@@ -288,7 +288,7 @@ def read_data(datafile: Union[str, Path]) -> Tuple[np.ndarray, TimeIndex, List[s
     mnemonics : List[str]
         Series identifiers (column names)
     """
-    from app.utils import validate_data_file
+    from ..utils.config_parser import validate_data_file
     datafile = Path(datafile)
     validate_data_file(datafile)
     
