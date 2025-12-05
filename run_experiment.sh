@@ -132,7 +132,7 @@ fi
 mkdir -p outputs/comparisons
 mkdir -p outputs/experiments
 
-# Function to check if experiment is already completed
+# Function to check if experiment is already completed with valid results
 is_experiment_complete() {
     local target=$1
     local comparisons_dir="outputs/comparisons"
@@ -151,11 +151,49 @@ is_experiment_complete() {
     # Check the latest result directory for completion
     local latest_dir=$(echo "$result_dirs" | tail -1)
     
-    # Check if comparison_results.json exists (indicates successful completion)
-    if [ -f "${latest_dir}/comparison_results.json" ]; then
-        return 0  # Complete
-    else
+    # Check if comparison_results.json exists (indicates completion)
+    if [ ! -f "${latest_dir}/comparison_results.json" ]; then
         return 1  # Not complete (missing result file)
+    fi
+    
+    # Check if at least one model has valid results (n_valid > 0)
+    # This ensures we only skip experiments that actually produced valid predictions
+    if command -v python3 >/dev/null 2>&1; then
+        # Use Python to check for valid results (n_valid > 0 for at least one model/horizon)
+        local has_valid=$(python3 <<EOF
+import json
+import sys
+try:
+    with open("${latest_dir}/comparison_results.json", 'r') as f:
+        results = json.load(f)
+    
+    # Check if any model has n_valid > 0 for any horizon
+    if 'results' in results:
+        for model_name, model_result in results['results'].items():
+            if model_result.get('status') == 'completed' and 'metrics' in model_result:
+                metrics = model_result.get('metrics', {})
+                forecast_metrics = metrics.get('forecast_metrics', {})
+                for horizon, horizon_metrics in forecast_metrics.items():
+                    n_valid = horizon_metrics.get('n_valid', 0)
+                    if n_valid > 0:
+                        print("1")
+                        sys.exit(0)
+    print("0")
+    sys.exit(0)
+except Exception as e:
+    # If parsing fails, consider it incomplete
+    print("0")
+    sys.exit(0)
+EOF
+)
+        if [ "$has_valid" = "1" ]; then
+            return 0  # Complete with valid results
+        else
+            return 1  # Not complete (no valid results)
+        fi
+    else
+        # Fallback: if Python not available, just check if file exists
+        return 0  # Assume complete if file exists
     fi
 }
 

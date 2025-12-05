@@ -341,6 +341,12 @@ def evaluate_forecaster(
             # Extract corresponding test data point using position-based matching
             # This is more reliable than index matching since test data is created by splitting
             test_pos = h - 1
+            
+            # Debug logging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Horizon {h}: test_pos={test_pos}, y_test length={len(y_test)}, y_pred_h type={type(y_pred_h)}, y_pred_h length={len(y_pred_h) if hasattr(y_pred_h, '__len__') else 'N/A'}")
+            
             if test_pos < len(y_test):
                 if isinstance(y_test, pd.DataFrame):
                     y_true_h = y_test.iloc[test_pos:test_pos+1]
@@ -350,6 +356,7 @@ def evaluate_forecaster(
                     y_true_h = y_test[test_pos:test_pos+1]
             else:
                 # Test data doesn't have enough points for this horizon
+                logger.warning(f"Horizon {h}: test_pos {test_pos} >= y_test length {len(y_test)}. No valid test data.")
                 y_true_h = pd.DataFrame() if isinstance(y_test, pd.DataFrame) else (pd.Series() if isinstance(y_test, pd.Series) else np.array([]))
             
             # Extract prediction value(s) - handle both Series and DataFrame
@@ -358,17 +365,28 @@ def evaluate_forecaster(
                 if len(y_pred_h) > 0:
                     y_pred_h = y_pred_h.iloc[0:1]
                 else:
+                    logger.warning(f"Horizon {h}: y_pred_h DataFrame is empty.")
                     y_pred_h = pd.DataFrame()
             elif isinstance(y_pred_h, pd.Series):
                 # For Series, extract the first value as a Series
                 if len(y_pred_h) > 0:
                     y_pred_h = y_pred_h.iloc[0:1] if hasattr(y_pred_h, 'iloc') else pd.Series([y_pred_h.iloc[0]])
                 else:
+                    logger.warning(f"Horizon {h}: y_pred_h Series is empty.")
+                    y_pred_h = pd.Series()
+            else:
+                # Handle numpy array or other types
+                if hasattr(y_pred_h, '__len__') and len(y_pred_h) > 0:
+                    y_pred_h = pd.Series([y_pred_h[0]]) if hasattr(y_pred_h, '__getitem__') else pd.Series([y_pred_h])
+                else:
+                    logger.warning(f"Horizon {h}: y_pred_h is empty or unsupported type: {type(y_pred_h)}")
                     y_pred_h = pd.Series()
             
             # Check if we have valid data
             has_pred = len(y_pred_h) > 0 if hasattr(y_pred_h, '__len__') else (y_pred_h.size > 0 if hasattr(y_pred_h, 'size') else False)
             has_true = len(y_true_h) > 0 if hasattr(y_true_h, '__len__') else (y_true_h.size > 0 if hasattr(y_true_h, 'size') else False)
+            
+            logger.debug(f"Horizon {h}: has_pred={has_pred}, has_true={has_true}, y_pred_h shape={y_pred_h.shape if hasattr(y_pred_h, 'shape') else 'N/A'}, y_true_h shape={y_true_h.shape if hasattr(y_true_h, 'shape') else 'N/A'}")
             
             if has_pred and has_true:
                 try:

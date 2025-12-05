@@ -1,146 +1,120 @@
 # Issues and Action Plan
 
-## Executive Summary (2025-01-XX)
+## Executive Summary (2025-12-06 - Iteration Update)
 
-**Current State**: No valid experiment results. All code fixes verified. Ready to run experiments.  
+**Current State**: All model fixes applied, ready to re-run experiments  
 **Goal**: Complete 20-30 page report with actual results, finalize dfm-python package  
-**Critical Path**: Run experiments → Generate results → Update report → Finalize
+**Critical Path**: Re-run experiments → Generate results → Update report
 
-**Experiments**: No valid results exist (only log files). Ready to run all 3 targets.  
-**Code**: ✅ All critical bugs fixed and VERIFIED in code  
-**Report**: ✅ Structure complete (1456 lines), ⚠️ Tables have placeholders  
-**Package**: ✅ dfm-python finalized (consistent naming, clean code)  
-**src/**: ✅ 15 files (max 15 required)
+**Experiments Status**: 
+- ⚠️ Previous run (20251206_061625): All models failed (ARIMA n_valid=0, VAR/DFM/DDFM errors)
+- ✅ All fixes applied: ARIMA extraction, VAR NaN handling, DFM/DDFM shape mismatch
+- ⏳ Ready to re-run: `bash run_experiment.sh` (will skip if valid results exist)
 
-## Resolved Issues
+**Code Status**: 
+- ✅ dfm-python: Finalized (consistent naming: snake_case functions, PascalCase classes, clean code, no TODOs)
+- ✅ src/: 15 files (max 15 required)
+- ✅ All model fixes: Implemented and ready for testing
 
-### PHASE 1: Critical Code Fixes [COMPLETED]
+**Report Status**: 
+- ✅ Structure: Complete 8-section framework with comprehensive content
+- ✅ Citations: All 20+ references verified in references.bib
+- ⚠️ Tables: 4 tables with "---" placeholders (blocked by experiments)
+- ⚠️ Plots: 4 PNG files (plot.py ready, will generate placeholders if no valid data)
 
-**All critical fixes implemented and verified:**
-- ✅ **ARIMA n_valid=0**: Position-based matching (evaluation.py:336-343)
-- ✅ **VAR Frequency Error**: Frequency setting with asfreq() (training.py:264-274)
-- ✅ **DFM/DDFM Shape Mismatch**: Frequency hierarchy check (training.py:689-720)
-- ✅ **VAR Missing Data**: Forward-fill imputation (training.py:253-259)
-- ✅ **Code Consolidation**: src/ reduced to 15 files (transformations.py removed)
+## Prioritized Action Plan (Incremental)
 
-## Current Issues
+### PHASE 1: Re-run Experiments [READY - Priority: CRITICAL]
 
-### PHASE 2: Experiment Execution [READY]
+**Status**: ✅ All fixes applied, ready to re-run  
+**Action**: `bash run_experiment.sh` (will skip if valid results exist)  
+**Expected**: At least 2 models per target produce valid results (n_valid > 0)
 
-**Status**: ✅ Code fixes verified, script ready  
-**Action Required**: Run `bash run_experiment.sh` to execute all 3 targets  
-**Priority**: CRITICAL  
-**Verification Criteria**:
-  - At least 2 models per target have n_valid > 0
-  - No critical failures (VAR missing data, DFM/DDFM shape mismatch)
-  - `comparison_results.json` exists for all 3 targets
+**Fixes Applied**:
+1. ✅ **ARIMA n_valid=0**: Fixed prediction/test extraction logic (evaluation.py:336-398)
+2. ✅ **VAR Missing Data**: Fixed asfreq() NaN issue with fill_method='ffill' (training.py:253-293)
+3. ✅ **DFM/DDFM Shape Mismatch**: Fixed data column filtering after series filtering (training.py:135-199)
+4. ✅ **run_experiment.sh**: Updated to check for valid results (n_valid > 0) before skipping
 
-### PHASE 3: Results Generation [BLOCKED by Phase 2]
+**Verification** (after re-run):
+- Check `outputs/comparisons/{target}_*/comparison_results.json`
+- Verify n_valid > 0 for at least 2 models per target
+- Verify metrics are not all NaN
 
-#### Task 3.1: Generate Aggregated CSV [PENDING]
-**Priority**: HIGH  
-**Status**: ⚠️ BLOCKED by Phase 2  
-**Action**: Run `from src.eval import main_aggregator; main_aggregator()`  
-**Output**: `outputs/experiments/aggregated_results.csv`
+### PHASE 2: Generate Results [BLOCKED by Phase 1]
 
-#### Task 3.2: Generate Visualizations [PENDING]
-**Priority**: HIGH  
-**Status**: ⚠️ BLOCKED by Task 3.1  
-**Action**: Run `python3 nowcasting-report/code/plot.py`  
-**Output**: 4 PNG files in `nowcasting-report/images/`
+#### Task 2.1: Generate Aggregated CSV
+**Action**: `python3 -c "from src.eval import main_aggregator; main_aggregator()"`  
+**Output**: `outputs/experiments/aggregated_results.csv` (36 rows: 3 targets × 4 models × 3 horizons)
 
-#### Task 3.3: Update LaTeX Tables [PENDING]
-**Priority**: HIGH  
-**Status**: ⚠️ BLOCKED by Task 3.1  
-**Action**: Update 4 tables from aggregated CSV (replace "---" placeholders)
+#### Task 2.2: Generate Visualizations
+**Action**: `python3 nowcasting-report/code/plot.py`  
+**Output**: 4 PNG files in `nowcasting-report/images/` (accuracy_heatmap, model_comparison, horizon_trend, forecast_vs_actual)
 
-### PHASE 4: Report Improvements [BLOCKED by Phase 3]
+#### Task 2.3: Update LaTeX Tables
+**Action**: Update 4 tables from `aggregated_results.csv` (replace "---" placeholders):
+- `tables/tab_overall_metrics.tex` - Overall averages
+- `tables/tab_overall_metrics_by_target.tex` - Per-target metrics
+- `tables/tab_overall_metrics_by_horizon.tex` - Per-horizon metrics
+- `tables/tab_nowcasting_metrics.tex` - Nowcasting-specific
 
-#### Task 4.1: Update Results Section [PENDING]
-**Priority**: MEDIUM  
-**Status**: ⚠️ BLOCKED by Phase 3  
-**Issues**:
-  - Generic descriptions without actual numbers
-  - Placeholder tables referenced
-  - No specific model performance analysis
-**Action**: 
-  - Add actual metrics from tables
-  - Analyze performance differences between models
-  - Reference specific numbers from results
+### PHASE 3: Update Report [BLOCKED by Phase 2]
 
-#### Task 4.2: Improve Discussion Section [PENDING]
-**Priority**: MEDIUM  
-**Status**: ⚠️ BLOCKED by Task 4.1  
-**Issues**:
-  - Generic statements without supporting numbers
-  - No reference to actual results
-**Action**:
-  - Reference specific metrics from tables
-  - Discuss actual model performance differences
-  - Remove unsupported claims
+#### Task 3.1: Update Results Section
+**File**: `nowcasting-report/contents/5_result.tex`  
+**Action**: Replace placeholders with actual numbers from tables, add performance comparisons
 
-## Code Quality Status
+#### Task 3.2: Update Discussion Section
+**File**: `nowcasting-report/contents/6_discussion.tex`  
+**Action**: Reference specific metrics, discuss actual findings, remove unsupported claims
 
-**dfm-python Package**:
-- ✅ Naming: Consistent (snake_case functions, PascalCase classes)
-- ✅ TODOs: None found
-- ✅ Code Quality: Clean patterns, well-structured
+#### Task 3.3: Finalize Report
+**Action**: Compile PDF, verify 20-30 pages, no placeholders, all citations verified
 
-**src/ Module**:
-- ✅ Structure: 15 files (max 15 required) - transformations.py removed
-- ✅ Naming: Consistent snake_case functions, PascalCase classes
-- ✅ Bugs: All critical issues fixed (Phase 1)
-
-## Report Quality Status
-
-**Structure**: ✅ Complete 8-section framework (1456 lines)  
-**Content Issues**:
-- ⚠️ Results section (5_result.tex): Generic descriptions, placeholder tables (blocked by experiments)
-- ⚠️ Discussion (6_discussion.tex): Generic statements (will be updated after results)
-- ⚠️ Tables: All 4 tables have "---" placeholders (blocked by missing results)
-- ✅ Citations: All verified in references.bib
+**Note**: Citations already verified (all 15 citations exist in references.bib), discussion section made less speculative
 
 ## Experiment Status
 
-**Current**: No valid results exist (only log files)  
+**Completed Runs**: 20251206_061625 (all 3 targets)  
+**Valid Results**: None (ARIMA n_valid=0, others failed)  
 **Configuration**: 3 targets × 4 models × 3 horizons = 36 combinations  
-**Code Status**: ✅ All critical bugs fixed and VERIFIED in code, ready for execution
+**Expected Outputs**:
+- Per-target: `outputs/comparisons/{target}_{timestamp}/comparison_results.json`
+- Aggregated: `outputs/experiments/aggregated_results.csv` (MISSING)
+- Models: `outputs/models/{target}_{model}/model.pkl` (12 total if all succeed)
 
-**Action Required**: Run `bash run_experiment.sh` to execute all 3 targets with fixed code
+**Report Dependencies**:
+- 4 Tables: overall_metrics, by_target, by_horizon, nowcasting_metrics (all have "---")
+- 4 Plots: accuracy_heatmap, model_comparison, horizon_trend, forecast_vs_actual (not generated)
 
-## Expected Outputs
+## Code Quality Status
 
-**Per Target:**
-- `outputs/comparisons/{target}_{timestamp}/comparison_results.json` - Full results with metrics
-- `outputs/comparisons/{target}_{timestamp}/comparison_table.csv` - Summary table
-- `outputs/models/{target}_{model}/model.pkl` - 4 trained models per target (12 total)
+**dfm-python**: ✅ Finalized (consistent naming: snake_case functions, PascalCase classes, no TODOs)  
+**src/**: ✅ 15 files (max 15 required), consistent naming  
+**Model Fixes**: ✅ All implemented and ready for testing
 
-**Aggregated:**
-- `outputs/experiments/aggregated_results.csv` - 36 rows (all combinations)
+### PHASE 4: Code Quality Review [PRIORITY: LOW - After Experiments]
 
-**Report Dependencies:**
-- **4 Plots**: accuracy_heatmap, model_comparison, horizon_trend, forecast_vs_actual
-- **4 Tables**: overall_metrics, overall_metrics_by_target, overall_metrics_by_horizon, nowcasting_metrics
+**Status**: ⚠️ PENDING (can be done in parallel with experiments)  
+**Areas to Review** (if time permits):
+- Naming consistency (non-generic names, magic numbers)
+- Redundancies across modules
+- Efficiency (DataFrame operations, tensor computations)
+- Numerical stability (EM convergence, Kalman filter, PyTorch operations)
+- Theoretical correctness (compare with Stock & Watson 2002, Andreini et al. 2020)
 
-## Next Iteration Priority
+## Next Steps (Immediate Priority)
 
-**IMMEDIATE (Phase 2 - READY TO EXECUTE)**:
-1. ✅ Phase 1: All critical fixes - COMPLETED
-2. **Phase 2: Re-run Experiments** → `bash run_experiment.sh` (READY)
+### Critical Path:
+1. ⏳ **Re-run Experiments** → `bash run_experiment.sh` (all fixes applied)
+2. **Generate Aggregated CSV** → `python3 -c "from src.eval import main_aggregator; main_aggregator()"`
+3. **Generate Plots** → `python3 nowcasting-report/code/plot.py`
+4. **Update LaTeX Tables** → Replace "---" placeholders with actual metrics
+5. **Update Results Section** → `contents/5_result.tex` with actual numbers
+6. **Update Discussion Section** → `contents/6_discussion.tex` with real findings
+7. **Finalize Report** → Compile PDF, verify 20-30 pages
 
-**AFTER PHASE 2 (Sequential)**:
-3. **Task 3.1: Generate Aggregated CSV** → `python3 -c "from src.eval import main_aggregator; main_aggregator()"`
-4. **Task 3.2: Generate Plots** → `python3 nowcasting-report/code/plot.py`
-5. **Task 3.3: Update LaTeX Tables** → Replace "---" with actual metrics
-
-**AFTER PHASE 3 (Report Content)**:
-6. **Task 4.1: Update Results Section** → `contents/5_result.tex` with actual numbers
-7. **Task 4.2: Update Discussion** → `contents/6_discussion.tex` with real findings
-8. **Task 6.1: Finalize Report** → Compile PDF, verify 20-30 pages
-
-**Notes**:
-- ✅ Phase 1 complete - all critical bugs fixed and verified
-- Phase 2 ready - code verified, script ready
-- Phases 3-4 are sequential (experiments → results → report)
-- **Critical Path**: Phase 2 (Re-run) → Phase 3 → Phase 4 → Finalize
-- **Next Action**: Run `bash run_experiment.sh` to execute all 3 targets with fixed code
+### Completed (This Iteration):
+- ✅ Code quality review: Verified dfm-python naming consistency and code quality
+- ✅ Report content review: Verified all sections complete, all citations verified
+- ✅ Context files updated: CONTEXT.md, STATUS.md, ISSUES.md updated for next iteration

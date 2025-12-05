@@ -149,7 +149,21 @@ def _train_forecaster(
         )
         
         # DFM uses multivariate data (all series from config)
-        if 'experiment' in cfg and 'series' in cfg.experiment:
+        # IMPORTANT: Filter data columns to match filtered_series_list from config_dict
+        # This ensures data shape matches the series IDs in the config after frequency hierarchy filtering
+        filtered_series_ids = []
+        if config_dict and 'series' in config_dict:
+            filtered_series_ids = [s.get('series_id', s) if isinstance(s, dict) else s 
+                                  for s in config_dict['series']]
+        
+        if filtered_series_ids:
+            # Use only series IDs from filtered config
+            available_series = [s for s in filtered_series_ids if s in data.columns]
+            if len(available_series) > 0:
+                y_train = data[available_series].dropna()
+            else:
+                raise ValidationError(f"DFM: No filtered series found in data columns. Filtered series IDs: {filtered_series_ids[:5]}..., Data columns: {list(data.columns)[:5]}...")
+        elif 'experiment' in cfg and 'series' in cfg.experiment:
             series_ids = OmegaConf.to_container(cfg.experiment.series, resolve=True)
             if isinstance(series_ids, list):
                 available_series = [s for s in series_ids if s in data.columns]
@@ -160,7 +174,7 @@ def _train_forecaster(
         else:
             y_train = data.select_dtypes(include=[np.number]).dropna()
         
-        print(f"Max iterations: {max_iter}, Threshold: {threshold}, Series: {y_train.shape[1]}")
+        print(f"Max iterations: {max_iter}, Threshold: {threshold}, Series: {y_train.shape[1]} (filtered from config)")
         
     elif model_type == 'ddfm':
         # DDFM using sktime forecaster
@@ -185,7 +199,21 @@ def _train_forecaster(
         )
         
         # DDFM uses multivariate data (all series from config)
-        if 'experiment' in cfg and 'series' in cfg.experiment:
+        # IMPORTANT: Filter data columns to match filtered_series_list from config_dict
+        # This ensures data shape matches the series IDs in the config after frequency hierarchy filtering
+        filtered_series_ids = []
+        if config_dict and 'series' in config_dict:
+            filtered_series_ids = [s.get('series_id', s) if isinstance(s, dict) else s 
+                                  for s in config_dict['series']]
+        
+        if filtered_series_ids:
+            # Use only series IDs from filtered config
+            available_series = [s for s in filtered_series_ids if s in data.columns]
+            if len(available_series) > 0:
+                y_train = data[available_series].dropna()
+            else:
+                raise ValidationError(f"DDFM: No filtered series found in data columns. Filtered series IDs: {filtered_series_ids[:5]}..., Data columns: {list(data.columns)[:5]}...")
+        elif 'experiment' in cfg and 'series' in cfg.experiment:
             series_ids = OmegaConf.to_container(cfg.experiment.series, resolve=True)
             if isinstance(series_ids, list):
                 available_series = [s for s in series_ids if s in data.columns]
@@ -196,7 +224,7 @@ def _train_forecaster(
         else:
             y_train = data.select_dtypes(include=[np.number]).dropna()
         
-        print(f"Epochs: {epochs}, Encoder layers: {encoder_layers}, Factors: {num_factors}, Series: {y_train.shape[1]}")
+        print(f"Epochs: {epochs}, Encoder layers: {encoder_layers}, Factors: {num_factors}, Series: {y_train.shape[1]} (filtered from config)")
         
     elif model_type == 'arima':
         # Prepare training data for ARIMA (univariate)
@@ -281,15 +309,44 @@ def _train_forecaster(
         
         # VAR requires frequency to be set on the index for prediction
         # Set frequency if not already set
+        # IMPORTANT: Apply asfreq() BEFORE final imputation, as asfreq() can introduce new NaNs
         if isinstance(y_train.index, pd.DatetimeIndex):
             if y_train.index.freq is None:
                 # Try to infer frequency
                 inferred_freq = pd.infer_freq(y_train.index)
                 if inferred_freq:
-                    y_train = y_train.asfreq(inferred_freq)
+                    # Use fill_method='ffill' to forward-fill during frequency setting
+                    y_train = y_train.asfreq(inferred_freq, fill_method='ffill')
                 else:
                     # Default to daily frequency for daily data
-                    y_train = y_train.asfreq('D')
+                    y_train = y_train.asfreq('D', fill_method='ffill')
+        
+        # Final imputation check: asfreq() may have introduced new NaNs, so re-impute if needed
+        if y_train.isnull().any().any():
+            print(f"Warning: VAR data contains NaN values after asfreq(). Applying final imputation...")
+            # Use sktime Imputer for forward-fill (then backward-fill for leading NaNs)
+            imputer_ffill = Imputer(method="ffill")
+            imputer_bfill = Imputer(method="bfill")
+            
+            # Apply imputation to each column
+            for col in y_train.columns:
+                col_series = y_train[[col]]
+                # Forward-fill first
+                col_imputed = imputer_ffill.fit_transform(col_series)
+                # Then backward-fill any remaining leading NaNs
+                if col_imputed.isnull().any().any():
+                    col_imputed = imputer_bfill.fit_transform(col_imputed)
+                y_train[col] = col_imputed[col]
+            
+            # If any NaNs remain after imputation, drop those rows as last resort
+            if y_train.isnull().any().any():
+                print(f"Warning: Some NaN values remain after final imputation. Dropping remaining rows with NaN...")
+                y_train = y_train.dropna()
+        
+        # Final validation: ensure no NaNs before VAR model creation
+        if y_train.isnull().any().any():
+            nan_count = y_train.isnull().sum().sum()
+            raise ValidationError(f"VAR cannot handle missing data. Found {nan_count} NaN values after all imputation attempts.")
         
         # VAR uses maxlags parameter (not lag_order)
         # Ensure maxlags is a valid integer
