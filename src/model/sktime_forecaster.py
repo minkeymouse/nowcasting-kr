@@ -25,9 +25,8 @@ except ImportError:
 
 from ..utils.config_parser import ValidationError
 
-# Import model wrappers
-from .dfm import DFM
-from .ddfm import DDFM
+# Note: DFM and DDFM are imported inside methods to avoid circular import
+# (dfm.py imports utilities from this module)
 
 
 def _check_sktime_available():
@@ -120,6 +119,8 @@ class DFMForecaster(BaseForecaster):
         self
             Returns self for method chaining
         """
+        # Import here to avoid circular import
+        from .dfm import DFM
         # Initialize DFM model
         self._dfm_model = DFM()
         
@@ -318,6 +319,8 @@ class DDFMForecaster(BaseForecaster):
     def _fit(self, y, X=None, fh=None):
         """Fit the DDFM model to training data."""
         # Initialize DDFM model
+        # Import here to avoid circular import
+        from .ddfm import DDFM
         ddfm_params = {}
         if self.encoder_layers:
             ddfm_params['encoder_layers'] = self.encoder_layers

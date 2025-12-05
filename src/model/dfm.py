@@ -24,15 +24,8 @@ except ImportError:
 
 from ..preprocess.utils import create_transformer_from_config
 
-# Import shared utilities
-from .sktime_forecaster import (
-    load_config,
-    validate_data_module_requirements,
-    create_standard_error_message,
-    create_data_module,
-    train_model,
-    save_to_outputs
-)
+# Note: Shared utilities from sktime_forecaster are imported inside methods
+# to avoid circular import (sktime_forecaster imports DFM from this module)
 
 
 class DFM:
@@ -67,7 +60,9 @@ class DFM:
         Note: If multiple keyword arguments are provided, only one should be used.
         The underlying model will validate this.
         """
-        load_config(self._model, self._metadata, source, yaml=yaml, mapping=mapping, hydra=hydra)
+        # Import here to avoid circular import
+        from .sktime_forecaster import load_config as _load_config
+        _load_config(self._model, self._metadata, source, yaml=yaml, mapping=mapping, hydra=hydra)
     
     def _create_data_module(self, data_path: str) -> Any:
         """Create DFMDataModule from data_path and config.
@@ -82,7 +77,9 @@ class DFM:
             ValidationError: If config is not loaded or transformer creation fails
             ImportError: If required dependencies are not available
         """
-        return create_data_module(
+        # Import here to avoid circular import
+        from .sktime_forecaster import create_data_module as _create_data_module
+        return _create_data_module(
             model=self,
             data_path=data_path,
             dfm_data_module=DFMDataModule,
@@ -116,8 +113,10 @@ class DFM:
         except ImportError:
             DFMTrainer = None
         
+        # Import here to avoid circular import
+        from .sktime_forecaster import train_model as _train_model
         # Use shared training implementation
-        result = train_model(
+        result = _train_model(
             model_wrapper=self,
             model_instance=self._model,
             metadata=self._metadata,
@@ -244,7 +243,9 @@ class DFM:
         Returns:
             Path to the model directory
         """
-        return save_to_outputs(
+        # Import here to avoid circular import
+        from .sktime_forecaster import save_to_outputs as _save_to_outputs
+        return _save_to_outputs(
             model_wrapper=self,
             model_name=model_name,
             outputs_dir=outputs_dir,

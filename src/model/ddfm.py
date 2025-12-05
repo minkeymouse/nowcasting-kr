@@ -156,13 +156,13 @@ class DDFM:
         
         # Add DDFM-specific training metadata
         # DDFM results may not have all attributes, so check before accessing
+        import numpy as np
         if hasattr(result, 'converged'):
             self._metadata["converged"] = result.converged
         if hasattr(result, 'num_iter'):
             self._metadata["num_iter"] = result.num_iter
         if hasattr(result, 'loglik'):
-            import numpy as np
-        self._metadata["loglik"] = float(result.loglik) if result.loglik is not None else np.nan
+            self._metadata["loglik"] = float(result.loglik) if result.loglik is not None else np.nan
     
     def predict(self, horizon: Optional[int] = None) -> Any:
         """Generate forecasts using the trained model.
