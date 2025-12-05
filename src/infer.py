@@ -395,10 +395,13 @@ def run_nowcasting_evaluation(
     print(f"Data: {params['data_path']}")
     
     # TODO: Implement full nowcasting evaluation
-    # - Load trained model from outputs/models/
-    # - Load data from params['data_path']
-    # - Run simulate_nowcasting_evaluation with target dates
-    # - Return evaluation results
+    # This requires:
+    # 1. Load trained model from outputs/models/{target}_{model}/model.pkl
+    # 2. Load data from params['data_path']
+    # 3. Run simulate_nowcasting_evaluation() from nowcasting.py with target dates
+    # 4. Calculate metrics per horizon using evaluation.py
+    # 5. Return evaluation results (nowcast_metrics, full_metrics, improvement)
+    # Note: Currently returns 'not_implemented' status. This is a known limitation.
     
     return {
         'status': 'not_implemented',
