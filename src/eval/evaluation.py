@@ -324,10 +324,6 @@ def evaluate_forecaster(
     horizons_arr = np.asarray(horizons)
     horizons_arr = np.sort(horizons_arr)  # Sort horizons
     
-    # Predict only for requested horizons
-    fh = horizons_arr.tolist()
-    y_pred_all = forecaster.predict(fh=fh)
-    
     # Calculate metrics per horizon by matching indices
     results = {}
     for h in horizons_arr:
@@ -337,35 +333,38 @@ def evaluate_forecaster(
         
         # Get prediction for horizon h
         # When predict(fh=[h]) is called, it returns prediction at time train_end+h
-        # We need to extract this specific prediction
+        # Test data starts at train_end+1, so horizon h corresponds to position h-1 in test data
         try:
-            # Try to predict just this horizon to get the exact index
+            # Predict for this specific horizon
             y_pred_h = forecaster.predict(fh=[h])
             
-            # Get the corresponding test data point
-            # Test data starts at train_end+1, so horizon h corresponds to position h-1
-            # But we should match by index if possible
-            if isinstance(y_pred_h, (pd.DataFrame, pd.Series)) and isinstance(y_test, (pd.DataFrame, pd.Series)):
-                # Both have indices - match by index
-                pred_idx = y_pred_h.index[0] if len(y_pred_h) > 0 else None
-                if pred_idx is not None and pred_idx in y_test.index:
-                    y_true_h = y_test.loc[[pred_idx]]
-                else:
-                    # Fall back to position-based: horizon h = position h-1 in test data
-                    test_pos = h - 1
-                    if test_pos < len(y_test):
-                        y_true_h = y_test.iloc[test_pos:test_pos+1]
-                    else:
-                        y_true_h = pd.DataFrame() if isinstance(y_test, pd.DataFrame) else pd.Series()
-            else:
-                # Position-based extraction
-                test_pos = h - 1
+            # Extract corresponding test data point using position-based matching
+            # This is more reliable than index matching since test data is created by splitting
+            test_pos = h - 1
+            if test_pos < len(y_test):
                 if isinstance(y_test, pd.DataFrame):
-                    y_true_h = y_test.iloc[test_pos:test_pos+1] if test_pos < len(y_test) else pd.DataFrame()
+                    y_true_h = y_test.iloc[test_pos:test_pos+1]
                 elif isinstance(y_test, pd.Series):
-                    y_true_h = y_test.iloc[test_pos:test_pos+1] if test_pos < len(y_test) else pd.Series()
+                    y_true_h = y_test.iloc[test_pos:test_pos+1]
                 else:
-                    y_true_h = y_test[test_pos:test_pos+1] if test_pos < len(y_test) else np.array([])
+                    y_true_h = y_test[test_pos:test_pos+1]
+            else:
+                # Test data doesn't have enough points for this horizon
+                y_true_h = pd.DataFrame() if isinstance(y_test, pd.DataFrame) else (pd.Series() if isinstance(y_test, pd.Series) else np.array([]))
+            
+            # Extract prediction value(s) - handle both Series and DataFrame
+            if isinstance(y_pred_h, pd.DataFrame):
+                # For DataFrame, extract the first row
+                if len(y_pred_h) > 0:
+                    y_pred_h = y_pred_h.iloc[0:1]
+                else:
+                    y_pred_h = pd.DataFrame()
+            elif isinstance(y_pred_h, pd.Series):
+                # For Series, extract the first value as a Series
+                if len(y_pred_h) > 0:
+                    y_pred_h = y_pred_h.iloc[0:1] if hasattr(y_pred_h, 'iloc') else pd.Series([y_pred_h.iloc[0]])
+                else:
+                    y_pred_h = pd.Series()
             
             # Check if we have valid data
             has_pred = len(y_pred_h) > 0 if hasattr(y_pred_h, '__len__') else (y_pred_h.size > 0 if hasattr(y_pred_h, 'size') else False)

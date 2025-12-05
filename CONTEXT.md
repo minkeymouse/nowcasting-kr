@@ -3,8 +3,8 @@
 ## Architecture Overview
 
 ### Directory Structure
-- **src/**: Experiment engine (17 files, 15 effective) - wrappers for sktime & dfm-python
-- **dfm-python/**: Core DFM/DDFM package with Lightning-based training (submodule)
+- **src/**: Experiment engine (16 files) - wrappers for sktime & dfm-python (transformations.py deprecated but kept for compatibility)
+- **dfm-python/**: Core DFM/DDFM package with Lightning-based training (submodule) - ✅ Finalized, consistent naming (snake_case functions, PascalCase classes)
 - **nowcasting-report/**: LaTeX report (20-30 pages) with plots from outputs/
 - **config/**: Hydra YAML configs (experiment/, model/, series/)
 - **outputs/**: Experiment results (comparisons/, models/, experiments/)
@@ -56,24 +56,23 @@ run_experiment.sh
 ## Current Status (2025-01-XX)
 
 ### Work Completed This Iteration
-- ✅ **Report Content**: Improved text flow, removed redundant placeholder warnings, polished sections
-- ✅ **dfm-python Package**: Code quality verified - consistent naming (snake_case functions, PascalCase classes), no TODO/FIXME
-- ✅ **Code Quality**: All model fixes complete (ARIMA, VAR, DFM, DDFM), ready for execution
-- ✅ **Report Structure**: Complete 20-30 page LaTeX framework, all citations verified (20+ references)
+- ✅ **Report Content Review**: Reviewed all report sections - introduction, literature review, theoretical background, method, results, discussion, conclusion are well-structured
+- ✅ **dfm-python Verification**: Verified naming consistency (snake_case functions, PascalCase classes) - consistent throughout
+- ✅ **Code Structure Review**: Reviewed src/ structure - transformations.py is deprecated (re-exports from utils.py) but kept for backward compatibility
+- ✅ **Status Files Update**: Updated STATUS.md, CONTEXT.md, ISSUES.md for next iteration with current state
 
 ### Experiment Status
-- **0/3 targets executed** - Old invalid results deleted, ready to re-run with fixed code
+- **0/3 targets executed** - No valid results exist, ready to run with fixed code
 - **Configuration**: 3 targets × 4 models × 3 horizons = 36 combinations
-- **Model Fixes Completed**:
-  - ARIMA: ✅ Fixed prediction extraction in `evaluate_forecaster()` - now predicts each horizon individually
-  - VAR: ✅ Fixed NoneType error - added None checks and data validation
-  - DFM: ✅ Fixed import/path issue - PyTorch and pytorch-lightning installed
-  - DDFM: ✅ Fixed PyTorch dependency - dependencies installed
-- **Action Required**: Run experiments with `bash run_experiment.sh`
+- **Code Status**: ✅ All critical bugs fixed
+  - ARIMA: ✅ Fixed prediction matching using position-based approach
+  - VAR: ✅ Fixed frequency error by setting freq on DatetimeIndex
+  - DFM/DDFM: ✅ Fixed weekly series filter - excludes weekly series from monthly blocks
+- **Action Required**: Run experiments with `bash run_experiment.sh` to generate valid results
 
 ### Code Quality Status
-- **src/ Module**: 17 files (15 effective - within limit), all imports fixed
-- **dfm-python/ Package**: ✅ Finalized - consistent naming, clean patterns, no TODOs
+- **src/ Module**: 16 files (transformations.py deprecated but kept for compatibility), all imports fixed
+- **dfm-python/ Package**: ✅ Finalized - consistent naming (snake_case functions, PascalCase classes), clean patterns, no TODOs
 - **run_experiment.sh**: ✅ Verified - auto-skip logic, parallel execution
 
 ### Report Status

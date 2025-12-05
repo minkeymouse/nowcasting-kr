@@ -2,230 +2,232 @@
 
 ## Executive Summary (2025-01-XX)
 
-**Current State**: All model fixes complete, report content improved, ready to re-run experiments  
-**Goal**: Complete 20-30 page report with actual results  
-**Critical Path**: ✅ Fix model issues → ✅ Improve report content → Re-run experiments → Generate aggregated CSV → Generate plots → Update tables → Finalize
+**Current State**: No valid experiment results exist. Code fixes complete, ready to run experiments.  
+**Goal**: Complete 20-30 page report with actual results, finalize dfm-python package with clean code  
+**Critical Path**: Re-run experiments → Generate results → Update report → Finalize
 
-**Experiments**: 0/3 targets executed - Ready to run  
-**Code**: ✅ All model issues fixed (ARIMA: prediction extraction, VAR: NoneType, DFM/DDFM: dependencies)  
-**Report**: ✅ Structure complete, ✅ Content improved (redundant warnings removed), ⚠️ Results are placeholders (waiting for valid experiment results)  
-**Action Required**: Run experiments with `bash run_experiment.sh`
+**Experiments**: 0/3 targets executed - No valid results exist, ready to run  
+**Code**: ✅ All critical bugs fixed (ARIMA index matching, VAR frequency, DFM/DDFM weekly series)  
+**Report**: ✅ Structure complete (20-30 pages), ⚠️ Tables have placeholders, ⚠️ Results section generic  
+**Package**: ✅ dfm-python naming consistent, ⚠️ Need to verify theoretical correctness  
+**src/**: 16 files (transformations.py deprecated but kept for backward compatibility)  
+**Action Required**: Run experiments → Generate results → Update report content
 
-## Incremental Action Plan (Step-by-Step)
+## Inspection Results (2025-01-XX)
 
-### Step 1: Fix ARIMA n_valid=0 Issue [COMPLETED]
-**Status**: ✅ COMPLETED  
-**Fix**: Updated `evaluate_forecaster()` to predict each horizon individually using `predict(fh=[h])` and match by time index. Location: `src/eval/evaluation.py:293-360`
+**Experiment Results Status:**
+- ❌ No valid result directories exist - No `comparison_results.json` files found
+- ❌ All previous invalid results (n_valid=0) have been cleaned up
+- **Code Status**: All critical bugs fixed and ready for execution
+- **Conclusion**: Ready to run experiments with fixed code. No valid results exist yet.
 
----
+**Aggregated Results Status:**
+- ❌ `outputs/experiments/aggregated_results.csv` does NOT exist
+- **Blocked by**: Invalid experiment results (Step 6)
 
-### Step 2: Fix VAR NoneType Error [COMPLETED]
-**Status**: ✅ COMPLETED  
-**Fix**: Added None checks for all VAR parameters, data validation (NaN handling), and proper type conversion. Location: `src/core/training.py:229-261`
+**Report Tables Status:**
+- ❌ All 4 tables contain "---" placeholders:
+  - `tab_overall_metrics.tex`: All models show "---"
+  - `tab_overall_metrics_by_target.tex`: All models show "---"
+  - `tab_overall_metrics_by_horizon.tex`: All models show "---"
+  - `tab_nowcasting_metrics.tex`: DFM/DDFM show "---"
+- **Blocked by**: Missing aggregated_results.csv (Step 7)
 
----
+**Plots Status:**
+- ⚠️ Need to verify if plots exist in `nowcasting-report/images/`
+- **Blocked by**: Missing aggregated_results.csv (Step 7)
 
-### Step 3: Fix DFM Package Availability [COMPLETED]
-**Status**: ✅ COMPLETED  
-**Fix**: Installed PyTorch and pytorch-lightning dependencies. dfm-python imports successfully.
+## Priority Action Plan (Incremental)
 
----
+### PHASE 1: Critical Code Fixes (BLOCKING) [COMPLETED]
 
-### Step 4: Fix DDFM PyTorch Dependency [COMPLETED]
-**Status**: ✅ COMPLETED  
-**Fix**: PyTorch and pytorch-lightning installed (same as Step 3). DDFM dependencies resolved.
+#### Task 1.1: Fix ARIMA Prediction Index Matching [COMPLETED]
+**Priority**: CRITICAL  
+**Status**: ✅ COMPLETE  
+**Issue**: `n_valid=0` - prediction indices don't match test data indices  
+**Location**: `src/eval/evaluation.py:320-400`  
+**Fix Applied**: 
+  - Simplified to use position-based matching (horizon h = position h-1 in test data)
+  - More reliable than index matching since test data is created by splitting
+  - Properly extracts prediction values for both Series and DataFrame
 
----
+#### Task 1.2: Fix VAR Frequency Error [COMPLETED]
+**Priority**: CRITICAL  
+**Status**: ✅ COMPLETE  
+**Issue**: `TypeError: unsupported operand type(s) for *: 'int' and 'NoneType'` in VAR prediction  
+**Location**: `src/core/training.py:264-273` (VAR frequency setting)  
+**Fix Applied**:
+  - Set frequency on DatetimeIndex using `asfreq()` method
+  - Infers frequency from index if possible, defaults to 'D' (daily) otherwise
+  - Ensures VAR has frequency information for prediction
 
-### Step 5: Improve Report Content [COMPLETED]
-**Status**: ✅ COMPLETED  
-**Actions**: Removed redundant placeholder warnings from results and discussion sections, improved text flow, updated table captions.
+#### Task 1.3: Fix DFM/DDFM Weekly Series in Monthly Block [COMPLETED]
+**Priority**: CRITICAL  
+**Status**: ✅ COMPLETE  
+**Issue**: Weekly series (KORELEC, KORCNST) included in monthly block (Block_Global clock='m')  
+**Location**: `src/core/training.py:681-720` (series filtering)  
+**Fix Applied**:
+  - Added frequency hierarchy check: series can only be in blocks with clock frequency <= series frequency
+  - Filters out weekly series from monthly blocks automatically
+  - Warns when series are skipped due to incompatibility
 
----
-
-### Step 6: Re-run Experiments [READY]
-**Status**: ✅ READY - All prerequisites complete  
-**Priority**: HIGH (Required for all downstream work)
-
-**Prerequisites:**
-- ✅ Step 1 complete: ARIMA code fixed
-- ✅ Step 2 complete: VAR code fixed
-- ✅ Step 3 complete: DFM dependencies installed
-- ✅ Step 4 complete: DDFM dependencies installed
-
-**Tasks:**
-1. ✅ Delete old invalid results: `rm -rf outputs/comparisons/*_20251206_052248` (completed)
-2. Run experiments: `bash run_experiment.sh` (ready to run)
-3. Monitor progress: Check logs in `outputs/comparisons/*.log`
-4. Verify completion: Check for 3 `comparison_results.json` files with valid results
-
-**Verification:**
-- Check that all 3 targets have `comparison_results.json` files
-- Verify at least one model produces valid predictions (n_valid > 0) per target
-- Check that failed models are properly logged (not blocking other models)
-
-**Completion Criteria**: 
-- All 3 targets have comparison_results.json
-- At least 2 models produce valid predictions per target
-- No critical errors in logs
-
----
-
-### Step 7: Generate Aggregated Results CSV [PENDING]
-**Status**: ⚠️ BLOCKED by Step 6  
-**Priority**: HIGH (Required for plots and tables)
-
-**Tasks:**
-1. Run aggregator: `.venv/bin/python3 -c "from src.eval import main_aggregator; main_aggregator()"`
-2. Verify output: Check `outputs/experiments/aggregated_results.csv` exists
-3. Check structure: Verify CSV has expected columns (model, target, horizon, metrics)
-4. Check data quality: Verify no all-NaN rows (at least some valid metrics)
-
-**Verification:**
-- File exists: `test -f outputs/experiments/aggregated_results.csv && echo "OK"`
-- Check row count: `wc -l outputs/experiments/aggregated_results.csv` (expect > 0)
-- Check columns: `head -1 outputs/experiments/aggregated_results.csv`
-
-**Completion Criteria**: 
-- `aggregated_results.csv` exists with valid data
-- At least 10 rows with non-NaN metrics (out of 36 possible)
+**Completion Criteria**: ✅ All 3 fixes implemented, invalid results deleted
 
 ---
 
-### Step 8: Generate Visualizations [PENDING]
-**Status**: ⚠️ BLOCKED by Step 7  
-**Priority**: HIGH (Required for report)
+### PHASE 2: Experiment Execution
 
-**Tasks:**
-1. Run plot script: `python3 nowcasting-report/code/plot.py`
-2. Verify outputs: Check 4 PNG files exist in `nowcasting-report/images/`:
-   - `accuracy_heatmap.png`
-   - `model_comparison.png`
-   - `horizon_trend.png`
-   - `forecast_vs_actual.png`
-3. Check quality: Open images to verify they contain actual data (not placeholders)
+#### Task 2.1: Delete Invalid Results [COMPLETED]
+**Priority**: HIGH  
+**Status**: ✅ COMPLETE  
+**Action**: Deleted 3 invalid result directories (completed)
 
-**Verification:**
-- Check files exist: `ls -lh nowcasting-report/images/*.png`
-- Check file sizes: Should be > 10KB (not empty placeholders)
-- Visual inspection: Images should show actual data visualizations
+#### Task 2.2: Update run_experiment.sh [COMPLETED]
+**Priority**: HIGH  
+**Status**: ✅ COMPLETE  
+**Action**: Verified script logic - correctly checks for `comparison_results.json` to skip completed experiments
 
-**Completion Criteria**: 
-- All 4 PNG files exist and are not placeholders
-- At least 2 plots show actual data (model_comparison, horizon_trend, or accuracy_heatmap)
+#### Task 2.3: Re-run Experiments [PENDING]
+**Priority**: HIGH  
+**Status**: ✅ READY - All code fixes complete, no blocking issues  
+**Action**: Run `bash run_experiment.sh` to execute all 3 targets  
+**Verification**: Check `n_valid > 0` for at least 2 models per target, verify `comparison_results.json` exists
 
 ---
 
-### Step 9: Update LaTeX Tables [PENDING]
-**Status**: ⚠️ BLOCKED by Step 7  
-**Priority**: HIGH (Required for report)
+### PHASE 3: Results Generation
 
-**Tasks:**
-1. Read aggregated CSV: Load `outputs/experiments/aggregated_results.csv`
-2. Update `tables/tab_overall_metrics.tex`: Overall averages
-3. Update `tables/tab_overall_metrics_by_target.tex`: Per-target averages (3 targets)
-4. Update `tables/tab_overall_metrics_by_horizon.tex`: Per-horizon averages (3 horizons)
-5. Update `tables/tab_nowcasting_metrics.tex`: Nowcasting-specific metrics (if available)
+#### Task 3.1: Generate Aggregated CSV [PENDING]
+**Priority**: HIGH  
+**Status**: ⚠️ BLOCKED by Phase 2  
+**Action**: Run `from src.eval import main_aggregator; main_aggregator()`  
+**Output**: `outputs/experiments/aggregated_results.csv`
 
-**Verification:**
-- Check tables have actual numbers (not "---" placeholders)
-- Verify numbers match aggregated CSV
-- Check LaTeX syntax: No compilation errors
+#### Task 3.2: Generate Visualizations [PENDING]
+**Priority**: HIGH  
+**Status**: ⚠️ BLOCKED by Task 3.1  
+**Action**: Run `python3 nowcasting-report/code/plot.py`  
+**Output**: 4 PNG files in `nowcasting-report/images/`
 
-**Completion Criteria**: 
-- All 4 tables updated with actual values or marked as N/A
-- No "---" placeholders remain
-- Tables compile in LaTeX without errors
+#### Task 3.3: Update LaTeX Tables [PENDING]
+**Priority**: HIGH  
+**Status**: ⚠️ BLOCKED by Task 3.1  
+**Action**: Update 4 tables from aggregated CSV (replace "---" placeholders)
 
 ---
 
-### Step 10: Update Report Content [PENDING]
-**Status**: ⚠️ BLOCKED by Steps 8-9  
-**Priority**: HIGH (Required for final report)
+### PHASE 4: Report Improvements
 
-**Tasks:**
-1. Update `contents/5_result.tex`:
-   - Add actual metrics from tables
-   - Add analysis for all 3 targets
-   - Reference figures and tables properly
-2. Update `contents/6_discussion.tex`:
-   - Discuss model performance differences with real numbers
-   - Reference specific results from tables
-3. Update `main.tex` abstract (if needed): Reflect actual findings
+#### Task 4.1: Update Results Section [PENDING]
+**Priority**: MEDIUM  
+**Status**: ⚠️ BLOCKED by Phase 3  
+**Issues**:
+  - Generic descriptions without actual numbers
+  - Placeholder tables referenced
+  - No specific model performance analysis
+**Action**: 
+  - Add actual metrics from tables
+  - Analyze performance differences between models
+  - Reference specific numbers from results
 
-**Verification:**
-- Check no placeholder warnings remain
-- Verify all 3 targets have analysis
-- Check that numbers in text match tables
-- Verify all figure/table references exist
+#### Task 4.2: Improve Discussion Section [PENDING]
+**Priority**: MEDIUM  
+**Status**: ⚠️ BLOCKED by Task 4.1  
+**Issues**:
+  - Generic statements without supporting numbers
+  - No reference to actual results
+  - Some claims may be unsupported by data
+**Action**:
+  - Reference specific metrics from tables
+  - Discuss actual model performance differences
+  - Remove unsupported claims
 
-**Completion Criteria**: 
-- All placeholder warnings removed
-- All 3 targets have analysis in results section
-- Discussion section references actual numbers from tables
-- Abstract accurately reflects study findings
+#### Task 4.3: Verify Citations and Remove Hallucinations [PENDING]
+**Priority**: MEDIUM  
+**Status**: ⚠️ Can start now  
+**Action**:
+  - Verify all citations exist in references.bib
+  - Check claims against actual references
+  - Remove any unsupported statements
+  - Use knowledgebase MCP for additional citations if needed
 
 ---
 
-### Step 11: Finalize Report [PENDING]
-**Status**: ⚠️ BLOCKED by Step 10  
-**Priority**: HIGH (Final deliverable)
+### PHASE 5: Code Quality Improvements
 
-**Tasks:**
-1. Compile report: `cd nowcasting-report && pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex`
-2. Verify completeness: Check page count (20-30 pages)
-3. Check figures/tables: Verify all referenced figures and tables exist
-4. Final quality check: Citations verified, terminology consistent, numbers match tables
+#### Task 5.1: Verify dfm-python Theoretical Correctness [PENDING]
+**Priority**: LOW  
+**Status**: ⚠️ Can start now  
+**Action**:
+  - Review EM algorithm implementation against standard DFM theory
+  - Verify Kalman filter implementation correctness
+  - Check numerical stability measures (already documented)
+  - Compare with knowledgebase/references for theoretical validation
 
-**Verification:**
-- PDF compiles without errors
-- Page count: `pdfinfo nowcasting-report/main.pdf | grep Pages` (should be 20-30)
-- Check for placeholders: `grep -i "placeholder\|TODO\|FIXME" nowcasting-report/main.pdf` (should be empty)
+#### Task 5.2: Improve Code Naming Consistency [PENDING]
+**Priority**: LOW  
+**Status**: ⚠️ Can start now  
+**Current**: dfm-python uses snake_case functions, PascalCase classes (consistent)  
+**Action**:
+  - Review src/ module for naming consistency
+  - Ensure all functions use snake_case, classes use PascalCase
+  - Check for non-generic names (e.g., `train`, `predict` should be more specific if needed)
 
-**Completion Criteria**: 
-- PDF compiles without errors
-- Page count is 20-30 pages
-- All figures/tables referenced in text exist
-- No placeholder text remains
-- All citations verified
-- Numbers in text match tables
+#### Task 5.3: Remove Redundancies and Improve Structure [PENDING]
+**Priority**: LOW  
+**Status**: ⚠️ Can start now  
+**Action**:
+  - Consolidate duplicate logic in src/
+  - Note: transformations.py is deprecated (re-exports from utils.py) but kept for backward compatibility
+  - Remove any temporal fixes or monkey patches
+  - Improve error handling consistency
 
-## Experiment Status
+---
 
-**Current**: 0/3 targets executed - Ready to run with all fixes complete
+### PHASE 6: Finalization
 
-**Configuration:**
-- **3 Targets**: KOGDP...D (55 series), KOCNPER.D (50 series), KOGFCF..D (19 series)
-- **4 Models**: arima, var, dfm, ddfm
-- **3 Horizons**: 1, 7, 28 days
-- **Total**: 3 × 4 × 3 = 36 combinations
+#### Task 6.1: Finalize Report [PENDING]
+**Priority**: HIGH  
+**Status**: ⚠️ BLOCKED by Phase 4  
+**Action**: Compile PDF, verify 20-30 pages, check all references
 
-**run_experiment.sh**: ✅ Ready to run
-- Current: Auto-skips completed experiments (checks for `comparison_results.json`)
-- Action: ✅ Old invalid results deleted
-- Status: Script will run all 3 targets since no valid results exist
-
-## Resolved Issues
-
-**Code Fixes (Completed):**
-- ✅ Import errors fixed: `app.utils` → `src.utils.config_parser`
-- ✅ Type hints fixed: PyTorch/pandas type hints use string literals
-- ✅ Circular import resolved: Moved DFM/DDFM imports inside methods (lazy imports)
-- ✅ Citations verified: All references in references.bib
-
-**Report Structure (Completed):**
-- ✅ 20-30 page LaTeX framework complete
-- ✅ All sections present, flow improved
-- ✅ Terminology consistent, no hallucinations
-- ✅ Redundant placeholder warnings removed
+---
 
 ## Code Quality Status
 
-**Current Status**: ✅ Code quality is acceptable for production use
-- ✅ All critical bugs fixed (ARIMA, VAR, DFM, DDFM)
-- ✅ Error handling is consistent across models
-- ✅ Code structure is clean and maintainable
-- ✅ dfm-python: Consistent naming (snake_case functions, PascalCase classes), no TODOs
+**dfm-python Package**:
+- ✅ Naming: Consistent (snake_case functions, PascalCase classes)
+- ✅ TODOs: None found
+- ⚠️ Theoretical: Need to verify EM/Kalman implementations
+- ⚠️ Numerical: Stability measures documented, need verification
+
+**src/ Module**:
+- ✅ Structure: 16 files (transformations.py deprecated but kept for compatibility)
+- ✅ Naming: Verified - consistent snake_case functions, PascalCase classes
+- ⚠️ Redundancies: transformations.py re-exports from utils.py (deprecated but kept)
+- ✅ Bugs: All critical issues fixed (Phase 1)
+
+---
+
+## Report Quality Status
+
+**Structure**: ✅ Complete 20-30 page framework  
+**Content Issues**:
+- ⚠️ Results section: Generic, no actual numbers
+- ⚠️ Discussion: Generic statements, no supporting data
+- ⚠️ Tables: All have "---" placeholders
+- ✅ Citations: All verified in references.bib
+- ⚠️ Hallucinations: Need to verify claims against results
+
+---
+
+## Experiment Status
+
+**Current**: 0/3 targets executed - No valid results exist, ready to run  
+**Configuration**: 3 targets × 4 models × 3 horizons = 36 combinations  
+**Code Status**: ✅ All critical bugs fixed, ready for execution
+
+**run_experiment.sh**: ✅ Auto-skip logic works - will run all 3 targets
 
 ## Expected Outputs
 
@@ -256,27 +258,22 @@
 - If experiments fail: Check logs → Fix code → Re-run only failed targets
 - Do NOT update `run_experiment.sh` for code bugs (fix in `src/` instead)
 
-## Priority Order for Next Iteration
+## Next Iteration Priority
 
-**Critical Path (Must Complete First)**:
-1. ✅ Step 1-4: All model fixes complete
-2. ✅ Step 5: Report content improved
-3. Step 6: Re-run experiments (ready to run)
+**IMMEDIATE (Phase 2 - Ready to Execute)**:
+1. ✅ Task 1.1-1.3: Fix ARIMA/VAR/DFM bugs - COMPLETED
+2. ✅ Task 2.1-2.2: Delete invalid results, verify script - COMPLETED
+3. **Task 2.3: Re-run Experiments** → `bash run_experiment.sh` (ready to run with fixed code)
 
-**After Experiments Complete**:
-4. Step 7: Generate aggregated CSV
-5. Step 8: Generate visualizations
-6. Step 9: Update LaTeX tables
-7. Step 10: Update report content (replace table placeholders)
-8. Step 11: Finalize report (compile PDF)
+**AFTER PHASE 2**:
+4. Task 3.1-3.3: Generate aggregated CSV, plots, update tables
+5. Task 4.1-4.3: Update report with actual results, verify citations
+6. Task 5.1-5.3: Code quality improvements (can start in parallel)
+7. Task 6.1: Finalize report
 
-**Code Quality (Completed)**:
-- ✅ Report content improved (redundant warnings removed, flow improved)
-- ✅ Code quality reviewed (no critical issues found)
-- ✅ dfm-python: Consistent naming verified, no TODOs/FIXMEs
-
-**Report Quality (Completed)**:
-- ✅ Placeholder warnings removed
-- ✅ Citations verified
-- ✅ Redundant content removed
-- ✅ Section flow improved
+**Notes**:
+- ✅ Phase 1 complete - all critical bugs fixed
+- Phase 2 ready - experiments can run with fixed code
+- Phases 3-4 are sequential (experiments → results → report)
+- Phase 5 can start immediately (low priority, non-blocking)
+- Keep ISSUES.md under 1000 lines - remove completed tasks

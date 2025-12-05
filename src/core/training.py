@@ -261,6 +261,18 @@ def _train_forecaster(
         if y_train.shape[1] < 2:
             raise ValidationError(f"VAR requires at least 2 series. Found {y_train.shape[1]} series.")
         
+        # VAR requires frequency to be set on the index for prediction
+        # Set frequency if not already set
+        if isinstance(y_train.index, pd.DatetimeIndex):
+            if y_train.index.freq is None:
+                # Try to infer frequency
+                inferred_freq = pd.infer_freq(y_train.index)
+                if inferred_freq:
+                    y_train = y_train.asfreq(inferred_freq)
+                else:
+                    # Default to daily frequency for daily data
+                    y_train = y_train.asfreq('D')
+        
         # VAR uses maxlags parameter (not lag_order)
         # Ensure maxlags is a valid integer
         if lag_order is None and auto_lag and auto_lag.get('enabled', False):
@@ -667,33 +679,79 @@ def train(
                     if 'blocks' not in model_cfg_dict:
                         model_cfg_dict['blocks'] = dfm_yaml['blocks']
         
-        # Convert series block names to binary vectors
+        # Get block clock frequencies from model config to filter series
+        block_clocks = {}  # Map block name to clock frequency
+        if 'blocks' in model_cfg_dict and isinstance(model_cfg_dict['blocks'], dict):
+            for block_name, block_cfg in model_cfg_dict['blocks'].items():
+                if isinstance(block_cfg, dict) and 'clock' in block_cfg:
+                    block_clocks[block_name] = block_cfg['clock']
+        
+        # Frequency hierarchy: 'd' < 'w' < 'm' < 'q' < 'sa' < 'a'
+        # A series can only be in a block if its frequency is >= block clock frequency
+        freq_hierarchy = {'d': 1, 'w': 2, 'm': 3, 'q': 4, 'sa': 5, 'a': 6}
+        
+        # Convert series block names to binary vectors and filter incompatible series
+        filtered_series_list = []
         if block_names_order and series_list:
             for series_item in series_list:
+                series_freq = series_item.get('frequency', 'm').lower()
+                series_freq_level = freq_hierarchy.get(series_freq, 3)  # Default to monthly level
+                
                 if '_block_names' in series_item:
                     block_names = series_item.pop('_block_names')
-                    # Convert block names to binary vector
-                    # block_names can be: ['Block_Global', 'Block_Consumption'] or [1] (index) or ['Block_Global'] (name)
-                    block_vector = [0] * len(block_names_order)
+                    # Check if series frequency is compatible with block clocks
+                    compatible_blocks = []
                     for block_spec in block_names:
+                        block_name = None
                         if isinstance(block_spec, str):
-                            # Block name (e.g., 'Block_Global')
-                            if block_spec in block_names_order:
-                                block_idx = block_names_order.index(block_spec)
-                                block_vector[block_idx] = 1
-                        elif isinstance(block_spec, int):
-                            # Block index (1-based or 0-based)
-                            block_idx = block_spec - 1 if block_spec > 0 else block_spec
-                            if 0 <= block_idx < len(block_names_order):
-                                block_vector[block_idx] = 1
-                    series_item['blocks'] = block_vector
+                            block_name = block_spec
+                        elif isinstance(block_spec, int) and 0 <= block_spec < len(block_names_order):
+                            block_name = block_names_order[block_spec]
+                        
+                        if block_name:
+                            block_clock = block_clocks.get(block_name, 'm')  # Default to monthly
+                            block_clock_level = freq_hierarchy.get(block_clock.lower(), 3)
+                            # Series can be in block if series frequency level >= block clock level
+                            if series_freq_level >= block_clock_level:
+                                compatible_blocks.append(block_spec)
+                    
+                    # Only add series if it has at least one compatible block
+                    if compatible_blocks:
+                        # Convert compatible block names to binary vector
+                        block_vector = [0] * len(block_names_order)
+                        for block_spec in compatible_blocks:
+                            if isinstance(block_spec, str):
+                                if block_spec in block_names_order:
+                                    block_idx = block_names_order.index(block_spec)
+                                    block_vector[block_idx] = 1
+                            elif isinstance(block_spec, int):
+                                block_idx = block_spec - 1 if block_spec > 0 else block_spec
+                                if 0 <= block_idx < len(block_names_order):
+                                    block_vector[block_idx] = 1
+                        series_item['blocks'] = block_vector
+                        filtered_series_list.append(series_item)
+                    else:
+                        # Series frequency incompatible with all blocks - skip it
+                        print(f"Warning: Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with block clocks. Skipping.")
                 else:
                     # No block info: default to first block (Block_Global)
-                    series_item['blocks'] = [1] + [0] * (len(block_names_order) - 1) if block_names_order else [1]
+                    # Check compatibility with default block
+                    default_block_clock = block_clocks.get(block_names_order[0] if block_names_order else 'Block_Global', 'm')
+                    default_block_clock_level = freq_hierarchy.get(default_block_clock.lower(), 3)
+                    if series_freq_level >= default_block_clock_level:
+                        series_item['blocks'] = [1] + [0] * (len(block_names_order) - 1) if block_names_order else [1]
+                        filtered_series_list.append(series_item)
+                    else:
+                        print(f"Warning: Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with default block clock '{default_block_clock}'. Skipping.")
+        else:
+            # No block structure - include all series
+            filtered_series_list = series_list
         
-        # Add series to model config
-        if series_list:
-            model_cfg_dict['series'] = series_list
+        # Add filtered series to model config
+        if filtered_series_list:
+            model_cfg_dict['series'] = filtered_series_list
+        else:
+            raise ValidationError(f"No compatible series found after filtering by block clock frequencies. Check series frequencies against block clocks.")
         
         # Remove experiment-specific keys that dfm-python doesn't understand
         # But keep model config keys (max_iter, threshold, ar_lag, etc.) as they are valid model config
