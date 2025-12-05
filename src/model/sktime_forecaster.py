@@ -133,37 +133,40 @@ class DFMForecaster(BaseForecaster):
                 "Either config_path or config_dict must be provided to DFMForecaster"
             )
         
-        # Convert y to numpy array if needed
-        if isinstance(y, pd.DataFrame):
-            data_array = y.values
-            data_index = y.index
-            data_columns = y.columns
-        else:
-            data_array = np.array(y)
-            data_index = None
-            data_columns = None
+        # Convert y to DataFrame if needed
+        if not isinstance(y, pd.DataFrame):
+            y = pd.DataFrame(y)
         
-        # Save data to temporary file for DFM
-        # Note: DFMDataModule supports in-memory data (data parameter), but the current
-        # create_data_module() function only accepts data_path. The DFM wrapper's train()
-        # method can accept a data_module parameter, but we use the simplified data_path
-        # API here for consistency with the sktime interface pattern.
-        # TODO: Refactor to create data_module with in-memory data to avoid temporary files
-        import tempfile
-        import os
-        
-        temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
-        temp_df = pd.DataFrame(data_array, index=data_index, columns=data_columns)
-        temp_df.to_csv(temp_file.name)
-        temp_file.close()
-        
+        # Create data module from in-memory DataFrame (avoiding temporary files)
         try:
-            # Train the model using temporary file
-            self._dfm_model.train(data_path=temp_file.name, max_iter=self.max_iter, threshold=self.threshold)
-        finally:
-            # Clean up temporary file
-            if os.path.exists(temp_file.name):
-                os.unlink(temp_file.name)
+            from dfm_python.lightning import DFMDataModule
+            from ..preprocess.utils import create_transformer_from_config
+            
+            data_module = create_data_module_from_dataframe(
+                model=self._dfm_model,
+                data=y,
+                dfm_data_module=DFMDataModule,
+                create_transformer_func=create_transformer_from_config
+            )
+            
+            # Train the model using in-memory data module
+            self._dfm_model.train(data_module=data_module, max_iter=self.max_iter, threshold=self.threshold)
+        except ImportError:
+            # Fallback to temporary file if dependencies not available
+            import tempfile
+            import os
+            
+            temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
+            y.to_csv(temp_file.name)
+            temp_file.close()
+            
+            try:
+                # Train the model using temporary file
+                self._dfm_model.train(data_path=temp_file.name, max_iter=self.max_iter, threshold=self.threshold)
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_file.name):
+                    os.unlink(temp_file.name)
         
         # Store training data for prediction
         self._y = y
@@ -333,42 +336,50 @@ class DDFMForecaster(BaseForecaster):
                 "Either config_path or config_dict must be provided to DDFMForecaster"
             )
         
-        # Convert y to numpy array if needed
-        if isinstance(y, pd.DataFrame):
-            data_array = y.values
-            data_index = y.index
-            data_columns = y.columns
-        else:
-            data_array = np.array(y)
-            data_index = None
-            data_columns = None
+        # Convert y to DataFrame if needed
+        if not isinstance(y, pd.DataFrame):
+            y = pd.DataFrame(y)
         
-        # Save data to temporary file for DDFM
-        # Note: DFMDataModule supports in-memory data (data parameter), but the current
-        # create_data_module() function only accepts data_path. The DDFM wrapper's train()
-        # method can accept a data_module parameter, but we use the simplified data_path
-        # API here for consistency with the sktime interface pattern.
-        # TODO: Refactor to create data_module with in-memory data to avoid temporary files
-        import tempfile
-        import os
-        
-        temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
-        temp_df = pd.DataFrame(data_array, index=data_index, columns=data_columns)
-        temp_df.to_csv(temp_file.name)
-        temp_file.close()
-        
+        # Create data module from in-memory DataFrame (avoiding temporary files)
         try:
-            # Train the model using temporary file
+            from dfm_python.lightning import DFMDataModule
+            from ..preprocess.utils import create_transformer_from_config
+            
+            data_module = create_data_module_from_dataframe(
+                model=self._ddfm_model,
+                data=y,
+                dfm_data_module=DFMDataModule,
+                create_transformer_func=create_transformer_from_config
+            )
+            
+            # Train the model using in-memory data module
             self._ddfm_model.train(
-                data_path=temp_file.name,
+                data_module=data_module,
                 epochs=self.epochs,
                 learning_rate=self.learning_rate,
                 batch_size=self.batch_size
             )
-        finally:
-            # Clean up temporary file
-            if os.path.exists(temp_file.name):
-                os.unlink(temp_file.name)
+        except ImportError:
+            # Fallback to temporary file if dependencies not available
+            import tempfile
+            import os
+            
+            temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
+            y.to_csv(temp_file.name)
+            temp_file.close()
+            
+            try:
+                # Train the model using temporary file
+                self._ddfm_model.train(
+                    data_path=temp_file.name,
+                    epochs=self.epochs,
+                    learning_rate=self.learning_rate,
+                    batch_size=self.batch_size
+                )
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_file.name):
+                    os.unlink(temp_file.name)
         
         # Store training data for prediction
         self._y = y
@@ -527,6 +538,73 @@ def create_standard_error_message(
     if suggestion:
         msg += f"\nSuggestion: {suggestion}"
     return msg
+
+
+def create_data_module_from_dataframe(
+    model: Any,
+    data: pd.DataFrame,
+    dfm_data_module: Optional[Any],
+    create_transformer_func: Optional[Any]
+) -> Any:
+    """Create DFMDataModule from in-memory DataFrame (preprocessed data).
+    
+    This function creates a DFMDataModule instance from an already-preprocessed
+    pandas DataFrame, avoiding the need for temporary files.
+    
+    Args:
+        model: The model wrapper instance (DFM or DDFM) that has get_config() method
+        data: Preprocessed pandas DataFrame (already standardized, no missing values)
+        dfm_data_module: DFMDataModule class (or None if not available)
+        create_transformer_func: Function to create transformer pipeline from config
+        
+    Returns:
+        DFMDataModule instance ready for training (setup() will be called)
+        
+    Raises:
+        ValidationError: If config is not loaded or transformer creation fails
+        ImportError: If required dependencies are not available
+    """
+    # Validate that required dependencies are available
+    validate_data_module_requirements(dfm_data_module, create_transformer_func)
+    
+    # Get config from model - must be loaded before creating data module
+    config = model.get_config()
+    if config is None:
+        raise ValidationError(
+            create_standard_error_message(
+                operation="Creating data module",
+                reason="Configuration not loaded",
+                suggestion="Call load_config() first to load the model configuration"
+            )
+        )
+    
+    # Create preprocessing pipeline from config for statistics extraction (Mx/Wx)
+    # Note: Data is already preprocessed, pipeline is only for extracting statistics
+    pipeline = create_transformer_func(config)
+    
+    # Convert DataFrame to numpy array for DFMDataModule
+    # DFMDataModule can handle numpy arrays directly
+    if isinstance(data, pd.DataFrame):
+        data_array = data.values
+        time_index = data.index
+    else:
+        data_array = np.asarray(data)
+        time_index = None
+    
+    # Create DFMDataModule with config, preprocessed data, and pipeline for statistics
+    # Pipeline will be fitted in setup() to extract statistics (Mx/Wx) for forecasting
+    data_module = dfm_data_module(
+        config=config,
+        pipeline=pipeline,  # For extracting statistics (Mx/Wx)
+        data=data_array,  # Preprocessed data (already standardized, no missing values)
+        time_index=time_index
+    )
+    
+    # Setup the data module - this fits the pipeline on preprocessed data to extract statistics
+    # (Mx/Wx) for forecasting/nowcasting operations
+    data_module.setup()
+    
+    return data_module
 
 
 def create_data_module(
