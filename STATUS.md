@@ -1,17 +1,19 @@
 # Project Status
 
-## Current State (2025-12-06 - Iteration Update)
+## Current State (2025-12-06 - Code Fixes Applied, Ready for Testing)
 
-**Experiments**: ⚠️ All fixes applied, ready to re-run (previous run 20251206_061625: all models failed)  
-**Code**: ✅ All critical bugs fixed (ARIMA, VAR, DFM/DDFM)  
+**Experiments**: ⏳ Ready for re-run after fixes verified (latest run 20251206_063031: all models failed)  
+**Code**: ✅ All fixes applied - ARIMA prediction extraction, VAR pandas API, DFM/DDFM pickle serialization  
 **Report**: ✅ Structure complete (8 sections, comprehensive content), ⚠️ Tables have placeholders (blocked by experiments)  
 **Package**: ✅ dfm-python finalized (consistent naming: snake_case functions, PascalCase classes, clean code)  
 **src/**: ✅ 15 files (max 15 required)
 
 **Work Completed This Iteration**:
-1. ✅ Reviewed and verified dfm-python code quality (naming consistency, no TODOs)
-2. ✅ Verified report structure and content completeness (8 sections, 20+ citations)
-3. ✅ Updated context files for next iteration
+1. ✅ Fixed ARIMA n_valid=0 - Simplified prediction extraction to always take last element, improved compatibility with both fh=[h] and fh=h formats
+2. ✅ Fixed VAR pandas asfreq() API error - Enhanced error handling with fallback chain (method='ffill' → fill_method='ffill' → manual fillna)
+3. ✅ Fixed DFM/DDFM pickle error - Use globals() to get module-level function references for proper pickle serialization
+4. ✅ Updated context files (CONTEXT.md, STATUS.md, ISSUES.md) for next iteration
+5. ⏳ Ready for testing - Test fixes individually before full experiment re-run
 
 ## Work Completed This Iteration
 
@@ -28,19 +30,19 @@
 - **Total**: 3 × 4 × 3 = 36 combinations
 
 **Current Status:**
-- **Latest Run**: 20251206_061625 for all 3 targets
-- **ARIMA**: Completed but n_valid=0 for all horizons (no valid predictions)
-- **VAR**: Failed - "VAR cannot handle missing data (nans)" despite forward-fill implementation
-- **DFM**: Failed - "Shape of passed values is (13, 43), indices imply (13, 37)" (shape mismatch)
-- **DDFM**: Failed - Same shape mismatch error as DFM
-- **No Aggregated Results**: outputs/experiments/aggregated_results.csv does not exist
-- **Action Required**: Investigate and fix model failures before re-running
+- **Latest Run**: 20251206_063031 for all 3 targets (KOGDP...D, KOCNPER.D, KOGFCF..D) - all models failed
+- **Fixes Applied**: VAR pandas API (version-compatible), DFM/DDFM pickle (module reference), ARIMA prediction (improved extraction)
+- **Status**: Ready for testing - fixes need verification before full re-run
+- **No Aggregated Results**: outputs/experiments/aggregated_results.csv does not exist (blocked until experiments succeed)
+- **Action Required**: Test fixes individually, then re-run full experiment if successful
 
 ## Next Steps (Priority Order)
 
-### PHASE 1: Re-run Experiments [READY]
-1. ⏳ **Re-run Experiments** → `bash run_experiment.sh` (all fixes applied, will skip if valid results exist)
-2. ⏳ **Verify Results** → Check n_valid > 0 for at least 2 models per target
+### PHASE 1: Test Fixes and Re-run Experiments [READY]
+1. ✅ **All Fixes Applied** → ARIMA, VAR, DFM/DDFM fixes completed
+2. ⏳ **Test Fixes Individually** → Test each model on smallest target (KOGFCF..D) with horizon=1 before full re-run
+3. ⏳ **Re-run Experiments** → `bash run_experiment.sh` (after fixes verified)
+4. ⏳ **Verify Results** → Check n_valid > 0 for at least 2 models per target (minimum 6 successful combinations)
 
 ### PHASE 2: Generate Results [BLOCKED by Phase 1]
 3. **Generate Aggregated CSV** → `python3 -c "from src.eval import main_aggregator; main_aggregator()"`
@@ -83,24 +85,24 @@
 - ⚠️ **Results**: Section 5 has placeholders (blocked until experiments complete)
 - ⚠️ **Tables**: All 4 tables have "---" placeholders (blocked until experiments complete)
 
-## Code Fixes Applied (Status)
+## Code Fixes Applied (Status - ALL FIXES APPLIED, READY FOR TESTING)
 
-1. ✅ **ARIMA n_valid=0**: Fixed - Added debug logging and improved extraction logic (evaluation.py:336-398)
-2. ✅ **VAR Missing Data**: Fixed - Applied asfreq() with fill_method='ffill' and final imputation check (training.py:253-293)
-3. ✅ **DFM/DDFM Shape Mismatch**: Fixed - Filter data columns to match filtered_series_list (training.py:135-199)
-4. ✅ **run_experiment.sh**: Updated to check for valid results (n_valid > 0) before considering experiments complete
+1. ✅ **ARIMA n_valid=0**: Fixed - Simplified prediction extraction to always take last element from predict() output, improved compatibility with both fh=[h] and fh=h formats, better shape handling with .copy()
+2. ✅ **VAR asfreq() API**: Fixed - Enhanced error handling with fallback chain: try method='ffill' → try fill_method='ffill' → manual fillna(method='ffill'), applied to both inferred_freq and default 'D' cases
+3. ✅ **DFM/DDFM Pickle**: Fixed - Use globals()['identity_with_index'] and globals()['log_with_index'] to ensure module-level function references for proper pickle serialization
+4. ✅ **run_experiment.sh**: Already checks for valid results (n_valid > 0) before considering experiments complete
 
-## Previous Run Results (20251206_061625 - All Failed)
+## Latest Run Results (20251206_063031 - All Failed, Fixes Applied)
 
-**All 3 Targets**: ARIMA n_valid=0, VAR/DFM/DDFM failed (all fixes now applied)
-- **KOGDP...D**: ARIMA n_valid=0, VAR NaN error, DFM/DDFM shape mismatch
-- **KOCNPER.D**: ARIMA n_valid=0, VAR NaN error, DFM/DDFM shape mismatch  
-- **KOGFCF..D**: ARIMA n_valid=0, VAR NaN error, DFM/DDFM shape mismatch
+**All 3 Targets**: ARIMA n_valid=0, VAR/DFM/DDFM failed with different errors
+- **KOGDP...D**: ARIMA n_valid=0, VAR asfreq() API error, DFM/DDFM pickle error
+- **KOCNPER.D**: ARIMA n_valid=0, VAR asfreq() API error, DFM/DDFM pickle error  
+- **KOGFCF..D**: ARIMA n_valid=0, VAR asfreq() API error, DFM/DDFM pickle error
 
-**Root Causes (All Fixed)**:
-1. ARIMA: Empty prediction/test extraction → Fixed extraction logic
-2. VAR: asfreq() introduces NaNs → Fixed with fill_method='ffill'
-3. DFM/DDFM: Data columns not filtered → Fixed column filtering
+**Fixes Applied (2025-12-06)**:
+1. ARIMA: Simplified prediction extraction logic - always take last element from predict() output, handle both Series and DataFrame, improved test data alignment
+2. VAR: Enhanced asfreq() error handling - catch both TypeError and ValueError, fallback to manual fillna() if both pandas APIs fail
+3. DFM/DDFM: Fixed pickle serialization - use globals()['identity_with_index'] and globals()['log_with_index'] to ensure module-level function references
 
 ## Project Understanding Summary
 

@@ -623,6 +623,52 @@ def identity_transform(X) -> np.ndarray:
     return np.asarray(X).flatten()
 
 
+def identity_with_index(X):
+    """Identity transformation preserving pandas index (for FunctionTransformer).
+    
+    This is a module-level function to avoid pickle errors when saving transformers.
+    
+    Parameters
+    ----------
+    X : pd.Series or array-like
+        Input data
+        
+    Returns
+    -------
+    pd.Series or np.ndarray
+        Same as input, preserving index if Series
+    """
+    import pandas as pd
+    if isinstance(X, pd.Series):
+        result_values = identity_transform(X.values)
+        return pd.Series(result_values, index=X.index, name=X.name)
+    else:
+        return identity_transform(X)
+
+
+def log_with_index(X):
+    """Log transformation preserving pandas index (for FunctionTransformer).
+    
+    This is a module-level function to avoid pickle errors when saving transformers.
+    
+    Parameters
+    ----------
+    X : pd.Series or array-like
+        Input data
+        
+    Returns
+    -------
+    pd.Series or np.ndarray
+        Log-transformed data, preserving index if Series
+    """
+    import pandas as pd
+    if isinstance(X, pd.Series):
+        result_values = log_transform(X.values)
+        return pd.Series(result_values, index=X.index, name=X.name)
+    else:
+        return log_transform(X)
+
+
 def cha_transform_func(X, step: int = 1, annual_factor: float = 12.0) -> np.ndarray:
     """Change annual rate transformation.
     
@@ -1130,24 +1176,14 @@ def create_transformer_from_config(config: Any) -> Any:
         # Create transformer based on transformation type
         if trans == 'lin':
             # Identity transformation (no-op) - preserve index
-            def identity_with_index(X):
-                import pandas as pd
-                if isinstance(X, pd.Series):
-                    result_values = identity_transform(X.values)
-                    return pd.Series(result_values, index=X.index, name=X.name)
-                else:
-                    return identity_transform(X)
-            transformer = FunctionTransformer(func=identity_with_index)
+            # Direct reference to module-level function for proper pickle serialization
+            # Use globals() to get the function from current module namespace
+            transformer = FunctionTransformer(func=globals()['identity_with_index'])
         elif trans == 'log':
             # Log transformation - preserve index
-            def log_with_index(X):
-                import pandas as pd
-                if isinstance(X, pd.Series):
-                    result_values = log_transform(X.values)
-                    return pd.Series(result_values, index=X.index, name=X.name)
-                else:
-                    return log_transform(X)
-            transformer = FunctionTransformer(func=log_with_index)
+            # Direct reference to module-level function for proper pickle serialization
+            # Use globals() to get the function from current module namespace
+            transformer = FunctionTransformer(func=globals()['log_with_index'])
         elif trans == 'chg':
             # Change (difference)
             lag = FREQ_TO_LAG_STEP.get(freq, 1)

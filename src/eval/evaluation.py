@@ -332,11 +332,18 @@ def evaluate_forecaster(
             continue
         
         # Get prediction for horizon h
-        # When predict(fh=[h]) is called, it returns prediction at time train_end+h
+        # When predict(fh=[h]) is called, it may return:
+        # - Single prediction for horizon h (most common)
+        # - h predictions for horizons 1 to h (some forecasters)
         # Test data starts at train_end+1, so horizon h corresponds to position h-1 in test data
         try:
             # Predict for this specific horizon
-            y_pred_h = forecaster.predict(fh=[h])
+            # Try both fh=[h] (list) and fh=h (int) for compatibility
+            try:
+                y_pred_h = forecaster.predict(fh=[h])
+            except (TypeError, ValueError):
+                # Some forecasters might not accept list, try int
+                y_pred_h = forecaster.predict(fh=h)
             
             # Extract corresponding test data point using position-based matching
             # This is more reliable than index matching since test data is created by splitting
@@ -347,9 +354,49 @@ def evaluate_forecaster(
             logger = logging.getLogger(__name__)
             logger.debug(f"Horizon {h}: test_pos={test_pos}, y_test length={len(y_test)}, y_pred_h type={type(y_pred_h)}, y_pred_h length={len(y_pred_h) if hasattr(y_pred_h, '__len__') else 'N/A'}")
             
+            # Extract prediction value(s) - handle both Series and DataFrame
+            # For predict(fh=[h]), we want the prediction at horizon h
+            # If it returns multiple predictions, take the last one (should be for horizon h)
+            # If it returns a single prediction, use it directly
+            if isinstance(y_pred_h, pd.DataFrame):
+                if len(y_pred_h) > 0:
+                    # Always take the last row (should be the prediction for horizon h)
+                    y_pred_h = y_pred_h.iloc[-1:].copy()
+                    # Extract target series if specified
+                    if target_series is not None and target_series in y_pred_h.columns:
+                        y_pred_h = y_pred_h[[target_series]]
+                    elif isinstance(y_test, pd.DataFrame) and len(y_test.columns) == 1:
+                        # Single column, use it
+                        y_pred_h = y_pred_h.iloc[:, [0]]
+                else:
+                    logger.warning(f"Horizon {h}: y_pred_h DataFrame is empty.")
+                    y_pred_h = pd.DataFrame()
+            elif isinstance(y_pred_h, pd.Series):
+                if len(y_pred_h) > 0:
+                    # Always take the last value (should be the prediction for horizon h)
+                    y_pred_h = y_pred_h.iloc[-1:]
+                else:
+                    logger.warning(f"Horizon {h}: y_pred_h Series is empty.")
+                    y_pred_h = pd.Series()
+            else:
+                # Handle numpy array or other types
+                if hasattr(y_pred_h, '__len__') and len(y_pred_h) > 0:
+                    # Convert to Series for consistent handling, take last value
+                    y_pred_h = pd.Series([y_pred_h[-1]])
+                else:
+                    logger.warning(f"Horizon {h}: y_pred_h is empty or unsupported type: {type(y_pred_h)}")
+                    y_pred_h = pd.Series()
+            
+            # Extract corresponding test data
             if test_pos < len(y_test):
                 if isinstance(y_test, pd.DataFrame):
-                    y_true_h = y_test.iloc[test_pos:test_pos+1]
+                    y_true_h = y_test.iloc[test_pos:test_pos+1].copy()
+                    # Extract target series if specified
+                    if target_series is not None and target_series in y_true_h.columns:
+                        y_true_h = y_true_h[[target_series]]
+                    elif len(y_test.columns) == 1:
+                        # Single column, use it
+                        y_true_h = y_true_h.iloc[:, [0]]
                 elif isinstance(y_test, pd.Series):
                     y_true_h = y_test.iloc[test_pos:test_pos+1]
                 else:
@@ -359,32 +406,27 @@ def evaluate_forecaster(
                 logger.warning(f"Horizon {h}: test_pos {test_pos} >= y_test length {len(y_test)}. No valid test data.")
                 y_true_h = pd.DataFrame() if isinstance(y_test, pd.DataFrame) else (pd.Series() if isinstance(y_test, pd.Series) else np.array([]))
             
-            # Extract prediction value(s) - handle both Series and DataFrame
-            if isinstance(y_pred_h, pd.DataFrame):
-                # For DataFrame, extract the first row
-                if len(y_pred_h) > 0:
-                    y_pred_h = y_pred_h.iloc[0:1]
-                else:
-                    logger.warning(f"Horizon {h}: y_pred_h DataFrame is empty.")
-                    y_pred_h = pd.DataFrame()
-            elif isinstance(y_pred_h, pd.Series):
-                # For Series, extract the first value as a Series
-                if len(y_pred_h) > 0:
-                    y_pred_h = y_pred_h.iloc[0:1] if hasattr(y_pred_h, 'iloc') else pd.Series([y_pred_h.iloc[0]])
-                else:
-                    logger.warning(f"Horizon {h}: y_pred_h Series is empty.")
-                    y_pred_h = pd.Series()
-            else:
-                # Handle numpy array or other types
-                if hasattr(y_pred_h, '__len__') and len(y_pred_h) > 0:
-                    y_pred_h = pd.Series([y_pred_h[0]]) if hasattr(y_pred_h, '__getitem__') else pd.Series([y_pred_h])
-                else:
-                    logger.warning(f"Horizon {h}: y_pred_h is empty or unsupported type: {type(y_pred_h)}")
-                    y_pred_h = pd.Series()
-            
             # Check if we have valid data
             has_pred = len(y_pred_h) > 0 if hasattr(y_pred_h, '__len__') else (y_pred_h.size > 0 if hasattr(y_pred_h, 'size') else False)
             has_true = len(y_true_h) > 0 if hasattr(y_true_h, '__len__') else (y_true_h.size > 0 if hasattr(y_true_h, 'size') else False)
+            
+            # Additional check: ensure shapes are compatible
+            if has_pred and has_true:
+                # Align shapes - both should be 1D or 2D with compatible dimensions
+                if isinstance(y_pred_h, pd.DataFrame) and isinstance(y_true_h, pd.DataFrame):
+                    # Ensure same number of columns
+                    if y_pred_h.shape[1] != y_true_h.shape[1]:
+                        logger.warning(f"Horizon {h}: Shape mismatch - y_pred_h has {y_pred_h.shape[1]} columns, y_true_h has {y_true_h.shape[1]} columns")
+                        has_pred = False
+                elif isinstance(y_pred_h, pd.Series) and isinstance(y_true_h, pd.Series):
+                    # Both Series - should be compatible
+                    pass
+                elif isinstance(y_pred_h, pd.DataFrame) and isinstance(y_true_h, pd.Series):
+                    # Convert Series to DataFrame for compatibility
+                    y_true_h = y_true_h.to_frame()
+                elif isinstance(y_pred_h, pd.Series) and isinstance(y_true_h, pd.DataFrame):
+                    # Convert Series to DataFrame
+                    y_pred_h = y_pred_h.to_frame()
             
             logger.debug(f"Horizon {h}: has_pred={has_pred}, has_true={has_true}, y_pred_h shape={y_pred_h.shape if hasattr(y_pred_h, 'shape') else 'N/A'}, y_true_h shape={y_true_h.shape if hasattr(y_true_h, 'shape') else 'N/A'}")
             
@@ -395,12 +437,14 @@ def evaluate_forecaster(
                     )
                     results[h] = metrics
                 except Exception as e:
+                    logger.warning(f"Horizon {h}: Error calculating metrics: {e}")
                     results[h] = {
                         'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,
                         'MSE': np.nan, 'MAE': np.nan, 'RMSE': np.nan,
                         'sigma': np.nan, 'n_valid': 0
                     }
             else:
+                logger.warning(f"Horizon {h}: Missing data - has_pred={has_pred}, has_true={has_true}")
                 results[h] = {
                     'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,
                     'MSE': np.nan, 'MAE': np.nan, 'RMSE': np.nan,
@@ -408,6 +452,9 @@ def evaluate_forecaster(
                 }
         except Exception as e:
             # If prediction fails for this horizon, return NaN metrics
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Horizon {h}: Prediction failed with error: {e}")
             results[h] = {
                 'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,
                 'MSE': np.nan, 'MAE': np.nan, 'RMSE': np.nan,

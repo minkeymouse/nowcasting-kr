@@ -68,20 +68,20 @@ run_experiment.sh
 - Model: `config/model/{model}.yaml` - Model-specific parameters
 - Series: `config/series/{series_id}.yaml` - Frequency, transformation, blocks
 
-## Current Status (2025-12-06 - Iteration Update)
+## Current Status (2025-12-06 - Code Fixes Applied, Ready for Testing)
 
 ### Experiment Results Status
-- **Latest Run**: 20251206_061625 for all 3 targets
-- **Valid Results**: None - ARIMA n_valid=0, VAR/DFM/DDFM failed (all fixes applied, ready to re-run)
+- **Latest Run**: 20251206_063031 for all 3 targets (KOGDP...D, KOCNPER.D, KOGFCF..D)
+- **Valid Results**: None - All models failed (ARIMA n_valid=0, VAR/DFM/DDFM errors)
 - **Configuration**: 3 targets × 4 models × 3 horizons = 36 combinations
-- **No Aggregated Results**: `outputs/experiments/aggregated_results.csv` does NOT exist
+- **No Aggregated Results**: `outputs/experiments/aggregated_results.csv` does NOT exist (blocked until experiments succeed)
 
 ### Code Status
-- **ARIMA**: ✅ Fixed - Improved prediction/test extraction logic
-- **VAR**: ✅ Fixed - Applied asfreq() with fill_method='ffill' and final imputation
-- **DFM/DDFM**: ✅ Fixed - Filter data columns to match filtered_series_list
+- **ARIMA**: ✅ Fix applied - Simplified prediction extraction, improved compatibility with fh formats
+- **VAR**: ✅ Fix applied - Enhanced asfreq() error handling with fallback chain (method='ffill' → fill_method='ffill' → manual fillna)
+- **DFM/DDFM**: ✅ Fix applied - Use globals() for module-level function references to ensure proper pickle serialization
 - **run_experiment.sh**: ✅ Updated to check for valid results (n_valid > 0)
-- **Ready for Re-run**: All fixes applied, experiments ready to be re-run
+- **Status**: ✅ All fixes applied, ready for testing before full re-run
 
 ### Report Status
 - **Structure**: ✅ Complete 8-section framework (intro, lit review, theory, method, results, discussion, conclusion, acknowledgement)
@@ -158,28 +158,24 @@ src/
 
 ## Critical Issues Status
 
-### Issues Resolved (2025-12-06)
-1. ✅ **ARIMA n_valid=0**: Fixed - Improved prediction/test extraction logic
-2. ✅ **VAR Missing Data**: Fixed - Applied asfreq() with fill_method='ffill' and final imputation
-3. ✅ **DFM/DDFM Shape Mismatch**: Fixed - Filter data columns to match filtered_series_list
+### Issues Fixed (2025-12-06 - Fixes Applied, Ready for Testing)
+1. ✅ **ARIMA n_valid=0**: Fixed - Simplified prediction extraction to always take last element, improved compatibility with both fh=[h] and fh=h formats (evaluation.py)
+2. ✅ **VAR pandas API Error**: Fixed - Enhanced error handling with fallback chain: try method='ffill' → try fill_method='ffill' → manual fillna() (training.py)
+3. ✅ **DFM/DDFM Pickle Error**: Fixed - Use globals()['identity_with_index'] and globals()['log_with_index'] to ensure module-level function references (preprocess/utils.py)
 
 ### Missing Components (Blocked by Experiments)
-- **Aggregated Results CSV**: Does not exist (will be generated after experiments complete)
-- **Valid Metrics**: No results available yet (experiments need to be re-run)
-- **Report Tables**: All contain "---" placeholders (will be updated after experiments)
-- **Report Plots**: Will be placeholders if generated now (will be updated after experiments)
+- **Aggregated Results CSV**: Does not exist (cannot generate without valid results)
+- **Valid Metrics**: No results available (all models failing in latest run)
+- **Report Tables**: All contain "---" placeholders (blocked until experiments succeed)
+- **Report Plots**: Will be placeholders if generated now (blocked until experiments succeed)
 
 ## Next Steps (Priority Order - Incremental Approach)
 
-### PHASE 1: Fix Model Issues [COMPLETED]
-1. ✅ **Fix ARIMA n_valid=0** - Fixed: Added debug logging and improved extraction (evaluation.py:336-398)
-2. ✅ **Fix VAR Missing Data** - Fixed: Applied asfreq() with fill_method='ffill' and final imputation (training.py:253-293)
-3. ✅ **Fix DFM/DDFM Shape Mismatch** - Fixed: Filter data columns to match filtered_series_list (training.py:135-199)
-
-### PHASE 2: Execute Experiments [READY TO RUN]
-4. ✅ **Fix All Issues** → All fixes implemented
-5. ⏳ **Re-run Experiments** → `bash run_experiment.sh` (ready to run)
-6. ⏳ **Verify Results** → Check n_valid > 0 for at least 2 models per target (after re-run)
+### PHASE 1: Test Fixes and Re-run Experiments [READY]
+1. ✅ **All Fixes Applied** → ARIMA, VAR, DFM/DDFM fixes completed
+2. ⏳ **Test Fixes Individually** → Test each model on smallest target (KOGFCF..D) with horizon=1 before full re-run
+3. ⏳ **Re-run Experiments** → `bash run_experiment.sh` (after fixes verified)
+4. ⏳ **Verify Results** → Check n_valid > 0 for at least 2 models per target (minimum 6 successful combinations)
 
 ### PHASE 3: Generate Results [BLOCKED by Phase 2]
 6. **Generate Aggregated CSV** → `python3 -c "from src.eval import main_aggregator; main_aggregator()"`

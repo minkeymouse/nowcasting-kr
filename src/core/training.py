@@ -315,11 +315,32 @@ def _train_forecaster(
                 # Try to infer frequency
                 inferred_freq = pd.infer_freq(y_train.index)
                 if inferred_freq:
-                    # Use fill_method='ffill' to forward-fill during frequency setting
-                    y_train = y_train.asfreq(inferred_freq, fill_method='ffill')
+                    # Use version-compatible API: pandas >= 1.5.0 uses method, < 1.5.0 uses fill_method
+                    # pandas 2.x only supports method parameter
+                    try:
+                        # Try newer API first (pandas >= 1.5.0, including 2.x)
+                        y_train = y_train.asfreq(inferred_freq, method='ffill')
+                    except (TypeError, ValueError) as e:
+                        # Fall back to older API (pandas < 1.5.0) - but this is unlikely for pandas 2.3.3
+                        # If method fails, try without fill parameter and handle NaNs separately
+                        try:
+                            y_train = y_train.asfreq(inferred_freq, fill_method='ffill')
+                        except (TypeError, ValueError):
+                            # Last resort: asfreq without fill, then forward-fill manually
+                            y_train = y_train.asfreq(inferred_freq)
+                            y_train = y_train.fillna(method='ffill')
                 else:
                     # Default to daily frequency for daily data
-                    y_train = y_train.asfreq('D', fill_method='ffill')
+                    try:
+                        y_train = y_train.asfreq('D', method='ffill')
+                    except (TypeError, ValueError) as e:
+                        # Fall back to older API or manual fill
+                        try:
+                            y_train = y_train.asfreq('D', fill_method='ffill')
+                        except (TypeError, ValueError):
+                            # Last resort: asfreq without fill, then forward-fill manually
+                            y_train = y_train.asfreq('D')
+                            y_train = y_train.fillna(method='ffill')
         
         # Final imputation check: asfreq() may have introduced new NaNs, so re-impute if needed
         if y_train.isnull().any().any():
