@@ -2,33 +2,34 @@
 
 ## Current Status Summary (Updated 2025-12-06)
 
-**Blocking Issues:**
-- ✅ Code-level import errors FIXED
-  - Root cause: Missing `src/__init__.py` + incorrect path calculation
-  - Fixes: Created `src/__init__.py`, fixed path in `train.py` and `infer.py`, switched to absolute imports
-  - Status: Code fixes in place, but cannot verify due to missing dependencies
-- ⚠️ Missing Python dependencies (CURRENT BLOCKER)
-  - Error: `ModuleNotFoundError: No module named 'hydra'` (latest runs: 011236, 011412, 013508)
-  - Impact: Cannot proceed past import stage even though code fixes are applied
-  - All 9 latest runs (3 per target) fail with same hydra dependency error
-  - Action needed: Install dependencies (hydra-core, omegaconf, sktime, etc.)
-- ❌ No experiment results generated (0 successful runs - all 18 attempts failed: 6 per target)
-  - Error progression: relative import (001731, 002402) → missing src (004456) → missing hydra (011236, 011412, 013508)
-  - No result directories or JSON files found in `outputs/comparisons/`
-  - No `outputs/models/` directory exists (no trained models saved)
-- ⚠️ Report contains placeholder content (improved in latest iteration, but still needs actual results)
+**Critical Blocker:**
+- ⚠️ **Missing Python Dependencies**: `hydra-core` not installed
+  - All 21 experiment runs failed with `ModuleNotFoundError: No module named 'hydra'`
+  - Code fixes are complete (src/__init__.py created, paths corrected)
+  - Action: `pip install -e .` or `pip install hydra-core>=1.3.2 omegaconf>=2.3.0 sktime[forecasting]>=0.40.1 scipy>=1.10.0 scikit-learn>=1.7.2`
+
+**Experiment Status:**
+- ❌ **0/3 targets complete** (KOGDP...D, KOCNPER.D, KOGFCF..D)
+- No result files: No `comparison_results.json`, no `outputs/models/` directory
+- `run_experiment.sh` will run all 3 targets once dependencies installed (skip logic checks for `comparison_results.json`)
+
+**Report Status:**
+- ⚠️ Placeholder content for KOCNPER.D and KOGFCF..D ("향후 연구에서 다룰 예정") - BLOCKED until experiments complete
+- ✅ All citations verified (all from references.bib)
+- ✅ Report structure complete: All sections present and enhanced
+- ✅ Literature review expanded: Added ARIMA/VAR details, deep learning models (DeepAR, Deep State Space Models, TFT)
+- ✅ Theoretical background enhanced: Detailed evaluation metrics explanations, rationale for standardized metrics
+- ✅ Method section improved: Enhanced variable descriptions, missing value handling details
+- Ready for results: plot.py ready, tables ready, structure complete
 
 **Non-Blocking Issues:**
 - ✅ src/ has 17 files (code effectively in 15 files with deprecation wrappers - acceptable)
 - ⚠️ Temporary file workarounds in sktime_forecaster.py (lines 146-162, 342-362) - documented, non-blocking
-- ✅ dfm-python naming consistency VERIFIED AND FINALIZED (Latest iteration - 2025-12-06)
+- ✅ dfm-python naming consistency VERIFIED AND FINALIZED
   - Classes use PascalCase: KalmanFilter, EMAlgorithm, BaseEncoder, PCAEncoder, DFMForecaster
   - Functions use snake_case: check_finite, ensure_real, ensure_symmetric, extract_decoder_params
-  - No TODO/FIXME comments found
-  - Code follows clean patterns consistently - FINALIZED
+  - No TODO/FIXME comments found, code follows clean patterns consistently
 - ⚠️ dfm-python optional improvements: numerical stability review, theoretical correctness verification (non-blocking, can be done in future)
-- ✅ Report content ENHANCED (latest iteration - expanded introduction and discussion sections)
-- ✅ Report citations VERIFIED (tent kernel, FRBNY Staff Nowcast properly cited)
 
 ---
 
@@ -40,19 +41,25 @@
 **Horizons (3):** 1, 7, 28 days
 **Total Required:** 3 targets × 4 models × 3 horizons = 36 model-horizon combinations
 
-### Current Results Status
+### Current Results Status (Inspection: 2025-12-06)
 **Location:** `outputs/comparisons/`
 - ❌ **0 successful experiments** (no result directories found)
-- ❌ **18 failed runs** (only .log files, 6 per target: 001731, 002402, 004456, 011236, 011412, 013508)
+- ❌ **21 failed runs** (only .log files, 7 per target: 001731, 002402, 004456, 011236, 011412, 013508, 015506)
+- **Inspection confirmed** (2025-12-06):
+  - ✅ All 21 log files exist and show consistent error patterns
+  - ✅ No result directories exist (only log files in comparisons/)
+  - ✅ No JSON/CSV files found in entire outputs/ directory
+  - ✅ No outputs/models/ directory exists
 - **Error progression:**
   - Runs 001731, 002402 (6 total): `ImportError: attempted relative import with no known parent package` (FIXED)
   - Runs 004456 (3 total): `ModuleNotFoundError: No module named 'src'` (FIXED by creating src/__init__.py)
-  - Runs 011236, 011412, 013508 (9 total): `ModuleNotFoundError: No module named 'hydra'` (CURRENT BLOCKER - missing dependency)
+  - Runs 011236, 011412, 013508, 015506 (12 total): `ModuleNotFoundError: No module named 'hydra'` (CURRENT BLOCKER - missing dependency)
 - ❌ **No result files:**
   - No `{target}_{timestamp}/` directories
   - No `comparison_results.json` files
   - No `comparison_table.csv` files
   - No `outputs/models/` directory (no trained models saved)
+- **Experiments needed:** All 3 targets (KOGDP...D, KOCNPER.D, KOGFCF..D) - 0% complete
 
 ### Expected Outputs (when experiments succeed)
 For each target:
@@ -68,182 +75,90 @@ After aggregation:
 - ✅ Function `is_experiment_complete()` checks for `comparison_results.json` in latest result directory
 - ✅ Script will skip completed experiments when dependencies are installed and experiments run successfully
 - ✅ No successful results found - script will run all 3 targets when executed
-- ⚠️ **Note for later steps**: If experiments fail partially (some targets succeed, others fail), may need to update script to handle partial completion or re-run only failed targets
+- ✅ Aggregator call fixed: Uses `from src.eval import main_aggregator; main_aggregator()`
+- ⚠️ **Note for later steps**: After experiments run successfully, verify skip logic works. If partial failures occur (some targets succeed, others fail), may need to update script to handle partial completion or re-run only failed targets. Currently no updates needed - script is correct.
 
 ---
 
-## Concrete Action Plan (Step-by-Step)
+## Concrete Action Plan (Step-by-Step) - Based on Inspection Results
 
-### Phase 1: Resolve Dependencies and Verify Setup (CRITICAL - BLOCKING)
+### Phase 1: Install Dependencies (CRITICAL - BLOCKING)
 
-**Goal**: Get experiments running past import stage
+**Current State**: All 21 runs failed due to missing `hydra` module. Code fixes complete.
 
 **Task 1.1: Install Python Dependencies**
-- [ ] Check if virtual environment exists: `ls -la .venv/`
-- [ ] Activate virtual environment: `source .venv/bin/activate`
-- [ ] Install core dependencies: `pip install hydra-core omegaconf`
-- [ ] Install sktime and forecasting dependencies: `pip install sktime[forecasting]`
-- [ ] Install other required packages (check requirements.txt or setup.py if exists)
-- [ ] Verify installations: `python3 -c "import hydra; import sktime; print('OK')"`
+- [x] Updated `pyproject.toml` with dependencies - ✅ COMPLETED
+- [ ] Create/activate virtual environment: `python3 -m venv .venv && source .venv/bin/activate`
+- [ ] Install: `pip install -e .` or `pip install hydra-core>=1.3.2 omegaconf>=2.3.0 sktime[forecasting]>=0.40.1 scipy>=1.10.0 scikit-learn>=1.7.2`
+- [ ] Verify: `python3 -c "import hydra; import sktime; print('OK')"`
 
-**Task 1.2: Test Import Fixes**
-- [ ] Test basic import: `python3 -c "from src.utils.config_parser import setup_paths"`
-- [ ] Test config loading: `python3 -c "from src.utils.config_parser import parse_experiment_config; import hydra; from hydra import initialize, compose; print('OK')"`
-- [ ] Test actual script (dry run): `python3 src/train.py compare --config-name experiment/kogdp_report --help` (if help exists)
-- [ ] Verify script proceeds beyond imports (may fail on data/model issues, but imports should work)
-
-**Task 1.3: Verify Data and Config Files**
-- [ ] Check data file exists: `ls -la data/sample_data.csv` (or path from config)
-- [ ] Verify config files exist for all 3 targets: `ls -la config/experiment/*_report.yaml`
-- [ ] Check series configs referenced in experiment configs exist
-- [ ] Verify model configs exist: `ls -la config/model/*.yaml`
+**Task 1.2: Verify Setup**
+- [ ] Test import: `python3 -c "from src.utils.config_parser import setup_paths"`
+- [ ] Check data file: `ls -la data/sample_data.csv`
+- [ ] Check config files: `ls -la config/experiment/*.yaml`
 
 ---
 
-### Phase 2: Run Experiments Incrementally (CRITICAL - BLOCKING)
+### Phase 2: Run Experiments (CRITICAL - BLOCKING)
 
-**Goal**: Generate experiment results for all 3 targets
+**Goal**: Generate results for all 3 targets (0/3 complete)
 
-**Task 2.1: Test Single Target First (KOGDP...D)**
-- [ ] Run single experiment: `python3 src/train.py compare --config-name experiment/kogdp_report`
-- [ ] Check for errors in output (not just import errors)
-- [ ] Verify output structure created:
-  - `outputs/comparisons/KOGDP...D_*/comparison_results.json` exists
-  - `outputs/comparisons/KOGDP...D_*/comparison_table.csv` exists
-  - `outputs/models/` contains trained models (at least some models)
-- [ ] Inspect JSON file to verify metrics are present (sMSE, sMAE, sRMSE per model/horizon)
-- [ ] If successful, proceed to Task 2.2. If failed, diagnose and fix before proceeding.
+**Task 2.1: Run All Experiments**
+- [ ] Run: `bash run_experiment.sh` (automatically runs all 3 targets, skips completed ones)
+- [ ] Monitor: Script shows progress every 60 seconds
+- [ ] Verify results: Check `outputs/comparisons/{target}_{timestamp}/comparison_results.json` exists for all 3 targets
 
-**Task 2.2: Run Remaining Targets**
-- [ ] Run KOCNPER.D: `python3 src/train.py compare --config-name experiment/kocnper_report`
-- [ ] Verify output: `outputs/comparisons/KOCNPER.D_*/comparison_results.json` exists
-- [ ] Run KOGFCF..D: `python3 src/train.py compare --config-name experiment/kogfcf_report`
-- [ ] Verify output: `outputs/comparisons/KOGFCF..D_*/comparison_results.json` exists
-- [ ] **Alternative**: Use `run_experiment.sh` to run all targets (it will skip completed ones)
-
-**Task 2.3: Aggregate Results**
-- [ ] Run aggregator: `python3 -c "from src.eval import main_aggregator; main_aggregator()"` (✅ FIXED: updated to use correct import path)
-- [ ] Verify aggregated CSV: `outputs/experiments/aggregated_results.csv` exists
-- [ ] Check CSV contains metrics for all 3 targets, 4 models, 3 horizons
-- [ ] Verify CSV structure matches what plot.py and tables expect
-
-**Task 2.4: Update run_experiment.sh if Needed (LATER STEP)**
-- [ ] If experiments fail partially, review skip logic
-- [ ] If some models fail but others succeed, consider updating script to handle partial results
-- [ ] If timeout issues occur, adjust timeout values in script
-- [ ] **Note**: Only update if issues are encountered during actual runs
+**Task 2.2: Aggregate Results**
+- [ ] Run: `python3 -c "from src.eval import main_aggregator; main_aggregator()"`
+- [ ] Verify: `outputs/experiments/aggregated_results.csv` exists with metrics for all targets/models/horizons
 
 ---
 
-### Phase 3: Generate Visualizations (IMPORTANT - BLOCKED)
+### Phase 3: Generate Visualizations (IMPORTANT - BLOCKED until Phase 2)
 
-**Goal**: Create plots from experiment results
-
-**Task 3.1: Verify Plot Script**
-- [ ] Check `nowcasting-report/code/plot.py` exists and is executable
-- [ ] Review plot.py to understand expected input format (JSON files from outputs/comparisons/)
-- [ ] Verify plot.py can load results: `python3 nowcasting-report/code/plot.py` (may need to run from project root)
-- [ ] Check if plot.py needs modifications for data format
-
-**Task 3.2: Generate Plots**
-- [ ] Run plot generation: `python3 nowcasting-report/code/plot.py`
-- [ ] Verify all 4 images created:
-  - `nowcasting-report/images/accuracy_heatmap.png`
-  - `nowcasting-report/images/forecast_vs_actual.png`
-  - `nowcasting-report/images/horizon_trend.png`
-  - `nowcasting-report/images/model_comparison.png`
-- [ ] Inspect plots to ensure they contain actual data (not placeholders or empty plots)
-- [ ] If plots are empty or incorrect, fix plot.py data loading/formatting
+**Task 3.1: Generate Plots**
+- [ ] Run: `python3 nowcasting-report/code/plot.py`
+- [ ] Verify 4 images created in `nowcasting-report/images/`:
+  - `accuracy_heatmap.png`, `forecast_vs_actual.png`, `horizon_trend.png`, `model_comparison.png`
+- [ ] Check plots contain actual data (not placeholders)
 
 ---
 
-### Phase 4: Update Report Tables (IMPORTANT - BLOCKED)
+### Phase 4: Update Report Tables (IMPORTANT - BLOCKED until Phase 2)
 
-**Goal**: Populate LaTeX tables with real metrics
-
-**Task 4.1: Load Aggregated Results**
-- [ ] Load `outputs/experiments/aggregated_results.csv` into Python/pandas
-- [ ] Verify CSV structure: columns (target, model, horizon, sMSE, sMAE, sRMSE, etc.)
-- [ ] Check data completeness: all 3 targets, 4 models, 3 horizons present
-
-**Task 4.2: Update Overall Metrics Table**
-- [ ] Update `nowcasting-report/tables/tab_overall_metrics.tex`
-- [ ] Calculate overall averages across all targets/horizons for each model
-- [ ] Format numbers appropriately (round to 4 decimal places)
-- [ ] Handle missing values (ARIMA if it fails, 28-day horizon if insufficient data)
-
-**Task 4.3: Update Target-Specific Table**
-- [ ] Update `nowcasting-report/tables/tab_overall_metrics_by_target.tex`
-- [ ] Populate metrics for each target (KOGDP...D, KOCNPER.D, KOGFCF..D)
-- [ ] Calculate averages across horizons for each target-model combination
-- [ ] Format consistently with overall metrics table
-
-**Task 4.4: Update Horizon-Specific Table**
-- [ ] Update `nowcasting-report/tables/tab_overall_metrics_by_horizon.tex`
-- [ ] Populate metrics for each horizon (1, 7, 28 days)
-- [ ] Calculate averages across targets for each horizon-model combination
-- [ ] Handle 28-day horizon if insufficient data (mark as N/A or omit)
-
-**Task 4.5: Update Nowcasting Table (if applicable)**
-- [ ] Check if nowcasting evaluation was run (may require separate script: `src/infer.py nowcast`)
-- [ ] If nowcasting results exist, update `nowcasting-report/tables/tab_nowcasting_metrics.tex`
-- [ ] If not, keep placeholder or note that nowcasting evaluation is future work
+**Task 4.1: Update Tables with Results**
+- [ ] Load `outputs/experiments/aggregated_results.csv`
+- [ ] Update `tables/tab_overall_metrics.tex`: Overall averages across all targets/horizons
+- [ ] Update `tables/tab_overall_metrics_by_target.tex`: Per-target averages (all 3 targets)
+- [ ] Update `tables/tab_overall_metrics_by_horizon.tex`: Per-horizon averages (1, 7, 28 days)
+- [ ] Format consistently (4 decimal places, handle missing values as "---")
 
 ---
 
-### Phase 5: Update Report Content (IMPORTANT - BLOCKED)
-
-**Goal**: Replace placeholder content with actual results and analysis
+### Phase 5: Update Report Content (IMPORTANT - BLOCKED until Phase 2-4)
 
 **Task 5.1: Update Results Section**
-- [ ] Update `nowcasting-report/contents/5_result.tex`
-- [ ] Replace placeholder text with actual findings from experiment results
-- [ ] Reference specific metrics from tables (e.g., "DFM achieved sRMSE=0.0419 for 7-day horizon")
-- [ ] Discuss model performance differences with actual numbers
-- [ ] Update section to reflect all 3 targets if results are available (currently only GDP mentioned)
+- [ ] Update `contents/5_result.tex`: Replace "향후 연구에서 다룰 예정" for KOCNPER.D and KOGFCF..D with actual results
+- [ ] Reference specific metrics from tables with actual numbers
+- [ ] Add analysis comparing performance across all 3 targets
 
 **Task 5.2: Update Discussion Section**
-- [ ] Update `nowcasting-report/contents/6_discussion.tex`
-- [ ] Discuss actual findings: why DFM performs well at 7-day horizon, why VAR performs well at 1-day
-- [ ] Address DDFM performance (if lower than DFM, discuss potential reasons: underfitting, hyperparameters)
-- [ ] Discuss limitations based on actual results (e.g., 28-day horizon insufficient data)
-- [ ] Connect findings to theoretical background section
+- [ ] Update `contents/6_discussion.tex`: Discuss findings with actual numbers
+- [ ] Compare performance across targets and explain differences
+- [ ] Connect findings to theoretical background
 
-**Task 5.3: Update Abstract and Introduction**
-- [ ] Update `nowcasting-report/main.tex` abstract if needed (currently mentions GDP results)
-- [ ] Update `nowcasting-report/contents/1_introduction.tex` to reflect actual scope (3 targets vs. just GDP)
-- [ ] Ensure introduction matches what was actually done
+**Task 5.3: Update Abstract**
+- [ ] Update `main.tex` abstract to mention all 3 targets (currently GDP only)
 
 ---
 
 ### Phase 6: Finalize Report (IMPORTANT)
 
-**Goal**: Ensure report is complete, compiles, and meets length requirements
-
-**Task 6.1: Compile and Verify Report**
-- [ ] Compile LaTeX: `cd nowcasting-report && pdflatex main.tex`
-- [ ] Run bibliography: `bibtex main` (if needed)
-- [ ] Recompile: `pdflatex main.tex` (twice for references)
-- [ ] Check for LaTeX errors and fix them
-- [ ] Verify PDF generated: `nowcasting-report/main.pdf`
-
-**Task 6.2: Verify Report Length**
-- [ ] Check PDF page count (should be 20-30 pages)
-- [ ] If too short (< 20 pages):
-  - Expand method section with more detail
-  - Add more analysis in discussion
-  - Expand theoretical background if needed
-- [ ] If too long (> 30 pages):
-  - Condense less critical sections
-  - Move detailed tables to appendix if needed
-  - Remove redundant content
-
-**Task 6.3: Final Quality Check**
-- [ ] Verify all figures referenced in text exist in `images/` directory
-- [ ] Verify all tables referenced in text exist and are populated
-- [ ] Check citations: all references in text exist in `references.bib`
-- [ ] Verify no placeholder text remains (search for "---", "TBD", "향후 연구")
-- [ ] Check Korean text is properly formatted (no encoding issues)
+**Task 6.1: Compile and Verify**
+- [ ] Compile: `cd nowcasting-report && pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex`
+- [ ] Check PDF page count (target: 20-30 pages)
+- [ ] Verify all figures/tables exist and are referenced
+- [ ] Check no placeholder text remains (search for "향후 연구", "---", "TBD")
 
 ---
 
@@ -271,12 +186,17 @@ After aggregation:
 
 ### Current Focus
 **Phase 1, Task 1.1**: Install Python dependencies (hydra-core, omegaconf, sktime) to unblock experiments.
+- ✅ **Progress**: Updated `pyproject.toml` to include all required dependencies (2025-12-06)
+- ⏭️ **Next**: Install dependencies using `pip install -e .` or manually install packages listed in pyproject.toml
+
+**Experiments Status**: 0/3 targets complete (0%). All 21 runs failed due to missing dependencies. Once dependencies installed, all 3 targets need to be run.
 
 ### Key Decisions
-1. **Incremental execution**: Test single target first before running all 3
+1. **Incremental execution**: Test single target (KOGDP...D) first before running all 3 via run_experiment.sh
 2. **Verify after each phase**: Don't proceed to next phase until current phase is complete
 3. **Focus on blocking issues**: Phases 1-6 are critical, Phase 7 can wait
-4. **Update run_experiment.sh only if needed**: Script looks good, only update if issues arise
+4. **Update run_experiment.sh only if needed**: Script is correct, only update if issues arise during actual runs
+5. **Use run_experiment.sh for remaining targets**: After first target succeeds, use script to run remaining 2 targets (it will skip completed ones)
 
 ---
 
@@ -327,12 +247,15 @@ After aggregation:
 **Current State**:
 - GDP results mentioned, other targets say "향후 연구에서 다룰 예정"
 - Nowcasting section mentions "향후 연구에서 구현될 예정"
+- Report structure and content quality improved, but needs actual results
 **Action**:
 - [ ] After experiments complete, update all 3 targets in results section
 - [ ] Remove or implement nowcasting evaluation (currently TODO in `src/infer.py:397`)
 - [ ] Update tables with actual metrics for all targets
 - [ ] Remove all "향후 연구" placeholders
-**Status**: BLOCKED until experiments complete
+- [ ] Generate plots from actual results
+- [ ] Compile PDF and verify 20-30 pages
+**Status**: BLOCKED until experiments complete. Report content quality has been significantly improved in recent iterations.
 
 ### Priority 5: Report - Improve Flow and Detail (MEDIUM)
 **Location**: All report sections
@@ -393,7 +316,72 @@ After aggregation:
 
 ---
 
-## Notes
+## Improvement Plan Summary (2025-12-06)
+
+### Critical Path (Blocking - Must Complete First)
+1. **Install dependencies** → Run experiments → Update report with results
+2. **Current blocker**: Missing hydra-core dependency (all 21 runs failed)
+3. **Experiments needed**: All 3 targets (0/3 complete) - run_experiment.sh will handle skipping completed ones
+
+### Code Quality Issues Found
+
+**src/ Module:**
+- ✅ **Temporary file workarounds** (sktime_forecaster.py:146-162, 342-362): Documented with TODO comments. DFMDataModule supports in-memory data, but `create_data_module()` only accepts file paths. Non-blocking, can refactor later.
+- ✅ **Nowcasting evaluation not implemented** (infer.py:397): TODO comment exists. Non-blocking for report completion.
+- ✅ **File count**: 17 files (acceptable with deprecation wrappers)
+
+**dfm-python Package:**
+- ✅ **Naming consistency**: Verified - classes PascalCase, functions snake_case
+- ⚠️ **Numerical stability**: Not deeply reviewed. Regularization exists (1e-6, 1e-8), convergence checks exist. Can review incrementally.
+- ⚠️ **Theoretical correctness**: Not verified against references. Tent kernel, clock framework, factor dynamics should match Mariano & Murasawa (2003), Andreini et al. (2020). Can verify incrementally.
+
+### Report Issues Found
+
+**Content Issues:**
+- ❌ **Placeholder content**: KOCNPER.D and KOGFCF..D results say "향후 연구에서 다룰 예정" (5_result.tex:5, 24)
+- ❌ **Nowcasting section**: Mentions "향후 연구에서 구현될 예정" (5_result.tex:72, 80, 96)
+- ⚠️ **Report length**: Not verified (target: 20-30 pages). May need expansion after results added.
+- ✅ **Citations**: Verified - tent kernel (mariano2003new), FRBNY Staff Nowcast (bok2019frbny) properly cited
+
+**Flow and Detail:**
+- ⚠️ **Method section**: Has hyperparameters but could expand on design rationale
+- ⚠️ **Results section**: Has GDP results but needs all 3 targets
+- ⚠️ **Discussion section**: Good structure but needs actual findings from all targets
+
+### Experiment Planning
+
+**Current Status:**
+- ✅ **run_experiment.sh**: Correctly checks for completed experiments (looks for `comparison_results.json`)
+- ✅ **Skip logic**: Will automatically skip completed targets when re-run
+- ❌ **Results**: 0/3 targets complete (all 21 runs failed due to missing dependencies)
+- ✅ **No updates needed**: Script is correct, only update if issues occur during actual runs
+
+**Required Experiments:**
+- 3 targets × 4 models × 3 horizons = 36 combinations
+- All 3 targets need to run (KOGDP...D, KOCNPER.D, KOGFCF..D)
+- Script will run all 3 when dependencies installed (currently all incomplete)
+
+### Prioritized Action Items
+
+**Immediate (Blocking):**
+1. Install dependencies (hydra-core, omegaconf, sktime, etc.)
+2. Run experiments for all 3 targets
+3. Generate plots from results
+4. Update report tables with actual metrics
+5. Remove placeholder content from report
+
+**Short-term (After Results Available):**
+6. Update report content with all 3 targets' results
+7. Verify report length (20-30 pages), expand if needed
+8. Finalize report compilation and quality check
+
+**Long-term (Non-blocking, Incremental):**
+9. Refactor temporary file workarounds in sktime_forecaster.py
+10. Review numerical stability in dfm-python (EM algorithm, Kalman filter)
+11. Verify theoretical correctness (tent kernel, clock framework)
+12. Implement nowcasting evaluation (if needed for report)
+
+### Notes
 
 - **Work incrementally**: Complete one task before moving to next
 - **Test after each change**: Don't break working functionality

@@ -3,11 +3,11 @@
 ## Current State (2025-12-06 - Updated)
 
 ### Recent Progress (Latest Iteration - 2025-12-06)
-- ✅ **Report Content ENHANCED**: Expanded introduction and discussion sections
-  - Enhanced introduction section with more detailed contributions (5 items expanded with technical details)
-  - Expanded discussion section's limitations with 7 detailed items including prediction uncertainty quantification
-  - Improved flow and professional tone throughout
-  - Better connection between sections
+- ✅ **Report Content ENHANCED**: Expanded multiple sections for better completeness
+  - **Literature Review**: Added detailed subsection on traditional statistical models (ARIMA, VAR) with advantages/limitations. Expanded deep learning section with DeepAR, Deep State Space Models, Temporal Fusion Transformers
+  - **Theoretical Background**: Enhanced evaluation metrics section with detailed mathematical explanations. Added rationale for standardized metrics (scale independence, interpretability, consistency)
+  - **Method Section**: Improved explanatory variable descriptions with economic rationale. Expanded missing value handling with technical details on forward/backward fill and Kalman filter capabilities
+  - **Previous iterations**: Enhanced introduction and discussion sections, improved professional tone throughout
 - ✅ **dfm-python Code Quality VERIFIED**: Finalized naming consistency review
   - Verified all classes use PascalCase: KalmanFilter, EMAlgorithm, BaseEncoder, PCAEncoder, DFMForecaster
   - Verified all functions use snake_case: check_finite, ensure_real, ensure_symmetric, extract_decoder_params
@@ -59,36 +59,63 @@
   - Function `is_experiment_complete()` checks for `comparison_results.json` in latest result directory
   - Script will skip completed experiments when dependencies are installed and experiments run successfully
 
-### Experiment Results Analysis
+### Experiment Results Analysis (Inspection: 2025-12-06)
 
 **Location**: `/data/nowcasting-kr/outputs/comparisons/`
 
-**Status**: ❌ **ALL EXPERIMENTS FAILED** (18 attempts: 3 targets × 6 runs)
+**Status**: ❌ **ALL EXPERIMENTS FAILED** (21 attempts: 3 targets × 7 runs)
 
-**Findings**:
-- 18 log files found (6 runs × 3 targets: 001731, 002402, 004456, 011236, 011412, 013508)
+**Inspection Findings** (2025-12-06):
+- ✅ **Confirmed**: 21 log files exist (7 runs × 3 targets: 001731, 002402, 004456, 011236, 011412, 013508, 015506)
+- ✅ **Confirmed**: No result directories exist (only log files in comparisons/)
+- ✅ **Confirmed**: No JSON/CSV result files exist (searched entire outputs/ directory)
+- ✅ **Confirmed**: No `outputs/models/` directory exists (no trained models saved)
 - Error progression shows multiple issues:
   1. **First 6 runs** (001731, 002402): `ImportError: attempted relative import with no known parent package` (FIXED)
   2. **Next 3 runs** (004456): `ModuleNotFoundError: No module named 'src'` (FIXED by creating src/__init__.py)
-  3. **Latest 9 runs** (011236, 011412, 013508): `ModuleNotFoundError: No module named 'hydra'` (CURRENT BLOCKER - missing dependency)
+  3. **Latest 12 runs** (011236, 011412, 013508, 015506): `ModuleNotFoundError: No module named 'hydra'` (CURRENT BLOCKER - missing dependency)
 - No result files generated:
   - ❌ No `comparison_results.json` files
   - ❌ No `comparison_table.csv` files
   - ❌ No result directories (expected: `{target}_{timestamp}/`)
   - ❌ No trained models in `outputs/models/` (directory doesn't exist)
 
-**Failed Targets** (all 6 attempts each):
-1. `KOGDP...D` - Failed at 00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12, 01:35:08
-2. `KOCNPER.D` - Failed at 00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12, 01:35:08
-3. `KOGFCF..D` - Failed at 00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12, 01:35:08
+**Failed Targets** (all 7 attempts each):
+1. `KOGDP...D` - Failed at 00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12, 01:35:08, 01:55:06
+2. `KOCNPER.D` - Failed at 00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12, 01:35:08, 01:55:06
+3. `KOGFCF..D` - Failed at 00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12, 01:35:08, 01:55:06
 
-**Error Details** (from latest logs - 013508):
+**Experiment Configuration:**
+- **3 targets**: KOGDP...D (55 series), KOCNPER.D (50 series), KOGFCF..D (19 series)
+- **4 models**: arima, var, dfm, ddfm
+- **3 horizons**: 1, 7, 28 days
+- **Total required**: 36 model-horizon combinations (3 × 4 × 3)
+- **Current completion**: 0/3 targets (0%)
+
+**Error Details** (from latest logs - 015506):
 ```
 Traceback (most recent call last):
   File "/data/nowcasting-kr/src/utils/config_parser.py", line 9, in <module>
     import hydra
 ModuleNotFoundError: No module named 'hydra'
+
+During handling of the above exception, another exception occurred:
+Traceback (most recent call last):
+  File "/data/nowcasting-kr/src/train.py", line 27, in <module>
+    from src.utils.config_parser import setup_paths, get_project_root
+  File "/data/nowcasting-kr/src/utils/__init__.py", line 3, in <module>
+    from .config_parser import (
+  File "/data/nowcasting-kr/src/utils/config_parser.py", line 12, in <module>
+    raise ImportError(f"Required dependencies not available: {e}")
+ImportError: Required dependencies not available: No module named 'hydra'
 ```
+
+**Inspection Summary**:
+- All 21 log files show consistent error pattern (all 3 targets fail at same stage)
+- Latest runs (015506) all fail with same hydra dependency error
+- Code-level fixes are in place (src/__init__.py exists, paths corrected)
+- Blocker is purely missing Python dependencies (hydra-core package)
+- No partial results or intermediate files found
 
 ### Root Cause Analysis
 
@@ -98,9 +125,10 @@ ModuleNotFoundError: No module named 'hydra'
    - Issue: Missing `src/__init__.py` file (Python requires this to recognize directory as package)
    - Fix: Created `src/__init__.py` with package metadata
    - Also fixed path calculation: `_project_root = _script_dir.parent.resolve()` (was incorrectly `parent.parent`)
-3. **Missing hydra dependency** (runs 011236, 011412, 013508): ⚠️ CURRENT BLOCKER
+3. **Missing hydra dependency** (runs 011236, 011412, 013508, 015506): ⚠️ CURRENT BLOCKER
    - Issue: `hydra` package not installed in environment
    - Impact: Cannot proceed past import stage even though code fixes are in place
+   - Confirmed: All latest runs (015506) fail with same error
    - Action needed: Install dependencies (hydra-core, omegaconf, etc.)
 
 **Fixes Applied**:
@@ -128,28 +156,34 @@ ModuleNotFoundError: No module named 'hydra'
 
 ### Next Steps (Priority Order)
 
-1. **Test Import Fix** (READY - fixes applied, needs testing):
-   - Run: `python3 src/train.py compare --config-name experiment/kogdp_report`
-   - Verify no import errors (should pass line 27 now)
-   - Check if script proceeds beyond imports (may fail on dependencies/data)
-   - If successful, proceed to full experiment suite
+1. **Install Dependencies** (CURRENT BLOCKER):
+   - Install: `pip install -e .` or `pip install hydra-core>=1.3.2 omegaconf>=2.3.0 sktime[forecasting]>=0.40.1 scipy>=1.10.0 scikit-learn>=1.7.2`
+   - Verify: `python3 -c "import hydra; import sktime; print('OK')"`
 
-2. **Generate Results** (BLOCKED - waiting for import fix verification):
-   - After import fix verified, run full experiment suite via `run_experiment.sh`
-   - Verify result files generated: `outputs/comparisons/{target}_{timestamp}/comparison_results.json`
-   - Check for trained models: `outputs/models/{model_name}/model.pkl`
-   - Validate all 3 targets complete (KOGDP...D, KOCNPER.D, KOGFCF..D)
+2. **Run Experiments** (BLOCKED - waiting for dependencies):
+   - Run: `bash run_experiment.sh` (will run all 3 targets: KOGDP...D, KOCNPER.D, KOGFCF..D)
+   - Script automatically skips completed experiments (checks for `comparison_results.json`)
+   - Verify results: `outputs/comparisons/{target}_{timestamp}/comparison_results.json`
+   - Expected: 3 result directories with JSON files
 
-3. **Update Report** (BLOCKED - requires results):
+3. **Update Report with Results** (BLOCKED - requires results):
    - Generate plots: `python3 nowcasting-report/code/plot.py`
-   - Update LaTeX tables with actual metrics from JSON/CSV
-   - Replace placeholder content in `contents/5_result.tex`
+   - Update LaTeX tables: `tables/tab_*.tex` with metrics from aggregated_results.csv
+   - Replace placeholders in `contents/5_result.tex` for KOCNPER.D and KOGFCF..D
+   - Compile PDF and verify 20-30 pages
 
-### Blockers
+4. **Report Content Quality** (ONGOING - can continue improving):
+   - Report structure is complete with all sections
+   - Literature review, theoretical background, and method sections have been enhanced
+   - Content quality improved, but still needs actual results to complete
 
-1. ✅ **Code-level import errors fixed** - Path setup and src/__init__.py in place
-2. ⚠️ **Missing Python dependencies** - `hydra-core` not installed (current blocker)
-3. ❌ **No experiment results available** - Cannot update report without data (blocked until experiments run successfully)
+### Current Blocker
+
+**Missing Python Dependencies**: `hydra-core` not installed
+- All 21 experiment runs failed with `ModuleNotFoundError: No module named 'hydra'`
+- Code fixes are in place (src/__init__.py, path corrections)
+- Action: Install dependencies using `pip install -e .`
+- After installation: Run `bash run_experiment.sh` to execute all 3 targets
 
 ### Files Fixed/Modified (All Iterations)
 
@@ -178,11 +212,14 @@ ModuleNotFoundError: No module named 'hydra'
 
 ### Notes
 
-- All 18 experiment attempts failed (6 per target: 001731, 002402, 004456, 011236, 011412, 013508)
+- All 21 experiment attempts failed (7 per target: 001731, 002402, 004456, 011236, 011412, 013508, 015506)
 - Error progression: relative import → missing src → missing hydra dependency
 - Code fixes applied: src/__init__.py created, path calculation fixed, absolute imports used
 - Current blocker: Missing `hydra-core` dependency (not a code issue)
-- All latest runs (011236, 011412, 013508) fail with same error: `ModuleNotFoundError: No module named 'hydra'`
-- No result files generated: confirmed no JSON, CSV, or result directories exist in outputs/comparisons/
+- **Inspection confirmed** (2025-12-06): All latest runs (015506) fail with same error: `ModuleNotFoundError: No module named 'hydra'`
+- **Inspection confirmed**: No result files generated - no JSON, CSV, or result directories exist in outputs/comparisons/
+- **Inspection confirmed**: No outputs/models/ directory exists (no trained models)
 - Next: Install dependencies, then test with actual experiment run
 - After dependencies installed, experiments should proceed (may encounter other issues like data paths or model-specific errors)
+- **run_experiment.sh skip logic**: Will automatically skip completed experiments once they succeed (checks for comparison_results.json)
+- **Report update plan**: Once results available, update tables → generate plots → update content → verify 20-30 pages

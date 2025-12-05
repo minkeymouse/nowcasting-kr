@@ -253,16 +253,21 @@ nowcasting-report/code/plot.py
    - Deprecation wrappers kept for backward compatibility
    - Status: Non-critical, within acceptable range
 
-### Experiment Results Status (Confirmed 2025-12-06)
-- **KOGDP...D**: Failed - 6 runs (00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12, 01:35:08)
-- **KOCNPER.D**: Failed - 6 runs (00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12, 01:35:08)
-- **KOGFCF..D**: Failed - 6 runs (00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12, 01:35:08)
-- **Total**: 18 failed runs (0 successful)
+### Experiment Results Status (Confirmed 2025-12-06 - Inspection Complete)
+- **KOGDP...D**: Failed - 7 runs (00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12, 01:35:08, 01:55:06)
+- **KOCNPER.D**: Failed - 7 runs (00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12, 01:35:08, 01:55:06)
+- **KOGFCF..D**: Failed - 7 runs (00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12, 01:35:08, 01:55:06)
+- **Total**: 21 failed runs (0 successful)
+- **Inspection confirmed** (2025-12-06):
+  - ✅ All 21 log files exist in `outputs/comparisons/`
+  - ✅ No result directories exist (only log files)
+  - ✅ No JSON/CSV files found in entire outputs/ directory
+  - ✅ No `outputs/models/` directory exists
 - **Result Files**: None generated (no JSON, CSV, or result directories)
 - **Error Progression**:
   1. Runs 001731, 002402 (6 total): `ImportError: attempted relative import with no known parent package` (FIXED)
   2. Runs 004456 (3 total): `ModuleNotFoundError: No module named 'src'` at `src/train.py:27` (FIXED)
-  3. Runs 011236, 011412, 013508 (9 total): `ModuleNotFoundError: No module named 'hydra'` (CURRENT BLOCKER)
+  3. Runs 011236, 011412, 013508, 015506 (12 total): `ModuleNotFoundError: No module named 'hydra'` (CURRENT BLOCKER)
 - **Root Causes**: 
   1. Missing `src/__init__.py` (Python requires this for package recognition) - ✅ FIXED
   2. Incorrect path: `_project_root = _script_dir.parent.parent` should be `_script_dir.parent` - ✅ FIXED
@@ -282,14 +287,24 @@ nowcasting-report/code/plot.py
    - Status: dfm-python code quality finalized, ready for use
    - Note: Numerical stability and theoretical correctness review can be done in future iterations if needed
 
-## Work Done in This Iteration (2025-12-06)
+## Work Done in This Iteration (2025-12-06 - Latest)
 
-### Report Improvements
-- **Enhanced Introduction Section**: Expanded 5 contribution items with technical details about standardized metrics, clock framework, nowcasting framework, DDFM evaluation, and practical tools
-- **Enhanced Discussion Section**: Expanded limitations section from 6 to 7 items, adding prediction uncertainty quantification. Each limitation now includes detailed explanations and future directions
-- **Improved Flow**: Better transitions between sections, more professional tone throughout
+### Report Content Enhancements
+- **Expanded Literature Review Section**: 
+  - Added detailed subsection on traditional statistical models (ARIMA, VAR) with their advantages and limitations
+  - Expanded deep learning section with details on DeepAR, Deep State Space Models, and Temporal Fusion Transformers
+  - Enhanced coverage of traditional vs. modern forecasting approaches
+- **Enhanced Theoretical Background Section**: 
+  - Expanded evaluation metrics section with detailed mathematical explanations for sMSE, sMAE, sRMSE
+  - Added subsection on rationale for using standardized metrics (scale independence, interpretability, consistency)
+  - Improved mathematical rigor and clarity
+- **Improved Method Section**: 
+  - Enhanced explanatory variable descriptions with economic rationale for each category
+  - Expanded missing value handling section with detailed explanation of forward/backward fill rationale
+  - Added technical details on Kalman filter's missing value handling capabilities
+- **Previous Iterations**: Enhanced introduction and discussion sections, improved professional tone throughout
 
-### dfm-python Finalization
+### dfm-python Finalization (Completed in Previous Iteration)
 - **Naming Consistency Verified**: 
   - Classes: PascalCase (KalmanFilter, EMAlgorithm, BaseEncoder, PCAEncoder, DFMForecaster, etc.)
   - Functions: snake_case (check_finite, ensure_real, ensure_symmetric, extract_decoder_params, compute_principal_components, etc.)
@@ -297,9 +312,130 @@ nowcasting-report/code/plot.py
 - **Status**: dfm-python code finalized and ready for use
 
 ### Status Files Updated
-- CONTEXT.md: Updated with latest iteration work, added summary section
-- STATUS.md: Added recent progress section with report enhancements and dfm-python finalization
-- ISSUES.md: Updated non-blocking issues, marked dfm-python as finalized
+- CONTEXT.md: Updated with latest iteration work, consolidated project understanding
+- STATUS.md: Will be updated with current state and next steps
+- ISSUES.md: Will be consolidated, removing resolved issues
+
+## Comprehensive Project Understanding (Fresh Start Analysis)
+
+### Experiment Configuration Summary
+
+**Configured Targets (3):**
+1. **KOGDP...D** (GDP) - `config/experiment/kogdp_report.yaml`
+   - 55 series (KOBSESI.R, KOCALL., KOCNFCONR, etc.)
+   - Models: arima, var, dfm, ddfm
+   - Horizons: [1, 7, 28] days
+   - DFM: max_iter=5000, threshold=1e-5
+   - DDFM: epochs=100, encoder_layers=[64,32], num_factors=2, lr=0.001, batch_size=32
+
+2. **KOCNPER.D** (Private Consumption) - `config/experiment/kocnper_report.yaml`
+   - 50 series (subset of GDP series)
+   - Models: arima, var, dfm, ddfm
+   - Horizons: [1, 7, 28] days
+   - Same model parameters as GDP
+
+3. **KOGFCF..D** (Gross Fixed Capital Formation) - `config/experiment/kogfcf_report.yaml`
+   - 19 series (smaller subset)
+   - Models: arima, var, dfm, ddfm
+   - Horizons: [1, 7, 28] days
+   - Same model parameters as GDP
+
+**Total Required Experiments:**
+- 3 targets × 4 models × 3 horizons = 36 model-horizon combinations
+- Each target requires: 4 model training runs + comparison + aggregation
+
+### Experiment Execution Flow
+
+**run_experiment.sh Logic:**
+1. Validates environment (venv, data file, config files, dependencies)
+2. Checks for completed experiments via `is_experiment_complete()`:
+   - Looks for `outputs/comparisons/{target}_{timestamp}/comparison_results.json`
+   - Skips if latest result directory contains JSON file
+3. Runs incomplete targets in parallel (max 5 concurrent)
+4. Each experiment: `python3 src/train.py compare --config-name experiment/{target}_report`
+5. After completion: Aggregates results via `main_aggregator()` from `src.eval.evaluation`
+
+**Expected Output Structure:**
+```
+outputs/
+├── comparisons/
+│   ├── KOGDP...D_YYYYMMDD_HHMMSS/
+│   │   ├── comparison_results.json      # Full results with metrics per model/horizon
+│   │   └── comparison_table.csv         # Summary table
+│   ├── KOCNPER.D_YYYYMMDD_HHMMSS/
+│   └── KOGFCF..D_YYYYMMDD_HHMMSS/
+├── models/
+│   ├── {target}_arima/model.pkl
+│   ├── {target}_var/model.pkl
+│   ├── {target}_dfm/model.pkl
+│   └── {target}_ddfm/model.pkl
+└── experiments/
+    └── aggregated_results.csv           # Combined results across all targets
+```
+
+### Current Experiment Status (Inspection: 2025-12-06)
+
+**All Experiments Missing (0/3 targets completed):**
+- ❌ **KOGDP...D**: 7 failed runs (001731, 002402, 004456, 011236, 011412, 013508, 015506)
+- ❌ **KOCNPER.D**: 7 failed runs (same timestamps)
+- ❌ **KOGFCF..D**: 7 failed runs (same timestamps)
+- **Total**: 21 failed attempts, 0 successful
+- **Latest Error**: `ModuleNotFoundError: No module named 'hydra'` (all 015506 runs)
+- **Inspection confirmed**: All 21 log files show consistent error pattern, no partial results found
+
+**What's Missing (Inspection Confirmed 2025-12-06):**
+- ✅ **Confirmed**: No `comparison_results.json` files exist (searched entire outputs/)
+- ✅ **Confirmed**: No `comparison_table.csv` files exist (searched entire outputs/)
+- ✅ **Confirmed**: No result directories (`{target}_{timestamp}/`) exist (only log files in comparisons/)
+- ✅ **Confirmed**: No trained models in `outputs/models/` (directory doesn't exist)
+- ✅ **Confirmed**: No aggregated results in `outputs/experiments/` (directory may not exist)
+
+### Report Update Plan (Once Results Available)
+
+**Step 1: Generate Plots**
+- Run: `python3 nowcasting-report/code/plot.py`
+- Expected outputs:
+  - `images/accuracy_heatmap.png`: Model × Target heatmap (sRMSE)
+  - `images/model_comparison.png`: Bar chart comparing models (sMSE, sMAE, sRMSE)
+  - `images/horizon_trend.png`: Line plot showing performance by horizon
+  - `images/forecast_vs_actual.png`: Time series comparison (currently placeholder)
+
+**Step 2: Update LaTeX Tables**
+- `tables/tab_overall_metrics.tex`: Overall averages across all targets/horizons
+- `tables/tab_overall_metrics_by_target.tex`: Per-target averages (KOGDP...D, KOCNPER.D, KOGFCF..D)
+- `tables/tab_overall_metrics_by_horizon.tex`: Per-horizon averages (1, 7, 28 days)
+- `tables/tab_nowcasting_metrics.tex`: Nowcasting results (if nowcasting evaluation is run)
+
+**Step 3: Update Report Content**
+- `contents/5_result.tex`: Replace placeholder text with actual findings
+  - Remove "향후 연구에서 다룰 예정" for KOCNPER.D and KOGFCF..D
+  - Add actual metrics and analysis for all 3 targets
+  - Reference specific numbers from tables (e.g., "DFM achieved sRMSE=0.0419 for 7-day horizon")
+- `contents/6_discussion.tex`: Discuss actual findings with real numbers
+- `main.tex`: Update abstract if needed to reflect all 3 targets
+
+**Step 4: Verify Report Completeness**
+- Compile PDF: `cd nowcasting-report && pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex`
+- Check page count (target: 20-30 pages)
+- Verify all figures/tables referenced in text exist
+- Ensure no placeholder text remains
+
+### run_experiment.sh Update Strategy
+
+**Current Skip Logic:**
+- Function `is_experiment_complete()` correctly checks for `comparison_results.json`
+- Script will automatically skip completed experiments
+- **No changes needed** unless partial failures occur
+
+**If Partial Failures Occur:**
+- If some models fail but others succeed, may need to handle partial results
+- If some targets succeed but others fail, script will re-run only failed targets
+- Consider adding per-model skip logic if needed (currently not implemented)
+
+**Note for Later Steps:**
+- After dependencies installed, `run_experiment.sh` will run all 3 targets (all currently incomplete)
+- Once experiments succeed, script will skip completed ones on subsequent runs
+- Only update script if issues are encountered during actual runs
 
 ## Next Iteration Context
 
@@ -314,19 +450,19 @@ nowcasting-report/code/plot.py
 - ✅ dfm-python finalized (naming consistent, clean patterns)
 - ✅ Report structure improved (enhanced sections, better flow)
 - ⚠️ Dependencies missing (hydra-core) - blocking experiments
-- ❌ No experiment results yet (all 18 attempts failed)
+- ❌ No experiment results yet (all 21 attempts failed)
 
 ### Report Status
 - ✅ Structure complete (all sections present)
 - ✅ Content quality improved (enhanced introduction and discussion)
 - ✅ Citations verified (all references from references.bib)
 - ⚠️ Placeholder content remains (KOCNPER.D, KOGFCF..D results missing)
-- ⚠️ Tables need actual data (currently have placeholder values)
+- ⚠️ Tables need actual data (currently have placeholder values for GDP only)
 - ⚠️ Plots need actual data (plot.py ready but no results to plot)
 
 ### Key Files Modified This Iteration
 - `nowcasting-report/contents/1_introduction.tex`: Enhanced contributions section
 - `nowcasting-report/contents/6_discussion.tex`: Expanded limitations section
-- `CONTEXT.md`: Added work summary and next iteration context
+- `CONTEXT.md`: Added comprehensive project understanding and report update plan
 - `STATUS.md`: Added recent progress
 - `ISSUES.md`: Updated status of non-blocking issues
