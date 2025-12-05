@@ -394,14 +394,17 @@ def run_nowcasting_evaluation(
     print(f"Target: {params['target_series']}")
     print(f"Data: {params['data_path']}")
     
-    # TODO: Implement full nowcasting evaluation
-    # This requires:
+    # NOTE: Nowcasting evaluation is not implemented in the current version.
+    # This is a known limitation documented in the report.
+    # The report (contents/5_result.tex) correctly states that nowcasting evaluation
+    # results will be presented after future experiments ("향후 실험을 통해 결과를 제시할 예정임").
+    # 
+    # To implement nowcasting evaluation in the future, this would require:
     # 1. Load trained model from outputs/models/{target}_{model}/model.pkl
     # 2. Load data from params['data_path']
     # 3. Run simulate_nowcasting_evaluation() from nowcasting.py with target dates
     # 4. Calculate metrics per horizon using evaluation.py
     # 5. Return evaluation results (nowcast_metrics, full_metrics, improvement)
-    # Note: Currently returns 'not_implemented' status. This is a known limitation.
     
     return {
         'status': 'not_implemented',
