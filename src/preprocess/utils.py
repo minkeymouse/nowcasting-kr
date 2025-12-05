@@ -529,13 +529,17 @@ def create_transformer_from_config(config: Any) -> Any:
             
             def cha_transform_func(X):
                 """Change annual rate transformation."""
-                X = np.asarray(X).flatten()
-                T = len(X)
-                result = np.full(T, np.nan)
+                X = np.asarray(X)
+                # Ensure 2D input for transformer compatibility
+                if X.ndim == 1:
+                    X = X.reshape(-1, 1)
+                X_flat = X.flatten()
+                T = len(X_flat)
+                result = np.full((T, 1), np.nan)
                 if T > step:
                     # Annualized change: (X[t] / X[t-step])^(1/n) - 1
-                    ratio = X[step:] / (np.abs(X[:-step]) + 1e-10)
-                    result[step:] = 100.0 * (np.power(ratio, 1.0 / annual_factor) - 1.0)
+                    ratio = X_flat[step:] / (np.abs(X_flat[:-step]) + 1e-10)
+                    result[step:, 0] = 100.0 * (np.power(ratio, 1.0 / annual_factor) - 1.0)
                 return result
             
             transformer = FunctionTransformer(func=cha_transform_func)
