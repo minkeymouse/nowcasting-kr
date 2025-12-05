@@ -3,11 +3,26 @@
 ## Architecture Overview
 
 ### Directory Structure
-- **src/**: Experiment engine (16 files) - wrappers for sktime & dfm-python (transformations.py deprecated but kept for compatibility)
-- **dfm-python/**: Core DFM/DDFM package with Lightning-based training (submodule) - ✅ Finalized, consistent naming (snake_case functions, PascalCase classes)
-- **nowcasting-report/**: LaTeX report (20-30 pages) with plots from outputs/
-- **config/**: Hydra YAML configs (experiment/, model/, series/)
-- **outputs/**: Experiment results (comparisons/, models/, experiments/)
+- **src/**: Experiment engine (15 files, max 15 required) - wrappers for sktime & dfm-python
+  - ✅ transformations.py removed (no active imports found)
+  - Entry points: train.py (compare), infer.py (nowcast)
+  - Core modules: core/training.py, eval/evaluation.py, model/, preprocess/, utils/
+- **dfm-python/**: Core DFM/DDFM package (submodule) - ✅ Finalized
+  - Lightning-based training, EM algorithm (DFM), PyTorch encoder (DDFM)
+  - Consistent naming: snake_case functions, PascalCase classes
+- **nowcasting-report/**: LaTeX report (20-30 pages target)
+  - Contents: 8 sections (intro, lit review, theory, method, results, discussion, conclusion, acknowledgement)
+  - Tables: 4 tables with placeholders (tab_overall_metrics, tab_by_target, tab_by_horizon, tab_nowcasting)
+  - Images: 4 plots (model_comparison, horizon_trend, accuracy_heatmap, forecast_vs_actual)
+  - Code: plot.py generates plots from outputs/
+- **config/**: Hydra YAML configs
+  - experiment/: 3 target configs (kogdp_report, kocnper_report, kogfcf_report)
+  - model/: Model-specific parameters (arima, var, dfm, ddfm)
+  - series/: 100+ series configs (frequency, transformation, blocks)
+- **outputs/**: Experiment results
+  - comparisons/: Per-target results (comparison_results.json, comparison_table.csv)
+  - models/: Trained models (model.pkl per target/model)
+  - experiments/: Aggregated results (aggregated_results.csv - MISSING)
 
 ### Key Components
 
@@ -53,32 +68,31 @@ run_experiment.sh
 - Model: `config/model/{model}.yaml` - Model-specific parameters
 - Series: `config/series/{series_id}.yaml` - Frequency, transformation, blocks
 
-## Current Status (2025-01-XX)
+## Current Status (2025-01-XX - Iteration Summary)
 
-### Work Completed This Iteration
-- ✅ **Report Content Review**: Reviewed all report sections - introduction, literature review, theoretical background, method, results, discussion, conclusion are well-structured
-- ✅ **dfm-python Verification**: Verified naming consistency (snake_case functions, PascalCase classes) - consistent throughout
-- ✅ **Code Structure Review**: Reviewed src/ structure - transformations.py is deprecated (re-exports from utils.py) but kept for backward compatibility
-- ✅ **Status Files Update**: Updated STATUS.md, CONTEXT.md, ISSUES.md for next iteration with current state
-
-### Experiment Status
-- **0/3 targets executed** - No valid results exist, ready to run with fixed code
+### Experiment Results Status
+- **No valid results exist** - Only log files in outputs/comparisons/ (no comparison_results.json)
+- **Ready for execution** - All code fixes verified, script ready to run
 - **Configuration**: 3 targets × 4 models × 3 horizons = 36 combinations
-- **Code Status**: ✅ All critical bugs fixed
-  - ARIMA: ✅ Fixed prediction matching using position-based approach
-  - VAR: ✅ Fixed frequency error by setting freq on DatetimeIndex
-  - DFM/DDFM: ✅ Fixed weekly series filter - excludes weekly series from monthly blocks
-- **Action Required**: Run experiments with `bash run_experiment.sh` to generate valid results
+- **No Aggregated Results**: `outputs/experiments/aggregated_results.csv` does NOT exist (will be generated after experiments)
 
-### Code Quality Status
-- **src/ Module**: 16 files (transformations.py deprecated but kept for compatibility), all imports fixed
-- **dfm-python/ Package**: ✅ Finalized - consistent naming (snake_case functions, PascalCase classes), clean patterns, no TODOs
-- **run_experiment.sh**: ✅ Verified - auto-skip logic, parallel execution
+### Code Status (All Fixes Verified)
+- **ARIMA**: ✅ Position-based matching implemented (evaluation.py:336-343)
+- **VAR**: ✅ Forward-fill imputation implemented (training.py:253-259), frequency setting verified (training.py:264-274)
+- **DFM/DDFM**: ✅ Frequency hierarchy check implemented (training.py:689-720)
+- **All critical bugs fixed** - Ready for experiment execution
 
 ### Report Status
-- **Structure**: ✅ Complete 20-30 page framework, improved flow
-- **Content Quality**: ✅ All citations verified, terminology consistent, redundant warnings removed
-- **Placeholders**: ⚠️ Tables contain placeholders (will be updated after experiments)
+- **Structure**: ✅ Complete framework (1456 lines total across 8 sections)
+- **Tables**: ⚠️ All 4 tables contain "---" placeholders (blocked until experiments complete)
+- **Plots**: ⚠️ 4 placeholder images exist (will generate placeholders if no valid data)
+- **Content**: ✅ Sections 1-4, 6-7 complete; ⚠️ Section 5 (results) has placeholders
+- **Citations**: ✅ All verified in references.bib (20+ references)
+
+### Code Quality Status
+- **src/ Module**: ✅ 15 files (max 15 required) - transformations.py removed, all imports fixed
+- **dfm-python/ Package**: ✅ Finalized - consistent naming (snake_case functions, PascalCase classes), clean patterns, no TODOs
+- **run_experiment.sh**: ✅ Verified - ready to run all 3 targets
 
 ## Data Flow
 
@@ -97,15 +111,82 @@ run_experiment.sh
 - **Standardized Metrics**: sMSE, sMAE, sRMSE (normalized by training std)
 - **Output Structure**: outputs/{models,comparisons,experiments}/ with timestamps
 
-## Next Steps (Priority Order)
+## Project Structure Details
 
-1. **Re-run Experiments** → `bash run_experiment.sh` (ready to run, all fixes complete)
-2. **Verify Results** → Check n_valid > 0 for at least some model/horizon combinations
-3. **Generate Aggregated CSV** → Create `outputs/experiments/aggregated_results.csv` from comparison results
-4. **Generate Plots** → `python3 nowcasting-report/code/plot.py` (4 PNG files)
-5. **Update Tables** → From aggregated_results.csv
-6. **Update Report Content** → Replace placeholders in `contents/5_result.tex`, `contents/6_discussion.tex`
-7. **Finalize Report** → Compile PDF, verify 20-30 pages, no placeholders
+### src/ Module (15 files - max 15 required)
+```
+src/
+├── __init__.py
+├── train.py                    # CLI entry: compare command
+├── infer.py                    # CLI entry: nowcast command
+├── core/
+│   ├── __init__.py
+│   └── training.py            # Unified training via sktime forecasters
+├── eval/
+│   ├── __init__.py
+│   └── evaluation.py          # Standardized metrics, aggregation
+├── model/
+│   ├── __init__.py
+│   ├── dfm.py                 # DFM model wrapper
+│   ├── ddfm.py                # DDFM model wrapper
+│   └── sktime_forecaster.py   # sktime forecaster adapters
+├── preprocess/
+│   ├── __init__.py
+│   └── utils.py               # Preprocessing utilities
+└── utils/
+    ├── __init__.py
+    └── config_parser.py        # Hydra config parsing
+```
+
+### Experiment Configuration
+- **3 Targets**: KOGDP...D (GDP, 55 series), KOCNPER.D (Consumption, 50 series), KOGFCF..D (Investment, 19 series)
+- **4 Models**: arima, var, dfm, ddfm
+- **3 Horizons**: 1, 7, 28 days
+- **Total Combinations**: 3 × 4 × 3 = 36
+
+### Data Flow
+1. **Config Loading**: Hydra loads experiment config → extracts series list → builds dfm-python config
+2. **Data Loading**: Load CSV (data/sample_data.csv) → 101 series, 2,538 observations
+3. **Preprocessing**: Per-series transformations (log, diff, standardization) → sktime FunctionTransformer
+4. **Training**: Create forecaster → fit() → EM (DFM) or PyTorch Lightning (DDFM)
+5. **Evaluation**: Train/test split (80/20) → predict() → calculate_standardized_metrics() → n_valid check
+6. **Comparison**: Aggregate across models → generate_comparison_table() → Save JSON/CSV
+7. **Visualization**: Load JSON → Extract metrics → Generate plots → Save PNG
+8. **Report**: Update LaTeX tables from aggregated CSV → Compile PDF
+
+## Critical Issues Status
+
+### All Critical Issues Resolved
+1. **ARIMA n_valid=0**: ✅ FIXED - Position-based matching implemented
+2. **VAR Missing Data**: ✅ FIXED - Forward-fill imputation implemented
+3. **DFM/DDFM Shape Mismatch**: ✅ FIXED - Frequency hierarchy check implemented
+
+### Missing Components (Blocked by Experiments)
+- **Aggregated Results CSV**: Does not exist (will be generated after experiments)
+- **Valid Metrics**: No results available yet (experiments not run)
+- **Report Tables**: All contain placeholders (will be updated after experiments)
+- **Report Plots**: Will be placeholders if generated now (will be updated after experiments)
+
+## Next Steps (Priority Order - Incremental Approach)
+
+### PHASE 1: Fix Model Issues [COMPLETED]
+1. ✅ **Fix ARIMA n_valid=0** - Position-based matching implemented
+2. ✅ **Fix VAR Missing Data** - Forward-fill imputation implemented
+3. ✅ **Fix DFM/DDFM Shape Mismatch** - Frequency hierarchy check implemented
+
+### PHASE 2: Execute Experiments [READY]
+4. **Re-run Experiments** → `bash run_experiment.sh` (all fixes applied)
+5. **Verify Results** → Check n_valid > 0 for at least 2 models per target
+
+### PHASE 3: Generate Results [BLOCKED by Phase 2]
+6. **Generate Aggregated CSV** → `python3 -c "from src.eval import main_aggregator; main_aggregator()"`
+7. **Generate Plots** → `python3 nowcasting-report/code/plot.py` (4 PNG files)
+8. **Update Tables** → From aggregated_results.csv (replace "---" placeholders)
+
+### PHASE 4: Update Report [BLOCKED by Phase 3]
+9. **Update Results Section** → `contents/5_result.tex` with actual numbers from tables
+10. **Update Discussion** → `contents/6_discussion.tex` with real findings
+11. **Finalize Report** → Compile PDF, verify 20-30 pages, no placeholders
 
 ## Report Update Plan (After Experiments Complete)
 

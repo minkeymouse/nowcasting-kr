@@ -2,18 +2,19 @@
 
 ## Current State (2025-01-XX)
 
-**Experiments**: 0/3 targets executed - No valid results exist, ready to run  
-**Code**: ✅ All critical bugs fixed - ARIMA index matching, VAR frequency, DFM/DDFM weekly series filter  
-**Report**: ✅ Structure complete (20-30 pages), content reviewed and polished, ⚠️ Results are placeholders (waiting for valid experiment results)  
-**Status**: Ready to run experiments with fixed code  
-**src/**: 16 files (transformations.py is deprecated but kept for backward compatibility)
+**Experiments**: No valid results - only log files exist, ready to run  
+**Code**: ✅ All critical fixes verified and implemented  
+**Report**: ✅ Structure complete (1456 lines, 8 sections), ⚠️ Tables have placeholders  
+**Package**: ✅ dfm-python finalized (consistent naming, clean code)  
+**src/**: ✅ 15 files (max 15 required)
 
-## Completed Work This Iteration
+## Work Completed This Iteration
 
-- ✅ **Report Content Review**: Reviewed all report sections (introduction, literature, theoretical, method, results, discussion, conclusion) - content is well-structured and ready for results
-- ✅ **dfm-python Package Verification**: Verified naming consistency - snake_case functions, PascalCase classes throughout
-- ✅ **Code Structure Review**: Reviewed src/ structure - transformations.py is deprecated but kept for backward compatibility (no active imports)
-- ✅ **Status Files Update**: Updated STATUS.md, CONTEXT.md, ISSUES.md for next iteration
+- ✅ **Code Fixes**: All critical bugs fixed (ARIMA position-based matching, VAR forward-fill imputation, DFM/DDFM frequency hierarchy check)
+- ✅ **Code Consolidation**: src/ reduced to 15 files (transformations.py removed)
+- ✅ **Report Structure**: Complete 8-section framework (1456 lines total)
+- ✅ **Citation Verification**: All citations verified in references.bib
+- ✅ **dfm-python Verification**: Naming consistent (snake_case functions, PascalCase classes), no TODOs found
 
 ## Experiment Status
 
@@ -24,24 +25,30 @@
 - **Total**: 3 × 4 × 3 = 36 combinations
 
 **Current Status:**
-- **0/3 targets executed** - No valid results exist, ready to run with fixed code
-- **Code Fixes Applied**:
-  - ARIMA: ✅ Fixed prediction index matching using position-based approach
-  - VAR: ✅ Fixed frequency error by setting freq on DatetimeIndex using asfreq()
-  - DFM/DDFM: ✅ Fixed weekly series filter - excludes weekly series from monthly blocks
-- **Action Required**: Run experiments with `bash run_experiment.sh` to generate valid results
+- **No valid results exist** - Only log files in outputs/comparisons/
+- **Code Status**: ✅ All fixes VERIFIED in code
+- **Action Required**: Run experiments → `bash run_experiment.sh`
 
 ## Next Steps (Priority Order)
 
-1. ✅ **Fix Model Issues** - COMPLETED
-2. ✅ **Delete Invalid Results** - COMPLETED
-3. **Re-run Experiments** → `bash run_experiment.sh` (ready to run with fixed code)
-4. **Verify Results** → Check n_valid > 0 for at least some model/horizon combinations
-5. **Generate Aggregated CSV** → Create `outputs/experiments/aggregated_results.csv` from comparison results
-6. **Generate Plots** → `python3 nowcasting-report/code/plot.py` (4 PNG files)
-7. **Update Tables** → From aggregated_results.csv
-8. **Update Report** → Replace placeholders in `contents/5_result.tex`, `contents/6_discussion.tex`
-9. **Finalize** → Compile PDF, verify 20-30 pages, no placeholders
+### PHASE 1: Fix Model Issues [COMPLETED]
+1. ✅ Fix ARIMA n_valid=0 - Position-based matching (evaluation.py:336-343)
+2. ✅ Fix VAR Missing Data - Forward-fill imputation (training.py:253-259)
+3. ✅ Fix DFM/DDFM Shape Mismatch - Frequency hierarchy check (training.py:689-720)
+
+### PHASE 2: Execute Experiments [READY]
+4. **Re-run Experiments** → `bash run_experiment.sh`
+5. **Verify Results** → Check n_valid > 0 for at least 2 models per target
+
+### PHASE 3: Generate Results [BLOCKED by Phase 2]
+6. **Generate Aggregated CSV** → `python3 -c "from src.eval import main_aggregator; main_aggregator()"`
+7. **Generate Plots** → `python3 nowcasting-report/code/plot.py`
+8. **Update Tables** → From aggregated_results.csv (replace "---" placeholders)
+
+### PHASE 4: Update Report [BLOCKED by Phase 3]
+9. **Update Results Section** → `contents/5_result.tex` with actual numbers
+10. **Update Discussion** → `contents/6_discussion.tex` with real findings
+11. **Finalize Report** → Compile PDF, verify 20-30 pages, no placeholders
 
 ## Project Overview
 
@@ -61,44 +68,33 @@
 
 ## Code Quality
 
-- ⚠️ **src/ Module**: 16 files (need to reduce to 15 max), all imports fixed
+- ✅ **src/ Module**: 15 files (max 15 required) - transformations.py removed, all imports fixed
 - ✅ **dfm-python/ Package**: Finalized - consistent naming, clean patterns, no TODOs
-- ✅ **run_experiment.sh**: Verified - auto-skip logic, parallel execution
+- ✅ **run_experiment.sh**: Verified - ready to run all 3 targets
 
 ## Report Status
 
-- ✅ **Structure**: Complete 20-30 page framework, improved flow
+- ✅ **Structure**: Complete 8-section framework (1456 lines)
 - ✅ **Citations**: All verified in references.bib (20+ references)
 - ✅ **Terminology**: Consistent (DFM/동적 요인 모형)
-- ✅ **Content Quality**: Redundant placeholder warnings removed, improved text flow
-- ⚠️ **Results**: Placeholders in tables remain (blocked until experiments complete)
+- ✅ **Content Quality**: Sections 1-4, 6-7 complete
+- ⚠️ **Results**: Section 5 has placeholders (blocked until experiments complete)
+- ⚠️ **Tables**: All 4 tables have "---" placeholders (blocked until experiments complete)
 
-## Code Fixes Applied (2025-01-XX)
+## Code Fixes Applied (Verified)
 
-**All critical bugs fixed:**
+1. **ARIMA n_valid=0**: ✅ FIXED - Position-based matching (evaluation.py:336-343)
+2. **VAR Missing Data**: ✅ FIXED - Forward-fill imputation (training.py:253-259)
+3. **DFM/DDFM Shape Mismatch**: ✅ FIXED - Frequency hierarchy check (training.py:689-720)
 
-1. **ARIMA n_valid=0**: ✅ FIXED
-   - Fixed prediction matching using position-based approach (horizon h = position h-1)
-   - Location: `src/eval/evaluation.py:320-400`
-   - More reliable than index matching for split data
+## Critical Path
 
-2. **VAR TypeError**: ✅ FIXED
-   - Set frequency on DatetimeIndex using `asfreq()` method
-   - Infers frequency or defaults to 'D' (daily)
-   - Location: `src/core/training.py:264-273`
+**Next Action**: Run `bash run_experiment.sh` to execute all 3 targets with fixed code
 
-3. **DFM/DDFM Frequency Mismatch**: ✅ FIXED
-   - Added frequency hierarchy check (series frequency >= block clock frequency)
-   - Automatically filters out weekly series from monthly blocks
-   - Location: `src/core/training.py:681-720`
-
-**Code Consolidation:**
-- ✅ Removed deprecated `src/nowcasting.py` (reduced from 17 to 16 files)
-- ⚠️ `transformations.py` is deprecated but kept for backward compatibility (re-exports from utils.py, no active imports found)
-
-**Next Actions:**
-1. ✅ Fix ARIMA prediction matching - COMPLETED
-2. ✅ Fix VAR frequency setting - COMPLETED
-3. ✅ Fix DFM/DDFM config - COMPLETED
-4. ✅ Code consolidation started - COMPLETED (removed nowcasting.py)
-5. **Re-run experiments** with fixed code → `bash run_experiment.sh`
+**After Experiments**:
+1. Generate aggregated CSV
+2. Generate plots
+3. Update LaTeX tables
+4. Update results section with actual numbers
+5. Update discussion with real findings
+6. Finalize report (compile PDF, verify 20-30 pages)

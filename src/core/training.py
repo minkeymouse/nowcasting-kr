@@ -93,6 +93,7 @@ def _train_forecaster(
         import numpy as np
         from sktime.forecasting.arima import ARIMA as SktimeARIMA
         from sktime.forecasting.var import VAR as SktimeVAR
+        from sktime.transformations.series.impute import Imputer
         try:
             from src.model.sktime_forecaster import DFMForecaster, DDFMForecaster
         except ImportError:
@@ -242,21 +243,38 @@ def _train_forecaster(
             if isinstance(series_ids, list):
                 available_series = [s for s in series_ids if s in data.columns]
                 if len(available_series) > 1:
-                    y_train = data[available_series].dropna()
+                    y_train = data[available_series].copy()
                 else:
                     # Fallback: use all numeric columns
-                    y_train = data.select_dtypes(include=[np.number]).dropna()
+                    y_train = data.select_dtypes(include=[np.number]).copy()
         else:
             # Use all numeric columns
-            y_train = data.select_dtypes(include=[np.number]).dropna()
+            y_train = data.select_dtypes(include=[np.number]).copy()
         
-        # Check for None values in data
+        # Handle missing values with forward-fill imputation (preserves more data than dropping)
         if y_train.isnull().any().any():
-            print(f"Warning: VAR data contains NaN values. Dropping rows with NaN...")
-            y_train = y_train.dropna()
+            print(f"Warning: VAR data contains NaN values. Applying forward-fill imputation...")
+            # Use sktime Imputer for forward-fill (then backward-fill for leading NaNs)
+            imputer_ffill = Imputer(method="ffill")
+            imputer_bfill = Imputer(method="bfill")
+            
+            # Apply imputation to each column
+            for col in y_train.columns:
+                col_series = y_train[[col]]
+                # Forward-fill first
+                col_imputed = imputer_ffill.fit_transform(col_series)
+                # Then backward-fill any remaining leading NaNs
+                if col_imputed.isnull().any().any():
+                    col_imputed = imputer_bfill.fit_transform(col_imputed)
+                y_train[col] = col_imputed[col]
+            
+            # If any NaNs remain after imputation, drop those rows as last resort
+            if y_train.isnull().any().any():
+                print(f"Warning: Some NaN values remain after imputation. Dropping remaining rows with NaN...")
+                y_train = y_train.dropna()
         
         if len(y_train) == 0:
-            raise ValidationError(f"VAR: No valid data after dropping NaN values.")
+            raise ValidationError(f"VAR: No valid data after imputation.")
         
         if y_train.shape[1] < 2:
             raise ValidationError(f"VAR requires at least 2 series. Found {y_train.shape[1]} series.")
