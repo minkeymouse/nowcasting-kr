@@ -14,9 +14,7 @@ from .utils import (
     # Frequency utilities
     get_periods_per_year,
     get_annual_factor,
-)
-from .transformations import (
-    # Transformation functions
+    # Transformation functions (consolidated from transformations.py)
     identity_transform,
     log_transform,
     pch_transform,
@@ -24,17 +22,22 @@ from .transformations import (
     pca_transform,
     cch_transform,
     cca_transform,
+    cha_transform_func,
     make_pch_transformer,
     make_pc1_transformer,
     make_pca_transformer,
     make_cch_transformer,
     make_cca_transformer,
+    make_cha_transformer,
+    IndexPreservingColumnEnsembleTransformer,
+    FREQ_TO_LAG_YOY,
+    FREQ_TO_LAG_STEP,
+    check_sktime_available,
 )
-from .sktime import check_sktime_available
 
 # Optional sktime imports (may be None if sktime is not installed)
 try:
-    from .sktime import (
+    from .utils import (
         ColumnEnsembleTransformer,
         TransformerPipeline,
         FunctionTransformer,
@@ -60,11 +63,16 @@ __all__ = [
     'pca_transform',
     'cch_transform',
     'cca_transform',
+    'cha_transform_func',
     'make_pch_transformer',
     'make_pc1_transformer',
     'make_pca_transformer',
     'make_cch_transformer',
     'make_cca_transformer',
+    'make_cha_transformer',
+    'IndexPreservingColumnEnsembleTransformer',
+    'FREQ_TO_LAG_YOY',
+    'FREQ_TO_LAG_STEP',
     # Data reading
     'read_data',
     'TimeIndex',

@@ -32,8 +32,6 @@ matlab/**/*.xls
 
 outputs/
 
-config/
-
 .venv/
 
 */.venv/*

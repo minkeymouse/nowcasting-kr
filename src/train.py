@@ -14,24 +14,18 @@ import sys
 import argparse
 from typing import Dict, Any, Optional, List
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "src"))
-sys.path.insert(0, str(project_root / "dfm-python" / "src"))
+# Set up paths first before any relative imports
+# This allows the script to be run directly as python3 src/train.py
+_script_dir = Path(__file__).parent.resolve()
+_project_root = _script_dir.parent.resolve()  # src/ -> project root
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+if str(_script_dir) not in sys.path:
+    sys.path.insert(0, str(_script_dir))
 
-# Set up paths
-try:
-    from src.utils.path_setup import setup_paths
-except ImportError:
-    from utils.path_setup import setup_paths
-
+# Now use absolute imports
+from src.utils.config_parser import setup_paths, get_project_root
 setup_paths(include_dfm_python=True, include_src=True, include_app=True)
-
-try:
-    from omegaconf import OmegaConf
-except ImportError as e:
-    raise ImportError(f"Required dependencies not available: {e}")
 
 from src.core.training import train, compare_models
 from src.utils.config_parser import parse_experiment_config, extract_experiment_params, validate_experiment_config
@@ -62,7 +56,7 @@ def train_model(
         Training result dictionary with keys: status, model_name, model_dir, metrics, etc.
     """
     if config_dir is None:
-        config_dir = str(project_root / "config")
+        config_dir = str(get_project_root() / "config")
     
     cfg = parse_experiment_config(config_name, config_dir, overrides)
     validate_experiment_config(cfg, require_target=False, require_models=True)
@@ -111,7 +105,7 @@ def compare_models_by_config(
         Comparison result dictionary with keys: target_series, models, horizons, results, comparison, etc.
     """
     if config_dir is None:
-        config_dir = str(project_root / "config")
+        config_dir = str(get_project_root() / "config")
     
     cfg = parse_experiment_config(config_name, config_dir, overrides)
     validate_experiment_config(cfg, require_target=True, require_models=True)
@@ -146,7 +140,7 @@ def main():
     
     args = parser.parse_args()
     
-    config_path = str(project_root / "config")
+    config_path = str(get_project_root() / "config")
     
     if args.command == 'train':
         result = train_model(

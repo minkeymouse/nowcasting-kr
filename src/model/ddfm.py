@@ -3,10 +3,9 @@
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
-import warnings
 
-# Set up paths using centralized utility (relative import since we're in src/)
-from ..utils.path_setup import setup_paths
+# Set up paths using centralized utility
+from ..utils.config_parser import setup_paths
 setup_paths(include_dfm_python=True, include_src=True, include_app=True)
 
 # Import custom exceptions for error handling
@@ -23,23 +22,16 @@ except ImportError:
     DFMConfig = None
     DFMDataModule = None
 
-try:
-    from ..preprocess.utils import create_transformer_from_config
-except ImportError:
-    try:
-        from preprocess.utils import create_transformer_from_config
-    except ImportError:
-        create_transformer_from_config = None
+from ..preprocess.utils import create_transformer_from_config
 
 # Import shared utilities
-from ._common import (
-    load_config_impl,
-    create_deprecation_warning_message,
+from .sktime_forecaster import (
+    load_config,
     validate_data_module_requirements,
     create_standard_error_message,
-    create_data_module_impl,
-    train_impl,
-    save_to_outputs_impl
+    create_data_module,
+    train_model,
+    save_to_outputs
 )
 
 
@@ -100,25 +92,7 @@ class DDFM:
         Note: If multiple keyword arguments are provided, only one should be used.
         The underlying model will validate this.
         """
-        load_config_impl(self._model, self._metadata, source, yaml=yaml, mapping=mapping, hydra=hydra)
-    
-    def load_data(self, data_path: str):
-        """Load data (deprecated - kept for backward compatibility).
-        
-        This method is deprecated. Use train(data_path=...) or train(data_module=...) instead.
-        The new API requires DFMDataModule which is automatically created from data_path.
-        
-        Migration guide:
-        - Old: model.load_data("data.csv"); model.train()
-        - New: model.train(data_path="data.csv")
-        """
-        warnings.warn(
-            create_deprecation_warning_message("load_data", "train(data_path=...) or train(data_module=...)"),
-            DeprecationWarning,
-            stacklevel=2
-        )
-        self._metadata["data_path"] = data_path
-        self._metadata["data_loaded"] = True
+        load_config(self._model, self._metadata, source, yaml=yaml, mapping=mapping, hydra=hydra)
     
     def _create_data_module(self, data_path: str) -> Any:
         """Create DFMDataModule from data_path and config.
@@ -133,7 +107,7 @@ class DDFM:
             ValidationError: If config is not loaded or transformer creation fails
             ImportError: If required dependencies are not available
         """
-        return create_data_module_impl(
+        return create_data_module(
             model=self,
             data_path=data_path,
             dfm_data_module=DFMDataModule,
@@ -169,7 +143,7 @@ class DDFM:
             DDFMTrainer = None
         
         # Use shared training implementation
-        result = train_impl(
+        result = train_model(
             model_wrapper=self,
             model_instance=self._model,
             metadata=self._metadata,
@@ -302,7 +276,7 @@ class DDFM:
         Returns:
             Path to the model directory
         """
-        return save_to_outputs_impl(
+        return save_to_outputs(
             model_wrapper=self,
             model_name=model_name,
             outputs_dir=outputs_dir,

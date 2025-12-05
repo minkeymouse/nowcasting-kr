@@ -7,34 +7,14 @@ import json
 import numpy as np
 import sys
 
-# Add project root to path for imports
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "src"))
-sys.path.insert(0, str(project_root / "dfm-python" / "src"))
-
 # Set up paths using centralized utility
-# Try absolute import first (works when src/ is in path), then relative (works as package)
-try:
-    from src.utils.path_setup import setup_paths
-except ImportError:
-    try:
-        from utils.path_setup import setup_paths
-    except ImportError:
-        from .utils.path_setup import setup_paths
-
+from ..utils.config_parser import setup_paths
 setup_paths(include_dfm_python=True, include_src=True, include_app=True)
 
-try:
-    from app.utils import (
-        ValidationError,
-        DEFAULT_DDFM_ENCODER_LAYERS, DEFAULT_DDFM_NUM_FACTORS, DEFAULT_DDFM_EPOCHS
-    )
-except ImportError:
-    from app.utils import (
-        ValidationError,
-        DEFAULT_DDFM_ENCODER_LAYERS, DEFAULT_DDFM_NUM_FACTORS, DEFAULT_DDFM_EPOCHS
-    )
+from app.utils import (
+    ValidationError,
+    DEFAULT_DDFM_ENCODER_LAYERS, DEFAULT_DDFM_NUM_FACTORS, DEFAULT_DDFM_EPOCHS
+)
 
 try:
     import hydra
@@ -42,22 +22,9 @@ try:
 except ImportError as e:
     raise ImportError(f"Required dependencies not available: {e}")
 
-# Import model wrappers - use absolute imports with fallback
-try:
-    from src.model.dfm import DFM
-    from src.model.ddfm import DDFM
-except ImportError:
-    try:
-        from model.dfm import DFM
-        from model.ddfm import DDFM
-    except ImportError as e:
-        raise ImportError(
-            f"Model wrapper not available: {e}\n"
-            "This usually means:\n"
-            "  1. dfm-python package is not installed or not in path\n"
-            "  2. Path setup failed - check src/utils/path_setup.py\n"
-            "  3. Missing dependencies - run: uv pip install -e dfm-python/"
-        )
+# Import model wrappers
+from ..model.dfm import DFM
+from ..model.ddfm import DDFM
 
 
 def _detect_model_type_from_config(cfg: DictConfig) -> str:

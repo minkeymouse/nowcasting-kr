@@ -6,12 +6,10 @@ from .evaluation import (
     evaluate_forecaster,
     compare_multiple_models,
     generate_comparison_table,
-    save_comparison_plots
-)
-
-from .aggregator import (
+    save_comparison_plots,
     collect_all_comparison_results,
-    aggregate_overall_performance
+    aggregate_overall_performance,
+    main_aggregator
 )
 
 __all__ = [
@@ -22,6 +20,7 @@ __all__ = [
     'generate_comparison_table',
     'save_comparison_plots',
     'collect_all_comparison_results',
-    'aggregate_overall_performance'
+    'aggregate_overall_performance',
+    'main_aggregator'
 ]
 
