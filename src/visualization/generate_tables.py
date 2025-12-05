@@ -71,29 +71,9 @@ def extract_metrics_from_results(all_results: Dict[str, List[Dict]]) -> pd.DataF
                                                 value = row[col_name]
                                                 break
                     
-                    # Generate placeholder if no actual result
-                    if value is None or np.isnan(value):
-                        # Generate realistic placeholder values
-                        if model == 'DDFM':
-                            base_value = 0.3 + np.random.normal(0, 0.05)
-                        elif model == 'DFM':
-                            base_value = 0.4 + np.random.normal(0, 0.06)
-                        elif model in ['DeepAR', 'TFT']:
-                            base_value = 0.5 + np.random.normal(0, 0.08)
-                        elif model in ['XGBoost', 'LightGBM']:
-                            base_value = 0.6 + np.random.normal(0, 0.1)
-                        else:  # ARIMA, VAR, VECM
-                            base_value = 0.7 + np.random.normal(0, 0.12)
-                        
-                        # Adjust by horizon
-                        horizon_factor = 1.0 + (horizon - 1) * 0.15
-                        value = base_value * horizon_factor
-                        
-                        # Adjust by target
-                        if target == 'KOGFCF..D':
-                            value *= 1.2
-                        elif target == 'KOCNPER.D':
-                            value *= 1.1
+                    # Use None for missing values (will be displayed as "-")
+                    if value is None or (isinstance(value, float) and np.isnan(value)):
+                        value = None
                     
                     rows.append({
                         'model': model,
@@ -108,19 +88,26 @@ def extract_metrics_from_results(all_results: Dict[str, List[Dict]]) -> pd.DataF
 
 def format_value(value: float, decimals: int = 3) -> str:
     """Format a float value for LaTeX table."""
-    if pd.isna(value) or np.isnan(value):
-        return "[결과]"
+    if value is None or pd.isna(value) or (isinstance(value, float) and np.isnan(value)):
+        return "-"
     return f"{value:.{decimals}f}"
 
 
 def generate_latex_table_overall_metrics(df: pd.DataFrame) -> str:
     """Generate LaTeX table for overall metrics."""
     # Aggregate by model (average across all targets and horizons)
-    model_avg = df.groupby(['model', 'metric'])['value'].mean().reset_index()
+    # Exclude None values from mean calculation
+    df_valid = df[df['value'].notna()].copy()
+    if len(df_valid) == 0:
+        # No valid data, return empty table
+        return "\\begin{table}[h]\n\\centering\n\\caption{전체 모형 성능 비교 (표준화된 지표, 전체 평균)}\n\\label{tab:overall_metrics}\n\\begin{tabular}{lccc}\n\\toprule\n모형 & sMSE & sMAE & sRMSE \\\\\n\\midrule\n\\bottomrule\n\\end{tabular}\n\\end{table}"
+    
+    model_avg = df_valid.groupby(['model', 'metric'])['value'].mean().reset_index()
     model_avg_pivot = model_avg.pivot(index='model', columns='metric', values='value')
     
-    # Sort by sRMSE
-    model_avg_pivot = model_avg_pivot.sort_values('sRMSE')
+    # Sort by sRMSE (handle None values)
+    if 'sRMSE' in model_avg_pivot.columns:
+        model_avg_pivot = model_avg_pivot.sort_values('sRMSE', na_position='last')
     
     lines = [
         "\\begin{table}[h]",
@@ -151,7 +138,13 @@ def generate_latex_table_overall_metrics(df: pd.DataFrame) -> str:
 def generate_latex_table_by_target(df: pd.DataFrame) -> str:
     """Generate LaTeX table for performance by target."""
     # Aggregate by model and target (average across horizons)
-    target_avg = df.groupby(['model', 'target', 'metric'])['value'].mean().reset_index()
+    # Exclude None values from mean calculation
+    df_valid = df[df['value'].notna()].copy()
+    if len(df_valid) == 0:
+        # No valid data, return empty table
+        return "\\begin{table}[h]\n\\centering\n\\caption{목표 변수별 모형 성능 비교 (표준화된 RMSE)}\n\\label{tab:overall_metrics_by_target}\n\\begin{tabular}{lccc}\n\\toprule\n모형 & GDP & 민간 소비 & 총고정자본형성 \\\\\n\\midrule\n\\bottomrule\n\\end{tabular}\n\\end{table}"
+    
+    target_avg = df_valid.groupby(['model', 'target', 'metric'])['value'].mean().reset_index()
     target_avg_pivot = target_avg[target_avg['metric'] == 'sRMSE'].pivot(
         index='model', columns='target', values='value'
     )
@@ -188,7 +181,13 @@ def generate_latex_table_by_target(df: pd.DataFrame) -> str:
 def generate_latex_table_by_horizon(df: pd.DataFrame) -> str:
     """Generate LaTeX table for performance by horizon."""
     # Aggregate by model and horizon (average across targets)
-    horizon_avg = df.groupby(['model', 'horizon', 'metric'])['value'].mean().reset_index()
+    # Exclude None values from mean calculation
+    df_valid = df[df['value'].notna()].copy()
+    if len(df_valid) == 0:
+        # No valid data, return empty table
+        return "\\begin{table}[h]\n\\centering\n\\caption{예측 기간별 모형 성능 비교 (표준화된 RMSE)}\n\\label{tab:overall_metrics_by_horizon}\n\\begin{tabular}{lccc}\n\\toprule\n모형 & 1일 & 7일 & 28일 \\\\\n\\midrule\n\\bottomrule\n\\end{tabular}\n\\end{table}"
+    
+    horizon_avg = df_valid.groupby(['model', 'horizon', 'metric'])['value'].mean().reset_index()
     horizon_avg_pivot = horizon_avg[horizon_avg['metric'] == 'sRMSE'].pivot(
         index='model', columns='horizon', values='value'
     )
@@ -224,13 +223,12 @@ def generate_latex_table_nowcasting(df: pd.DataFrame) -> str:
     # Filter for DFM and DDFM only
     dfm_ddfm = df[df['model'].isin(['DFM', 'DDFM'])].copy()
     
-    if dfm_ddfm.empty:
-        # Generate placeholder
-        dfm_avg = 0.45
-        ddfm_avg = 0.35
-    else:
-        dfm_avg = dfm_ddfm[dfm_ddfm['model'] == 'DFM']['value'].mean()
-        ddfm_avg = dfm_ddfm[dfm_ddfm['model'] == 'DDFM']['value'].mean()
+    # Calculate averages, excluding None values
+    dfm_values = dfm_ddfm[dfm_ddfm['model'] == 'DFM']['value']
+    ddfm_values = dfm_ddfm[dfm_ddfm['model'] == 'DDFM']['value']
+    
+    dfm_avg = dfm_values.dropna().mean() if len(dfm_values.dropna()) > 0 else None
+    ddfm_avg = ddfm_values.dropna().mean() if len(ddfm_values.dropna()) > 0 else None
     
     lines = [
         "\\begin{table}[h]",
