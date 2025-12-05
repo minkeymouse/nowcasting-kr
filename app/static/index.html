@@ -12,16 +12,14 @@
 <body>
     <div id="root"></div>
     <script type="text/babel">
-        // Load and execute App.jsx
-        fetch('/static/src/App.jsx')
-            .then(response => response.text())
+        fetch('/static/src/app-simple.jsx')
+            .then(r => r.text())
             .then(code => {
-                // Use Babel to transform and execute the JSX code
                 const transformed = Babel.transform(code, { presets: ['react'] }).code;
                 eval(transformed);
             })
             .catch(error => {
-                console.error('Failed to load App.jsx:', error);
+                console.error('Failed to load application:', error);
                 document.getElementById('root').innerHTML = '<div style="padding: 20px; color: red;">Failed to load application. Please check the console for errors.</div>';
             });
     </script>

@@ -32,9 +32,9 @@ IF %ERRORLEVEL% NEQ 0 (
 )
 
 echo.
-echo Starting Chatbot server...
-start "" http://localhost:8000
-uv run app/main.py
+echo Starting Nowcasting API server...
+start "" http://localhost:2020
+uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 2020 --reload
 
 echo.
 echo Chatbot stopped.

@@ -1,49 +1,21 @@
-"""Configuration-related API endpoints."""
+"""API endpoints for configuration, models, and file uploads."""
 
-from fastapi import APIRouter
-from typing import List
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from pathlib import Path
+import shutil
+import pandas as pd
+from typing import List, Dict, Any
 
-from api.dependencies import config_manager
+from api.dependencies import config_manager, model_registry
 from api.error_handlers import handle_exceptions
 from api.schemas import (
-    ConfigResponse, ConfigUpdateRequest, ExperimentInfo,
-    ExperimentRequest, ExperimentResponse, SeriesConfigResponse,
-    BlockConfigResponse
+    ExperimentInfo,
+    UnifiedConfigResponse, UnifiedConfigUpdateRequest,
+    ModelInfo
 )
+from app.utils import DATA_DIR
 
 router = APIRouter()
-
-
-# Legacy config endpoints (for backward compatibility)
-@router.get("/configs", response_model=List[str])
-@handle_exceptions
-async def list_configs():
-    """List available config files (legacy)."""
-    return config_manager.list_configs()
-
-
-@router.get("/config/{config_name}", response_model=ConfigResponse)
-@handle_exceptions
-async def get_config(config_name: str):
-    """Get config file content (legacy)."""
-    content = config_manager.get_config(config_name)
-    return ConfigResponse(config_name=config_name, content=content)
-
-
-@router.put("/config/{config_name}")
-@handle_exceptions
-async def update_config(config_name: str, request: ConfigUpdateRequest):
-    """Update config file (legacy)."""
-    config_manager.update_config(config_name, request.content)
-    return {"message": "Config updated successfully"}
-
-
-@router.post("/config/{config_name}")
-@handle_exceptions
-async def create_config(config_name: str, request: ConfigUpdateRequest):
-    """Create a new config file (legacy)."""
-    config_manager.update_config(config_name, request.content)
-    return {"message": "Config created successfully"}
 
 
 # Experiment endpoints
@@ -61,79 +33,123 @@ async def list_experiments():
                 model_type=exp_data["model_type"]
             ))
         except:
-            # Skip experiments that can't be loaded
             continue
     return experiments
 
 
-@router.get("/experiment/{experiment_id}", response_model=ExperimentResponse)
+@router.get("/experiment/{experiment_id}/unified", response_model=UnifiedConfigResponse)
 @handle_exceptions
-async def get_experiment(experiment_id: str):
-    """Get experiment config."""
-    exp_data = config_manager.get_experiment(experiment_id)
-    return ExperimentResponse(**exp_data)
+async def get_experiment_unified(experiment_id: str):
+    """Get experiment config as unified structure (parsed dict)."""
+    result = config_manager.get_experiment_unified(experiment_id)
+    return UnifiedConfigResponse(**result)
 
 
-@router.post("/experiment/{experiment_id}")
+@router.put("/experiment/{experiment_id}/unified")
 @handle_exceptions
-async def create_experiment(experiment_id: str, request: ExperimentRequest):
-    """Create a new experiment."""
-    config_manager.create_experiment(experiment_id, request.model_type, request.content)
-    return {"message": "Experiment created successfully"}
+async def update_experiment_unified(experiment_id: str, request: UnifiedConfigUpdateRequest) -> Dict[str, str]:
+    """Update experiment config from unified structure (dict)."""
+    config_manager.update_experiment_unified(experiment_id, request.config)
+    return {"message": "Experiment config updated successfully"}
 
 
-@router.put("/experiment/{experiment_id}")
+# Series list endpoint
+@router.get("/series", response_model=List[str])
 @handle_exceptions
-async def update_experiment(experiment_id: str, request: ExperimentRequest):
-    """Update experiment config."""
-    config_manager.update_experiment(experiment_id, request.content)
-    return {"message": "Experiment updated successfully"}
-
-
-# Series config endpoints
-@router.get("/series-configs", response_model=List[str])
-@handle_exceptions
-async def list_series_configs():
+async def list_series():
     """List all series configs."""
     return config_manager.list_series_configs()
 
 
-@router.get("/series-config/{series_name}", response_model=SeriesConfigResponse)
+# Models endpoint
+@router.get("/models", response_model=List[ModelInfo])
 @handle_exceptions
-async def get_series_config(series_name: str):
-    """Get series config."""
-    content = config_manager.get_series_config(series_name)
-    return SeriesConfigResponse(series_name=series_name, content=content)
+async def list_models():
+    """List all trained models."""
+    models = model_registry.list_models()
+    return [ModelInfo(**model) for model in models]
 
 
-@router.put("/series-config/{series_name}")
+# File upload endpoints
+@router.post("/data")
 @handle_exceptions
-async def update_series_config(series_name: str, request: ConfigUpdateRequest):
-    """Update series config."""
-    config_manager.update_series_config(series_name, request.content)
-    return {"message": "Series config updated successfully"}
+async def upload_data(
+    file: UploadFile = File(...),
+    date_column: str = "date",
+    date_format: str = "YYYY-MM-DD",
+    filename: str = "sample_data.csv"
+) -> Dict[str, Any]:
+    """Upload CSV data file with date column specification."""
+    if not file.filename or not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="File must be a CSV file")
+    
+    if not filename.endswith('.csv'):
+        filename = filename + '.csv'
+    
+    file_path = DATA_DIR / filename
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    
+    with open(file_path, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    
+    try:
+        df = pd.read_csv(file_path, nrows=1)
+        if date_column not in df.columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Date column '{date_column}' not found in CSV. Available columns: {', '.join(df.columns)}"
+            )
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=f"Failed to validate CSV: {str(e)}")
+    
+    return {
+        "message": "Data uploaded successfully",
+        "filename": filename,
+        "path": str(file_path),
+        "date_column": date_column,
+        "date_format": date_format
+    }
 
 
-# Block config endpoints
-@router.get("/block-configs", response_model=List[str])
+@router.post("/config")
 @handle_exceptions
-async def list_block_configs():
-    """List all block configs."""
-    return config_manager.list_block_configs()
-
-
-@router.get("/block-config/{block_name}", response_model=BlockConfigResponse)
-@handle_exceptions
-async def get_block_config(block_name: str):
-    """Get block config."""
-    content = config_manager.get_block_config(block_name)
-    return BlockConfigResponse(block_name=block_name, content=content)
-
-
-@router.put("/block-config/{block_name}")
-@handle_exceptions
-async def update_block_config(block_name: str, request: ConfigUpdateRequest):
-    """Update block config."""
-    config_manager.update_block_config(block_name, request.content)
-    return {"message": "Block config updated successfully"}
+async def upload_config(
+    file: UploadFile = File(...),
+    filename: str = "metadata.csv"
+) -> Dict[str, Any]:
+    """Upload config CSV file with series metadata."""
+    if not file.filename or not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="File must be a CSV file")
+    
+    if not filename.endswith('.csv'):
+        filename = filename + '.csv'
+    
+    file_path = DATA_DIR / filename
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    
+    with open(file_path, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    
+    try:
+        df = pd.read_csv(file_path)
+        required_cols = ['series_name', 'series_description', 'frequency', 'release']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Missing required columns: {', '.join(missing_cols)}. Found columns: {', '.join(df.columns)}"
+            )
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=f"Failed to validate CSV: {str(e)}")
+    
+    return {
+        "message": "Config uploaded successfully",
+        "filename": filename,
+        "path": str(file_path),
+        "rows": len(df)
+    }
 

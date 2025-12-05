@@ -31,3 +31,9 @@ matlab/**/*.xls
 !requirements*.txt
 
 outputs/
+
+config/
+
+.venv/
+
+*/.venv/*

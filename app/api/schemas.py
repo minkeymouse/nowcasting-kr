@@ -34,6 +34,7 @@ class ModelInfo(BaseModel):
     timestamp: str
     config_path: str
     model_type: str
+    experiment_id: Optional[str] = None
 
 
 class InferenceRequest(BaseModel):
@@ -81,8 +82,9 @@ class ExperimentInfo(BaseModel):
 
 class ExperimentRequest(BaseModel):
     """Request schema for experiment creation/update."""
-    model_type: str  # "dfm" or "ddfm"
-    content: str  # YAML content
+    model_type: str = "dfm"  # "dfm" or "ddfm"
+    content: Optional[str] = None  # YAML content (optional, will create minimal config if None)
+    experiment_name: Optional[str] = None  # Base experiment name (will be made unique)
 
 
 class ExperimentResponse(BaseModel):
@@ -111,4 +113,39 @@ class DashboardStats(BaseModel):
     total_experiments: int
     recent_success_rate: float
     models_by_type: Dict[str, int]
+
+
+class ExperimentRunRequest(BaseModel):
+    """Request schema for experiment run endpoint."""
+    experiment_id: str
+    config_overrides: Optional[List[str]] = None
+    output_dir: Optional[str] = None
+
+
+class ExperimentRunResponse(BaseModel):
+    """Response schema for experiment run endpoint."""
+    job_id: str
+    status: str
+    message: str
+
+
+class ExperimentStatus(BaseModel):
+    """Status schema for experiment job."""
+    job_id: str
+    status: str  # "running", "completed", "failed"
+    experiment_id: str
+    timestamp: str
+    error: Optional[str] = None
+
+
+class UnifiedConfigResponse(BaseModel):
+    """Response schema for unified config structure."""
+    experiment_id: str
+    model_type: str
+    config: Dict[str, Any]  # Parsed config structure
+
+
+class UnifiedConfigUpdateRequest(BaseModel):
+    """Request schema for unified config update."""
+    config: Dict[str, Any]  # Config structure to update
 
