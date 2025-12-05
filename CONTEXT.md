@@ -221,11 +221,13 @@ nowcasting-report/code/plot.py
 - **Report**: LaTeX structure exists, plot generation code ready
 
 ### Current Issues (Critical)
-1. **Import Errors**: ✅ FIXED - Root causes addressed
-   - Error: `ModuleNotFoundError: No module named 'src'` at line 27
-   - Root causes: Missing `src/__init__.py` + incorrect path calculation
-   - Fixes: Created `src/__init__.py`, fixed path in `train.py` and `infer.py`
-   - Status: Ready for testing (fixes applied, not yet verified with actual run)
+1. **Import Errors**: ✅ CODE FIXED, ⚠️ DEPENDENCIES MISSING
+   - Error progression: relative import → missing src → missing hydra dependency
+   - Root causes: 
+     - Missing `src/__init__.py` + incorrect path calculation - ✅ FIXED
+     - Missing Python dependencies (hydra-core) - ⚠️ CURRENT BLOCKER
+   - Fixes: Created `src/__init__.py`, fixed path in `train.py` and `infer.py`, switched to absolute imports
+   - Status: Code fixes in place, but cannot verify until dependencies installed
 
 2. **No Experiment Results**: 
    - `outputs/comparisons/` contains only `.log` files (9 error logs)
@@ -233,11 +235,12 @@ nowcasting-report/code/plot.py
    - No actual metrics data available for report
    - Status: Blocked until import fix verified and experiments run successfully
 
-3. **Report Content**: ✅ IMPROVED (Latest iteration)
-   - Removed redundant mentions of "experiments in progress"
-   - Improved flow and clarity in results section
-   - Still has placeholder content for missing experiments (KOCNPER.D, KOGFCF..D)
-   - Status: Content quality improved, but still needs actual results for complete report
+3. **Report Content**: ✅ IMPROVED (Latest iteration - 2025-12-06)
+   - Removed redundant mentions of "experiments in progress" and "아직 구현되지 않았"
+   - Improved language: Changed "진행 중" to "향후 연구에서 다룰 예정"
+   - Enhanced professional tone throughout report sections
+   - Still has placeholder content for missing experiments (KOCNPER.D, KOGFCF..D) - requires actual results
+   - Status: Content quality improved, professional language, but still needs actual results for complete report
 
 4. **File Count**: 
    - `src/` has 17 Python files (code effectively in 15 files with deprecation wrappers)
@@ -245,19 +248,24 @@ nowcasting-report/code/plot.py
    - Status: Non-critical, within acceptable range
 
 ### Experiment Results Status (Confirmed 2025-12-06)
-- **KOGDP...D**: Failed (import error) - 3 runs (00:17:31, 00:24:02, 00:44:56)
-- **KOCNPER.D**: Failed (import error) - 3 runs (00:17:31, 00:24:02, 00:44:56)
-- **KOGFCF..D**: Failed (import error) - 3 runs (00:17:31, 00:24:02, 00:44:56)
+- **KOGDP...D**: Failed - 5 runs (00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12)
+- **KOCNPER.D**: Failed - 5 runs (00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12)
+- **KOGFCF..D**: Failed - 5 runs (00:17:31, 00:24:02, 00:44:56, 01:12:36, 01:14:12)
 - **Result Files**: None generated (no JSON, CSV, or result directories)
-- **Error**: `ModuleNotFoundError: No module named 'src'` at `src/train.py:27`
+- **Error Progression**:
+  1. Runs 001731, 002402: `ImportError: attempted relative import with no known parent package`
+  2. Runs 004456: `ModuleNotFoundError: No module named 'src'` at `src/train.py:27`
+  3. Runs 011236, 011412: `ModuleNotFoundError: No module named 'hydra'` (current blocker)
 - **Root Causes**: 
-  1. Missing `src/__init__.py` (Python requires this for package recognition)
-  2. Incorrect path: `_project_root = _script_dir.parent.parent` should be `_script_dir.parent`
-- **Fixes Applied**: Created `src/__init__.py`, fixed path calculation in both `train.py` and `infer.py`
+  1. Missing `src/__init__.py` (Python requires this for package recognition) - ✅ FIXED
+  2. Incorrect path: `_project_root = _script_dir.parent.parent` should be `_script_dir.parent` - ✅ FIXED
+  3. Missing Python dependencies (hydra-core, omegaconf) - ⚠️ CURRENT BLOCKER
+- **Fixes Applied**: Created `src/__init__.py`, fixed path calculation in both `train.py` and `infer.py`, switched to absolute imports
 
 ### Next Steps (Priority Order)
-1. **Test import fixes** - Verify import errors are resolved with actual experiment run
-2. **Run successful experiments** - Generate actual results for all 3 targets
-3. **Update report with results** - Populate tables and generate plots from actual data
-4. **Complete report** - Ensure 20-30 pages with all sections properly filled
-5. **Finalize dfm-python** - Review numerical stability and theoretical correctness (naming already verified as consistent)
+1. **Install dependencies** - Install hydra-core, omegaconf (and other required packages)
+2. **Test import fixes** - Verify import errors are resolved with actual experiment run
+3. **Run successful experiments** - Generate actual results for all 3 targets
+4. **Update report with results** - Populate tables and generate plots from actual data
+5. **Complete report** - Ensure 20-30 pages with all sections properly filled
+6. **Finalize dfm-python** - Review numerical stability and theoretical correctness (naming consistency verified: classes PascalCase, functions snake_case)
