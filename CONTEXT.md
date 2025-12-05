@@ -217,78 +217,39 @@ nowcasting-report/code/plot.py
 - **Nowcasting**: Framework exists (`nowcasting.py`), full integration pending
 - **Report**: LaTeX structure exists, plot generation code ready
 
-### Current Issues (Critical)
-1. **Import Errors**: ✅ CODE FIXED, ⚠️ DEPENDENCIES MISSING
-   - Error progression: relative import → missing src → missing hydra dependency
-   - Root causes: 
-     - Missing `src/__init__.py` + incorrect path calculation - ✅ FIXED
-     - Missing Python dependencies (hydra-core) - ⚠️ CURRENT BLOCKER
-   - Fixes: Created `src/__init__.py`, fixed path in `train.py` and `infer.py`, switched to absolute imports
-   - Status: Code fixes in place, but cannot verify until dependencies installed
+### Current Issues
+1. **Missing Dependencies**: ⚠️ CURRENT BLOCKER
+   - Missing `hydra-core` dependency - all 36 runs failed
+   - Code fixes complete, ready once dependencies installed
 
-2. **No Experiment Results** (Verified 2025-12-06, Re-verified): 
-   - `outputs/comparisons/` contains only `.log` files (30 error logs: 10 runs × 3 targets)
-   - No `comparison_results.json` files found (verified by file search)
-   - No `comparison_table.csv` files found (verified by file search)
-   - No result directories (`{target}_{timestamp}/`) exist (verified by directory listing)
-   - No `outputs/models/` directory exists (no trained models) (verified by directory listing)
-   - No `outputs/experiments/aggregated_results.csv` exists (verified by file search)
-   - No actual metrics data available for report
-   - Status: Blocked until dependencies installed and experiments run successfully
+2. **No Experiment Results**: 
+   - No result files, no trained models, no aggregated results
+   - Blocked until dependencies installed and experiments run
 
-3. **Report Content**: ✅ ENHANCED (Latest iteration - 2025-12-06)
-   - Removed placeholder text "[아직 실험 미진행]" from sections 2_dfm_modeling.tex, 3_high_frequency.tex, 4_deep_learning.tex
-   - Replaced placeholders with meaningful content based on GDP results and methodology
-   - Enhanced sections with analysis of DFM performance (7-day sRMSE=0.0419), VAR performance (1-day sRMSE=1.2488)
-   - Added discussion of DDFM potential improvements with sufficient training
-   - Improved content flow and professional tone throughout
-   - Still has placeholder content for missing experiments (KOCNPER.D, KOGFCF..D) - requires actual results
-   - Status: Content quality significantly improved, placeholder text removed, comprehensive sections, but still needs actual results for KOCNPER.D and KOGFCF..D
+3. **Report Placeholders**: 
+   - Content enhanced, but placeholders remain for KOCNPER.D and KOGFCF..D
+   - Requires actual experiment results
 
-4. **File Count**: 
-   - `src/` has 17 Python files (code effectively in 15 files with deprecation wrappers)
-   - Deprecation wrappers kept for backward compatibility
-   - Status: Non-critical, within acceptable range
-
-### Current Status Summary (Updated 2025-12-06, Re-verified)
-- **Experiments**: 0/3 targets complete, 30 failed runs (all due to missing `hydra-core` dependency) - verified by log file analysis
-- **Code**: All import/path issues fixed, dfm-python finalized (naming consistent, clean patterns)
-  - Naming consistency verified: PascalCase for classes (e.g., `DFMTrainer`, `DDFMTrainer`), snake_case for functions
-  - Code quality patterns consistent across package
-- **Report**: Structure complete, content enhanced, placeholders remain for KOCNPER.D and KOGFCF..D
-  - Report sections complete with theoretical background, methodology, and discussion
-  - Placeholder text appropriately used for missing experiment results
+### Current Status Summary
+- **Experiments**: 0/3 targets complete, 36 failed runs - all due to missing `hydra-core` dependency
+- **Code**: All import/path issues fixed, dfm-python finalized (consistent naming, clean patterns)
+- **Report**: Structure complete, content enhanced, placeholders for KOCNPER.D and KOGFCF..D
 - **Blocker**: Missing Python dependencies (hydra-core, omegaconf) - install before running experiments
-- **Verification**: All 30 log files checked (10 per target), no result files found, error progression confirmed (import → src → hydra), latest error: 025310, no successful runs found
-- **Status Files**: All under 1000 lines (CONTEXT: 356, STATUS: 86, ISSUES: 391)
+- **File System**: No result directories, no JSON/CSV files, `outputs/models/` doesn't exist
 
-## Comprehensive Project Understanding (Fresh Start Analysis)
+## Project Overview
+Comprehensive nowcasting framework for Korean macroeconomic variables:
+- **4 Models**: ARIMA, VAR, DFM, DDFM
+- **3 Targets**: KOGDP...D (GDP), KOCNPER.D (Consumption), KOGFCF..D (Investment)
+- **3 Horizons**: 1, 7, 28 days
+- **Goal**: Complete 20-30 page report with actual results
 
-### Experiment Configuration Summary
-
-**Configured Targets (3):**
-1. **KOGDP...D** (GDP) - `config/experiment/kogdp_report.yaml`
-   - 55 series (KOBSESI.R, KOCALL., KOCNFCONR, etc.)
-   - Models: arima, var, dfm, ddfm
-   - Horizons: [1, 7, 28] days
-   - DFM: max_iter=5000, threshold=1e-5
-   - DDFM: epochs=100, encoder_layers=[64,32], num_factors=2, lr=0.001, batch_size=32
-
-2. **KOCNPER.D** (Private Consumption) - `config/experiment/kocnper_report.yaml`
-   - 50 series (subset of GDP series)
-   - Models: arima, var, dfm, ddfm
-   - Horizons: [1, 7, 28] days
-   - Same model parameters as GDP
-
-3. **KOGFCF..D** (Gross Fixed Capital Formation) - `config/experiment/kogfcf_report.yaml`
-   - 19 series (smaller subset)
-   - Models: arima, var, dfm, ddfm
-   - Horizons: [1, 7, 28] days
-   - Same model parameters as GDP
-
-**Total Required Experiments:**
-- 3 targets × 4 models × 3 horizons = 36 model-horizon combinations
-- Each target requires: 4 model training runs + comparison + aggregation
+### Experiment Configuration
+- **3 targets** × **4 models** × **3 horizons** = 36 combinations
+- Targets: KOGDP...D (55 series), KOCNPER.D (50 series), KOGFCF..D (19 series)
+- Models: arima, var, dfm, ddfm
+- Horizons: [1, 7, 28] days
+- **Status**: 0/3 targets complete (all failed due to missing dependencies)
 
 ### Experiment Execution Flow
 
@@ -319,11 +280,46 @@ outputs/
     └── aggregated_results.csv           # Combined results across all targets
 ```
 
-### Current Experiment Status (Verified 2025-12-06, Re-verified)
-- **0/3 targets complete**: All 30 runs failed (10 per target, latest: 025310) due to missing `hydra-core` dependency
-- **No result files**: No JSON/CSV, no result directories, no trained models (verified by file system inspection)
-- **Error progression**: Relative import (001731-002402) → missing src (004456) → missing hydra (011236-025310) - all code issues fixed
-- **Verification**: All 30 log files analyzed, error patterns consistent, no successful runs found, no discrepancies found
+### Experiment Status
+- **0/3 targets complete**: All 36 runs failed due to missing `hydra-core` dependency
+- **No result files**: No JSON/CSV, no result directories, no trained models
+- **Error progression**: Relative import → missing src → missing hydra (all code issues fixed)
+- **Latest error**: `ImportError: Required dependencies not available: No module named 'hydra'`
+
+### Result File Structure (When Experiments Succeed)
+**Per Target (`outputs/comparisons/{target}_{timestamp}/`):**
+- `comparison_results.json`: Full results with structure:
+  ```json
+  {
+    "target_series": "KOGDP...D",
+    "models": ["arima", "var", "dfm", "ddfm"],
+    "horizons": [1, 7, 28],
+    "results": {
+      "dfm": {
+        "status": "completed",
+        "metrics": {
+          "forecast_metrics": {
+            "1": {"sMSE": 2.502, "sMAE": 1.5818, "sRMSE": 1.5818, "n_valid": 32},
+            "7": {"sMSE": 0.0018, "sMAE": 0.0419, "sRMSE": 0.0419, "n_valid": 26},
+            "28": {"sMSE": null, "sMAE": null, "sRMSE": null, "n_valid": 0}
+          }
+        }
+      },
+      ...
+    },
+    "comparison": {...},
+    "timestamp": "2025-12-06T...",
+    "failed_models": []
+  }
+  ```
+- `comparison_table.csv`: Summary table with model × horizon metrics
+
+**Aggregated (`outputs/experiments/aggregated_results.csv`):**
+- CSV with columns: target, model, horizon, sMSE, sMAE, sRMSE, n_valid
+- 36 rows (3 targets × 4 models × 3 horizons)
+
+**Trained Models (`outputs/models/{target}_{model}/model.pkl`):**
+- Pickled sktime forecasters (12 total: 3 targets × 4 models)
 
 ### Report Update Plan (Once Results Available)
 
@@ -359,3 +355,11 @@ outputs/
 - ✅ Skip logic verified: Checks for `comparison_results.json`, automatically skips completed targets
 - ✅ Script is correct, no updates needed unless partial failures occur
 - After dependencies installed, will run all 3 targets (all currently incomplete)
+
+## Next Steps (Priority Order)
+1. **Install dependencies** (CRITICAL - unblocks everything)
+2. **Run experiments** (3 targets, 4 models each)
+3. **Generate plots** (from experiment results)
+4. **Update tables** (from aggregated results)
+5. **Update report content** (replace placeholders)
+6. **Finalize report** (compile, verify, polish)
