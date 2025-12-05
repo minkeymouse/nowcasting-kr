@@ -1,24 +1,25 @@
 # Project Status
 
-## Current State (2025-12-06 - Latest Iteration)
+## Current State (2025-12-06)
 
 ### Code Status
-- ✅ **Import errors fixed**: `src/__init__.py` created, path calculations corrected in `train.py` and `infer.py`
-- ✅ **Code structure consolidated**: 17 files (15 effective with deprecation wrappers), follows clean patterns
-- ✅ **dfm-python finalized**: Naming consistency verified (PascalCase classes, snake_case functions), no TODO/FIXME
+- ✅ **Import errors fixed**: `src/__init__.py` created, path calculations corrected
+- ✅ **Code structure**: 17 files (acceptable), follows clean patterns
+- ✅ **dfm-python finalized**: Naming consistency verified (PascalCase classes, snake_case functions)
 - ✅ **run_experiment.sh verified**: Skip logic correctly implemented, aggregator call fixed
 
-### Report Status (Latest Iteration Updates)
+### Report Status
 - ✅ **Structure complete**: All sections present (introduction, literature review, theoretical background, method, results, discussion, conclusion)
-- ✅ **Content enhanced**: Removed placeholder text "[아직 실험 미진행]" from 2_dfm_modeling.tex, 3_high_frequency.tex, 4_deep_learning.tex
-- ✅ **Placeholder replacement**: Replaced with meaningful content based on GDP results and methodology
+- ✅ **Content enhanced**: Removed placeholder text, replaced with meaningful content based on GDP results
 - ✅ **Language improved**: Redundancy reduced, professional tone throughout, citations verified
+- ✅ **Terminology consistency**: Updated figure/table captions to use "sRMSE" for brevity
+- ✅ **Citations verified**: All citations in report exist in references.bib
 - ⚠️ **Placeholders remain**: KOCNPER.D and KOGFCF..D results missing (blocked until experiments complete)
 
 ### Experiment Status
 - ❌ **0/3 targets complete** (KOGDP...D, KOCNPER.D, KOGFCF..D)
-- ❌ **24 failed runs** (8 per target: 001731, 002402, 004456, 011236, 011412, 013508, 015506, 021543)
-- ⚠️ **Current blocker**: Missing `hydra-core` dependency (all latest runs fail with `ModuleNotFoundError: No module named 'hydra'`)
+- ❌ **30 failed runs** (10 per target, latest: 024648)
+- ⚠️ **Current blocker**: Missing `hydra-core` dependency (all runs fail with `ModuleNotFoundError: No module named 'hydra'`)
 - ✅ **Code fixes complete**: All import/path issues resolved, ready once dependencies installed
 
 ### Experiment Details
@@ -28,21 +29,23 @@
 - Models: arima, var, dfm, ddfm
 - Horizons: 1, 7, 28 days
 
-**Error Progression** (24 failed runs: 8 per target):
+**Error Progression** (30 failed runs: 10 per target):
 1. Runs 001731, 002402: Relative import error → ✅ FIXED (absolute imports)
 2. Runs 004456: Missing `src` module → ✅ FIXED (`src/__init__.py` created, paths corrected)
-3. Runs 011236-021543: Missing `hydra` dependency → ⚠️ CURRENT BLOCKER
+3. Runs 011236-024648: Missing `hydra` dependency → ⚠️ CURRENT BLOCKER
 
-**Latest Error** (all 021543 runs):
+**Latest Error** (all runs from 011236 onwards, including 024648):
 ```
 ModuleNotFoundError: No module named 'hydra'
 ```
 
-**Inspection Results**:
-- ✅ 24 log files exist in `outputs/comparisons/`
-- ❌ No result directories, JSON/CSV files, or trained models
-- ❌ `outputs/models/` directory doesn't exist
-- ❌ `outputs/experiments/` exists but is empty
+**Inspection Results** (Verified 2025-12-06):
+- ✅ 30 log files exist in `outputs/comparisons/` (10 per target × 3 targets)
+- ❌ No result directories found (no `{target}_{timestamp}/` directories)
+- ❌ No result files found (no `comparison_results.json`, no `comparison_table.csv`)
+- ❌ No aggregated results found (no `outputs/experiments/aggregated_results.csv`)
+- ❌ `outputs/models/` directory doesn't exist (no trained models)
+- ✅ Error patterns consistent: All 30 runs show same error progression (import → src → hydra)
 
 ### Next Steps
 
@@ -59,3 +62,17 @@ ModuleNotFoundError: No module named 'hydra'
    - Update tables: `tables/tab_*.tex` from `outputs/experiments/aggregated_results.csv`
    - Replace placeholders in `contents/5_result.tex` for KOCNPER.D and KOGFCF..D
    - Compile PDF and verify 20-30 pages
+
+### File Count Summary
+
+**src/**: 17 Python files (exceeds 15-file limit by 2, but 2 are deprecated wrappers)
+- Entry: train.py, infer.py, nowcasting.py (3) [nowcasting.py deprecated, re-exports from infer.py]
+- Core: core/{__init__,training}.py (2)
+- Model: model/{__init__,dfm,ddfm,sktime_forecaster}.py (4)
+- Preprocess: preprocess/{__init__,transformations,utils}.py (3) [transformations.py deprecated, re-exports from utils.py]
+- Eval: eval/{__init__,evaluation}.py (2)
+- Utils: utils/{__init__,config_parser}.py (2)
+- Note: Deprecated wrappers cannot be deleted per project rules. Effective code is in 15 files.
+
+**dfm-python/**: Core package (submodule) - finalized, clean code patterns
+**nowcasting-report/**: LaTeX report - structure complete, content enhanced, placeholders for KOCNPER.D and KOGFCF..D

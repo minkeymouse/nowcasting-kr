@@ -365,8 +365,8 @@ echo "  - Aggregated results: outputs/experiments/"
 echo ""
 
 # Count results
-local result_dirs=$(find outputs/comparisons -maxdepth 1 -type d -name "KOGDP*" -o -name "KOCNPER*" -o -name "KOGFCF*" 2>/dev/null | wc -l)
-local log_files=$(find outputs/comparisons -maxdepth 1 -type f -name "*.log" 2>/dev/null | wc -l)
+result_dirs=$(find outputs/comparisons -maxdepth 1 -type d -name "KOGDP*" -o -name "KOCNPER*" -o -name "KOGFCF*" 2>/dev/null | wc -l)
+log_files=$(find outputs/comparisons -maxdepth 1 -type f -name "*.log" 2>/dev/null | wc -l)
 
 echo "Generated:"
 echo "  - $result_dirs comparison directory(ies)"
@@ -374,7 +374,7 @@ echo "  - $log_files log file(s)"
 echo ""
 
 if [ -f "outputs/experiments/aggregated_results.csv" ]; then
-    local csv_lines=$(wc -l < outputs/experiments/aggregated_results.csv)
+    csv_lines=$(wc -l < outputs/experiments/aggregated_results.csv)
     echo "  - Aggregated CSV with $csv_lines line(s)"
 fi
 
