@@ -27,14 +27,14 @@ Arguments:
 
 Steps in each iteration (match WORKFLOW.md):
   1   Run experiment (@run_experiment.sh)
-  2   Inspect codebases (src/, dfm-python/, nowcasting-report/) - fresh start
-  3   Work on the plan from step 2
+  2   Inspect codebases (src/, dfm-python/, nowcasting-report/) - fresh start, check FEEDBACK.md
+  3   Work on the plan from step 2 (incorporate FEEDBACK.md)
   4   Analyze results; update STATUS/ISSUES/CONTEXT
-  5   Plan improvements for dfm-python & report
-  6   Execute improvement plan (code/report updates)
-  7   Continue remaining plan items
+  5   Plan improvements for dfm-python & report (check FEEDBACK.md)
+  6   Execute improvement plan (code/report updates, incorporate FEEDBACK.md)
+  7   Continue remaining plan items (check FEEDBACK.md)
   8   Summarize iteration; refresh CONTEXT/STATUS/ISSUES
-  9   Stage & commit (push submodules every 10th iteration)
+  9   Stage & commit (push submodules every 5th iteration for user review)
 
 Environment:
   COMMIT_MSG - Commit message for step 9 (default: "Iteration N")
@@ -187,14 +187,22 @@ workflow_context() {
 - CONTEXT.md: Use this file for context offloading for persistence if necessary.
 - STATUS.md: Use this file to track the progress and leave the status for next iteration on updates.
 - ISSUES.md: Track resolved issues and next steps. Keep file under 1000 lines. Mark resolved issues clearly.
+- FEEDBACK.md: User feedback file - Check this file regularly (especially after every 5 iterations when submodules are pushed). User will provide feedback on the report content, structure, and quality. Incorporate feedback into improvements.
 - src/ : engine for running the experiment. This module provides wrapper for @sktime and @dfm-python packages with preprocessing - training - inference. Maximum 15 files including __init__.py.
 - dfm-python/ : Core DFM/DDFM package - finalized with clean code patterns, consistent naming, legacy code cleaned up.
+- nowcasting-report/ : LaTeX report submodule - Structure ready, need to populate with experiment results. User reviews report every 5 iterations and provides feedback in FEEDBACK.md.
 - nowcasting-report/code/plot.py : Code for creating plots used in the paper based on the results in outputs/ directory. Images should be created at nowcasting-report/images/*.png and used in the report properly.
 - neo4j mcp : knowledgebase containing references. NEVER hallucinate.
 - outputs/ : directory containing experiment results from @run_experiment.sh
 - config/ : Hydra YAML configs in config/experiment/ (4 target configs: koequipte_report, kowrccnse_report, koipallg_report, kompri30g_report), config/model/, config/series/ (all series have block: null)
 - run_test_experiment.sh : Test script to verify all targets and models before full run
 - DDFM_COMPARISON.md : Comparison of original ddfm implementation and dfm-python
+
+# FEEDBACK PROCESS
+- User reviews the report in nowcasting-report/ submodule every 5 iterations (when submodules are pushed to origin main)
+- User provides feedback in FEEDBACK.md file
+- Check FEEDBACK.md regularly and incorporate feedback into report improvements
+- Focus on: report clarity, content accuracy, structure, missing information, formatting issues
 
 EOF
 }
@@ -342,11 +350,36 @@ safe_git_commit() {
 
 safe_git_submodule_push() {
   cd "$REPO_ROOT"
-  log_info "Pushing submodules (iteration ${ITERATION})"
+  log_info "Pushing submodules to origin main (iteration ${ITERATION})"
   local failed=0
-  git submodule foreach 'git push' || failed=1
+  
+  # Push each submodule individually to handle errors gracefully
+  if [ -d "nowcasting-report/.git" ]; then
+    log_info "Pushing nowcasting-report submodule..."
+    cd nowcasting-report
+    if git push origin main 2>&1; then
+      log_info "✓ nowcasting-report pushed successfully"
+    else
+      log_warn "⚠ nowcasting-report push had errors"
+      failed=1
+    fi
+    cd "$REPO_ROOT"
+  fi
+  
+  if [ -d "dfm-python/.git" ]; then
+    log_info "Pushing dfm-python submodule..."
+    cd dfm-python
+    if git push origin main 2>&1; then
+      log_info "✓ dfm-python pushed successfully"
+    else
+      log_warn "⚠ dfm-python push had errors"
+      failed=1
+    fi
+    cd "$REPO_ROOT"
+  fi
+  
   if [[ $failed -eq 1 ]]; then
-    log_error "Some submodule pushes failed"
+    log_warn "Some submodule pushes had errors, but continuing"
     return 1
   fi
   return 0
@@ -379,11 +412,11 @@ step2_inspect_code() {
   cd "$REPO_ROOT"
   local out_dir
   out_dir=$(latest_output_dir 2>/dev/null || echo "")
-  local prompt="Inspect the @src/ @dfm-python/ and @nowcasting-report/ to understand the project structure, components, and data flow. Check @STATUS.md and @ISSUES.md for current state and pending tasks."
+  local prompt="Inspect the @src/ @dfm-python/ and @nowcasting-report/ to understand the project structure, components, and data flow. Check @STATUS.md and @ISSUES.md for current state and pending tasks. Check @FEEDBACK.md for any user feedback that needs to be addressed."
   if [[ -n "$out_dir" ]] && [[ -d "$out_dir" ]]; then
     prompt+=" Study the experiment run output in ${out_dir} (latest run) and plan how to update the @nowcasting-report with results. Check which experiments have already been completed by examining the outputs/ directory structure and log files."
   fi
-  prompt+=" Current experiment configuration: 4 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G, KOMPRI30G) × 4 models (ARIMA, VAR, DFM, DDFM) × 3 horizons (1, 7, 28) = 48 combinations. Report structure: 6 sections (Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion) - target under 15 pages. IMPORTANT: When planning how to update the report, check which experiments have been completed. The report focuses on comparing 4 models across 4 targets organized by economic sector (Production, Investment, Consumption). This is a fresh new start - provide a comprehensive understanding of the project."
+  prompt+=" Current experiment configuration: 4 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G, KOMPRI30G) × 4 models (ARIMA, VAR, DFM, DDFM) × 3 horizons (1, 7, 28) = 48 combinations. Report structure: 6 sections (Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion) - target under 15 pages. IMPORTANT: When planning how to update the report, check which experiments have been completed. The report focuses on comparing 4 models across 4 targets organized by economic sector (Production: KOIPALL.G, KOMPRI30G; Investment: KOEQUIPTE; Consumption: KOWRCCNSE). If FEEDBACK.md contains user feedback, prioritize addressing those items. This is a fresh new start - provide a comprehensive understanding of the project."
   if cursor_text "$prompt"; then
     log_info "Step 2 completed successfully"
     mark_step_completed 2
@@ -400,7 +433,7 @@ step3_plan_from_inspection() {
   validate_prerequisites 3
   cd "$REPO_ROOT"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
-  if cursor_force "Work on the plan from step 2. Based on the inspection results, create or update a concrete, actionable plan in ISSUES.md. When planning tasks, consider which experiments are needed for the report and which are already complete (check outputs/ directory). If new experiments are needed, note that run_experiment.sh should be updated in later steps to include only missing experiments. Focus on incremental tasks that can be completed step by step. Keep ISSUES.md under ${LINE_LIMIT} lines. Do not create new files."; then
+  if cursor_force "Work on the plan from step 2. Based on the inspection results, create or update a concrete, actionable plan in ISSUES.md. Check @FEEDBACK.md for any user feedback and incorporate feedback items into the plan. When planning tasks, consider which experiments are needed for the report and which are already complete (check outputs/ directory). If new experiments are needed, note that run_experiment.sh should be updated in later steps to include only missing experiments. Focus on incremental tasks that can be completed step by step. Keep ISSUES.md under ${LINE_LIMIT} lines. Do not create new files."; then
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     log_info "Step 3 completed successfully"
     mark_step_completed 3
@@ -426,7 +459,7 @@ step4_analyze_results() {
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
-  if cursor_force "Analyze the results in ${out_dir}. If there are errors or issues, update them in STATUS.md and ISSUES.md and inspect what happened. If there's something wrong with the numbers, also update them in STATUS.md and think about what happened. Mark resolved issues clearly in ISSUES.md (use ✅ RESOLVED status). Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files."; then
+  if cursor_force "Analyze the results in ${out_dir}. If there are errors or issues, update them in STATUS.md and ISSUES.md and inspect what happened. If there's something wrong with the numbers, also update them in STATUS.md and think about what happened. Mark resolved issues clearly in ISSUES.md (use ✅ RESOLVED status). Check @FEEDBACK.md for any user feedback related to results. Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files."; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
@@ -445,7 +478,7 @@ step5_plan_improvements() {
   validate_prerequisites 5
   cd "$REPO_ROOT"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
-  if cursor_force "Plan how to improve the dfm-python package and nowcasting-report paper. The report structure is 6 sections (Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion) targeting under 15 pages. Focus on comparing 4 models (ARIMA, VAR, DFM, DDFM) across 4 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G, KOMPRI30G). If there are improvement points in the codes, such as numerical stability, convergence issues, theoretically wrong implementation (refer to knowledgebase and legacy clone repos if needed), include the improvements on them in the plan. If there are improvement points in the report, such as hallucination, lack of detail, redundancy, unnatural flow, include the improvements in the plan. If there are improvement points in the code quality such as redundancies, non-generic naming in dfm-python, inefficient logic, monkey patch, temporal fixes, include them in the plan. Note: Legacy code cleanup is completed. dfm-python is finalized with consistent naming and clean patterns. If there are any new experiments needed for the report or extensions, changes in experiment, include them in the plan. IMPORTANT: When planning new experiments, also update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them from run_experiment.sh. This ensures each iteration only runs missing experiments needed to complete the report. Do not make the plan too long. Leave the tasks at ISSUES.md and work incrementally. Plan with manageable tasks. Keep ISSUES.md under ${LINE_LIMIT} lines. Do not create new files."; then
+  if cursor_force "Plan how to improve the dfm-python package and nowcasting-report paper. The report structure is 6 sections (Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion) targeting under 15 pages. Focus on comparing 4 models (ARIMA, VAR, DFM, DDFM) across 4 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G, KOMPRI30G). Check @FEEDBACK.md for user feedback and prioritize addressing feedback items in the plan. If there are improvement points in the codes, such as numerical stability, convergence issues, theoretically wrong implementation (refer to knowledgebase and legacy clone repos if needed), include the improvements on them in the plan. If there are improvement points in the report, such as hallucination, lack of detail, redundancy, unnatural flow, include the improvements in the plan. If there are improvement points in the code quality such as redundancies, non-generic naming in dfm-python, inefficient logic, monkey patch, temporal fixes, include them in the plan. Note: Legacy code cleanup is completed. dfm-python is finalized with consistent naming and clean patterns. If there are any new experiments needed for the report or extensions, changes in experiment, include them in the plan. IMPORTANT: When planning new experiments, also update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them from run_experiment.sh. This ensures each iteration only runs missing experiments needed to complete the report. Do not make the plan too long. Leave the tasks at ISSUES.md and work incrementally. Plan with manageable tasks. Keep ISSUES.md under ${LINE_LIMIT} lines. Do not create new files."; then
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     log_info "Step 5 completed successfully"
     mark_step_completed 5
@@ -464,7 +497,7 @@ step6_execute_plan() {
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
-  if cursor_stream "Work on the plan. Execute the active plan items in ISSUES.md. Apply code/report updates needed for dfm-python and nowcasting-report. IMPORTANT: If the plan includes new experiments needed for the report, update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to identify which experiments have already been run (look for existing result directories and log files). Modify run_experiment.sh to exclude completed experiments and only run missing ones. This ensures each iteration progressively completes the report without re-running unnecessary experiments. Focus on incremental improvements and prioritize tasks. Do not create new files. Use existing files only and keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."; then
+  if cursor_stream "Work on the plan. Execute the active plan items in ISSUES.md. Check @FEEDBACK.md for user feedback and incorporate feedback into report updates. Apply code/report updates needed for dfm-python and nowcasting-report. IMPORTANT: If the plan includes new experiments needed for the report, update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to identify which experiments have already been run (look for existing result directories and log files). Modify run_experiment.sh to exclude completed experiments and only run missing ones. This ensures each iteration progressively completes the report without re-running unnecessary experiments. Focus on incremental improvements and prioritize tasks. Do not create new files. Use existing files only and keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
@@ -485,7 +518,7 @@ step7_continue_plan() {
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
-  if cursor_stream "Keep working on the plan with any unfinished tasks. Continue remaining items from ISSUES.md. IMPORTANT: If there are remaining experiments needed for the report, update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them. This ensures the next iteration (step 1) only runs missing experiments. Focus on incremental improvements and complete as many tasks as possible. Do not create new files. Keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."; then
+  if cursor_stream "Keep working on the plan with any unfinished tasks. Continue remaining items from ISSUES.md. Check @FEEDBACK.md for any new user feedback and incorporate into ongoing work. IMPORTANT: If there are remaining experiments needed for the report, update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them. This ensures the next iteration (step 1) only runs missing experiments. Focus on incremental improvements and complete as many tasks as possible. Do not create new files. Keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
@@ -506,7 +539,7 @@ step8_summarize_iteration() {
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
-  if cursor_force "Identify the work done in this iteration. Identify what's done, what's not done. Update STATUS.md and ISSUES.md for the next iteration. Mark resolved issues clearly in ISSUES.md. Remove old resolved issues to keep file under ${LINE_LIMIT} lines. Update experiment status in STATUS.md (completed/pending combinations). Next iteration will start fresh so you need to leave the proper context for next iteration. Keep each file under ${LINE_LIMIT} lines. Do not create new files."; then
+  if cursor_force "Identify the work done in this iteration. Identify what's done, what's not done. Update STATUS.md and ISSUES.md for the next iteration. Mark resolved issues clearly in ISSUES.md. Remove old resolved issues to keep file under ${LINE_LIMIT} lines. Update experiment status in STATUS.md (completed/pending combinations). Note: Submodules are pushed every 5 iterations - user will review report and provide feedback in FEEDBACK.md. Next iteration will start fresh so you need to leave the proper context for next iteration. Keep each file under ${LINE_LIMIT} lines. Do not create new files."; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
@@ -531,8 +564,11 @@ step9_commit() {
   guard_line_limit "${REPO_ROOT}/CONTEXT.md"
   
   if safe_git_commit "$COMMIT_MSG"; then
-    if [[ "${ITERATION:-0}" =~ ^[0-9]+$ ]] && (( ITERATION % 10 == 0 )); then
+    # Push submodules every 5 iterations (user reviews report and provides feedback)
+    if [[ "${ITERATION:-0}" =~ ^[0-9]+$ ]] && (( ITERATION % 5 == 0 )); then
+      log_info "Pushing submodules to origin main (iteration ${ITERATION} - user will review and provide feedback)"
       safe_git_submodule_push || log_warn "Submodule push had errors but continuing"
+      log_info "Note: User will review report in nowcasting-report/ and provide feedback in FEEDBACK.md"
     fi
     log_info "Step 9 completed successfully"
     mark_step_completed 9
