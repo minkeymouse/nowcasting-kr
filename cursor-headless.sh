@@ -1,20 +1,29 @@
 #!/usr/bin/env bash
 # Cursor headless workflow runner for nowcasting-kr
-# Implements the steps described in WORKFLOW.md using cursor-agent in print mode.
-# No new files are created; existing files are updated in-place when needed.
+# Implements the steps described in WORKFLOW.md using cursor-agent
 
-set -euo pipefail
+# Don't exit on error - pipeline should persist until user cancels
+set +e
+set -u  # Still fail on undefined variables
+set -o pipefail  # But catch pipe errors without exiting
 
-REPO_ROOT="/data/nowcasting-kr"
-VENV_PATH="${REPO_ROOT}/.venv/bin/activate"
-LINE_LIMIT=1000
-MAX_RETRIES="${MAX_RETRIES:-3}"
-RETRY_DELAY="${RETRY_DELAY:-5}"  # seconds
-LOG_DIR="${REPO_ROOT}/.cursor-logs"
-BACKUP_DIR="${LOG_DIR}/backups"
-STEP_STATUS_FILE="${REPO_ROOT}/.cursor-step-status"
+# Configuration
+readonly REPO_ROOT="/data/nowcasting-kr"
+readonly VENV_PATH="${REPO_ROOT}/.venv/bin/activate"
+readonly LINE_LIMIT=1000
+readonly MAX_RETRIES="${MAX_RETRIES:-3}"
+readonly RETRY_DELAY="${RETRY_DELAY:-5}"
+readonly LOG_DIR="${REPO_ROOT}/.cursor-logs"
+readonly BACKUP_DIR="${LOG_DIR}/backups"
+readonly STEP_STATUS_FILE="${REPO_ROOT}/.cursor-step-status"
+readonly TARGETS=("KOEQUIPTE" "KOWRCCNSE" "KOIPALL.G")
+readonly MODELS=("ARIMA" "VAR" "DFM" "DDFM")
+readonly HORIZONS=(1 7 28)
+readonly TOTAL_COMBINATIONS=36
+
 ITERATION="${ITERATION:-0}"
 
+# Utility functions
 usage() {
   cat <<'EOF'
 Usage: cursor-headless.sh <number_of_iterations>
@@ -22,12 +31,11 @@ Usage: cursor-headless.sh <number_of_iterations>
 Runs the specified number of iterations (each iteration runs steps 1-9).
 
 Arguments:
-  number_of_iterations  Number of iterations to run (e.g., 1, 2, 3, ...)
-                        Runs iterations 1 through N sequentially
+  number_of_iterations  Number of iterations to run (1, 2, 3, ...)
 
 Steps in each iteration (match WORKFLOW.md):
   1   Run experiment (@run_experiment.sh)
-  2   Inspect codebases (src/, dfm-python/, nowcasting-report/) - fresh start, check FEEDBACK.md
+  2   Inspect codebases - fresh start, check FEEDBACK.md
   3   Work on the plan from step 2 (incorporate FEEDBACK.md)
   4   Analyze results; update STATUS/ISSUES/CONTEXT
   5   Plan improvements for dfm-python & report (check FEEDBACK.md)
@@ -38,19 +46,20 @@ Steps in each iteration (match WORKFLOW.md):
 
 Environment:
   COMMIT_MSG - Commit message for step 9 (default: "Iteration N")
-  
-Optional environment variables:
   MAX_RETRIES - Number of retry attempts on failure (default: 3)
   RETRY_DELAY - Delay between retries in seconds (default: 5)
 
 Examples:
-  ./cursor-headless.sh 1  # Run 1 iteration (iteration 1)
-  ./cursor-headless.sh 2  # Run 2 iterations (iteration 1, 2)
-  ./cursor-headless.sh 5  # Run 5 iterations (iteration 1, 2, 3, 4, 5)
+  ./cursor-headless.sh 1  # Run 1 iteration
+  ./cursor-headless.sh 2  # Run 2 iterations
 EOF
 }
 
-die() { echo "error: $*" >&2; exit 1; }
+# Log error but don't exit - pipeline should continue
+die() { 
+  log_error "$*"
+  return 1
+}
 
 log() {
   local level="$1"
@@ -67,7 +76,7 @@ log_info() { log "INFO" "$@"; }
 log_error() { log "ERROR" "$@"; }
 log_warn() { log "WARN" "$@"; }
 
-# Step tracking functions
+# Step tracking
 mark_step_completed() {
   local step="$1"
   local timestamp
@@ -77,15 +86,6 @@ mark_step_completed() {
   log_info "Marked step $step as completed at $timestamp (iteration ${ITERATION})"
 }
 
-get_step_status() {
-  local step="$1"
-  if [[ ! -f "$STEP_STATUS_FILE" ]]; then
-    return 1
-  fi
-  grep "^${step}|" "$STEP_STATUS_FILE" | tail -n1
-}
-
-
 show_step_history() {
   log_info "Step completion history:"
   if [[ -f "$STEP_STATUS_FILE" ]]; then
@@ -94,16 +94,19 @@ show_step_history() {
       count=$((count + 1))
       log_info "  Step $step completed at $timestamp (iteration $iteration)"
     done < <(tail -n 10 "$STEP_STATUS_FILE" 2>/dev/null)
-    if [[ $count -eq 0 ]]; then
-      log_info "  No steps completed yet"
-    fi
+    [[ $count -eq 0 ]] && log_info "  No steps completed yet"
   else
     log_info "  No steps completed yet"
   fi
 }
 
+# Environment validation
 require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+  if ! command -v "$1" >/dev/null 2>&1; then
+    log_error "missing required command: $1"
+    return 1
+  fi
+  return 0
 }
 
 ensure_env() {
@@ -112,24 +115,39 @@ ensure_env() {
 }
 
 activate_venv() {
-  [[ -f "$VENV_PATH" ]] || die "virtualenv not found at $VENV_PATH"
+  if [[ ! -f "$VENV_PATH" ]]; then
+    log_error "virtualenv not found at $VENV_PATH"
+    return 1
+  fi
   # shellcheck disable=SC1090
-  source "$VENV_PATH"
+  source "$VENV_PATH" || {
+    log_error "Failed to activate virtualenv"
+    return 1
+  }
+  return 0
 }
 
 assert_file() {
-  [[ -f "$1" ]] || die "required file not found: $1"
+  if [[ ! -f "$1" ]]; then
+    log_error "required file not found: $1"
+    return 1
+  fi
+  return 0
 }
 
 guard_line_limit() {
   local f="$1"
-  [[ -f "$f" ]] || die "file missing for line limit check: $f"
+  if [[ ! -f "$f" ]]; then
+    log_warn "file missing for line limit check: $f"
+    return 0  # Don't fail if file doesn't exist
+  fi
   local lines
   lines=$(wc -l < "$f")
   if [[ "$lines" -gt "$LINE_LIMIT" ]]; then
-    log_error "File $f exceeds ${LINE_LIMIT} lines ($lines lines)"
-    die "$f exceeds ${LINE_LIMIT} lines ($lines)"
+    log_error "File $f exceeds ${LINE_LIMIT} lines ($lines lines) - but continuing"
+    return 1  # Return error but don't exit
   fi
+  return 0
 }
 
 backup_file_if_exists() {
@@ -145,87 +163,125 @@ backup_file_if_exists() {
 }
 
 latest_output_dir() {
-  # Portable version using ls -lt instead of GNU find -printf
-  if [[ ! -d "${REPO_ROOT}/outputs" ]]; then
-    return 1
-  fi
-  # Use ls -lt to sort by modification time, get most recent directory
+  [[ ! -d "${REPO_ROOT}/outputs" ]] && return 1
   ls -1td "${REPO_ROOT}/outputs"/*/ 2>/dev/null | head -n1 | sed 's|/$||' || return 1
 }
 
+# DFM/DDFM package check
+check_dfm_package() {
+  if [[ -f "${REPO_ROOT}/.venv/bin/activate" ]]; then
+    source "${REPO_ROOT}/.venv/bin/activate"
+    if ! python3 -c "import sys; sys.path.insert(0, 'dfm-python/src'); import dfm_python" 2>/dev/null; then
+      log_warn "dfm-python package not available - DFM/DDFM experiments will fail"
+      log_warn "Install dependencies: cd dfm-python && pip install -e ."
+      return 1
+    else
+      log_info "✓ dfm-python package available"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+check_dfm_results() {
+  local latest_dir
+  latest_dir=$(latest_output_dir 2>/dev/null || echo "")
+  if [[ -n "$latest_dir" ]] && [[ -d "$latest_dir" ]] && [[ -f "${latest_dir}/comparison_results.json" ]]; then
+    if python3 -c "import json, sys; data = json.load(open('${latest_dir}/comparison_results.json')); dfm_status = data['results'].get('dfm', {}).get('status'); ddfm_status = data['results'].get('ddfm', {}).get('status'); sys.exit(0 if dfm_status == 'failed' or ddfm_status == 'failed' else 1)" 2>/dev/null; then
+      log_warn "⚠ DFM/DDFM experiments failed - Check comparison_results.json for error details"
+      log_warn "⚠ Only ARIMA/VAR results available (18/${TOTAL_COMBINATIONS} combinations complete)"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+# Workflow context
 workflow_context() {
   cat <<'EOF'
 # RULES
 - DO NOT CREATE FILES or MARKDOWNS
 - DO NOT DELETE FILES
-- ONLY WORK under modifying existing codes.
-- NEVER HALLUCINATE. Only use the references at references.bib when writing the report.
-- When need to add new information from knowledgebase, add the citation at references.bib
-- src/ should contain maximum 15 files including __init__.py file. If necessary, restructure and consolidate.
-- CONTEXT.md, STATUS.md, ISSUES.md MUST BE UNDER 1000 lines.
-- Try to improve incrementally. Do not try to do everything at once. Try to prioritize the tasks and work on them one by one.
+- ONLY WORK under modifying existing codes
+- NEVER HALLUCINATE. Only use references at references.bib
+- src/ should contain maximum 15 files including __init__.py
+- CONTEXT.md, STATUS.md, ISSUES.md MUST BE UNDER 1000 lines
+- Try to improve incrementally. Prioritize tasks and work on them one by one
 
 # GOAL
-- Write the Complete report (under 15 pages) in @nowcasting-report/ comparing 4 models (ARIMA, VAR, DFM, DDFM) on 3 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G)
-- Finalize the package @dfm-python/ with clean code pattern, consistent and generic naming
+- Write complete report (under 15 pages) comparing 4 models (ARIMA, VAR, DFM, DDFM) on 3 targets
+- Finalize @dfm-python/ with clean code pattern, consistent and generic naming
 
 # EXPERIMENT CONFIGURATION
-- Targets: 3 (KOEQUIPTE - Equipment Investment, KOWRCCNSE - Wholesale/Retail Sales, KOIPALL.G - Industrial Production)
+- Targets: 3 (KOEQUIPTE, KOWRCCNSE, KOIPALL.G)
 - Models: 4 (ARIMA, VAR, DFM, DDFM)
 - Horizons: 3 (1, 7, 28 days)
 - Total: 36 combinations (3 × 4 × 3)
-- Series configs: All series use block: null (only global block for DFM/DDFM)
+- Series configs: All series use block: null
 - Data file: data/data.csv
 
 # REPORT STRUCTURE
-- 6 sections: Introduction, Methodology, Production Model (KOIPALL.G), Investment Model (KOEQUIPTE), Consumption Model (KOWRCCNSE), Conclusion
-- Target: Under 15 pages (condensed from previous 20-30 page target)
+- 6 sections: Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion
+- Target: Under 15 pages
 - Tables: tab_overall_metrics, tab_by_target, tab_by_horizon
-- Focus: Compare ARIMA, VAR, DFM, DDFM models across 3 targets
 
 # DESIRED OUTPUT (from WORKFLOW.md)
 ## Tables (3 required):
-1. Table with dataset details and model parameters (ARIMA, VAR, DFM, DDFM model and training params)
-2. Table with standardized MSE and standardized MAE for (target, model, horizon) pairs - 36 rows (3 targets × 4 models × 3 horizons)
-3. Table with DFM and DDFM backtest results for 2024-2025 by month (train 1985-2019, nowcast Jan 2024-Oct 2025, sMSE/sMAE per month)
+1. Dataset details and model parameters (ARIMA, VAR, DFM, DDFM model and training params)
+2. Standardized MSE/MAE for (target, model, horizon) pairs - 36 rows
+3. DFM/DDFM backtest results for 2024-2025 by month (train 1985-2019, nowcast Jan 2024-Oct 2025)
 
 ## Images (3 required):
-1. Forecast vs actual plots: 3 plots (one per target), each showing 60 months total - 30 months historical (single original line) + 30 months forecasts (5 lines: original, ARIMA, VAR, DFM, DDFM). X-axis: monthly timestamp, Y-axis: target series.
+1. Forecast vs actual plots: 3 plots (one per target), 60 months total (30 historical + 30 forecasts)
 2. Accuracy heatmap: 4 models × 3 targets (standardized RMSE)
 3. Performance trend: Performance by forecasting horizon (1, 7, 28 days)
 
 # WORKFLOW PRIORITY:
-1. FIRST: Generate tables and plots from experiment results (outputs/comparisons/, outputs/experiments/)
-2. THEN: Build/update report sections using the generated tables and plots
-3. Use nowcasting-report/code/plot.py to generate images, update LaTeX tables in nowcasting-report/tables/
+1. FIRST: Fix DFM/DDFM package if needed, run missing experiments
+2. THEN: Generate tables and plots from experiment results
+3. FINALLY: Build/update report sections using generated tables and plots
 
 # RESOURCES
-- CONTEXT.md: Use this file for context offloading for persistence if necessary.
-- STATUS.md: Use this file to track the progress and leave the status for next iteration on updates.
-- ISSUES.md: Track resolved issues and next steps. Keep file under 1000 lines. Mark resolved issues clearly.
-- FEEDBACK.md: User feedback file - Check this file regularly (especially after every 2 iterations when submodules are pushed). User will provide feedback on the report content, structure, and quality. Incorporate feedback into improvements.
-- src/ : engine for running the experiment. This module provides wrapper for @sktime and @dfm-python packages with preprocessing - training - inference. Maximum 15 files including __init__.py.
-- dfm-python/ : Core DFM/DDFM package - finalized with clean code patterns, consistent naming, legacy code cleaned up.
-- nowcasting-report/ : LaTeX report submodule - Structure ready, need to populate with experiment results. User reviews report every 2 iterations and provides feedback in FEEDBACK.md.
-- nowcasting-report/code/plot.py : Code for creating plots used in the paper based on the results in outputs/ directory. Images should be created at nowcasting-report/images/*.png and used in the report properly.
-- nowcasting-report/tables/ : LaTeX table files that need to be populated with actual results
-- neo4j mcp : knowledgebase containing references. NEVER hallucinate.
-- outputs/ : directory containing experiment results from @run_experiment.sh
-- outputs/comparisons/ : Per-target comparison results (comparison_results.json, comparison_table.csv)
-- outputs/experiments/ : Aggregated results (aggregated_results.csv - 36 rows)
-- config/ : Hydra YAML configs in config/experiment/ (3 target configs: koequipte_report, kowrccnse_report, koipallg_report), config/model/, config/series/ (all series have block: null)
-- run_test_experiment.sh : Test script to verify all targets and models before full run
-- DDFM_COMPARISON.md : Comparison of original ddfm implementation and dfm-python
+- CONTEXT.md: Context offloading for persistence
+- STATUS.md: Track progress and status for next iteration
+- ISSUES.md: Track resolved issues and next steps (keep under 1000 lines)
+- FEEDBACK.md: User feedback file - check regularly, incorporate into improvements
+- src/: Engine for running experiments (max 15 files)
+- dfm-python/: Core DFM/DDFM package
+- nowcasting-report/: LaTeX report submodule
+- outputs/: Experiment results from @run_experiment.sh
+- outputs/comparisons/: Per-target comparison results
+- outputs/experiments/: Aggregated results (aggregated_results.csv - 36 rows)
+- config/: Hydra YAML configs
 
 # FEEDBACK PROCESS
-- User reviews the report in nowcasting-report/ submodule every 2 iterations (when submodules are pushed to origin main)
-- User provides feedback in FEEDBACK.md file
-- Check FEEDBACK.md regularly and incorporate feedback into report improvements
-- Focus on: report clarity, content accuracy, structure, missing information, formatting issues
+- User reviews report every 2 iterations (when submodules are pushed)
+- User provides feedback in FEEDBACK.md
+- Check FEEDBACK.md regularly and incorporate feedback into improvements
 
 EOF
 }
 
+# Prompt builders
+build_dfm_priority_prompt() {
+  cat <<'EOF'
+CRITICAL PRIORITY: Check if dfm-python package is installed and working. If DFM/DDFM experiments are failing due to missing package dependencies, this MUST be the FIRST priority - install dfm-python dependencies (cd dfm-python && pip install -e .) before generating tables/plots. The report requires results from all 4 models (ARIMA, VAR, DFM, DDFM) - we currently only have ARIMA/VAR (18/36 combinations). Without DFM/DDFM results, the report cannot be complete.
+EOF
+}
+
+build_priority_order_prompt() {
+  cat <<'EOF'
+PRIORITY ORDER: 1) Fix DFM/DDFM package installation if needed, 2) Run missing DFM/DDFM experiments (18/36 combinations), 3) Generate required tables (3 tables: dataset/params, standardized MSE/MAE 36 rows, DFM/DDFM backtest monthly) from outputs/experiments/aggregated_results.csv and outputs/comparisons/, 4) Generate required plots (3 types: forecast vs actual per target, accuracy heatmap, performance trend) using nowcasting-report/code/plot.py, 5) Update LaTeX tables in nowcasting-report/tables/ with actual results, 6) Build/update report sections using generated tables and plots.
+EOF
+}
+
+build_common_prompt_suffix() {
+  cat <<'EOF'
+Check @FEEDBACK.md for user feedback and incorporate feedback items. When planning tasks, consider which experiments are needed and which are already complete (check outputs/ directory). If new experiments are needed, update run_experiment.sh to include only missing experiments. Focus on incremental tasks. Keep ISSUES.md under 1000 lines. Do not create new files.
+EOF
+}
+
+# Cursor agent execution
 run_cursor_with_retry() {
   local cmd_type="$1"
   shift
@@ -233,7 +289,6 @@ run_cursor_with_retry() {
   local attempt=1
   local exit_code=0
   
-  # Verify cursor-agent is available before retrying
   if ! command -v cursor-agent >/dev/null 2>&1; then
     log_error "cursor-agent command not found"
     return 127
@@ -268,10 +323,7 @@ run_cursor_with_retry() {
     else
       exit_code=$?
       log_warn "cursor-agent failed on attempt $attempt with exit code $exit_code"
-      if [[ $attempt -lt $MAX_RETRIES ]]; then
-        log_info "Retrying in ${RETRY_DELAY} seconds..."
-        sleep "$RETRY_DELAY"
-      fi
+      [[ $attempt -lt $MAX_RETRIES ]] && log_info "Retrying in ${RETRY_DELAY} seconds..." && sleep "$RETRY_DELAY"
       attempt=$((attempt + 1))
     fi
   done
@@ -280,23 +332,16 @@ run_cursor_with_retry() {
   return $exit_code
 }
 
-cursor_text() {
-  run_cursor_with_retry "text" "$@"
-}
+cursor_text() { run_cursor_with_retry "text" "$@"; }
+cursor_force() { run_cursor_with_retry "force" "$@"; }
+cursor_stream() { run_cursor_with_retry "stream" "$@"; }
 
-cursor_force() {
-  run_cursor_with_retry "force" "$@"
-}
-
-cursor_stream() {
-  run_cursor_with_retry "stream" "$@"
-}
-
+# Prerequisites validation
 validate_prerequisites() {
   local step="$1"
   log_info "Validating prerequisites for step $step"
   
-  # Check disk space (at least 1GB free)
+  # Check disk space
   if command -v df >/dev/null 2>&1; then
     local avail_kb
     avail_kb=$(df "$REPO_ROOT" 2>/dev/null | awk 'NR==2 {print $4}' || echo "")
@@ -305,29 +350,38 @@ validate_prerequisites() {
     fi
   fi
   
-  # Validate required files exist
   case "$step" in
     1)
-      assert_file "${REPO_ROOT}/run_experiment.sh"
+      assert_file "${REPO_ROOT}/run_experiment.sh" || log_warn "run_experiment.sh not found, step may fail"
+      check_dfm_package || true
       ;;
     3|4|5|6|7|8)
-      assert_file "${REPO_ROOT}/ISSUES.md"
+      assert_file "${REPO_ROOT}/ISSUES.md" || log_warn "ISSUES.md not found, step may fail"
       ;;
     4)
-      [[ -d "${REPO_ROOT}/outputs" ]] || die "outputs/ directory not found"
+      if [[ ! -d "${REPO_ROOT}/outputs" ]]; then
+        log_error "outputs/ directory not found"
+        return 1
+      fi
       ;;
     9)
-      require_cmd git
-      [[ -d "${REPO_ROOT}/.git" ]] || die "not a git repository"
+      if ! require_cmd git; then
+        log_error "git command not found"
+        return 1
+      fi
+      if [[ ! -d "${REPO_ROOT}/.git" ]]; then
+        log_error "not a git repository"
+        return 1
+      fi
       ;;
   esac
+  return 0
 }
 
+# Git operations
 safe_git_add() {
   cd "$REPO_ROOT"
-  # Only add tracked files and specific markdown files, not everything
-  git add -u  # Update tracked files
-  # Add specific files if they exist and are untracked
+  git add -u
   for f in STATUS.md ISSUES.md CONTEXT.md; do
     if [[ -f "$f" ]] && ! git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
       git add "$f"
@@ -340,19 +394,16 @@ safe_git_commit() {
   cd "$REPO_ROOT"
   local commit_msg="$1"
   
-  # Check if there are no changes to commit (both staged and unstaged)
   if git diff --quiet --cached && git diff --quiet; then
     log_info "No changes to commit"
     return 0
   fi
   
-  # Check for uncommitted changes and stage them
   if ! git diff --quiet; then
     log_info "Uncommitted changes detected, staging them"
     safe_git_add
   fi
   
-  # Check again if we have anything staged after adding
   if git diff --quiet --cached; then
     log_warn "No staged changes after git add, nothing to commit"
     return 0
@@ -368,54 +419,78 @@ safe_git_commit() {
 }
 
 safe_git_submodule_push() {
-  cd "$REPO_ROOT"
+  cd "$REPO_ROOT" || {
+    log_error "Failed to cd to $REPO_ROOT for submodule push"
+    return 1
+  }
+  
   log_info "Pushing submodules to origin main (iteration ${ITERATION})"
   local failed=0
   
-  # Push each submodule individually to handle errors gracefully
-  if [ -d "nowcasting-report/.git" ]; then
+  # Push nowcasting-report submodule (primary report that user reviews)
+  if [[ -d "nowcasting-report/.git" ]]; then
     log_info "Pushing nowcasting-report submodule..."
-    cd nowcasting-report
+    cd "nowcasting-report" || {
+      log_error "Failed to cd to nowcasting-report"
+      failed=1
+    }
     if git push origin main 2>&1; then
       log_info "✓ nowcasting-report pushed successfully"
     else
       log_warn "⚠ nowcasting-report push had errors"
       failed=1
     fi
-    cd "$REPO_ROOT"
+    cd "$REPO_ROOT" || {
+      log_error "Failed to return to $REPO_ROOT"
+      return 1
+    }
+  else
+    log_warn "nowcasting-report/.git not found - skipping push"
   fi
   
-  if [ -d "dfm-python/.git" ]; then
+  # Optionally push dfm-python submodule (less critical)
+  if [[ -d "dfm-python/.git" ]]; then
     log_info "Pushing dfm-python submodule..."
-    cd dfm-python
+    cd "dfm-python" || {
+      log_warn "Failed to cd to dfm-python - continuing"
+      return $failed
+    }
     if git push origin main 2>&1; then
       log_info "✓ dfm-python pushed successfully"
     else
-      log_warn "⚠ dfm-python push had errors"
-      failed=1
+      log_warn "⚠ dfm-python push had errors (non-critical)"
+      # Don't mark as failed for dfm-python - it's less critical
     fi
-    cd "$REPO_ROOT"
+    cd "$REPO_ROOT" || {
+      log_error "Failed to return to $REPO_ROOT"
+      return 1
+    }
   fi
   
-  if [[ $failed -eq 1 ]]; then
-    log_warn "Some submodule pushes had errors, but continuing"
-    return 1
-  fi
-  return 0
+  [[ $failed -eq 1 ]] && log_warn "Some submodule pushes had errors, but continuing"
+  return $failed
 }
 
+# Step implementations
 step1_run_experiment() {
   ensure_env
   log_info "Starting step 1: Run experiment"
   validate_prerequisites 1
   activate_venv
   cd "$REPO_ROOT"
-  log_info "Note: run_experiment.sh runs experiments for 3 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G). Check outputs/ directory for existing results before running new experiments."
-  log_info "For incremental testing, use MODELS filter: MODELS=\"dfm\" bash run_experiment.sh or MODELS=\"ddfm\" bash run_experiment.sh"
-  log_info "For verification, use run_test_experiment.sh first to verify all targets and models work correctly."
-  log_info "Current configuration: 3 targets × 4 models × 3 horizons = 36 combinations"
+  
+  log_info "Configuration: ${#TARGETS[@]} targets × ${#MODELS[@]} models × ${#HORIZONS[@]} horizons = ${TOTAL_COMBINATIONS} combinations"
+  log_info "For incremental testing: MODELS=\"dfm\" bash run_experiment.sh"
+  
+  if ! check_dfm_package; then
+    log_warn "⚠ WARNING: dfm-python package not available - DFM/DDFM experiments will fail"
+    log_warn "⚠ Only ARIMA and VAR results will be generated (18/${TOTAL_COMBINATIONS} combinations)"
+    log_warn "⚠ To fix: Install dfm-python dependencies: cd dfm-python && pip install -e ."
+  fi
+  
   if bash run_experiment.sh; then
     log_info "Step 1 completed successfully"
+    check_dfm_results || true
     mark_step_completed 1
     return 0
   else
@@ -429,13 +504,19 @@ step2_inspect_code() {
   log_info "Starting step 2: Inspect code (fresh new start)"
   validate_prerequisites 2
   cd "$REPO_ROOT"
+  
   local out_dir
   out_dir=$(latest_output_dir 2>/dev/null || echo "")
-  local prompt="Inspect the @src/ @dfm-python/ and @nowcasting-report/ to understand the project structure, components, and data flow. Check @STATUS.md and @ISSUES.md for current state and pending tasks. Check @FEEDBACK.md for any user feedback that needs to be addressed."
+  
+  local prompt="Inspect the @src/ @dfm-python/ and @nowcasting-report/ to understand the project structure, components, and data flow. Check @STATUS.md and @ISSUES.md for current state and pending tasks. Check @FEEDBACK.md for any user feedback that needs to be addressed. "
+  prompt+="$(build_dfm_priority_prompt) "
+  
   if [[ -n "$out_dir" ]] && [[ -d "$out_dir" ]]; then
-    prompt+=" Study the experiment run output in ${out_dir} (latest run) and plan how to generate tables/plots and update the @nowcasting-report with results. Check which experiments have already been completed by examining the outputs/ directory structure and log files."
+    prompt+="Study the experiment run output in ${out_dir} (latest run). Check comparison_results.json to see if DFM/DDFM failed and why. If DFM/DDFM failed due to missing package, this must be fixed FIRST before generating tables/plots. Plan how to fix DFM/DDFM package installation, run missing experiments, then generate tables/plots and update the @nowcasting-report with results. Check which experiments have already been completed by examining the outputs/ directory structure and log files. "
   fi
-  prompt+=" Current experiment configuration: 3 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) × 4 models (ARIMA, VAR, DFM, DDFM) × 3 horizons (1, 7, 28) = 36 combinations. Report structure: 6 sections (Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion) - target under 15 pages. REQUIRED OUTPUT: 3 tables (dataset/params, standardized MSE/MAE 36 rows, DFM/DDFM backtest monthly) and 3 image types (forecast vs actual per target, accuracy heatmap, performance trend). WORKFLOW: First generate tables and plots from outputs/, then build report sections. The report focuses on comparing 4 models across 3 targets organized by economic sector (Production: KOIPALL.G; Investment: KOEQUIPTE; Consumption: KOWRCCNSE). If FEEDBACK.md contains user feedback, prioritize addressing those items. This is a fresh new start - provide a comprehensive understanding of the project."
+  
+  prompt+="Current experiment configuration: ${#TARGETS[@]} targets × ${#MODELS[@]} models × ${#HORIZONS[@]} horizons = ${TOTAL_COMBINATIONS} combinations. Report structure: 6 sections - target under 15 pages. REQUIRED OUTPUT: 3 tables and 3 image types. WORKFLOW PRIORITY: 1) Fix DFM/DDFM package if needed, 2) Run missing DFM/DDFM experiments, 3) Generate tables and plots from outputs/ with all 4 models, 4) Build report sections. The report focuses on comparing 4 models across 3 targets. If FEEDBACK.md contains user feedback, prioritize addressing those items. This is a fresh new start - provide a comprehensive understanding of the project."
+  
   if cursor_text "$prompt"; then
     log_info "Step 2 completed successfully"
     mark_step_completed 2
@@ -452,7 +533,13 @@ step3_plan_from_inspection() {
   validate_prerequisites 3
   cd "$REPO_ROOT"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
-  if cursor_force "Work on the plan from step 2. Based on the inspection results, create or update a concrete, actionable plan in ISSUES.md. Check @FEEDBACK.md for any user feedback and incorporate feedback items into the plan. PRIORITY ORDER: 1) Generate required tables (3 tables: dataset/params, standardized MSE/MAE 36 rows, DFM/DDFM backtest monthly) from outputs/experiments/aggregated_results.csv and outputs/comparisons/, 2) Generate required plots (3 types: forecast vs actual per target, accuracy heatmap, performance trend) using nowcasting-report/code/plot.py, 3) Update LaTeX tables in nowcasting-report/tables/ with actual results, 4) Build/update report sections using generated tables and plots. When planning tasks, consider which experiments are needed for the report and which are already complete (check outputs/ directory). If new experiments are needed, note that run_experiment.sh should be updated in later steps to include only missing experiments. Focus on incremental tasks that can be completed step by step. Keep ISSUES.md under ${LINE_LIMIT} lines. Do not create new files."; then
+  
+  local prompt="Work on the plan from step 2. Based on the inspection results, create or update a concrete, actionable plan in ISSUES.md. "
+  prompt+="$(build_dfm_priority_prompt) "
+  prompt+="$(build_priority_order_prompt) "
+  prompt+="$(build_common_prompt_suffix)"
+  
+  if cursor_force "$prompt"; then
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     log_info "Step 3 completed successfully"
     mark_step_completed 3
@@ -466,19 +553,27 @@ step3_plan_from_inspection() {
 step4_analyze_results() {
   ensure_env
   log_info "Starting step 4: Analyze results"
-  validate_prerequisites 4
-  cd "$REPO_ROOT"
+  validate_prerequisites 4 || log_warn "Prerequisites validation failed, but continuing"
+  cd "$REPO_ROOT" || {
+    log_error "Failed to cd to $REPO_ROOT"
+    return 1
+  }
+  
   local out_dir
   out_dir=$(latest_output_dir)
   if [[ -z "$out_dir" ]] || [[ ! -d "$out_dir" ]]; then
-    log_error "No valid outputs directory found"
-    die "no outputs/ directory found"
+    log_error "no outputs/ directory found - step may fail"
+    # Continue anyway - agent can still work without outputs
   fi
+  
   log_info "Analyzing results in: $out_dir"
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
-  if cursor_force "Analyze the results in ${out_dir}. If there are errors or issues, update them in STATUS.md and ISSUES.md and inspect what happened. If there's something wrong with the numbers, also update them in STATUS.md and think about what happened. Mark resolved issues clearly in ISSUES.md (use ✅ RESOLVED status). Check @FEEDBACK.md for any user feedback related to results. Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files."; then
+  
+  local prompt="Analyze the results in ${out_dir}. CRITICAL: Check comparison_results.json to see if DFM/DDFM failed and identify the root cause. If DFM/DDFM failed due to missing package dependencies (e.g., 'dfm-python package not available', 'ModuleNotFoundError'), this MUST be marked as TOP PRIORITY in ISSUES.md - the report requires all 4 models but we only have ARIMA/VAR (18/${TOTAL_COMBINATIONS} combinations). If there are errors or issues, update them in STATUS.md and ISSUES.md and inspect what happened. If there's something wrong with the numbers, also update them in STATUS.md and think about what happened. Mark resolved issues clearly in ISSUES.md (use ✅ RESOLVED status). Check @FEEDBACK.md for any user feedback related to results. Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files."
+  
+  if cursor_force "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
@@ -497,7 +592,15 @@ step5_plan_improvements() {
   validate_prerequisites 5
   cd "$REPO_ROOT"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
-  if cursor_force "Plan how to improve the dfm-python package and nowcasting-report paper. The report structure is 6 sections (Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion) targeting under 15 pages. Focus on comparing 4 models (ARIMA, VAR, DFM, DDFM) across 3 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G). Check @FEEDBACK.md for user feedback and prioritize addressing feedback items in the plan. If there are improvement points in the codes, such as numerical stability, convergence issues, theoretically wrong implementation (refer to knowledgebase and legacy clone repos if needed), include the improvements on them in the plan. If there are improvement points in the report, such as hallucination, lack of detail, redundancy, unnatural flow, include the improvements in the plan. If there are improvement points in the code quality such as redundancies, non-generic naming in dfm-python, inefficient logic, monkey patch, temporal fixes, include them in the plan. Note: Legacy code cleanup is completed. dfm-python is finalized with consistent naming and clean patterns. If there are any new experiments needed for the report or extensions, changes in experiment, include them in the plan. IMPORTANT: When planning new experiments, also update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them from run_experiment.sh. This ensures each iteration only runs missing experiments needed to complete the report. Do not make the plan too long. Leave the tasks at ISSUES.md and work incrementally. Plan with manageable tasks. Keep ISSUES.md under ${LINE_LIMIT} lines. Do not create new files."; then
+  
+  local prompt="Plan how to improve the dfm-python package and nowcasting-report paper. "
+  prompt+="$(build_dfm_priority_prompt) "
+  prompt+="The report structure is 6 sections targeting under 15 pages. Focus on comparing 4 models (ARIMA, VAR, DFM, DDFM) across 3 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G). "
+  prompt+="$(build_priority_order_prompt) "
+  prompt+="If there are improvement points in the codes (numerical stability, convergence issues, theoretically wrong implementation), include them in the plan. If there are improvement points in the report (hallucination, lack of detail, redundancy, unnatural flow), include them in the plan. If there are improvement points in code quality (redundancies, non-generic naming, inefficient logic, monkey patch, temporal fixes), include them in the plan. Note: Legacy code cleanup is completed. dfm-python is finalized with consistent naming and clean patterns. "
+  prompt+="$(build_common_prompt_suffix)"
+  
+  if cursor_force "$prompt"; then
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     log_info "Step 5 completed successfully"
     mark_step_completed 5
@@ -516,7 +619,12 @@ step6_execute_plan() {
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
-  if cursor_stream "Work on the plan. Execute the active plan items in ISSUES.md following the priority order: FIRST generate tables and plots, THEN build report. Check @FEEDBACK.md for user feedback and incorporate feedback into updates. PRIORITY 1: Generate required tables from outputs/experiments/aggregated_results.csv and outputs/comparisons/ - create 3 tables (dataset/params table, standardized MSE/MAE table with 36 rows, DFM/DDFM backtest monthly table). PRIORITY 2: Generate required plots using nowcasting-report/code/plot.py - create 3 image types (forecast vs actual per target showing 60 months, accuracy heatmap 4×3, performance trend by horizon). PRIORITY 3: Update LaTeX tables in nowcasting-report/tables/ with actual results from generated tables. PRIORITY 4: Build/update report sections (nowcasting-report/contents/) using the generated tables and plots. Apply code/report updates needed for dfm-python and nowcasting-report. IMPORTANT: If the plan includes new experiments needed for the report, update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to identify which experiments have already been run (look for existing result directories and log files). Modify run_experiment.sh to exclude completed experiments and only run missing ones. This ensures each iteration progressively completes the report without re-running unnecessary experiments. Focus on incremental improvements and prioritize tasks. Do not create new files. Use existing files only and keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."; then
+  
+  local prompt="Work on the plan. Execute the active plan items in ISSUES.md following the priority order. CRITICAL: Check if DFM/DDFM package is installed first. If DFM/DDFM experiments are failing, this is the TOP PRIORITY - install dfm-python dependencies (cd dfm-python && pip install -e .) and run missing DFM/DDFM experiments (18/${TOTAL_COMBINATIONS} combinations) BEFORE generating tables/plots. The report requires all 4 models - we currently only have ARIMA/VAR (18/${TOTAL_COMBINATIONS}). Without DFM/DDFM results, tables and plots will be incomplete. "
+  prompt+="$(build_priority_order_prompt) "
+  prompt+="Check @FEEDBACK.md for user feedback and incorporate feedback into updates. Apply code/report updates needed for dfm-python and nowcasting-report. IMPORTANT: If the plan includes new experiments needed for the report, update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to identify which experiments have already been run. Modify run_experiment.sh to exclude completed experiments and only run missing ones. Focus on incremental improvements and prioritize tasks. Do not create new files. Use existing files only and keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
+  
+  if cursor_stream "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
@@ -537,7 +645,12 @@ step7_continue_plan() {
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
-  if cursor_stream "Keep working on the plan with any unfinished tasks. Continue remaining items from ISSUES.md following the priority order: tables/plots first, then report. Check @FEEDBACK.md for any new user feedback and incorporate into ongoing work. Continue generating required tables (3 tables: dataset/params, standardized MSE/MAE 36 rows, DFM/DDFM backtest monthly) and plots (3 types: forecast vs actual per target, accuracy heatmap, performance trend) if not yet complete. Then continue updating LaTeX tables and report sections. IMPORTANT: If there are remaining experiments needed for the report, update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them. This ensures the next iteration (step 1) only runs missing experiments. Focus on incremental improvements and complete as many tasks as possible. Do not create new files. Keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."; then
+  
+  local prompt="Keep working on the plan with any unfinished tasks. Continue remaining items from ISSUES.md following the priority order. CRITICAL: If DFM/DDFM package is not installed or experiments are failing, this MUST be addressed FIRST. Install dfm-python dependencies (cd dfm-python && pip install -e .) and run missing DFM/DDFM experiments (18/${TOTAL_COMBINATIONS} combinations) before generating tables/plots. The report requires all 4 models - without DFM/DDFM, tables and plots will be incomplete. "
+  prompt+="$(build_priority_order_prompt) "
+  prompt+="Check @FEEDBACK.md for any new user feedback and incorporate into ongoing work. IMPORTANT: If there are remaining experiments needed for the report, update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them. Focus on incremental improvements and complete as many tasks as possible. Do not create new files. Keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
+  
+  if cursor_stream "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
@@ -558,7 +671,10 @@ step8_summarize_iteration() {
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
-  if cursor_force "Identify the work done in this iteration. Identify what's done, what's not done. Update STATUS.md and ISSUES.md for the next iteration. Mark resolved issues clearly in ISSUES.md. Remove old resolved issues to keep file under ${LINE_LIMIT} lines. Update experiment status in STATUS.md (completed/pending combinations). Note: Submodules are pushed every 2 iterations - user will review report and provide feedback in FEEDBACK.md. Next iteration will start fresh so you need to leave the proper context for next iteration. Keep each file under ${LINE_LIMIT} lines. Do not create new files."; then
+  
+  local prompt="Identify the work done in this iteration. Identify what's done, what's not done. Update STATUS.md and ISSUES.md for the next iteration. Mark resolved issues clearly in ISSUES.md. Remove old resolved issues to keep file under ${LINE_LIMIT} lines. Update experiment status in STATUS.md (completed/pending combinations). Note: Submodules are pushed every 2 iterations - user will review report and provide feedback in FEEDBACK.md. Next iteration will start fresh so you need to leave the proper context for next iteration. Keep each file under ${LINE_LIMIT} lines. Do not create new files."
+  
+  if cursor_force "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
@@ -574,40 +690,57 @@ step8_summarize_iteration() {
 step9_commit() {
   ensure_env
   log_info "Starting step 9: Commit changes (iteration ${ITERATION})"
-  validate_prerequisites 9
-  cd "$REPO_ROOT"
-  [[ -n "${COMMIT_MSG:-}" ]] || die "COMMIT_MSG must be set for step 9"
+  validate_prerequisites 9 || log_warn "Prerequisites validation failed, but continuing"
+  cd "$REPO_ROOT" || {
+    log_error "Failed to cd to $REPO_ROOT"
+    return 1
+  }
+  
+  if [[ -z "${COMMIT_MSG:-}" ]]; then
+    log_error "COMMIT_MSG must be set for step 9 - using default"
+    COMMIT_MSG="Iteration ${ITERATION}"
+  fi
   
   guard_line_limit "${REPO_ROOT}/STATUS.md"
   guard_line_limit "${REPO_ROOT}/ISSUES.md"
   guard_line_limit "${REPO_ROOT}/CONTEXT.md"
   
   if safe_git_commit "$COMMIT_MSG"; then
-    # Push submodules every 2 iterations (user reviews report and provides feedback)
+    # Push submodules every 2 iterations (iterations 2, 4, 6, 8, ...)
     if [[ "${ITERATION:-0}" =~ ^[0-9]+$ ]] && (( ITERATION % 2 == 0 )); then
       log_info "Pushing submodules to origin main (iteration ${ITERATION} - user will review and provide feedback)"
-      safe_git_submodule_push || log_warn "Submodule push had errors but continuing"
+      if safe_git_submodule_push; then
+        log_info "✓ Submodules pushed successfully"
+      else
+        log_warn "⚠ Submodule push had errors but continuing"
+      fi
       log_info "Note: User will review report in nowcasting-report/ and provide feedback in FEEDBACK.md"
+    else
+      log_info "Skipping submodule push (iteration ${ITERATION} - push happens every 2 iterations)"
     fi
     log_info "Step 9 completed successfully"
     mark_step_completed 9
     return 0
   else
-    log_error "Step 9 failed, but iteration completed"
+    log_error "Step 9 git commit failed, but iteration completed"
+    # Still try to push submodules if it's an even iteration
+    if [[ "${ITERATION:-0}" =~ ^[0-9]+$ ]] && (( ITERATION % 2 == 0 )); then
+      log_info "Attempting submodule push despite commit failure (iteration ${ITERATION})"
+      safe_git_submodule_push || log_warn "Submodule push had errors but continuing"
+    fi
     return 1
   fi
 }
 
+# Cleanup
 cleanup_old_backups() {
-  # Keep only last 10 backups of each file
-  if [[ ! -d "$BACKUP_DIR" ]]; then
-    return 0
-  fi
+  [[ ! -d "$BACKUP_DIR" ]] && return 0
   for f in STATUS.md ISSUES.md CONTEXT.md; do
     ls -t "${BACKUP_DIR}/${f}.backup."* 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null || true
   done
 }
 
+# Step runner
 run_step() {
   local step="$1"
   log_info "-----------------------------------------"
@@ -625,24 +758,32 @@ run_step() {
     7) step7_continue_plan || step_result=1 ;;
     8) step8_summarize_iteration || step_result=1 ;;
     9) step9_commit || step_result=1 ;;
-    *) die "Invalid step: $step" ;;
+    *)
+      log_error "Invalid step: $step"
+      step_result=1
+      ;;
   esac
   
   if [[ $step_result -eq 1 ]]; then
     log_warn "Step $step had errors, but pipeline continues"
   fi
   
-  return $step_result
+  # Always return 0 to ensure pipeline continues
+  return 0
 }
 
+# Main
 main() {
-  [[ $# -eq 1 ]] || { usage; exit 1; }
+  if [[ $# -ne 1 ]]; then
+    usage
+    exit 1  # Only exit on usage error
+  fi
   
-  # Parse number of iterations
   local num_iters="$1"
-  
   if ! [[ "$num_iters" =~ ^[0-9]+$ ]] || [[ "$num_iters" -lt 1 ]]; then
-    die "Invalid number of iterations: $num_iters (must be >= 1)"
+    log_error "Invalid number of iterations: $num_iters (must be >= 1)"
+    usage
+    exit 1  # Only exit on invalid input
   fi
   
   mkdir -p "$LOG_DIR"
@@ -653,29 +794,19 @@ main() {
   log_info "Timestamp: $(date)"
   log_info "========================================="
   
-  # Show step completion history
   show_step_history
   
-  # Run iterations
   for iter in $(seq 1 "$num_iters"); do
     ITERATION="$iter"
-    
-    # Set COMMIT_MSG for this iteration
-    if [[ -z "${COMMIT_MSG:-}" ]]; then
-      COMMIT_MSG="Iteration ${iter}"
-    fi
+    [[ -z "${COMMIT_MSG:-}" ]] && COMMIT_MSG="Iteration ${iter}"
     
     log_info "========================================="
     log_info "Starting iteration ${iter} (steps 1-9)"
     log_info "COMMIT_MSG: ${COMMIT_MSG}"
     log_info "========================================="
     
-    # Cleanup old backups periodically (every 10 iterations)
-    if (( iter % 10 == 0 )); then
-      cleanup_old_backups
-    fi
+    (( iter % 10 == 0 )) && cleanup_old_backups
     
-    # Run all steps 1-9
     for step in $(seq 1 9); do
       run_step "$step"
     done
@@ -684,7 +815,6 @@ main() {
     log_info "Iteration ${iter} completed successfully"
     log_info "========================================="
     
-    # Reset COMMIT_MSG for next iteration
     unset COMMIT_MSG
   done
   

@@ -11,28 +11,88 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
 
 # Kill any existing training/experiment processes
+echo "=========================================="
 echo "Checking for existing processes..."
-RUNNING_COUNT=$(ps aux | grep -E "python.*train.*compare" | grep -v grep | wc -l)
-if [ "$RUNNING_COUNT" -gt 0 ]; then
-    echo "Found $RUNNING_COUNT running experiment(s). Terminating..."
-    pkill -f "python.*train" 2>/dev/null
-    pkill -f "python.*infer" 2>/dev/null
-    pkill -f "python.*experiment" 2>/dev/null
-    sleep 3
+echo "=========================================="
+
+# Save current script PID and parent PID to exclude from killing
+CURRENT_PID=$$
+PARENT_PID=$PPID
+SCRIPT_NAME=$(basename "$0")
+
+# Find all related processes - ONLY Python training processes, NOT shell scripts
+PATTERNS=(
+    "python.*train.*compare"
+    "python.*src/train.py"
+    "python.*train.py.*compare"
+    "python.*infer"
+    "python.*experiment"
+    "hydra.*train"
+)
+
+FOUND_PIDS=()
+for pattern in "${PATTERNS[@]}"; do
+    while IFS= read -r pid; do
+        # Exclude current process and parent process
+        if [ -n "$pid" ] && [ "$pid" != "$CURRENT_PID" ] && [ "$pid" != "$PARENT_PID" ]; then
+            # Verify it's actually a Python process, not a shell script
+            local proc_cmd=$(ps -p "$pid" -o cmd= 2>/dev/null || echo "")
+            if [[ "$proc_cmd" == *"python"* ]] && [[ "$proc_cmd" != *"bash"* ]] && [[ "$proc_cmd" != *"$SCRIPT_NAME"* ]]; then
+                FOUND_PIDS+=("$pid")
+            fi
+        fi
+    done < <(ps aux | grep -E "$pattern" | grep -v grep | awk '{print $2}')
+done
+
+# Remove duplicates
+UNIQUE_PIDS=($(printf '%s\n' "${FOUND_PIDS[@]}" | sort -u))
+
+if [ ${#UNIQUE_PIDS[@]} -gt 0 ]; then
+    echo "Found ${#UNIQUE_PIDS[@]} running experiment process(es): ${UNIQUE_PIDS[*]}"
+    echo "Terminating processes..."
     
-    # Force kill if still running
-    REMAINING=$(ps aux | grep -E "python.*train.*compare" | grep -v grep | wc -l)
-    if [ "$REMAINING" -gt 0 ]; then
-        echo "Force killing remaining processes..."
-        pkill -9 -f "python.*train" 2>/dev/null
-        pkill -9 -f "python.*infer" 2>/dev/null
-        pkill -9 -f "python.*experiment" 2>/dev/null
+    # First, try graceful termination (SIGTERM)
+    for pid in "${UNIQUE_PIDS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "  Sending SIGTERM to PID $pid"
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
+    
+    # Wait for processes to terminate
+    sleep 5
+    
+    # Check remaining processes and force kill if needed
+    REMAINING_PIDS=()
+    for pid in "${UNIQUE_PIDS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            REMAINING_PIDS+=("$pid")
+        fi
+    done
+    
+    if [ ${#REMAINING_PIDS[@]} -gt 0 ]; then
+        echo "Force killing ${#REMAINING_PIDS[@]} remaining process(es): ${REMAINING_PIDS[*]}"
+        for pid in "${REMAINING_PIDS[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then
+                echo "  Sending SIGKILL to PID $pid"
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+        done
         sleep 2
     fi
-    echo "Existing experiments terminated."
+    
+    # Final check - use pkill as backup (only for Python processes, not shell scripts)
+    # NOTE: We don't use pkill for run_experiment.sh to avoid killing ourselves
+    for pattern in "${PATTERNS[@]}"; do
+        # Only kill Python processes matching the pattern
+        pkill -9 -f "$pattern" 2>/dev/null || true
+    done
+    
+    echo "✓ Existing experiments terminated."
 else
-    echo "No existing experiments found."
+    echo "✓ No existing experiments found."
 fi
+echo ""
 
 # Target series (define before validation)
 TARGETS=("KOEQUIPTE" "KOWRCCNSE" "KOIPALL.G")
@@ -180,43 +240,87 @@ try:
         print("0")
         sys.exit(0)
     
-    # If models filter is provided, only check those models
+    # If models filter is provided, check ALL requested models are complete
     if models_to_check and len(models_to_check) > 0 and models_to_check[0]:
-        models_to_check = [m.lower() for m in models_to_check]
+        models_to_check = [m.lower().strip() for m in models_to_check]
         all_complete = True
+        missing_models = []
+        
         for model_name in models_to_check:
             model_result = results['results'].get(model_name, {})
-            if model_result.get('status') != 'completed':
+            status = model_result.get('status', '')
+            
+            # Must be 'completed' status
+            if status != 'completed':
                 all_complete = False
-                break
+                missing_models.append(f"{model_name}(status:{status})")
+                continue
+            
+            # Must have metrics
+            if 'metrics' not in model_result:
+                all_complete = False
+                missing_models.append(f"{model_name}(no_metrics)")
+                continue
+            
             metrics = model_result.get('metrics', {})
             forecast_metrics = metrics.get('forecast_metrics', {})
+            
+            # Must have valid results for at least one horizon
             model_has_valid = False
             for horizon, horizon_metrics in forecast_metrics.items():
                 n_valid = horizon_metrics.get('n_valid', 0)
                 if n_valid > 0:
                     model_has_valid = True
                     break
+            
+            if not model_has_valid:
+                all_complete = False
+                missing_models.append(f"{model_name}(no_valid_results)")
+        
+        if not all_complete:
+            # Debug output (will be ignored, but helps debugging)
+            sys.stderr.write(f"Incomplete models: {', '.join(missing_models)}\\n")
+            print("0")
+            sys.exit(0)
+        
+        print("1")
+        sys.exit(0)
+    else:
+        # No filter: require ALL 4 models (arima, var, dfm, ddfm) to be complete
+        required_models = ['arima', 'var', 'dfm', 'ddfm']
+        all_complete = True
+        
+        for model_name in required_models:
+            model_result = results['results'].get(model_name, {})
+            status = model_result.get('status', '')
+            
+            if status != 'completed':
+                all_complete = False
+                break
+            
+            if 'metrics' not in model_result:
+                all_complete = False
+                break
+            
+            metrics = model_result.get('metrics', {})
+            forecast_metrics = metrics.get('forecast_metrics', {})
+            
+            model_has_valid = False
+            for horizon, horizon_metrics in forecast_metrics.items():
+                n_valid = horizon_metrics.get('n_valid', 0)
+                if n_valid > 0:
+                    model_has_valid = True
+                    break
+            
             if not model_has_valid:
                 all_complete = False
                 break
+        
         print("1" if all_complete else "0")
         sys.exit(0)
-    else:
-        # No filter: check if any model has n_valid > 0 for any horizon
-        for model_name, model_result in results['results'].items():
-            if model_result.get('status') == 'completed' and 'metrics' in model_result:
-                metrics = model_result.get('metrics', {})
-                forecast_metrics = metrics.get('forecast_metrics', {})
-                for horizon, horizon_metrics in forecast_metrics.items():
-                    n_valid = horizon_metrics.get('n_valid', 0)
-                    if n_valid > 0:
-                        print("1")
-                        sys.exit(0)
-    print("0")
-    sys.exit(0)
 except Exception as e:
     # If parsing fails, consider it incomplete
+    sys.stderr.write(f"Error checking results: {e}\\n")
     print("0")
     sys.exit(0)
 EOF
@@ -227,8 +331,8 @@ EOF
             return 1  # Not complete (no valid results)
         fi
     else
-        # Fallback: if Python not available, just check if file exists
-        return 0  # Assume complete if file exists
+        # Fallback: if Python not available, assume incomplete (safer)
+        return 1  # Not complete (cannot verify)
     fi
 }
 
@@ -357,12 +461,27 @@ run_experiment() {
     local hours=$((duration / 3600))
     local minutes=$(((duration % 3600) / 60))
     
+    # Verify results actually exist and are valid
+    local result_dir=$(find outputs/comparisons -maxdepth 1 -type d -name "${target}_*" 2>/dev/null | sort | tail -1)
+    local has_valid_results=0
+    
+    if [ -n "$result_dir" ] && [ -f "${result_dir}/comparison_results.json" ]; then
+        # Quick check: verify JSON is valid and has results
+        if python3 -c "import json; data = json.load(open('${result_dir}/comparison_results.json')); exit(0 if 'results' in data else 1)" 2>/dev/null; then
+            has_valid_results=1
+        fi
+    fi
+    
     if [ $EXIT_CODE -eq 0 ]; then
-        echo "[$target] ✓ Completed in ${hours}h ${minutes}m"
+        if [ $has_valid_results -eq 1 ]; then
+            echo "[$target] ✓ Completed in ${hours}h ${minutes}m (results verified)"
+        else
+            echo "[$target] ⚠ Completed but no valid results found (exit code: $EXIT_CODE, check log: $log_file)"
+        fi
     elif [ $EXIT_CODE -eq 124 ]; then
         echo "[$target] ✗ Timeout after 24 hours (check log: $log_file)"
     else
-        echo "[$target] ⚠ Completed with errors (exit code: $EXIT_CODE, check log: $log_file)"
+        echo "[$target] ✗ Failed (exit code: $EXIT_CODE, check log: $log_file)"
     fi
 }
 
@@ -381,12 +500,20 @@ echo "Checking for completed experiments"
 echo "=========================================="
 TARGETS_TO_RUN=()
 # Convert MODELS array to space-separated string for is_experiment_complete
-MODELS_STR="${MODELS[*]}"
+# If MODELS is not set, check for all 4 models (arima var dfm ddfm)
+if [ ${#MODELS[@]} -eq 0 ]; then
+    MODELS_STR="arima var dfm ddfm"
+    MODELS_DISPLAY="all 4 models (arima var dfm ddfm)"
+else
+    MODELS_STR="${MODELS[*]}"
+    MODELS_DISPLAY="${MODELS[*]}"
+fi
+
 for target in "${TARGETS[@]}"; do
     if is_experiment_complete "$target" "$MODELS_STR"; then
-        echo "✓ $target: Already complete for models ${MODELS[*]} (skipping)"
+        echo "✓ $target: Already complete for $MODELS_DISPLAY (skipping)"
     else
-        echo "→ $target: Needs to run for models ${MODELS[*]}"
+        echo "→ $target: Needs to run for $MODELS_DISPLAY"
         TARGETS_TO_RUN+=("$target")
     fi
 done

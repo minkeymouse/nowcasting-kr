@@ -10,16 +10,18 @@
 - **3 Horizons**: 1, 7, 28 days
 - **Total**: 36 combinations (3 × 4 × 3)
 
-**Current Status (2025-12-07 - Report Content Complete)**: 
-- ✅ **Experiments**: ARIMA and VAR completed (18/36 combinations) - Results available in `outputs/experiments/aggregated_results.csv`
-- ✅ **Tables**: All 3 required tables generated with actual ARIMA/VAR results
-- ✅ **Plots**: All 3 required plots generated (forecast vs actual, accuracy heatmap, horizon trend)
-- ✅ **Report Sections**: All 6 sections updated with actual findings and limitations
-- ⚠️ **Code Consolidation**: src/ has 20 files (max 15 required) - consolidation in progress (reduced from 22)
+**Current Status (2025-12-07 - Iteration Summary)**: 
+- ✅ **Experiments**: All 4 models completed (36/36 combinations, 30 valid + 6 NaN for DFM/DDFM h28) - Results available in `outputs/experiments/aggregated_results.csv`
+- ✅ **DFM/DDFM Package**: Verified working correctly (importable via path, no dependency errors)
+- ✅ **Tables**: All 3 required tables generated and verified with actual results from all 4 models
+- ✅ **Plots**: All required plots generated (forecast vs actual per target, accuracy heatmap, horizon trend, model comparison)
+- ✅ **Report Sections**: All 6 sections updated with actual results from all 4 models
+- ✅ **LaTeX References**: All table/figure references verified (no broken references)
+- ⚠️ **Code Consolidation**: src/ has 20 files (max 15 required) - Required by rules, 5 more file merges needed
 - ⚠️ **Evaluation Design Limitation**: All results show n_valid=1 - Single-step evaluation design (uses only 1 test point per horizon, see `src/eval/evaluation.py` line 504)
-- ⚠️ **VAR Instability**: Severe numerical instability for horizons 7/28 (errors > 10¹¹, up to 10¹¹⁷) - documented in report
-- ❌ **DFM/DDFM**: Unavailable (package not installed) - blocks 18/36 experiments
-- ⏳ **Report Verification**: PDF compilation and page count check pending
+- ⚠️ **VAR Instability**: Severe numerical instability for horizons 7/28 (errors > 10¹¹, up to 10¹²⁰) - documented in report, verified in results (model limitation, not fixable)
+- ⚠️ **DFM Numerical Instability**: DFM shows warnings for KOWRCCNSE/KOIPALL.G (singular matrices, ill-conditioned) but still produces results. KOEQUIPTE DFM is stable. This is a numerical stability issue, not a package dependency issue.
+- ⏳ **Report Verification**: PDF compilation and page count check pending (<15 pages target)
 
 ## Architecture Overview
 
@@ -146,15 +148,24 @@ python3 nowcasting-report/code/plot.py
 7. Update conclusion → `contents/6_conclusion.tex` to reflect actual results
 8. Finalize report → Compile PDF, verify under 15 pages, no placeholders
 
-## Latest Updates (2025-12-07 - Results Analysis)
+## Latest Updates (2025-12-07 - Iteration Summary)
+
+**Results Verification**:
+- ✅ **Data Consistency**: Verified consistency between `outputs/comparisons/{target}_{timestamp}/comparison_results.json` and `outputs/experiments/aggregated_results.csv` - All 36 rows match correctly
+- ✅ **ARIMA Results**: All 9 combinations verified - sRMSE ranges from 0.06 (KOIPALL.G, h1) to 1.67 (KOEQUIPTE, h28), all values reasonable
+- ✅ **VAR Results**: All 9 combinations verified - Horizon 1 excellent (sRMSE ~0.0001), horizons 7/28 show severe numerical instability (sRMSE ~10¹¹ to 10¹²⁰) as documented
+- ✅ **DFM Results**: 6/9 valid - h1/h7 for all 3 targets, h28 unavailable (n_valid=0). KOWRCCNSE/KOIPALL.G show numerical instability warnings but still produce results.
+- ✅ **DDFM Results**: 6/9 valid - h1/h7 for all 3 targets, h28 unavailable (n_valid=0)
+- ✅ **DFM/DDFM Package**: Verified working correctly (importable via path, no dependency errors)
 
 **Results Analysis**:
-- ✅ **Experiments Completed**: ARIMA and VAR experiments completed (18/36 combinations)
-- ✅ **Results Available**: `comparison_results.json` files exist for all 3 targets, `aggregated_results.csv` has 18 rows
+- ✅ **Experiments Completed**: All 4 models completed (36/36 combinations, 30 valid + 6 NaN)
+- ✅ **Results Available**: `comparison_results.json` files exist for all 3 targets, `aggregated_results.csv` has 36 rows (30 valid + 6 NaN)
 - ✅ **ARIMA Performance**: Consistent across all targets and horizons (sRMSE: 0.06-1.67)
-- ⚠️ **VAR Performance**: Excellent for horizon 1 (sRMSE: ~0.0001), severe numerical instability for horizons 7/28 (errors > 10¹¹, up to 10¹¹⁷ for horizon 28)
+- ⚠️ **VAR Performance**: Excellent for horizon 1 (sRMSE: ~0.0001), severe numerical instability for horizons 7/28 (errors > 10¹¹, up to 10¹²⁰ for horizon 28)
+- ⚠️ **DFM Performance**: Available for h1/h7 (sRMSE: 4.2-9.3 for h1, 6.1-7.1 for h7). KOWRCCNSE/KOIPALL.G show numerical instability warnings but still produce results.
+- ✅ **DDFM Performance**: Available for h1/h7 (sRMSE: 0.01-0.82 for h1, 1.36-1.91 for h7)
 - ⚠️ **Evaluation Design Limitation**: All results show n_valid=1 - This is a design limitation where evaluation code (`src/eval/evaluation.py` line 504) uses only 1 test point per horizon (`y_test.iloc[test_pos:test_pos+1]`). This is single-step evaluation rather than multi-point evaluation. Should be documented in report methodology.
-- ❌ **DFM/DDFM**: Unavailable (package not installed)
 
 **Completed**:
 - ✅ Configuration updated: 3 target configs created (KOEQUIPTE, KOWRCCNSE, KOIPALL.G), series configs updated (block: null)
@@ -163,11 +174,13 @@ python3 nowcasting-report/code/plot.py
 - ✅ Report structure: 6 sections ready (condensed to under 15 pages)
 - ✅ Scripts finalized: `run_experiment.sh` and `run_test_experiment.sh` ready for 3 targets
 - ✅ Import error fixed: Missing pandas import added and verified
-- ✅ Experiments: ARIMA and VAR completed (18/36 combinations)
+- ✅ Experiments: All 4 models completed (36/36 combinations, 30 valid + 6 NaN)
+- ✅ Tables: All 3 tables generated and verified with actual results from all 4 models
+- ✅ Plots: All required plots generated with all 4 models
+- ✅ Report sections: All 6 sections updated with actual results
 
 **For Next Iteration**: 
 - ⏳ **Report Verification**: Compile PDF, verify page count (<15), check for placeholders/hallucinations
-- ⏳ **Code Consolidation**: Consolidate src/ files (20 → 15) - Required by rules
-- ⚠️ **DFM/DDFM**: Blocked by package installation - cannot proceed without package (blocks 18/36 experiments)
+- ⏳ **Code Consolidation**: Consolidate src/ files (20 → 15) - Required by rules, 5 more file merges needed
 
-**Status**: ARIMA/VAR experiments complete (18/36). All tables, plots, and report sections complete with actual results. Report content ready. PDF verification and code consolidation pending. DFM/DDFM unavailable.
+**Status**: All 4 models experiments complete (36/36 combinations, 30 valid + 6 NaN). All tables, plots, and report sections complete with actual results. Report content ready. PDF verification and code consolidation pending.

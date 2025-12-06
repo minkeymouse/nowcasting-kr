@@ -947,22 +947,22 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
                 
                 n_valid = horizon_metrics.get('n_valid', 0)
                 
-                # Only include if we have valid predictions
-                if n_valid and n_valid > 0:
-                    row = {
-                        'target': target_series,
-                        'model': model_name.upper(),
-                        'horizon': horizon,
-                        'sMSE': horizon_metrics.get('sMSE'),
-                        'sMAE': horizon_metrics.get('sMAE'),
-                        'sRMSE': horizon_metrics.get('sRMSE'),
-                        'MSE': horizon_metrics.get('MSE'),
-                        'MAE': horizon_metrics.get('MAE'),
-                        'RMSE': horizon_metrics.get('RMSE'),
-                        'sigma': horizon_metrics.get('sigma'),
-                        'n_valid': n_valid
-                    }
-                    rows.append(row)
+                # Include all horizons, even if n_valid=0 (for complete 36-row dataset)
+                # This allows the report to show NaN/N/A for unavailable combinations
+                row = {
+                    'target': target_series,
+                    'model': model_name.upper(),
+                    'horizon': horizon,
+                    'sMSE': horizon_metrics.get('sMSE'),
+                    'sMAE': horizon_metrics.get('sMAE'),
+                    'sRMSE': horizon_metrics.get('sRMSE'),
+                    'MSE': horizon_metrics.get('MSE'),
+                    'MAE': horizon_metrics.get('MAE'),
+                    'RMSE': horizon_metrics.get('RMSE'),
+                    'sigma': horizon_metrics.get('sigma'),
+                    'n_valid': n_valid
+                }
+                rows.append(row)
     
     if not rows:
         return pd.DataFrame()
@@ -1354,13 +1354,21 @@ Target & Model & Horizon & sMSE & sMAE & sRMSE \\\\
                         smae = row['sMAE'] if pd.notna(row['sMAE']) else 'N/A'
                         srmse = row['sRMSE'] if pd.notna(row['sRMSE']) else 'N/A'
                         
-                        # Format numbers
-                        if isinstance(smse, (int, float)):
-                            smse = f"{smse:.4f}"
-                        if isinstance(smae, (int, float)):
-                            smae = f"{smae:.4f}"
-                        if isinstance(srmse, (int, float)):
-                            srmse = f"{srmse:.4f}"
+                        # Format numbers - use scientific notation for extreme values
+                        def format_value(val):
+                            if not isinstance(val, (int, float)):
+                                return val
+                            if pd.isna(val) or np.isinf(val):
+                                return 'N/A'
+                            # Use scientific notation if abs(value) >= 1000 or < 0.001
+                            if abs(val) >= 1000 or (abs(val) < 0.001 and abs(val) > 0):
+                                return f"{val:.4e}"
+                            else:
+                                return f"{val:.4f}"
+                        
+                        smse = format_value(smse)
+                        smae = format_value(smae)
+                        srmse = format_value(srmse)
                         
                         latex += f"{target} & {model} & {horizon} & {smse} & {smae} & {srmse} \\\\\n"
                     else:
