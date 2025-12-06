@@ -10,14 +10,14 @@
 - **3 Horizons**: 1, 7, 28 days
 - **Total**: 36 combinations (3 × 4 × 3)
 
-**Current Status (2025-12-06 - Iteration 17)**: 
+**Current Status (2025-12-06 - Iteration 20)**: 
 - ✅ ARIMA: Complete (9/9 combinations, sRMSE=0.366)
 - ✅ VAR: Complete (9/9 combinations, sRMSE=0.046) - best overall performance
 - ⚠️ DFM: Partial (4/9 combinations) - KOGDP...D h1,h7; KOGFCF..D h1,h7 available; KOCNPER.D all horizons failed (numerical instability); all h28 unavailable (test set too small)
 - ⚠️ DDFM: Partial (6/9 combinations) - all targets h1,h7 available; all h28 unavailable (test set too small)
-- ✅ Report: Complete with all available results (28/36 combinations, 77.8%) integrated, all metric values verified and corrected
+- ✅ Report: Complete with all available results (28/36 combinations, 77.8%) integrated, all metric values verified and corrected (including abstract)
 - ✅ Package: dfm-python finalized with consistent naming, clean code patterns
-- ✅ Results Analysis: All comparison results verified, all metric values match aggregated_results.csv exactly
+- ✅ Results Analysis: All comparison results analyzed and verified (2025-12-06), all metric values match aggregated_results.csv exactly, DFM KOCNPER.D failure confirmed (overflow/NaN/Inf in forecast)
 
 ## Architecture Overview
 
@@ -136,18 +136,22 @@ python3 nowcasting-report/code/plot.py
 7. Update conclusion → `contents/7_conclusion.tex` to reflect actual results
 8. Finalize report → Compile PDF, verify 20-30 pages, no placeholders
 
-## Latest Updates (Iteration 17 - 2025-12-06)
+## Latest Updates (Iteration 20 - 2025-12-06)
 
 **Completed**:
-- ✅ All metric values verified and corrected to match aggregated_results.csv exactly
+- ✅ All metric values verified and corrected to match aggregated_results.csv exactly (including abstract fix: DDFM sRMSE 0.9845 → 0.9812)
 - ✅ All pre-compilation verification tasks completed
 - ✅ All LaTeX structure verified (\input{}, \ref{}, \cite{}, image paths)
 - ✅ Report content complete with all 28 available experiments integrated
 - ✅ All incremental improvements completed (E1, E2, E3)
 - ✅ Code finalized with consistent naming and clean patterns
-- ✅ Results analysis completed - all comparison results verified
+- ✅ Comparison results analysis completed - all comparison results in `outputs/comparisons/` analyzed and verified:
+  - DFM KOCNPER.D failure confirmed (overflow/NaN/Inf in forecast, singular matrices)
+  - All unavailable combinations properly handled (n_valid=0, graceful error handling)
+  - No unexpected errors or discrepancies found
+  - aggregated_results.csv verified (28 rows, 28/36 = 77.8%)
 
 **Pending**:
 - ⏳ PDF compilation (external dependency - requires LaTeX installation)
 
-**Status**: All report content is complete and verified. All metric values match aggregated_results.csv. All citations verified. LaTeX syntax verified. Code finalized. Ready for PDF compilation.
+**Status**: All report content is complete and verified. All metric values match aggregated_results.csv exactly (including abstract). All citations verified. LaTeX syntax verified. Code finalized. Ready for PDF compilation.

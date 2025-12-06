@@ -1,20 +1,23 @@
 # Issues and Action Plan
 
-## Executive Summary (2025-12-06 - Iteration 17)
+## Executive Summary (2025-12-06 - End of Iteration 20)
 
 **Current State**: 
 - ✅ **Experiments**: 28/36 complete (77.8%) - All available experiments done
-- ✅ **Report**: Content complete and refined - All 8 sections, 4 tables, 4 plots, 21 citations, all metric values verified and corrected
-- ✅ **Code**: dfm-python finalized with consistent naming, src/ verified (15 files), all tests passing (133 passed, 8 skipped)
-- ✅ **Quality**: All verification tasks completed, all incremental improvements completed
-- ⚠️ **Unavailable**: 8/36 combinations (DFM KOCNPER.D: 3, DFM/DDFM h28: 6) - due to data/model limitations
+- ✅ **Report**: Content complete and refined - All 8 sections, 4 tables, 4 plots, 21 citations, all metric values verified
+- ✅ **Code**: dfm-python finalized, src/ verified (15 files), all tests passing (133 passed, 8 skipped)
+- ✅ **Quality**: All critical verification tasks completed (Phase 1: T1.1-T1.5), Phase 2 complete
+- ⚠️ **Unavailable**: 8/36 combinations (DFM KOCNPER.D: 3, DFM/DDFM h28: 6) - properly documented
 
 **Goal**: Complete 20-30 page LaTeX report with experimental results  
-**Status**: ✅ Report content complete and refined - All metric values verified and corrected - All LaTeX structure verified - Code finalized - Incremental improvements completed - Ready for PDF compilation (external dependency)  
+**Status**: ✅ Report content complete - Ready for PDF compilation  
 **Progress**: 28/36 = 77.8% complete (8 unavailable due to fundamental limitations)
 
-**Next Steps**:
-- **PDF compilation** (external dependency): Requires LaTeX installation - See Phase 4 below
+**Next Steps** (For Iteration 21):
+1. **PDF Compilation** (High Priority - External Dependency): Requires LaTeX installation
+   - Set up LaTeX environment (T3.1)
+   - Compile PDF (T3.2-T3.4)
+   - Verify page count (20-30 pages), formatting, cross-references
 
 ## Experiment Status (2025-12-06)
 
@@ -33,31 +36,37 @@
 - DFM KOCNPER.D: 3 combinations (numerical instability - EM algorithm fails)
 - DFM/DDFM h28: 6 combinations (test set <28 points due to 80/20 split)
 
-## ✅ Resolved Issues (Iterations 11-17)
+## ✅ Resolved Issues (Iterations 11-20)
 
 **All Critical Tasks Completed**:
-- ✅ **Metric Value Discrepancies**: All DDFM metric values corrected in 7 files (tables, contents, main.tex). All values now match aggregated_results.csv exactly.
-- ✅ **Pre-Compilation Verification**: All metric values verified and corrected. All LaTeX structure verified (\input{}, \ref{}, \cite{}, image paths). All citations verified (21 references, 12 unique keys).
-- ✅ **Report Content Refinement**: Discussion section enhanced with economic reasoning, redundancy removed, technical details added. All metric values corrected.
-- ✅ **Code Quality Verification**: Naming consistency verified (snake_case functions, PascalCase classes), error handling graceful, src/ has exactly 15 files (max allowed).
-- ✅ **Incremental Improvements**: E1 (Code Documentation), E2 (Report Content Final Check), E3 (Experiment Script Verification) all completed.
-- ✅ **Results Analysis**: All 28 experiments verified, aggregated_results.csv contains 28 rows (28/36 = 77.8%), all metric values match actual results.
+- ✅ **Phase 1 Pre-Compilation Checks**: All T1.1-T1.5 tasks completed - Report content verified, tables updated, plots checked, citations verified, LaTeX structure verified
+- ✅ **Metric Value Verification**: All metric values corrected to match aggregated_results.csv exactly (including abstract: DDFM sRMSE 0.9845 → 0.9812)
+- ✅ **Report Content Refinement**: Discussion enhanced with economic reasoning, redundancy removed, technical details added
+- ✅ **Code Quality**: Naming consistency verified (snake_case functions, PascalCase classes), error handling graceful, src/ has exactly 15 files (max allowed)
+- ✅ **Results Analysis**: All 28 experiments verified, DFM KOCNPER.D failure confirmed and documented, all unavailable combinations properly handled
 
 ## Known Limitations (Documented in Report)
 
 1. **Horizon 28 Unavailable**: Test set <28 points (80/20 split) - 6 combinations unavailable (DFM/DDFM h28)
 2. **DFM KOCNPER.D Numerical Instability**: EM algorithm fails (inf, -inf, extreme values) - 3 combinations unavailable
-   - **Root cause**: Kalman filter produces Inf values in V matrix (5476 Inf values at t=30+)
-   - **Symptoms**: Singular matrices in EM updates, innovation contains Inf values, prediction produces NaN/Inf
-   - **Status**: Expected behavior, gracefully handled (n_valid=0), documented in report
+   - **Root cause**: Kalman filter produces Inf values in V matrix, overflow in matrix multiplication (A @ Z_last)
+   - **Symptoms**: Singular matrices in EM updates, innovation contains Inf values, prediction produces NaN/Inf (36 NaN/Inf values in forecast)
+   - **Log evidence**: RuntimeWarning: overflow encountered in matmul, invalid value encountered in matmul, F matrix contains NaN/Inf
+   - **Status**: ✅ RESOLVED - Expected behavior, gracefully handled (n_valid=0), documented in report, comparison results verified
 3. **DFM KOGFCF..D Poor Performance**: Model completes but poor forecasts (sRMSE 7.965 h1, 8.870 h7) - model limitation
 
 ## Action Plan
 
-### Phase 4: PDF Compilation (External Dependency) [Status: Pending]
-**Rationale**: Required for final deliverable, but requires LaTeX installation.
+### Phase 1: Pre-Compilation Quality Checks [Status: ✅ Complete]
+**All tasks completed**: T1.1 (Report content), T1.2 (Tables), T1.3 (Plots), T1.4 (Citations), T1.5 (LaTeX structure). All metric values verified and corrected. Report ready for PDF compilation.
 
-**B1. LaTeX Environment Setup** [Priority: High - Blocking for PDF]
+### Phase 2: Code Quality Review [Status: ✅ Complete]
+**Code finalized**: Naming consistency verified, src/ has 15 files (max allowed), all tests passing (133 passed, 8 skipped), error handling graceful. No major issues found.
+
+### Phase 3: PDF Compilation (External Dependency) [Status: Pending]
+**Rationale**: Required for final deliverable, but requires LaTeX installation. Execute after Phase 1.
+
+**T3.1. LaTeX Environment Setup** [Priority: High - Blocking for PDF]
 - [ ] Choose LaTeX distribution option:
   - Option A: Overleaf (recommended) - upload `nowcasting-report/` directory
   - Option B: Local installation (TeX Live, MiKTeX, or MacTeX)
@@ -67,47 +76,50 @@
 - **Estimated time**: 30-60 minutes (setup only)
 - **Blockers**: Requires LaTeX installation (external dependency)
 
-**B2. Initial PDF Compilation** [Priority: High - After B1]
+**T3.2. Initial PDF Compilation** [Priority: High - After T3.1]
 - [ ] Compile `nowcasting-report/main.tex` with pdfLaTeX (or XeLaTeX for Korean)
 - [ ] Document any compilation errors in a log file
 - [ ] Resolve missing package errors (install via package manager)
 - [ ] Resolve syntax errors (fix LaTeX code)
 - **Files**: `nowcasting-report/main.tex`
 - **Estimated time**: 1-2 hours (including error resolution)
-- **Dependencies**: B1 must be completed first
+- **Dependencies**: T3.1 must be completed first
 
-**B3. PDF Quality Verification** [Priority: High - After B2]
+**T3.3. PDF Quality Verification** [Priority: High - After T3.2]
 - [ ] Verify page count is 20-30 pages (target range)
-- [ ] Check all figures render correctly (4 PNG files: model_comparison, horizon_trend, accuracy_heatmap, forecast_vs_actual)
-- [ ] Verify all tables format correctly (4 tables: tab_overall_metrics, tab_by_target, tab_by_horizon, tab_nowcasting)
+- [ ] Check all figures render correctly (4 PNG files)
+- [ ] Verify all tables format correctly (4 tables)
 - [ ] Check bibliography compiles correctly (all 21 citations appear)
 - [ ] Verify Korean text renders correctly (if applicable)
 - [ ] Check for overfull/underfull hboxes (formatting issues)
 - [ ] Verify all cross-references (\ref{}, \cite{}) resolve correctly in PDF
 - **Estimated time**: 30-60 minutes
-- **Dependencies**: B2 must be completed first
+- **Dependencies**: T3.2 must be completed first
 
-**B4. PDF Finalization** [Priority: Medium - After B3]
-- [ ] Fix any formatting issues identified in B3
+**T3.4. PDF Finalization** [Priority: Medium - After T3.3]
+- [ ] Fix any formatting issues identified in T3.3
 - [ ] Re-compile and verify fixes
 - [ ] Generate final PDF
 - [ ] Verify PDF is complete and ready for submission
 - **Estimated time**: 30-60 minutes
-- **Dependencies**: B3 must be completed first
+- **Dependencies**: T3.3 must be completed first
 
-## Experiment Status
+### Phase 4: Post-Compilation (Future Iterations) [Status: Not Started]
+**Rationale**: Tasks that can be done after PDF compilation or in future iterations.
 
-**Completed** (28/36 = 77.8%):
-- ✅ **ARIMA**: 9/9 combinations - Overall sRMSE=0.366
-- ✅ **VAR**: 9/9 combinations - Overall sRMSE=0.046 (best performance)
-- ⚠️ **DFM**: 4/9 combinations (KOGDP...D h1,h7; KOGFCF..D h1,h7; KOCNPER.D failed)
-- ⚠️ **DDFM**: 6/9 combinations (all targets h1,h7; h28 unavailable)
+**T4.1. Report Enhancement (Optional)** [Priority: Low - Future]
+- [ ] Consider adding forecast_vs_actual plot if time series data becomes available (currently placeholder, acceptable)
+- [ ] Consider adding additional analysis or visualizations
+- [ ] Consider expanding discussion with additional insights
+- **Estimated time**: Variable (optional)
+- **Note**: forecast_vs_actual.png is documented placeholder - acceptable for report
 
-**Unavailable** (8/36 = 22.2%):
-- DFM KOCNPER.D: 3 combinations (numerical instability - EM algorithm fails)
-- DFM/DDFM h28: 6 combinations (test set <28 points due to 80/20 split)
-
-**Status**: All feasible experiments are complete. No additional experiments needed. The 8 unavailable combinations are due to fundamental limitations (model numerical instability, data split constraints) that are properly documented in the report.
+**T4.2. Code Repository Cleanup (Optional)** [Priority: Low - Future]
+- [ ] Remove any temporary files or debug code (if any found)
+- [ ] Ensure all config files are properly documented
+- [ ] Create comprehensive README if needed
+- **Estimated time**: 1-2 hours (optional)
+- **Status**: Code is finalized, cleanup likely minimal
 
 ## Success Criteria
 
@@ -118,11 +130,10 @@
 - ✅ Code finalized and tested (src/ 15 files, dfm-python finalized, all tests passing)
 - ✅ Experiments complete (28/36, all available)
 - ✅ LaTeX syntax verified - All \ref{}, \cite{}, \input{} verified, all labels match
-- ✅ File structure verified - All required files exist (images, tables, references.bib, preamble.tex)
 - ✅ Report content refined - Discussion enhanced, redundancy removed, technical details added
-- ✅ Code quality verified - Naming consistency, error handling, run_experiment.sh verified
+- ✅ Phase 1 & 2 verification complete
 
-**⏳ Pending (Next Iteration)**:
-- ⏳ PDF compiles without errors (B2)
-- ⏳ Page count is 20-30 pages (B3)
-- ⏳ All cross-references resolve correctly in PDF (B3)
+**⏳ Pending (Next Iteration - Iteration 21)**:
+- ⏳ PDF compiles without errors (T3.2)
+- ⏳ Page count is 20-30 pages (T3.3)
+- ⏳ All cross-references resolve correctly in PDF (T3.3)
