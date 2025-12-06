@@ -1,6 +1,6 @@
 #!/bin/bash
-# High-priority experiments for RESULTS_NEEDED.md
 # Run all experiments for model comparison
+# 3 targets × 4 models × 3 horizons = 36 combinations
 # Maximum 5 parallel background processes to avoid OOM
 
 # Don't exit on error - continue even if some models fail
@@ -35,7 +35,7 @@ else
 fi
 
 # Target series (define before validation)
-TARGETS=("KOEQUIPTE" "KOWRCCNSE" "KOIPALL.G" "KOMPRI30G")
+TARGETS=("KOEQUIPTE" "KOWRCCNSE" "KOIPALL.G")
 
 # Function to map target series to config name
 get_config_name() {
@@ -49,9 +49,6 @@ get_config_name() {
             ;;
         "KOIPALL.G")
             echo "experiment/koipallg_report"
-            ;;
-        "KOMPRI30G")
-            echo "experiment/kompri30g_report"
             ;;
         *)
             # Fallback: try to construct config name from target
@@ -82,12 +79,17 @@ validate_environment() {
     }
     echo "✓ Virtual environment activated"
     
-    # Check data file
-    if [ ! -f "data/sample_data.csv" ]; then
-        echo "✗ Error: Data file (data/sample_data.csv) not found"
+    # Check data file (try both possible names)
+    if [ -f "data/data.csv" ]; then
+        DATA_FILE="data/data.csv"
+        echo "✓ Data file exists: $DATA_FILE"
+    elif [ -f "data/sample_data.csv" ]; then
+        DATA_FILE="data/sample_data.csv"
+        echo "✓ Data file exists: $DATA_FILE"
+    else
+        echo "✗ Error: Data file not found (checked: data/data.csv, data/sample_data.csv)"
         return 1
     fi
-    echo "✓ Data file exists"
     
     # Check config files
     local missing_configs=0
@@ -293,7 +295,7 @@ else
     MODELS=("arima" "var" "dfm" "ddfm")
 fi
 
-# Horizons (all 3 as per RESULTS_NEEDED.md)
+# Horizons (1, 7, 28 days)
 HORIZONS=(1 7 28)
 
 # Maximum parallel processes
@@ -307,7 +309,7 @@ wait_for_slot() {
 }
 
 echo "=========================================="
-echo "Running High-Priority Experiments"
+echo "Running Experiments"
 echo "=========================================="
 echo "Target Series: ${TARGETS[@]}"
 echo "Models: ${MODELS[@]}"
@@ -428,7 +430,7 @@ echo "=========================================="
 echo "Completion time: $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
-# Aggregate results according to RESULTS_NEEDED.md structure
+# Aggregate results
 echo "=========================================="
 echo "Aggregating Results"
 echo "=========================================="
@@ -456,7 +458,7 @@ echo "  - Aggregated results: outputs/experiments/"
 echo ""
 
 # Count results
-result_dirs=$(find outputs/comparisons -maxdepth 1 -type d -name "KOEQUIPTE*" -o -name "KOWRCCNSE*" -o -name "KOIPALL.G*" -o -name "KOMPRI30G*" 2>/dev/null | wc -l)
+result_dirs=$(find outputs/comparisons -maxdepth 1 -type d -name "KOEQUIPTE*" -o -name "KOWRCCNSE*" -o -name "KOIPALL.G*" 2>/dev/null | wc -l)
 log_files=$(find outputs/comparisons -maxdepth 1 -type f -name "*.log" 2>/dev/null | wc -l)
 
 echo "Generated:"

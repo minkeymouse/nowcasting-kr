@@ -150,16 +150,10 @@ class DFMForecaster(BaseForecaster):
             
             # Train the model using in-memory data module
             self._dfm_model.train(data_module=data_module, max_iter=self.max_iter, threshold=self.threshold)
-        except (ImportError, Exception):
+        except (ImportError, ValueError, AttributeError) as e:
             # Fallback to temporary file when in-memory DataFrame handling fails
-            # This is necessary because dfm-python's train() method supports two interfaces:
-            # 1. data_module (in-memory): Preferred method using DFMDataModule, but may fail if
-            #    dependencies (e.g., create_data_module_from_dataframe) are unavailable or if
-            #    there are issues with DataFrame-to-DataModule conversion
-            # 2. data_path (file path): Fallback method that writes DataFrame to CSV and loads
-            #    from file, which is more robust but less efficient
-            # The temporary file approach ensures training can proceed even when the preferred
-            # in-memory method fails, maintaining backward compatibility and robustness
+            # This handles cases where DFMDataModule creation fails due to missing dependencies
+            # or DataFrame-to-DataModule conversion issues
             import tempfile
             import os
             
@@ -386,16 +380,10 @@ class DDFMForecaster(BaseForecaster):
                 learning_rate=self.learning_rate,
                 batch_size=self.batch_size
             )
-        except (ImportError, Exception):
+        except (ImportError, ValueError, AttributeError) as e:
             # Fallback to temporary file when in-memory DataFrame handling fails
-            # This is necessary because dfm-python's train() method supports two interfaces:
-            # 1. data_module (in-memory): Preferred method using DFMDataModule, but may fail if
-            #    dependencies (e.g., create_data_module_from_dataframe) are unavailable or if
-            #    there are issues with DataFrame-to-DataModule conversion
-            # 2. data_path (file path): Fallback method that writes DataFrame to CSV and loads
-            #    from file, which is more robust but less efficient
-            # The temporary file approach ensures training can proceed even when the preferred
-            # in-memory method fails, maintaining backward compatibility and robustness
+            # This handles cases where DFMDataModule creation fails due to missing dependencies
+            # or DataFrame-to-DataModule conversion issues
             import tempfile
             import os
             
@@ -652,7 +640,7 @@ def create_data_module_from_dataframe(
                 # Pipeline can't handle the data (likely due to column mismatch)
                 # Use passthrough transformer instead
                 pipeline = None
-    except Exception:
+    except (ValueError, TypeError, AttributeError, ImportError):
         # If pipeline creation fails, use passthrough
         pipeline = None
     
@@ -991,10 +979,10 @@ def save_to_outputs(
     time_index = None
     try:
         time_index = model_wrapper.get_time()
-    except:
+    except (AttributeError, RuntimeError):
         # Silently handle case where time index is not available
         # This can happen if model hasn't been trained or time index not set
-        pass
+        time_index = None
     
     # Save model, result, config, and time index as a single pickle file
     # This allows complete model reconstruction later

@@ -1007,3 +1007,543 @@ def main_aggregator():
     print(f"\n✓ Aggregated results saved to: {output_file}")
     print(f"  Total rows: {len(aggregated)}")
     print(f"  Columns: {', '.join(aggregated.columns)}")
+    
+    # Generate LaTeX tables
+    print("\n" + "=" * 70)
+    print("Generating LaTeX Tables")
+    print("=" * 70)
+    generate_all_latex_tables()
+
+
+# ========================================================================
+# LaTeX Table Generation Functions
+# ========================================================================
+
+def generate_latex_table_overall_metrics(
+    aggregated_df: pd.DataFrame,
+    output_path: Optional[Path] = None
+) -> str:
+    """Generate LaTeX table for overall metrics (averaged across all targets/horizons).
+    
+    Parameters
+    ----------
+    aggregated_df : pd.DataFrame
+        DataFrame from aggregate_overall_performance() with columns:
+        target, model, horizon, sMSE, sMAE, sRMSE
+    output_path : Path, optional
+        Path to save the LaTeX table file
+        
+    Returns
+    -------
+    str
+        LaTeX table code
+    """
+    if aggregated_df.empty:
+        # Return placeholder table
+        latex = """\\begin{table}[h]
+\\centering
+\\caption[Overall Model Performance Comparison (Standardized Metrics, Overall Average)]{Overall Model Performance Comparison (Standardized Metrics, Overall Average)\\footnote{Results averaged across 3 target variables (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) and 3 forecast horizons (1, 7, 28 days). Some combinations may be unavailable due to data and model limitations.}}
+\\label{tab:overall_metrics}
+\\begin{tabular}{lccc}
+\\toprule
+Model & sMSE & sMAE & sRMSE \\\\
+\\midrule
+ARIMA & -- & -- & -- \\\\
+VAR & -- & -- & -- \\\\
+DFM & -- & -- & -- \\\\
+DDFM & -- & -- & -- \\\\
+\\bottomrule
+\\end{tabular}
+\\end{table}"""
+        if output_path:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(latex)
+        return latex
+    
+    # Calculate averages across all targets and horizons
+    model_avg = aggregated_df.groupby('model')[['sMSE', 'sMAE', 'sRMSE']].mean().reset_index()
+    
+    # Sort by sRMSE
+    model_avg = model_avg.sort_values('sRMSE')
+    
+    # Generate LaTeX
+    latex = """\\begin{table}[h]
+\\centering
+\\caption[Overall Model Performance Comparison (Standardized Metrics, Overall Average)]{Overall Model Performance Comparison (Standardized Metrics, Overall Average)\\footnote{Results averaged across 3 target variables (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) and 3 forecast horizons (1, 7, 28 days). Some combinations may be unavailable due to data and model limitations.}}
+\\label{tab:overall_metrics}
+\\begin{tabular}{lccc}
+\\toprule
+Model & sMSE & sMAE & sRMSE \\\\
+\\midrule
+"""
+    
+    for _, row in model_avg.iterrows():
+        model = row['model']
+        smse = row['sMSE'] if pd.notna(row['sMSE']) else '--'
+        smae = row['sMAE'] if pd.notna(row['sMAE']) else '--'
+        srmse = row['sRMSE'] if pd.notna(row['sRMSE']) else '--'
+        
+        # Format numbers
+        if isinstance(smse, (int, float)):
+            smse = f"{smse:.4f}"
+        if isinstance(smae, (int, float)):
+            smae = f"{smae:.4f}"
+        if isinstance(srmse, (int, float)):
+            srmse = f"{srmse:.4f}"
+        
+        latex += f"{model} & {smse} & {smae} & {srmse} \\\\\n"
+    
+    latex += """\\bottomrule
+\\end{tabular}
+\\end{table}"""
+    
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(latex)
+    
+    return latex
+
+
+def generate_latex_table_by_target(
+    aggregated_df: pd.DataFrame,
+    output_path: Optional[Path] = None
+) -> str:
+    """Generate LaTeX table for metrics by target variable.
+    
+    Parameters
+    ----------
+    aggregated_df : pd.DataFrame
+        DataFrame from aggregate_overall_performance()
+    output_path : Path, optional
+        Path to save the LaTeX table file
+        
+    Returns
+    -------
+    str
+        LaTeX table code
+    """
+    if aggregated_df.empty:
+        # Return placeholder table
+        latex = """\\begin{table}[h]
+\\centering
+\\caption[Model Performance Comparison by Target Variable (Standardized RMSE)]{Model Performance Comparison by Target Variable (Standardized RMSE)\\footnote{Results averaged across forecast horizons. Some models may have no results for certain targets due to numerical instability.}}
+\\label{tab:overall_metrics_by_target}
+\\begin{tabular}{lccc}
+\\toprule
+Model & Equipment Investment & Wholesale/Retail Sales & Industrial Production \\\\
+ & (KOEQUIPTE) & (KOWRCCNSE) & (KOIPALL.G) \\\\
+\\midrule
+ARIMA & -- & -- & -- \\\\
+VAR & -- & -- & -- \\\\
+DFM & -- & -- & -- \\\\
+DDFM & -- & -- & -- \\\\
+\\bottomrule
+\\end{tabular}
+\\end{table}"""
+        if output_path:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(latex)
+        return latex
+    
+    # Calculate averages by model and target (across horizons)
+    target_avg = aggregated_df.groupby(['model', 'target'])['sRMSE'].mean().reset_index()
+    target_pivot = target_avg.pivot(index='model', columns='target', values='sRMSE')
+    
+    # Ensure all targets are present
+    targets = ['KOEQUIPTE', 'KOWRCCNSE', 'KOIPALL.G']
+    for target in targets:
+        if target not in target_pivot.columns:
+            target_pivot[target] = np.nan
+    
+    # Generate LaTeX
+    latex = """\\begin{table}[h]
+\\centering
+\\caption[Model Performance Comparison by Target Variable (Standardized RMSE)]{Model Performance Comparison by Target Variable (Standardized RMSE)\\footnote{Results averaged across forecast horizons. Some models may have no results for certain targets due to numerical instability.}}
+\\label{tab:overall_metrics_by_target}
+\\begin{tabular}{lccc}
+\\toprule
+Model & Equipment Investment & Wholesale/Retail Sales & Industrial Production \\\\
+ & (KOEQUIPTE) & (KOWRCCNSE) & (KOIPALL.G) \\\\
+\\midrule
+"""
+    
+    models = ['ARIMA', 'VAR', 'DFM', 'DDFM']
+    for model in models:
+        if model not in target_pivot.index:
+            latex += f"{model} & -- & -- & -- \\\\\n"
+            continue
+        
+        values = []
+        for target in targets:
+            val = target_pivot.loc[model, target] if target in target_pivot.columns else np.nan
+            if pd.notna(val):
+                values.append(f"{val:.4f}")
+            else:
+                values.append("--")
+        
+        latex += f"{model} & {values[0]} & {values[1]} & {values[2]} \\\\\n"
+    
+    latex += """\\bottomrule
+\\end{tabular}
+\\end{table}"""
+    
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(latex)
+    
+    return latex
+
+
+def generate_latex_table_by_horizon(
+    aggregated_df: pd.DataFrame,
+    output_path: Optional[Path] = None
+) -> str:
+    """Generate LaTeX table for metrics by forecast horizon.
+    
+    Parameters
+    ----------
+    aggregated_df : pd.DataFrame
+        DataFrame from aggregate_overall_performance()
+    output_path : Path, optional
+        Path to save the LaTeX table file
+        
+    Returns
+    -------
+    str
+        LaTeX table code
+    """
+    if aggregated_df.empty:
+        # Return placeholder table
+        latex = """\\begin{table}[h]
+\\centering
+\\caption[Model Performance Comparison by Forecast Horizon (Standardized RMSE)]{Model Performance Comparison by Forecast Horizon (Standardized RMSE)\\footnote{ARIMA and VAR have results for all forecast horizons. DFM and DDFM 28-day forecasts may be unavailable if test set size is insufficient (80/20 split results in test set <28 points).}}
+\\label{tab:overall_metrics_by_horizon}
+\\begin{tabular}{lccc}
+\\toprule
+Model & 1 day & 7 days & 28 days \\\\
+\\midrule
+ARIMA & -- & -- & -- \\\\
+VAR & -- & -- & -- \\\\
+DFM & -- & -- & N/A\\footnotemark[1] \\\\
+DDFM & -- & -- & N/A\\footnotemark[1] \\\\
+\\bottomrule
+\\end{tabular}
+\\footnotetext[1]{28-day forecast evaluation unavailable due to insufficient test set size.}
+\\end{table}"""
+        if output_path:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(latex)
+        return latex
+    
+    # Calculate averages by model and horizon (across targets)
+    horizon_avg = aggregated_df.groupby(['model', 'horizon'])['sRMSE'].mean().reset_index()
+    horizon_pivot = horizon_avg.pivot(index='model', columns='horizon', values='sRMSE')
+    
+    # Generate LaTeX
+    latex = """\\begin{table}[h]
+\\centering
+\\caption[Model Performance Comparison by Forecast Horizon (Standardized RMSE)]{Model Performance Comparison by Forecast Horizon (Standardized RMSE)\\footnote{ARIMA and VAR have results for all forecast horizons. DFM and DDFM 28-day forecasts may be unavailable if test set size is insufficient (80/20 split results in test set <28 points).}}
+\\label{tab:overall_metrics_by_horizon}
+\\begin{tabular}{lccc}
+\\toprule
+Model & 1 day & 7 days & 28 days \\\\
+\\midrule
+"""
+    
+    models = ['ARIMA', 'VAR', 'DFM', 'DDFM']
+    horizons = [1, 7, 28]
+    
+    for model in models:
+        if model not in horizon_pivot.index:
+            latex += f"{model} & -- & -- & -- \\\\\n"
+            continue
+        
+        values = []
+        for h in horizons:
+            if h in horizon_pivot.columns:
+                val = horizon_pivot.loc[model, h]
+                if pd.notna(val):
+                    values.append(f"{val:.4f}")
+                else:
+                    values.append("N/A\\footnotemark[1]" if h == 28 else "--")
+            else:
+                values.append("N/A\\footnotemark[1]" if h == 28 else "--")
+        
+        latex += f"{model} & {values[0]} & {values[1]} & {values[2]} \\\\\n"
+    
+    latex += """\\bottomrule
+\\end{tabular}
+\\footnotetext[1]{28-day forecast evaluation unavailable due to insufficient test set size.}
+\\end{table}"""
+    
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(latex)
+    
+    return latex
+
+
+def generate_latex_table_36_rows(
+    aggregated_df: pd.DataFrame,
+    output_path: Optional[Path] = None
+) -> str:
+    """Generate LaTeX table with 36 rows (3 targets × 4 models × 3 horizons).
+    
+    Parameters
+    ----------
+    aggregated_df : pd.DataFrame
+        DataFrame from aggregate_overall_performance()
+    output_path : Path, optional
+        Path to save the LaTeX table file
+        
+    Returns
+    -------
+    str
+        LaTeX table code
+    """
+    if aggregated_df.empty:
+        return "% Placeholder: No data available for 36-row table"
+    
+    # Sort by target, model, horizon
+    df_sorted = aggregated_df.sort_values(['target', 'model', 'horizon']).copy()
+    
+    # Generate LaTeX
+    latex = """\\begin{table}[h]
+\\centering
+\\caption[Standardized MSE and MAE by Target, Model, and Horizon]{Standardized MSE and MAE by Target, Model, and Horizon\\footnote{36 combinations: 3 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) × 4 models (ARIMA, VAR, DFM, DDFM) × 3 horizons (1, 7, 28 days). Missing values marked as N/A.}}
+\\label{tab:metrics_36_rows}
+\\begin{tabular}{lccccc}
+\\toprule
+Target & Model & Horizon & sMSE & sMAE & sRMSE \\\\
+\\midrule
+"""
+    
+    for _, row in df_sorted.iterrows():
+        target = row['target']
+        model = row['model']
+        horizon = row['horizon']
+        smse = row['sMSE'] if pd.notna(row['sMSE']) else 'N/A'
+        smae = row['sMAE'] if pd.notna(row['sMAE']) else 'N/A'
+        srmse = row['sRMSE'] if pd.notna(row['sRMSE']) else 'N/A'
+        
+        # Format numbers
+        if isinstance(smse, (int, float)):
+            smse = f"{smse:.4f}"
+        if isinstance(smae, (int, float)):
+            smae = f"{smae:.4f}"
+        if isinstance(srmse, (int, float)):
+            srmse = f"{srmse:.4f}"
+        
+        latex += f"{target} & {model} & {horizon} & {smse} & {smae} & {srmse} \\\\\n"
+    
+    latex += """\\bottomrule
+\\end{tabular}
+\\end{table}"""
+    
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(latex)
+    
+    return latex
+
+
+def generate_latex_table_dataset_params(
+    config_dir: Optional[Path] = None,
+    output_path: Optional[Path] = None
+) -> str:
+    """Generate LaTeX table for dataset details and model parameters.
+    
+    Parameters
+    ----------
+    config_dir : Path, optional
+        Directory containing config files (default: project root / config)
+    output_path : Path, optional
+        Path to save the LaTeX table file
+        
+    Returns
+    -------
+    str
+        LaTeX table code
+    """
+    import yaml
+    
+    if config_dir is None:
+        config_dir = Path(__file__).parent.parent.parent / "config"
+    
+    # Load model configs
+    model_configs = {}
+    for model_name in ['arima', 'var', 'dfm', 'ddfm']:
+        config_file = config_dir / "model" / f"{model_name}.yaml"
+        if config_file.exists():
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    model_configs[model_name] = yaml.safe_load(f)
+            except Exception:
+                model_configs[model_name] = {}
+    
+    # Load experiment configs to get series counts
+    targets = ['KOEQUIPTE', 'KOWRCCNSE', 'KOIPALL.G']
+    series_counts = {}
+    for target in targets:
+        config_name_map = {
+            'KOEQUIPTE': 'koequipte_report',
+            'KOWRCCNSE': 'kowrccnse_report',
+            'KOIPALL.G': 'koipallg_report'
+        }
+        config_file = config_dir / "experiment" / f"{config_name_map.get(target, '')}.yaml"
+        if config_file.exists():
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    exp_config = yaml.safe_load(f)
+                    series_list = exp_config.get('series', [])
+                    series_counts[target] = len(series_list) if isinstance(series_list, list) else 0
+            except Exception:
+                series_counts[target] = 0
+        else:
+            series_counts[target] = 0
+    
+    # Extract parameters
+    arima_order = model_configs.get('arima', {}).get('order', [1, 1, 1])
+    if isinstance(arima_order, list) and len(arima_order) >= 3:
+        arima_params = f"({arima_order[0]}, {arima_order[1]}, {arima_order[2]})"
+    else:
+        arima_params = "(1, 1, 1)"
+    
+    var_lags = model_configs.get('var', {}).get('lag_order', 1)
+    var_params = f"Lag: {var_lags}"
+    
+    dfm_factors = model_configs.get('dfm', {}).get('blocks', {}).get('Block_Global', {}).get('factors', 3)
+    dfm_max_iter = model_configs.get('dfm', {}).get('max_iter', 5000)
+    dfm_params = f"Factors: {dfm_factors}, Max Iter: {dfm_max_iter}"
+    
+    ddfm_layers = model_configs.get('ddfm', {}).get('encoder_layers', [64, 32])
+    ddfm_factors = model_configs.get('ddfm', {}).get('num_factors', 2)
+    ddfm_epochs = model_configs.get('ddfm', {}).get('epochs', 100)
+    if isinstance(ddfm_layers, list):
+        layers_str = '-'.join(map(str, ddfm_layers))
+    else:
+        layers_str = "64-32"
+    ddfm_params = f"Layers: {layers_str}, Factors: {ddfm_factors}, Epochs: {ddfm_epochs}"
+    
+    # Calculate total series count (average across targets)
+    avg_series_count = int(sum(series_counts.values()) / len(series_counts)) if series_counts else 0
+    
+    # Generate LaTeX
+    latex = """\\begin{table}[h]
+\\centering
+\\caption[Dataset Details and Model Parameters]{Dataset Details and Model Parameters\\footnote{Dataset: 3 target variables (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) with average of """ + str(avg_series_count) + """ series per target. Training period: 1985-2019, Nowcasting period: 2024-2025.}}
+\\label{tab:dataset_params}
+\\begin{tabular}{ll}
+\\toprule
+\\textbf{Item} & \\textbf{Value} \\\\
+\\midrule
+\\multicolumn{2}{l}{\\textbf{Dataset}} \\\\
+\\quad Targets & 3 (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) \\\\
+\\quad Series per Target & """ + str(avg_series_count) + """ (average) \\\\
+\\quad Training Period & 1985-2019 \\\\
+\\quad Nowcasting Period & 2024-2025 \\\\
+\\midrule
+\\multicolumn{2}{l}{\\textbf{Model Parameters}} \\\\
+\\quad ARIMA & Order: """ + arima_params + """ \\\\
+\\quad VAR & """ + var_params + """ \\\\
+\\quad DFM & """ + dfm_params + """ \\\\
+\\quad DDFM & """ + ddfm_params + """ \\\\
+\\bottomrule
+\\end{tabular}
+\\end{table}"""
+    
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(latex)
+    
+    return latex
+
+
+def generate_all_latex_tables(
+    outputs_dir: Optional[Path] = None,
+    tables_dir: Optional[Path] = None,
+    config_dir: Optional[Path] = None
+) -> Dict[str, str]:
+    """Generate all LaTeX tables from aggregated results.
+    
+    Parameters
+    ----------
+    outputs_dir : Path, optional
+        Directory containing outputs/ (default: project root / outputs)
+    tables_dir : Path, optional
+        Directory to save LaTeX tables (default: nowcasting-report/tables/)
+        
+    Returns
+    -------
+    Dict[str, str]
+        Dictionary mapping table names to LaTeX code
+    """
+    if outputs_dir is None:
+        outputs_dir = Path(__file__).parent.parent.parent / "outputs"
+    
+    if tables_dir is None:
+        tables_dir = Path(__file__).parent.parent.parent / "nowcasting-report" / "tables"
+    
+    # Load aggregated results
+    aggregated_file = outputs_dir / "experiments" / "aggregated_results.csv"
+    
+    if not aggregated_file.exists():
+        print(f"Warning: {aggregated_file} not found. Generating placeholder tables.")
+        aggregated_df = pd.DataFrame()
+    else:
+        aggregated_df = pd.read_csv(aggregated_file)
+    
+    if config_dir is None:
+        config_dir = Path(__file__).parent.parent.parent / "config"
+    
+    tables = {}
+    
+    # Generate each table
+    print("Generating LaTeX tables...")
+    
+    # Table 0: Dataset and parameters
+    print("  - tab_dataset_params.tex")
+    tables['dataset_params'] = generate_latex_table_dataset_params(
+        config_dir,
+        tables_dir / "tab_dataset_params.tex"
+    )
+    
+    # Table 1: Overall metrics
+    print("  - tab_overall_metrics.tex")
+    tables['overall_metrics'] = generate_latex_table_overall_metrics(
+        aggregated_df,
+        tables_dir / "tab_overall_metrics.tex"
+    )
+    
+    # Table 2: By target
+    print("  - tab_overall_metrics_by_target.tex")
+    tables['by_target'] = generate_latex_table_by_target(
+        aggregated_df,
+        tables_dir / "tab_overall_metrics_by_target.tex"
+    )
+    
+    # Table 3: By horizon
+    print("  - tab_overall_metrics_by_horizon.tex")
+    tables['by_horizon'] = generate_latex_table_by_horizon(
+        aggregated_df,
+        tables_dir / "tab_overall_metrics_by_horizon.tex"
+    )
+    
+    # Table 4: 36-row detailed table
+    print("  - tab_metrics_36_rows.tex")
+    tables['36_rows'] = generate_latex_table_36_rows(
+        aggregated_df,
+        tables_dir / "tab_metrics_36_rows.tex"
+    )
+    
+    print("✓ All LaTeX tables generated")
+    
+    return tables

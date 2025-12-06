@@ -24,6 +24,183 @@ from ..model.dfm import DFM
 from ..model.ddfm import DDFM
 
 
+def _extract_target_series(cfg: DictConfig) -> Optional[str]:
+    """Extract target series from config.
+    
+    Parameters
+    ----------
+    cfg : DictConfig
+        Hydra config
+        
+    Returns
+    -------
+    str or None
+        Target series name
+    """
+    if 'experiment' in cfg and 'target_series' in cfg.experiment:
+        return cfg.experiment.target_series
+    elif 'target_series' in cfg:
+        return cfg.target_series
+    return None
+
+
+def _prepare_multivariate_data(
+    data: pd.DataFrame,
+    config_dict: Optional[dict],
+    cfg: DictConfig,
+    target_series: Optional[str],
+    model_type: str
+) -> pd.DataFrame:
+    """Prepare multivariate training data for DFM/DDFM/VAR models.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Full data DataFrame
+    config_dict : dict, optional
+        Model config dictionary with series list
+    cfg : DictConfig
+        Hydra config
+    target_series : str, optional
+        Target series to include
+    model_type : str
+        Model type ('dfm', 'ddfm', 'var')
+        
+    Returns
+    -------
+    pd.DataFrame
+        Prepared training data
+    """
+    # Extract series IDs from config_dict if available
+    filtered_series_ids = []
+    if config_dict and 'series' in config_dict:
+        filtered_series_ids = [
+            s.get('series_id', s) if isinstance(s, dict) else s 
+            for s in config_dict['series']
+        ]
+    
+    if filtered_series_ids:
+        # Use only series IDs from filtered config
+        available_series = [s for s in filtered_series_ids if s in data.columns]
+        # Add target_series if not already included
+        if target_series and target_series in data.columns and target_series not in available_series:
+            available_series.append(target_series)
+        if len(available_series) > 0:
+            return data[available_series].dropna()
+        else:
+            raise ValidationError(
+                f"{model_type.upper()}: No filtered series found in data columns. "
+                f"Filtered series IDs: {filtered_series_ids[:5]}..., "
+                f"Data columns: {list(data.columns)[:5]}..."
+            )
+    elif 'experiment' in cfg and 'series' in cfg.experiment:
+        series_ids = OmegaConf.to_container(cfg.experiment.series, resolve=True)
+        if isinstance(series_ids, list):
+            available_series = [s for s in series_ids if s in data.columns]
+            # Add target_series if not already included
+            if target_series and target_series in data.columns and target_series not in available_series:
+                available_series.append(target_series)
+            if len(available_series) > 0:
+                return data[available_series].dropna()
+            else:
+                return data.select_dtypes(include=[np.number]).dropna()
+    else:
+        # Use all numeric columns, but ensure target_series is included
+        y_train = data.select_dtypes(include=[np.number]).dropna()
+        if target_series and target_series in data.columns and target_series not in y_train.columns:
+            y_train[target_series] = data[target_series]
+        return y_train
+
+
+def _impute_missing_values(y_train: pd.DataFrame, model_type: str) -> pd.DataFrame:
+    """Impute missing values in training data.
+    
+    Parameters
+    ----------
+    y_train : pd.DataFrame
+        Training data with potential missing values
+    model_type : str
+        Model type (for logging)
+        
+    Returns
+    -------
+    pd.DataFrame
+        Data with imputed missing values
+    """
+    if not y_train.isnull().any().any():
+        return y_train
+    
+    print(f"Warning: {model_type.upper()} data contains NaN values. Applying forward-fill imputation...")
+    from sktime.transformations.series.impute import Imputer
+    
+    imputer_ffill = Imputer(method="ffill")
+    imputer_bfill = Imputer(method="bfill")
+    
+    # Apply imputation to each column
+    for col in y_train.columns:
+        col_series = y_train[[col]]
+        # Forward-fill first
+        col_imputed = imputer_ffill.fit_transform(col_series)
+        # Then backward-fill any remaining leading NaNs
+        if col_imputed.isnull().any().any():
+            col_imputed = imputer_bfill.fit_transform(col_imputed)
+        y_train[col] = col_imputed[col]
+    
+    # If any NaNs remain after imputation, drop those rows as last resort
+    if y_train.isnull().any().any():
+        print(f"Warning: Some NaN values remain after imputation. Dropping remaining rows with NaN...")
+        y_train = y_train.dropna()
+    
+    return y_train
+
+
+def _set_dataframe_frequency(y_train: pd.DataFrame) -> pd.DataFrame:
+    """Set frequency on DataFrame index if DatetimeIndex.
+    
+    Parameters
+    ----------
+    y_train : pd.DataFrame
+        Training data
+        
+    Returns
+    -------
+    pd.DataFrame
+        Data with frequency set on index
+    """
+    if not isinstance(y_train.index, pd.DatetimeIndex):
+        return y_train
+    
+    if y_train.index.freq is not None:
+        return y_train
+    
+    # Try to infer frequency
+    inferred_freq = pd.infer_freq(y_train.index)
+    if inferred_freq:
+        # Use pandas 2.x compatible API (method parameter)
+        try:
+            y_train = y_train.asfreq(inferred_freq, method='ffill')
+        except (TypeError, ValueError):
+            # Fallback for older pandas versions
+            try:
+                y_train = y_train.asfreq(inferred_freq, fill_method='ffill')
+            except (TypeError, ValueError):
+                # Last resort: asfreq without fill, then forward-fill manually
+                y_train = y_train.asfreq(inferred_freq)
+                y_train = y_train.ffill()
+    else:
+        # Default to daily frequency
+        try:
+            y_train = y_train.asfreq('D', method='ffill')
+        except (TypeError, ValueError):
+            try:
+                y_train = y_train.asfreq('D', fill_method='ffill')
+            except (TypeError, ValueError):
+                y_train = y_train.asfreq('D')
+                y_train = y_train.ffill()
+    
+    return y_train
+
+
 def _detect_model_type_from_config(cfg: DictConfig) -> str:
     """Detect model type from Hydra config."""
     # Check defaults for model override
@@ -91,13 +268,7 @@ def _train_forecaster(
         from sktime.forecasting.arima import ARIMA as SktimeARIMA
         from sktime.forecasting.var import VAR as SktimeVAR
         from sktime.transformations.series.impute import Imputer
-        try:
-            from src.model.sktime_forecaster import DFMForecaster, DDFMForecaster
-        except ImportError:
-            try:
-                from model.sktime_forecaster import DFMForecaster, DDFMForecaster
-            except ImportError:
-                from ..model.sktime_forecaster import DFMForecaster, DDFMForecaster
+        from ..model.sktime_forecaster import DFMForecaster, DDFMForecaster
     except ImportError as e:
         raise ImportError(f"sktime is required for {model_type} models. Install with: pip install sktime[forecasting]") from e
     
@@ -146,46 +317,11 @@ def _train_forecaster(
         )
         
         # DFM uses multivariate data (all series from config)
-        # IMPORTANT: Include target_series in training data so DFM can predict it (same as VAR)
-        target_series = None
-        if 'experiment' in cfg and 'target_series' in cfg.experiment:
-            target_series = cfg.experiment.target_series
-        elif 'target_series' in cfg:
-            target_series = cfg.target_series
-        
-        # IMPORTANT: Filter data columns to match filtered_series_list from config_dict
-        # This ensures data shape matches the series IDs in the config after frequency hierarchy filtering
-        filtered_series_ids = []
-        if config_dict and 'series' in config_dict:
-            filtered_series_ids = [s.get('series_id', s) if isinstance(s, dict) else s 
-                                  for s in config_dict['series']]
-        
-        if filtered_series_ids:
-            # Use only series IDs from filtered config
-            available_series = [s for s in filtered_series_ids if s in data.columns]
-            # Add target_series if not already included
-            if target_series and target_series in data.columns and target_series not in available_series:
-                available_series.append(target_series)
-            if len(available_series) > 0:
-                y_train = data[available_series].dropna()
-            else:
-                raise ValidationError(f"DFM: No filtered series found in data columns. Filtered series IDs: {filtered_series_ids[:5]}..., Data columns: {list(data.columns)[:5]}...")
-        elif 'experiment' in cfg and 'series' in cfg.experiment:
-            series_ids = OmegaConf.to_container(cfg.experiment.series, resolve=True)
-            if isinstance(series_ids, list):
-                available_series = [s for s in series_ids if s in data.columns]
-                # Add target_series if not already included
-                if target_series and target_series in data.columns and target_series not in available_series:
-                    available_series.append(target_series)
-                if len(available_series) > 0:
-                    y_train = data[available_series].dropna()
-                else:
-                    y_train = data.select_dtypes(include=[np.number]).dropna()
-        else:
-            # Use all numeric columns, but ensure target_series is included
-            y_train = data.select_dtypes(include=[np.number]).dropna()
-            if target_series and target_series in data.columns and target_series not in y_train.columns:
-                y_train[target_series] = data[target_series]
+        # Include target_series in training data so DFM can predict it (same as VAR)
+        target_series = _extract_target_series(cfg)
+        y_train = _prepare_multivariate_data(
+            data, config_dict, cfg, target_series, model_type='dfm'
+        )
         
         print(f"Max iterations: {max_iter}, Threshold: {threshold}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
         
@@ -213,46 +349,11 @@ def _train_forecaster(
         )
         
         # DDFM uses multivariate data (all series from config)
-        # IMPORTANT: Include target_series in training data so DDFM can predict it (same as VAR/DFM)
-        target_series = None
-        if 'experiment' in cfg and 'target_series' in cfg.experiment:
-            target_series = cfg.experiment.target_series
-        elif 'target_series' in cfg:
-            target_series = cfg.target_series
-        
-        # IMPORTANT: Filter data columns to match filtered_series_list from config_dict
-        # This ensures data shape matches the series IDs in the config after frequency hierarchy filtering
-        filtered_series_ids = []
-        if config_dict and 'series' in config_dict:
-            filtered_series_ids = [s.get('series_id', s) if isinstance(s, dict) else s 
-                                  for s in config_dict['series']]
-        
-        if filtered_series_ids:
-            # Use only series IDs from filtered config
-            available_series = [s for s in filtered_series_ids if s in data.columns]
-            # Add target_series if not already included
-            if target_series and target_series in data.columns and target_series not in available_series:
-                available_series.append(target_series)
-            if len(available_series) > 0:
-                y_train = data[available_series].dropna()
-            else:
-                raise ValidationError(f"DDFM: No filtered series found in data columns. Filtered series IDs: {filtered_series_ids[:5]}..., Data columns: {list(data.columns)[:5]}...")
-        elif 'experiment' in cfg and 'series' in cfg.experiment:
-            series_ids = OmegaConf.to_container(cfg.experiment.series, resolve=True)
-            if isinstance(series_ids, list):
-                available_series = [s for s in series_ids if s in data.columns]
-                # Add target_series if not already included
-                if target_series and target_series in data.columns and target_series not in available_series:
-                    available_series.append(target_series)
-                if len(available_series) > 0:
-                    y_train = data[available_series].dropna()
-                else:
-                    y_train = data.select_dtypes(include=[np.number]).dropna()
-        else:
-            # Use all numeric columns, but ensure target_series is included
-            y_train = data.select_dtypes(include=[np.number]).dropna()
-            if target_series and target_series in data.columns and target_series not in y_train.columns:
-                y_train[target_series] = data[target_series]
+        # Include target_series in training data so DDFM can predict it (same as VAR/DFM)
+        target_series = _extract_target_series(cfg)
+        y_train = _prepare_multivariate_data(
+            data, config_dict, cfg, target_series, model_type='ddfm'
+        )
         
         print(f"Epochs: {epochs}, Encoder layers: {encoder_layers}, Factors: {num_factors}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
         
@@ -296,115 +397,27 @@ def _train_forecaster(
             trend = 'c'
         
         # VAR requires multivariate data - use all series or specified series
-        # IMPORTANT: Include target_series in training data so VAR can predict it
-        target_series = None
-        if 'experiment' in cfg and 'target_series' in cfg.experiment:
-            target_series = cfg.experiment.target_series
-        elif 'target_series' in cfg:
-            target_series = cfg.target_series
+        # Include target_series in training data so VAR can predict it
+        target_series = _extract_target_series(cfg)
+        y_train = _prepare_multivariate_data(
+            data, None, cfg, target_series, model_type='var'
+        )
         
-        if 'experiment' in cfg and 'series' in cfg.experiment:
-            series_ids = OmegaConf.to_container(cfg.experiment.series, resolve=True)
-            if isinstance(series_ids, list):
-                available_series = [s for s in series_ids if s in data.columns]
-                # Add target_series if not already included
-                if target_series and target_series in data.columns and target_series not in available_series:
-                    available_series.append(target_series)
-                if len(available_series) > 1:
-                    y_train = data[available_series].copy()
-                else:
-                    # Fallback: use all numeric columns
-                    y_train = data.select_dtypes(include=[np.number]).copy()
-        else:
-            # Use all numeric columns, but ensure target_series is included
-            y_train = data.select_dtypes(include=[np.number]).copy()
-            if target_series and target_series in data.columns and target_series not in y_train.columns:
-                y_train[target_series] = data[target_series]
+        # VAR requires clean data with no missing values
+        y_train = _impute_missing_values(y_train, model_type='var')
         
-        # Handle missing values with forward-fill imputation (preserves more data than dropping)
-        if y_train.isnull().any().any():
-            print(f"Warning: VAR data contains NaN values. Applying forward-fill imputation...")
-            # Use sktime Imputer for forward-fill (then backward-fill for leading NaNs)
-            imputer_ffill = Imputer(method="ffill")
-            imputer_bfill = Imputer(method="bfill")
-            
-            # Apply imputation to each column
-            for col in y_train.columns:
-                col_series = y_train[[col]]
-                # Forward-fill first
-                col_imputed = imputer_ffill.fit_transform(col_series)
-                # Then backward-fill any remaining leading NaNs
-                if col_imputed.isnull().any().any():
-                    col_imputed = imputer_bfill.fit_transform(col_imputed)
-                y_train[col] = col_imputed[col]
-            
-            # If any NaNs remain after imputation, drop those rows as last resort
-            if y_train.isnull().any().any():
-                print(f"Warning: Some NaN values remain after imputation. Dropping remaining rows with NaN...")
-                y_train = y_train.dropna()
+        # VAR requires frequency to be set on the index for prediction
+        # Apply asfreq() before final imputation, as asfreq() can introduce new NaNs
+        y_train = _set_dataframe_frequency(y_train)
+        
+        # Re-impute after asfreq() may have introduced new NaNs
+        y_train = _impute_missing_values(y_train, model_type='var')
         
         if len(y_train) == 0:
             raise ValidationError(f"VAR: No valid data after imputation.")
         
         if y_train.shape[1] < 2:
             raise ValidationError(f"VAR requires at least 2 series. Found {y_train.shape[1]} series.")
-        
-        # VAR requires frequency to be set on the index for prediction
-        # Set frequency if not already set
-        # IMPORTANT: Apply asfreq() BEFORE final imputation, as asfreq() can introduce new NaNs
-        if isinstance(y_train.index, pd.DatetimeIndex):
-            if y_train.index.freq is None:
-                # Try to infer frequency
-                inferred_freq = pd.infer_freq(y_train.index)
-                if inferred_freq:
-                    # Use version-compatible API: pandas >= 1.5.0 uses method, < 1.5.0 uses fill_method
-                    # pandas 2.x only supports method parameter
-                    try:
-                        # Try newer API first (pandas >= 1.5.0, including 2.x)
-                        y_train = y_train.asfreq(inferred_freq, method='ffill')
-                    except (TypeError, ValueError) as e:
-                        # Fall back to older API (pandas < 1.5.0) - but this is unlikely for pandas 2.3.3
-                        # If method fails, try without fill parameter and handle NaNs separately
-                        try:
-                            y_train = y_train.asfreq(inferred_freq, fill_method='ffill')
-                        except (TypeError, ValueError):
-                            # Last resort: asfreq without fill, then forward-fill manually
-                            y_train = y_train.asfreq(inferred_freq)
-                            y_train = y_train.ffill()
-                else:
-                    # Default to daily frequency for daily data
-                    try:
-                        y_train = y_train.asfreq('D', method='ffill')
-                    except (TypeError, ValueError) as e:
-                        # Fall back to older API or manual fill
-                        try:
-                            y_train = y_train.asfreq('D', fill_method='ffill')
-                        except (TypeError, ValueError):
-                            # Last resort: asfreq without fill, then forward-fill manually
-                            y_train = y_train.asfreq('D')
-                            y_train = y_train.ffill()
-        
-        # Final imputation check: asfreq() may have introduced new NaNs, so re-impute if needed
-        if y_train.isnull().any().any():
-            print(f"Warning: VAR data contains NaN values after asfreq(). Applying final imputation...")
-            # Use sktime Imputer for forward-fill (then backward-fill for leading NaNs)
-            imputer_ffill = Imputer(method="ffill")
-            imputer_bfill = Imputer(method="bfill")
-            
-            # Apply imputation to each column
-            for col in y_train.columns:
-                col_series = y_train[[col]]
-                # Forward-fill first
-                col_imputed = imputer_ffill.fit_transform(col_series)
-                # Then backward-fill any remaining leading NaNs
-                if col_imputed.isnull().any().any():
-                    col_imputed = imputer_bfill.fit_transform(col_imputed)
-                y_train[col] = col_imputed[col]
-            
-            # If any NaNs remain after imputation, drop those rows as last resort
-            if y_train.isnull().any().any():
-                print(f"Warning: Some NaN values remain after final imputation. Dropping remaining rows with NaN...")
-                y_train = y_train.dropna()
         
         # Final validation: ensure no NaNs before VAR model creation
         if y_train.isnull().any().any():
@@ -436,14 +449,12 @@ def _train_forecaster(
     elif 'target_series' in cfg:
         target_col = cfg.target_series
     
-    # CRITICAL FIX: Split data BEFORE fitting to avoid data leakage
-    # Split data for evaluation (80/20 split)
+    # Split data for evaluation (80/20 split) to avoid data leakage
+    # Model is fitted on training split only, ensuring no test data exposure during training
     split_idx = int(len(y_train) * 0.8)
     y_train_eval = y_train.iloc[:split_idx]
     y_test_eval = y_train.iloc[split_idx:]
     
-    # Fit model on training split only (not full data)
-    # This ensures no data leakage - model never sees test data during training
     forecaster.fit(y_train_eval)
     print(f"{'='*70}\n")
     
@@ -465,14 +476,8 @@ def _train_forecaster(
             horizons = [1, 7, 28]
     
     # Calculate forecast metrics
+    from ..eval.evaluation import evaluate_forecaster
     forecast_metrics = {}
-    try:
-        from src.eval.evaluation import evaluate_forecaster
-    except ImportError:
-        try:
-            from eval.evaluation import evaluate_forecaster
-        except ImportError:
-            from ..eval.evaluation import evaluate_forecaster
     
     if len(y_test_eval) > 0:
         # Note: evaluate_forecaster will refit on y_train_eval, but that's fine
@@ -517,7 +522,7 @@ def _train_forecaster(
             try:
                 result = underlying_model.get_result()
                 metadata = underlying_model.get_metadata()
-            except:
+            except (AttributeError, RuntimeError):
                 result = None
                 metadata = {}
         else:
@@ -624,7 +629,7 @@ def train(
     Parameters
     ----------
     config_name : str
-        Hydra config name (e.g., 'experiment/kogdp_report'). Must be a valid
+        Hydra config name (e.g., 'experiment/koequipte_report'). Must be a valid
         config file in config/ directory.
     config_path : str, optional
         Path to config directory. If None, uses default config/ directory.
@@ -681,7 +686,7 @@ def train(
         # Detect model type: prioritize model_name if provided, otherwise use config
         if model_name:
             # Extract model type from model_name (format: "model_type_target_timestamp")
-            # Examples: "arima_KOGDP...D_20251205_164431" -> "arima"
+            # Examples: "arima_KOEQUIPTE_20251205_164431" -> "arima"
             model_type_from_name = model_name.split('_')[0].lower()
             if model_type_from_name in ['arima', 'var', 'dfm', 'ddfm', 'vecm', 'xgboost', 'lightgbm', 'deepar', 'tft']:
                 model_type = model_type_from_name
@@ -758,11 +763,13 @@ def train(
                             }
                             # Blocks will be converted to binary vector later after we know block order
                             # Store block names/indices temporarily
-                            if 'blocks' in series_cfg:
+                            # If block is null/None, don't set _block_names (will use global block config)
+                            if 'blocks' in series_cfg and series_cfg['blocks'] is not None:
                                 dfm_series['_block_names'] = series_cfg['blocks']
-                            elif 'block' in series_cfg:
+                            elif 'block' in series_cfg and series_cfg['block'] is not None:
                                 dfm_series['_block_names'] = series_cfg['block']
                             else:
+                                # block is null/None or not specified - use default (will be handled by global config)
                                 dfm_series['_block_names'] = ['Block_Global']  # Default
                             series_list.append(dfm_series)
                         else:
@@ -783,9 +790,9 @@ def train(
                                         dfm_series['frequency'] = override['frequency']
                                     if 'transformation' in override:
                                         dfm_series['transformation'] = override['transformation']
-                                    if 'blocks' in override:
+                                    if 'blocks' in override and override['blocks'] is not None:
                                         dfm_series['_block_names'] = override['blocks']
-                                    elif 'block' in override:
+                                    elif 'block' in override and override['block'] is not None:
                                         dfm_series['_block_names'] = override['block']
                             series_list.append(dfm_series)
         except Exception as e:
@@ -894,6 +901,21 @@ def train(
                 
                 if '_block_names' in series_item:
                     block_names = series_item.pop('_block_names')
+                    # Handle None/null block_names (should use global block config)
+                    if block_names is None:
+                        # block was null - use default block (first block in order)
+                        if block_names_order:
+                            default_block_clock = block_clocks.get(block_names_order[0] if block_names_order else 'Block_Global', 'm')
+                            default_block_clock_level = freq_hierarchy.get(default_block_clock.lower(), 3)
+                            if series_freq_level >= default_block_clock_level:
+                                series_item['blocks'] = [1] + [0] * (len(block_names_order) - 1) if len(block_names_order) > 1 else [1]
+                                filtered_series_list.append(series_item)
+                            else:
+                                print(f"Warning: Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with default block clock '{default_block_clock}'. Skipping.")
+                        else:
+                            # No block structure - include series
+                            filtered_series_list.append(series_item)
+                        continue
                     # Check if series frequency is compatible with block clocks
                     compatible_blocks = []
                     for block_spec in block_names:
@@ -977,207 +999,6 @@ def train(
             outputs_dir=outputs_dir,
             model_cfg_dict=model_cfg_dict if 'model_cfg_dict' in locals() else {}
         )
-        
-        # Calculate forecast metrics if horizons are specified
-        # Get horizons from parameter, config (new format), or use default
-        # Check both top-level and experiment key (Hydra wrapping)
-        forecast_metrics = {}
-        if horizons is None:
-            horizons_raw = None
-            if 'experiment' in cfg and 'forecast_horizons' in cfg.experiment:
-                horizons_raw = OmegaConf.to_container(cfg.experiment.forecast_horizons, resolve=True)
-            elif 'forecast_horizons' in cfg:
-                horizons_raw = OmegaConf.to_container(cfg.forecast_horizons, resolve=True)
-            # Ensure horizons is a list of integers
-            if horizons_raw is not None:
-                if isinstance(horizons_raw, list):
-                    horizons = [int(str(h)) for h in horizons_raw]
-                else:
-                    horizons = [int(str(horizons_raw))]
-        if horizons is None:
-            # Default horizons
-            horizons = [1, 7, 28]
-        if horizons:
-            try:
-                import pandas as pd
-                try:
-                    from src.eval.evaluation import calculate_metrics_per_horizon
-                except ImportError:
-                    try:
-                        from eval.evaluation import calculate_metrics_per_horizon
-                    except ImportError:
-                        from .eval.evaluation import calculate_metrics_per_horizon
-                
-                # Load data for evaluation
-                data = pd.read_csv(data_file, index_col=0, parse_dates=True)
-                # Check both top-level and experiment key (Hydra wrapping)
-                if 'experiment' in cfg and 'target_series' in cfg.experiment:
-                    target_col = cfg.experiment.target_series
-                else:
-                    target_col = cfg.get('target_series')
-                
-                if target_col and target_col in data.columns:
-                    # For forecast evaluation, we need to:
-                    # 1. Train on subset of data (train set)
-                    # 2. Predict future values from end of train set
-                    # 3. Compare with actual test set values
-                    # However, model is already trained on full data, so we use a different approach:
-                    # - Use last portion as test set
-                    # - Predict from the point just before test set starts
-                    # - Note: This is not ideal but works for evaluation
-                    split_idx = int(len(data) * 0.8)
-                    y_train_data = data.iloc[:split_idx]
-                    y_test_data = data.iloc[split_idx:]
-                    
-                    # Generate predictions for max horizon
-                    # Note: predict() returns forecasts starting from the last training point
-                    max_horizon = max(horizons)
-                    y_pred = None  # Initialize to avoid unbound variable
-                    try:
-                        # Predict from current state (model was trained on full data)
-                        # This gives us forecasts for the next max_horizon periods
-                        pred_result = model.predict(horizon=max_horizon)
-                        if isinstance(pred_result, tuple):
-                            X_pred, Z_pred = pred_result
-                        else:
-                            X_pred = pred_result
-                        
-                        # DFM predict returns (horizon, N) where N is number of series
-                        if isinstance(X_pred, np.ndarray):
-                            # Handle NaN predictions - check if all NaN
-                            if np.all(np.isnan(X_pred)):
-                                print(f"Warning: All predictions are NaN. Shape: {X_pred.shape}. Skipping forecast metrics calculation.")
-                                forecast_metrics = {}
-                                y_pred = pd.Series([], dtype=float)
-                            else:
-                                # X_pred shape: (horizon, N) where N is number of series
-                                # Get series list from config - reuse the same logic as model loading
-                                # Extract series IDs from config (new format: simple list)
-                                # Check both top-level and experiment key (Hydra wrapping)
-                                target_idx = 0
-                                series_ids = []
-                                if 'experiment' in cfg and 'series' in cfg.experiment:
-                                    series_ids_raw = OmegaConf.to_container(cfg.experiment.series, resolve=True)
-                                    if isinstance(series_ids_raw, list):
-                                        series_ids = [str(s) for s in series_ids_raw]
-                                elif 'series' in cfg:
-                                    series_ids_raw = OmegaConf.to_container(cfg.series, resolve=True)
-                                    if isinstance(series_ids_raw, list):
-                                        series_ids = [str(s) for s in series_ids_raw]
-                                
-                                # Also check series_list from model loading (contains dict format)
-                                if not series_ids and 'series_list' in locals() and series_list:
-                                    for s in series_list:
-                                        if isinstance(s, dict):
-                                            series_ids.append(s.get('series_id', str(s)))
-                                        else:
-                                            series_ids.append(str(s))
-                                    
-                                    if target_col in series_ids:
-                                        target_idx = series_ids.index(target_col)
-                                    elif len(series_ids) > 0:
-                                        # Match by name similarity
-                                        norm_target = target_col.replace('...', '').replace('.', '').lower()
-                                        for idx, s_id in enumerate(series_ids):
-                                            norm_s = str(s_id).replace('...', '').replace('.', '').lower()
-                                            if norm_target in norm_s or norm_s in norm_target:
-                                                target_idx = idx
-                                                break
-                                
-                                # Extract predictions for target series
-                                if X_pred.ndim == 2 and X_pred.shape[1] > target_idx:
-                                    y_pred_values = X_pred[:, target_idx]
-                                elif X_pred.ndim == 2 and X_pred.shape[1] > 0:
-                                    y_pred_values = X_pred[:, 0]  # Fallback
-                                elif X_pred.ndim == 1:
-                                    y_pred_values = X_pred
-                                else:
-                                    forecast_metrics = {}
-                                    y_pred_values = np.array([])
-                                
-                                # Create index aligned with test data
-                                if len(y_pred_values) > 0 and len(y_test_data) > 0:
-                                    n_pred = min(len(y_pred_values), len(y_test_data))
-                                    if n_pred > 0:
-                                        pred_index = y_test_data.index[:n_pred]
-                                        y_pred = pd.Series(y_pred_values[:n_pred], index=pred_index)
-                                    else:
-                                        y_pred = pd.Series([], dtype=float)
-                                else:
-                                    y_pred = pd.Series([], dtype=float)
-                        else:
-                            # Already a DataFrame/Series
-                            y_pred = X_pred
-                        
-                        # Align test data with predictions
-                        if y_pred is not None and isinstance(y_pred, pd.DataFrame):
-                            y_test_aligned = y_test_data[target_col] if target_col in y_test_data.columns else y_test_data.iloc[:, 0]
-                            y_pred_aligned = y_pred[target_col] if target_col in y_pred.columns else y_pred.iloc[:, 0]
-                        elif y_pred is not None:
-                            y_test_aligned = y_test_data[target_col] if target_col in y_test_data.columns else y_test_data.iloc[:, 0]
-                            y_pred_aligned = y_pred
-                        else:
-                            y_test_aligned = pd.Series([], dtype=float)
-                            y_pred_aligned = pd.Series([], dtype=float)
-                        
-                        # Align indices and check for valid predictions
-                        if y_pred is not None and len(y_pred_aligned) > 0 and len(y_test_aligned) > 0:
-                            common_idx = y_test_aligned.index.intersection(y_pred_aligned.index)
-                            if len(common_idx) > 0:
-                                y_test_aligned = y_test_aligned.loc[common_idx]
-                                y_pred_aligned = y_pred_aligned.loc[common_idx]
-                                
-                                # Check for NaN predictions
-                                if isinstance(y_pred_aligned, pd.Series):
-                                    valid_mask = ~y_pred_aligned.isna()
-                                else:
-                                    valid_mask = ~np.isnan(y_pred_aligned)
-                                
-                                if valid_mask.sum() > 0:
-                                    # Calculate metrics per horizon
-                                    y_train_series = y_train_data[target_col] if target_col in y_train_data.columns else y_train_data.iloc[:, 0]
-                                    forecast_metrics = calculate_metrics_per_horizon(
-                                        y_test_aligned,
-                                        y_pred_aligned,
-                                        horizons,
-                                        y_train=y_train_series,
-                                        target_series=target_col
-                                    )
-                                else:
-                                    forecast_metrics = {}
-                            else:
-                                forecast_metrics = {}
-                        else:
-                            forecast_metrics = {}
-                    except Exception:
-                        forecast_metrics = {}
-            except Exception:
-                forecast_metrics = {}
-        
-        metrics = {
-            'converged': result.converged if hasattr(result, 'converged') else False,
-            'num_iter': result.num_iter if hasattr(result, 'num_iter') else 0,
-            'loglik': result.loglik if hasattr(result, 'loglik') else np.nan,
-            'training_completed': metadata.get('training_completed', True),
-            'model_type': metadata.get('model_type', 'dfm'),
-            'forecast_metrics': forecast_metrics
-        }
-        
-        final_model_name = model_name or cfg.get('model_name') or f"{config_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        model_dir = model.save_to_outputs(
-            model_name=final_model_name,
-            outputs_dir=outputs_dir,
-            config_path=None
-        )
-        
-        return {
-            'status': 'completed',
-            'model_name': final_model_name,
-            'model_dir': str(model_dir),
-            'metrics': metrics,
-            'result': result,
-            'metadata': metadata
-        }
 
 
 
@@ -1199,21 +1020,21 @@ def compare_models(
     Parameters
     ----------
     target_series : str
-        Target series name (e.g., 'KOGDP...D', 'KOCNPER.D', 'KOGFCF..D').
+        Target series name (e.g., 'KOEQUIPTE', 'KOWRCCNSE', 'KOIPALL.G').
     models : list of str
         List of model names to compare (e.g., ['arima', 'var', 'dfm', 'ddfm']).
         Valid model types: 'arima', 'var', 'dfm', 'ddfm'.
     horizons : list of int, default [1, 7, 28]
         Forecast horizons to evaluate (in days).
     data_path : str, optional
-        Path to data CSV file. If None, uses default data/sample_data.csv.
+        Path to data CSV file. If None, uses default data/data.csv.
     config_dir : str, optional
         Path to config directory. If None, uses default config/ directory.
     config_name : str, optional
         Hydra config name. If None, auto-derives from target_series:
-        - 'KOGDP...D' -> 'experiment/kogdp_report'
-        - 'KOCNPER.D' -> 'experiment/kocnper_report'
-        - 'KOGFCF..D' -> 'experiment/kogfcf_report'
+        - 'KOEQUIPTE' -> 'experiment/koequipte_report'
+        - 'KOWRCCNSE' -> 'experiment/kowrccnse_report'
+        - 'KOIPALL.G' -> 'experiment/koipallg_report'
     config_overrides : list of str, optional
         List of Hydra config override strings.
         
@@ -1259,9 +1080,9 @@ def compare_models(
     if config_name is None:
         # Fallback: map target series to report config name
         report_map = {
-            "KOGDP...D": "experiment/kogdp_report",
-            "KOCNPER.D": "experiment/kocnper_report",
-            "KOGFCF..D": "experiment/kogfcf_report"
+            "KOEQUIPTE": "experiment/koequipte_report",
+            "KOWRCCNSE": "experiment/kowrccnse_report",
+            "KOIPALL.G": "experiment/koipallg_report"
         }
         config_name = report_map.get(target_series, f"experiment/{target_series.lower().replace('...', '').replace('.', '')}_report")
     
@@ -1306,14 +1127,7 @@ def compare_models(
         comparison = _compare_results(model_results, horizons, target_series)
         
         if comparison and comparison.get('metrics_table') is not None:
-            # Import with fallback for both script and package execution
-            try:
-                from src.eval.evaluation import generate_comparison_table
-            except ImportError:
-                try:
-                    from eval.evaluation import generate_comparison_table
-                except ImportError:
-                    from ..eval.evaluation import generate_comparison_table
+            from ..eval.evaluation import generate_comparison_table
             
             if generate_comparison_table:
                 table_path = output_dir / "comparison_table.csv"
@@ -1349,14 +1163,7 @@ def _compare_results(
     target_series: str
 ) -> Dict[str, Any]:
     """Compare results from multiple models."""
-    # Import with fallback for both script and package execution
-    try:
-        from src.eval.evaluation import compare_multiple_models
-    except ImportError:
-        try:
-            from eval.evaluation import compare_multiple_models
-        except ImportError:
-            from ..eval.evaluation import compare_multiple_models
+    from ..eval.evaluation import compare_multiple_models
     
     successful_results = {
         name: result for name, result in results.items()

@@ -7,10 +7,14 @@
 - src/ should contain maximum 15 files including __init__.py file. If necessary, restructure and consolidate.
 - CONTEXT.md, STATUS.md, ISSUES.md MUST BE UNDER 1000 lines.
 - Try to improve incrementally. Do not try to do everything at once. Try to prioritize the tasks and work on them one by one.
+- Tables and Images specified by the user must be included in the paper.
+- Don't worry about the backward compatibility. Focus on making clean code.
 
 # GOAL
 - Write the Complete report(20~30 pages) in @nowcasting-report/
 - Finalize the package @dfm-python/ with clean code pattern, consistent and generic naming
+- All tables and plots desired created and implemented.
+- Clean and refactored codebase with consistent pattern and no unused, legacy codes, no redundancies and generic naming.
 
 # RESOURCES
 - CONTEXT.md: Use this file for context offloading for persistence if necessary.
@@ -23,6 +27,7 @@
 - outputs/ : directory containing experiment results from @run_experiment.sh
 - config/ : Hydra YAML configs in config/experiment/, config/model/, config/series/
 - DDFM_COMPARISON.md : Comparison of original ddfm implementation and dfm-python
+- @BENCHMARK_REPORT.md : Benchmark report that our report should focus on. This is report from another co-researcher that our report should consolidate and maintain the same experiment configuration. 
 
 # Iteration Steps
 
@@ -70,3 +75,15 @@
 ## Step 9(cursor-agent resume)
 - stage and commit the changes to keep track on them.
 - Only in every 10 iterations, push the submodules to main.
+
+# EXPERIMENT OUTPUT
+
+## Tables
+1. Table consisting of dataset details, arima, var, dfm and ddfm params(model and training)
+2. Table consisting of standardized MSE and standardized MAE for (target, model, horizon) pair. For instance, (dfm, 1), (dfm, 7), (dfm, 30). We have 3 targets, 3 horizons and 4 models so the table will be 36 rows.
+3. Table consisting of dfm and ddfm backtest results for year 2024~2025 each month. Train with data from 1985 to 2019, nowcast from Jan 2024 to Oct 2025(or any latest). By masking unavailable data, make sMSE, sMAE for each month by nowcasting.
+
+## Images
+1. Plot for 30 months forecasting and actual value in the test dataset for each target. This means 3 plots, each plot consist of original series line, arima, var, dfm, ddfm lines. This means 5 lines for each plot. Make sure x axis is monthly time stamp and y axis is target series. Make sure x axis has total 60 months which on the left, original series values so only one line and after the cutoff, 5 lines.
+2. Plot for accuracy heatmap of 4 models and 3 targets.
+3. Plot for performance trend with forecasting horizon.

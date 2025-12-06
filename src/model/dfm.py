@@ -263,5 +263,8 @@ class DFM:
         Raises:
             RuntimeError: If model has not been trained yet. Call train() first.
         """
-        return self._model.nowcast
+        if self._model._result is None:
+            raise RuntimeError("Model must be trained before accessing nowcast")
+        from ..nowcast import Nowcast
+        return Nowcast(self._model, data_module=self._data_module)
 
