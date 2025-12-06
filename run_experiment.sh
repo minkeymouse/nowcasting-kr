@@ -133,8 +133,10 @@ mkdir -p outputs/comparisons
 mkdir -p outputs/experiments
 
 # Function to check if experiment is already completed with valid results
+# If models_filter is provided, only checks if those specific models are complete
 is_experiment_complete() {
     local target=$1
+    local models_filter="${2:-}"  # Optional: comma-separated list of models to check
     local comparisons_dir="outputs/comparisons"
     
     if [ ! -d "$comparisons_dir" ]; then
@@ -156,19 +158,47 @@ is_experiment_complete() {
         return 1  # Not complete (missing result file)
     fi
     
-    # Check if at least one model has valid results (n_valid > 0)
-    # This ensures we only skip experiments that actually produced valid predictions
+    # Check if requested models (or all models if no filter) have valid results
     if command -v python3 >/dev/null 2>&1; then
-        # Use Python to check for valid results (n_valid > 0 for at least one model/horizon)
+        # Use Python to check for valid results
         local has_valid=$(python3 <<EOF
 import json
 import sys
+
+models_to_check = "${models_filter}".split() if "${models_filter}" else None
+
 try:
     with open("${latest_dir}/comparison_results.json", 'r') as f:
         results = json.load(f)
     
-    # Check if any model has n_valid > 0 for any horizon
-    if 'results' in results:
+    if 'results' not in results:
+        print("0")
+        sys.exit(0)
+    
+    # If models filter is provided, only check those models
+    if models_to_check and len(models_to_check) > 0 and models_to_check[0]:
+        models_to_check = [m.lower() for m in models_to_check]
+        all_complete = True
+        for model_name in models_to_check:
+            model_result = results['results'].get(model_name, {})
+            if model_result.get('status') != 'completed':
+                all_complete = False
+                break
+            metrics = model_result.get('metrics', {})
+            forecast_metrics = metrics.get('forecast_metrics', {})
+            model_has_valid = False
+            for horizon, horizon_metrics in forecast_metrics.items():
+                n_valid = horizon_metrics.get('n_valid', 0)
+                if n_valid > 0:
+                    model_has_valid = True
+                    break
+            if not model_has_valid:
+                all_complete = False
+                break
+        print("1" if all_complete else "0")
+        sys.exit(0)
+    else:
+        # No filter: check if any model has n_valid > 0 for any horizon
         for model_name, model_result in results['results'].items():
             if model_result.get('status') == 'completed' and 'metrics' in model_result:
                 metrics = model_result.get('metrics', {})
@@ -345,11 +375,13 @@ echo "=========================================="
 echo "Checking for completed experiments"
 echo "=========================================="
 TARGETS_TO_RUN=()
+# Convert MODELS array to space-separated string for is_experiment_complete
+MODELS_STR="${MODELS[*]}"
 for target in "${TARGETS[@]}"; do
-    if is_experiment_complete "$target"; then
-        echo "✓ $target: Already complete (skipping)"
+    if is_experiment_complete "$target" "$MODELS_STR"; then
+        echo "✓ $target: Already complete for models ${MODELS[*]} (skipping)"
     else
-        echo "→ $target: Needs to run"
+        echo "→ $target: Needs to run for models ${MODELS[*]}"
         TARGETS_TO_RUN+=("$target")
     fi
 done

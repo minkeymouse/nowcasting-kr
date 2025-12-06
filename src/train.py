@@ -86,7 +86,8 @@ def train_model(
 def compare_models_by_config(
     config_name: str,
     config_dir: Optional[str] = None,
-    overrides: Optional[List[str]] = None
+    overrides: Optional[List[str]] = None,
+    models_filter: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """Compare multiple models from experiment config (programmatic API).
     
@@ -98,6 +99,8 @@ def compare_models_by_config(
         Config directory path. If None, uses default config/ directory.
     overrides : list of str, optional
         Hydra config overrides
+    models_filter : list of str, optional
+        Filter models to run (e.g., ['var', 'dfm']). If None, runs all models from config.
         
     Returns
     -------
@@ -112,9 +115,16 @@ def compare_models_by_config(
     
     params = extract_experiment_params(cfg)
     
+    # Filter models if models_filter is provided
+    models_to_run = params['models']
+    if models_filter:
+        models_to_run = [m for m in models_to_run if m.lower() in [mf.lower() for mf in models_filter]]
+        if not models_to_run:
+            raise ValueError(f"No models match filter {models_filter}. Available models: {params['models']}")
+    
     result = compare_models(
         target_series=params['target_series'],
-        models=params['models'],
+        models=models_to_run,
         horizons=params['horizons'],
         data_path=params['data_path'],
         config_dir=config_dir,
@@ -154,15 +164,12 @@ def main():
     elif args.command == 'compare':
         # Filter models if --models flag is provided
         overrides = list(args.override) if args.override else []
-        if args.models:
-            # Override models list in config
-            models_str = ",".join(args.models)
-            overrides.append(f"models=[{models_str}]")
         
         result = compare_models_by_config(
             config_name=args.config_name,
             config_dir=config_path,
-            overrides=overrides
+            overrides=overrides,
+            models_filter=args.models
         )
         print(f"\n✓ Comparison saved to: {result['output_dir']}")
         if result.get('failed_models'):

@@ -10,7 +10,7 @@
 - **3 Horizons**: 1, 7, 28 days
 - **Total**: 36 combinations (3 × 4 × 3)
 
-**Current Status**: ARIMA working with complete results (9 combinations, sRMSE 0.366 avg). Report improved with actual findings. VAR KeyError fix applied, DFM/DDFM numerical instability remains
+**Current Status**: ARIMA working (6/9 combinations, n_valid=1). VAR working perfectly (9/9 combinations, n_valid=1) - overall sRMSE 0.046, much better than ARIMA. Report updated with VAR results. DFM has two issues: C matrix NaN (KOGDP...D) and prediction failure even when training succeeds (KOCNPER.D, KOGFCF..D). DDFM C matrix all NaN for all targets. dfm-python code naming verified as consistent.
 
 ## Architecture Overview
 
@@ -130,6 +130,10 @@ python3 nowcasting-report/code/plot.py
 8. Finalize report → Compile PDF, verify 20-30 pages, no placeholders
 
 **Latest Updates (2025-01-XX)**:
-- Discussion section improved with actual ARIMA findings (performance patterns, target differences)
-- Conclusion section updated with experimental results summary
-- Model selection guidance added based on actual findings
+- Report updated with VAR results: Tables and sections updated with VAR findings (sRMSE 0.046 overall, 0.056 GDP, 0.055 Consumption, 0.028 Investment)
+- Results section expanded: Added detailed VAR performance analysis by target and horizon
+- Discussion section updated: Added VAR findings and model comparison insights
+- Conclusion section updated: Added VAR results summary
+- dfm-python code review: Verified naming consistency (snake_case functions, PascalCase classes) - consistent
+- Report status: VAR results integrated, ARIMA results present, DFM/DDFM still need fixes
+- Next iteration: Test DFM/DDFM fixes, complete remaining experiments, finalize report

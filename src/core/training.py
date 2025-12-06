@@ -266,18 +266,30 @@ def _train_forecaster(
             trend = 'c'
         
         # VAR requires multivariate data - use all series or specified series
+        # IMPORTANT: Include target_series in training data so VAR can predict it
+        target_series = None
+        if 'experiment' in cfg and 'target_series' in cfg.experiment:
+            target_series = cfg.experiment.target_series
+        elif 'target_series' in cfg:
+            target_series = cfg.target_series
+        
         if 'experiment' in cfg and 'series' in cfg.experiment:
             series_ids = OmegaConf.to_container(cfg.experiment.series, resolve=True)
             if isinstance(series_ids, list):
                 available_series = [s for s in series_ids if s in data.columns]
+                # Add target_series if not already included
+                if target_series and target_series in data.columns and target_series not in available_series:
+                    available_series.append(target_series)
                 if len(available_series) > 1:
                     y_train = data[available_series].copy()
                 else:
                     # Fallback: use all numeric columns
                     y_train = data.select_dtypes(include=[np.number]).copy()
         else:
-            # Use all numeric columns
+            # Use all numeric columns, but ensure target_series is included
             y_train = data.select_dtypes(include=[np.number]).copy()
+            if target_series and target_series in data.columns and target_series not in y_train.columns:
+                y_train[target_series] = data[target_series]
         
         # Handle missing values with forward-fill imputation (preserves more data than dropping)
         if y_train.isnull().any().any():

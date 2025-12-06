@@ -211,6 +211,19 @@ class DFMForecaster(BaseForecaster):
         else:
             X_forecast = predictions
         
+        # Get series order from DFM model config (predictions are in this order)
+        try:
+            from dfm_python.utils.helpers import get_series_ids
+            config = self._dfm_model.get_config()
+            series_ids = get_series_ids(config)
+            # Ensure series_ids matches the number of columns in X_forecast
+            if len(series_ids) != X_forecast.shape[1]:
+                # Fallback: use training data columns if count doesn't match
+                series_ids = list(self._y.columns)
+        except (ImportError, AttributeError, Exception):
+            # Fallback: use training data columns if we can't get series_ids
+            series_ids = list(self._y.columns)
+        
         # Create index for forecast period
         last_train_idx = self._y.index[-1]
         if isinstance(last_train_idx, pd.Timestamp):
@@ -228,12 +241,17 @@ class DFMForecaster(BaseForecaster):
                 int(last_train_idx) + 1 + horizon
             )
         
-        # Create DataFrame with same column names as training data
+        # Create DataFrame with series_ids as columns (matching prediction order)
         y_pred = pd.DataFrame(
             X_forecast,
             index=forecast_index,
-            columns=self._y.columns
+            columns=series_ids[:X_forecast.shape[1]] if len(series_ids) >= X_forecast.shape[1] else list(self._y.columns)
         )
+        
+        # Reorder columns to match training data order (for consistency with evaluation)
+        # This ensures target_series extraction works correctly
+        if set(y_pred.columns) == set(self._y.columns):
+            y_pred = y_pred[self._y.columns]
         
         return y_pred
     
@@ -412,6 +430,19 @@ class DDFMForecaster(BaseForecaster):
         else:
             X_forecast = predictions
         
+        # Get series order from DDFM model config (predictions are in this order)
+        try:
+            from dfm_python.utils.helpers import get_series_ids
+            config = self._ddfm_model.get_config()
+            series_ids = get_series_ids(config)
+            # Ensure series_ids matches the number of columns in X_forecast
+            if len(series_ids) != X_forecast.shape[1]:
+                # Fallback: use training data columns if count doesn't match
+                series_ids = list(self._y.columns)
+        except (ImportError, AttributeError, Exception):
+            # Fallback: use training data columns if we can't get series_ids
+            series_ids = list(self._y.columns)
+        
         # Create forecast index
         last_train_idx = self._y.index[-1]
         if isinstance(last_train_idx, pd.Timestamp):
@@ -427,11 +458,17 @@ class DDFMForecaster(BaseForecaster):
                 int(last_train_idx) + 1 + horizon
             )
         
+        # Create DataFrame with series_ids as columns (matching prediction order)
         y_pred = pd.DataFrame(
             X_forecast,
             index=forecast_index,
-            columns=self._y.columns
+            columns=series_ids[:X_forecast.shape[1]] if len(series_ids) >= X_forecast.shape[1] else list(self._y.columns)
         )
+        
+        # Reorder columns to match training data order (for consistency with evaluation)
+        # This ensures target_series extraction works correctly
+        if set(y_pred.columns) == set(self._y.columns):
+            y_pred = y_pred[self._y.columns]
         
         return y_pred
     
