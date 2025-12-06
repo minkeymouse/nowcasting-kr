@@ -10,28 +10,27 @@
 - **3 Horizons**: 1, 7, 28 days
 - **Total**: 36 combinations (3 × 4 × 3)
 
-**Current Status (2025-12-07 - Iteration Summary)**: 
-- ✅ **Experiments**: All 4 models completed (36/36 combinations, 30 valid + 6 NaN for DFM/DDFM h28) - Results available in `outputs/experiments/aggregated_results.csv`
-- ✅ **DFM/DDFM Package**: Verified working correctly (importable via path, no dependency errors). All comparison_results.json show "failed_models": [] (empty list). NO package dependency errors found.
-- ✅ **Tables**: All 3 required tables generated and verified with actual results from all 4 models
-- ✅ **Plots**: All required plots generated (forecast vs actual per target, accuracy heatmap, horizon trend, model comparison)
-- ✅ **Report Sections**: All 6 sections updated with actual results from all 4 models
+**Current Status (2025-12-07 - Complete Verification)**: 
+- ✅ **Experiments**: All 4 models completed (36/36 combinations, 30 valid + 6 NaN for DFM/DDFM h28) - Results available in `outputs/experiments/aggregated_results.csv`. All comparison_results.json show "failed_models": [] and status "completed" for all models/targets. Aggregated results CSV matches comparison results perfectly (all 36 rows verified).
+- ✅ **DFM/DDFM Package**: ✅ **VERIFIED WORKING** - Working correctly (importable via path, no dependency errors). All comparison_results.json show "failed_models": [] (empty list). NO package dependency errors found.
+- ✅ **Tables**: All 3 required tables generated and verified with actual results from all 4 models (Table 1: dataset/params, Table 2: 36 rows, Table 3: monthly backtest with limitation documentation)
+- ✅ **Plots**: All required plots generated and verified (forecast vs actual per target, accuracy heatmap, horizon trend, model comparison)
+- ✅ **Report Sections**: All 6 sections updated with actual results from all 4 models - All numbers verified against aggregated_results.csv, all citations verified in references.bib, no placeholders found
 - ✅ **LaTeX References**: All table/figure references verified (no broken references)
-- ⚠️ **Code Consolidation**: src/ has 17 files (max 15 required) - Required by rules, 2 more file merges needed
-- ⚠️ **Evaluation Design Limitation**: All results show n_valid=1 - Single-step evaluation design (uses only 1 test point per horizon, see `src/eval/evaluation.py` line 504)
+- ✅ **Code Consolidation**: src/ has 15 files (max 15 required) - Complete
+- ⚠️ **Evaluation Design Limitation**: All results show n_valid=1 - Single-step evaluation design (uses only 1 test point per horizon, see `src/eval/evaluation.py` line 504) - Documented in methodology section
 - ⚠️ **VAR Instability**: Severe numerical instability for horizons 7/28 (errors > 10¹¹, up to 10¹²⁰) - documented in report, verified in results (model limitation, not fixable)
 - ⚠️ **DFM Numerical Instability**: DFM shows extreme values for KOWRCCNSE/KOIPALL.G (R=10000, Q=1e6, V_0=1e38) but still converged (num_iter=4, loglik=0.0). KOEQUIPTE DFM is stable (num_iter=100, loglik=-3993.23). This is an EM algorithm convergence issue, NOT a package dependency issue.
 - ⚠️ **DFM/DDFM h28 Limitation**: All DFM/DDFM h28 show NaN (n_valid=0) due to insufficient test data after 80/20 split. Root cause is data limitation, NOT package issues.
-- ⏳ **Report Verification**: PDF compilation and page count check pending (<15 pages target)
+- ⏳ **Report Verification**: PDF compilation and page count check pending (<15 pages target, LaTeX not installed but all content ready)
 
 ## Architecture Overview
 
 ### Directory Structure
-- **src/**: Experiment engine (17 files, max 15 required) - wrappers for sktime & dfm-python
+- **src/**: Experiment engine (15 files, max 15 required) - wrappers for sktime & dfm-python
   - Entry points: train.py (compare), infer.py (nowcast)
   - Core modules: core/training.py, eval/evaluation.py, model/, preprocess/, utils/, nowcast/
-  - Status: Refactored, legacy code removed, consistent patterns, syntax error fixed
-  - Note: File count exceeds limit (17 > 15), consolidation needed (2 more merges required)
+  - Status: Refactored, legacy code removed, consistent patterns, syntax error fixed, consolidation complete
 - **dfm-python/**: Core DFM/DDFM package (submodule) - Finalized
   - Lightning-based training, EM algorithm (DFM), PyTorch encoder (DDFM)
   - Consistent naming: snake_case functions, PascalCase classes
@@ -182,6 +181,5 @@ python3 nowcasting-report/code/plot.py
 
 **For Next Iteration**: 
 - ⏳ **Report Verification**: Compile PDF, verify page count (<15), check for placeholders/hallucinations
-- ⏳ **Code Consolidation**: Consolidate src/ files (17 → 15) - Required by rules, 2 more file merges needed
 
-**Status**: All 4 models experiments complete (36/36 combinations, 30 valid + 6 NaN). All tables, plots, and report sections complete with actual results. Report content ready. PDF verification and code consolidation pending.
+**Status**: All 4 models experiments complete (36/36 combinations, 30 valid + 6 NaN). All tables, plots, and report sections complete with actual results. All numbers verified against data. All citations verified. Code consolidation complete (15 files). Report content ready. PDF compilation pending (LaTeX not installed).
