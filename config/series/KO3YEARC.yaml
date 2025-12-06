@@ -11,6 +11,4 @@ scaler: standard
 impute: null
 units: Percent, Annual
 category: Finance
-block:
-- Block_Global
-- Block_Investment
+block: null

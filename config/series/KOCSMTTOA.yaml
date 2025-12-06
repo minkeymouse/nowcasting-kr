@@ -11,7 +11,4 @@ category: Consumption
 release: 32
 scaler: standard
 impute: null
-block:
-- Block_Global
-- Block_Consumption
-- Block_Nominal
+block: null

@@ -8,5 +8,4 @@ frequency: w
 transformation: chg
 scaler: standard
 impute: null
-block:
-- Block_Global
+block: null

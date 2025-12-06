@@ -11,6 +11,4 @@ category: Labor
 release: 11
 scaler: standard
 impute: null
-block:
-- Block_Global
-- Block_Labor
+block: null

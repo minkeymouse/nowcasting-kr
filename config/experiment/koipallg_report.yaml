@@ -1,6 +1,6 @@
-# Gross Fixed Capital Formation (KOGFCF..D) Experiment Configuration
-target_series: KOGFCF..D
-data_path: data/sample_data.csv
+# Industrial Production All Industries (KOIPALL.G) Experiment Configuration
+target_series: KOIPALL.G
+data_path: data/data.csv
 forecast_horizons: [1, 7, 28]
 
 models:
@@ -10,25 +10,49 @@ models:
   - ddfm
 
 series:
+  - KOBSESI.R
   - KOCALL.
+  - KOCNFCONR
   - KOCNGOV.D
+  - KOCONPMTH
   - KOCONPRCF
+  - KOCONSTRP
+  - KOCSECEMR
+  - KOCSEMEMR
+  - KOCSPHIMR
   - KOCYLEADR
+  - KOEMPCONF
+  - KOEMPMANF
+  - KOEMPTOTO
+  - KOEXCHINA
   - KOEXNGS.D
+  - KOEXPGDSA
   - KOEXPPRCF
+  - KOGCFFNVD
+  - KOHWRWEMP
   - KOIMNGS.D
   - KOIMPGDSA
   - KOIMPPRCF
   - KOIPALL.G
   - KOMPRI30G
+  - KOMSCAPGG
   - KONETTRDF
+  - KOPOPACTE
+  - KOPPSRM.F
   - KOPROPRCF
   - KORCNST
   - KORELEC
+  - KORFBEV
   - KORMACH
   - KORMCMP
   - KOROCOINF
+  - KORWHLS
+  - KOSHRPRCF
+  - KOSIARRLE
+  - KOSSBFMBE
   - KOUS$...
+  - KOVALCONA
+  - KOWRCCNSE
 
 # Model-specific parameter overrides (optional)
 model_overrides:

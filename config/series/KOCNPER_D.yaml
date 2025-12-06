@@ -11,6 +11,4 @@ category: Macro
 release: 25
 scaler: standard
 impute: null
-block:
-- Block_Global
-- Block_Consumption
+block: null

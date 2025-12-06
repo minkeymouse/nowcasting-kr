@@ -11,6 +11,4 @@ category: Investment
 release: 30
 scaler: standard
 impute: null
-block:
-- Block_Global
-- Block_Investment
+block: null

@@ -1,6 +1,6 @@
-# Private Consumption (KOCNPER.D) Experiment Configuration
-target_series: KOCNPER.D
-data_path: data/sample_data.csv
+# Equipment Investment (KOEQUIPTE) Experiment Configuration
+target_series: KOEQUIPTE
+data_path: data/data.csv
 forecast_horizons: [1, 7, 28]
 
 models:
@@ -15,6 +15,7 @@ series:
   - KOCNFCONR
   - KOCNGOV.D
   - KOCONPMTH
+  - KOCONPRCF
   - KOCONSTRP
   - KOCSECEMR
   - KOCSEMEMR
@@ -33,13 +34,16 @@ series:
   - KOIMPGDSA
   - KOIMPPRCF
   - KOIPALL.G
+  - KOMPRI30G
   - KOMSCAPGG
   - KONETTRDF
   - KOPOPACTE
   - KOPPSRM.F
   - KOPROPRCF
+  - KORCNST
   - KORELEC
   - KORFBEV
+  - KORMACH
   - KORMCMP
   - KOROCOINF
   - KORWHLS
@@ -49,6 +53,7 @@ series:
   - KOUS$...
   - KOVALCONA
   - KOWRCCNSE
+  - KOEQUIPTE
 
 # Model-specific parameter overrides (optional)
 model_overrides:

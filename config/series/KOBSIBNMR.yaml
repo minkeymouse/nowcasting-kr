@@ -11,5 +11,4 @@ category: Survey, Bsnss
 release: -5
 scaler: standard
 impute: null
-block:
-- Block_Global
+block: null

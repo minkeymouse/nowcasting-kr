@@ -1,6 +1,6 @@
-# GDP (KOGDP...D) Experiment Configuration
-target_series: KOGDP...D
-data_path: data/sample_data.csv
+# Wholesale and Retail Trade (KOWRCCNSE) Experiment Configuration
+target_series: KOWRCCNSE
+data_path: data/data.csv
 forecast_horizons: [1, 7, 28]
 
 models:

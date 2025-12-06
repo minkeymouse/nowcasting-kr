@@ -11,7 +11,4 @@ category: Int. trade
 release: 1
 scaler: standard
 impute: null
-block:
-- Block_Global
-- Block_Export
-- Block_Nominal
+block: null

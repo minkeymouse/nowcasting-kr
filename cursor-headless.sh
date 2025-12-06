@@ -166,8 +166,22 @@ workflow_context() {
 - Try to improve incrementally. Do not try to do everything at once. Try to prioritize the tasks and work on them one by one.
 
 # GOAL
-- Write the Complete report(20~30 pages) in @nowcasting-report/
+- Write the Complete report (under 15 pages) in @nowcasting-report/ comparing 4 models (ARIMA, VAR, DFM, DDFM) on 4 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G, KOMPRI30G)
 - Finalize the package @dfm-python/ with clean code pattern, consistent and generic naming
+
+# EXPERIMENT CONFIGURATION
+- Targets: 4 (KOEQUIPTE - Equipment Investment, KOWRCCNSE - Wholesale/Retail Sales, KOIPALL.G - All Industry Production, KOMPRI30G - Manufacturing Production)
+- Models: 4 (ARIMA, VAR, DFM, DDFM)
+- Horizons: 3 (1, 7, 28 days)
+- Total: 48 combinations (4 × 4 × 3)
+- Series configs: All series use block: null (only global block for DFM/DDFM)
+- Data file: data/data.csv
+
+# REPORT STRUCTURE
+- 6 sections: Introduction, Methodology, Production Model (KOIPALL.G, KOMPRI30G), Investment Model (KOEQUIPTE), Consumption Model (KOWRCCNSE), Conclusion
+- Target: Under 15 pages (condensed from previous 20-30 page target)
+- Tables: tab_overall_metrics, tab_by_target, tab_by_horizon
+- Focus: Compare ARIMA, VAR, DFM, DDFM models across 4 targets
 
 # RESOURCES
 - CONTEXT.md: Use this file for context offloading for persistence if necessary.
@@ -178,7 +192,8 @@ workflow_context() {
 - nowcasting-report/code/plot.py : Code for creating plots used in the paper based on the results in outputs/ directory. Images should be created at nowcasting-report/images/*.png and used in the report properly.
 - neo4j mcp : knowledgebase containing references. NEVER hallucinate.
 - outputs/ : directory containing experiment results from @run_experiment.sh
-- config/ : Hydra YAML configs in config/experiment/, config/model/, config/series/
+- config/ : Hydra YAML configs in config/experiment/ (4 target configs: koequipte_report, kowrccnse_report, koipallg_report, kompri30g_report), config/model/, config/series/ (all series have block: null)
+- run_test_experiment.sh : Test script to verify all targets and models before full run
 - DDFM_COMPARISON.md : Comparison of original ddfm implementation and dfm-python
 
 EOF
@@ -343,9 +358,10 @@ step1_run_experiment() {
   validate_prerequisites 1
   activate_venv
   cd "$REPO_ROOT"
-  log_info "Note: run_experiment.sh should only run experiments that are not already complete. Check outputs/ directory for existing results before running new experiments."
+  log_info "Note: run_experiment.sh runs experiments for 4 new targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G, KOMPRI30G). Check outputs/ directory for existing results before running new experiments."
   log_info "For incremental testing, use MODELS filter: MODELS=\"dfm\" bash run_experiment.sh or MODELS=\"ddfm\" bash run_experiment.sh"
-  log_info "Current status: ARIMA (9/9 complete), VAR (9/9 complete), DFM (1/9 tested, ready for full run), DDFM (1/9 tested, ready for full run)"
+  log_info "For verification, use run_test_experiment.sh first to verify all targets and models work correctly."
+  log_info "Current configuration: 4 targets × 4 models × 3 horizons = 48 combinations"
   if bash run_experiment.sh; then
     log_info "Step 1 completed successfully"
     mark_step_completed 1
@@ -367,7 +383,7 @@ step2_inspect_code() {
   if [[ -n "$out_dir" ]] && [[ -d "$out_dir" ]]; then
     prompt+=" Study the experiment run output in ${out_dir} (latest run) and plan how to update the @nowcasting-report with results. Check which experiments have already been completed by examining the outputs/ directory structure and log files."
   fi
-  prompt+=" Current experiment status: 18/36 complete (ARIMA 9, VAR 9), 18 pending (DFM 8, DDFM 8). IMPORTANT: When planning how to update the report, also consider which experiments are still missing. If new experiments are needed to complete the report, note that run_experiment.sh should be updated in later steps to include only missing experiments (not re-run completed ones). This is a fresh new start - provide a comprehensive understanding of the project."
+  prompt+=" Current experiment configuration: 4 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G, KOMPRI30G) × 4 models (ARIMA, VAR, DFM, DDFM) × 3 horizons (1, 7, 28) = 48 combinations. Report structure: 6 sections (Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion) - target under 15 pages. IMPORTANT: When planning how to update the report, check which experiments have been completed. The report focuses on comparing 4 models across 4 targets organized by economic sector (Production, Investment, Consumption). This is a fresh new start - provide a comprehensive understanding of the project."
   if cursor_text "$prompt"; then
     log_info "Step 2 completed successfully"
     mark_step_completed 2
@@ -429,7 +445,7 @@ step5_plan_improvements() {
   validate_prerequisites 5
   cd "$REPO_ROOT"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
-  if cursor_force "Plan how to improve the dfm-python package and nowcasting-report paper. If there are improvement points in the codes, such as numerical stability, convergence issues, theoretically wrong implementation (refer to knowledgebase and legacy clone repos if needed), include the improvements on them in the plan. If there are improvement points in the report, such as hallucination, lack of detail, redundancy, unnatural flow, include the improvements in the plan. If there are improvement points in the code quality such as redundancies, non-generic naming in dfm-python, inefficient logic, monkey patch, temporal fixes, include them in the plan. Note: Legacy code cleanup is completed. dfm-python is finalized with consistent naming and clean patterns. If there are any new experiments needed for the report or extensions, changes in experiment, include them in the plan. IMPORTANT: When planning new experiments, also update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them from run_experiment.sh. This ensures each iteration only runs missing experiments needed to complete the report. Do not make the plan too long. Leave the tasks at ISSUES.md and work incrementally. Plan with manageable tasks. Keep ISSUES.md under ${LINE_LIMIT} lines. Do not create new files."; then
+  if cursor_force "Plan how to improve the dfm-python package and nowcasting-report paper. The report structure is 6 sections (Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion) targeting under 15 pages. Focus on comparing 4 models (ARIMA, VAR, DFM, DDFM) across 4 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G, KOMPRI30G). If there are improvement points in the codes, such as numerical stability, convergence issues, theoretically wrong implementation (refer to knowledgebase and legacy clone repos if needed), include the improvements on them in the plan. If there are improvement points in the report, such as hallucination, lack of detail, redundancy, unnatural flow, include the improvements in the plan. If there are improvement points in the code quality such as redundancies, non-generic naming in dfm-python, inefficient logic, monkey patch, temporal fixes, include them in the plan. Note: Legacy code cleanup is completed. dfm-python is finalized with consistent naming and clean patterns. If there are any new experiments needed for the report or extensions, changes in experiment, include them in the plan. IMPORTANT: When planning new experiments, also update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them from run_experiment.sh. This ensures each iteration only runs missing experiments needed to complete the report. Do not make the plan too long. Leave the tasks at ISSUES.md and work incrementally. Plan with manageable tasks. Keep ISSUES.md under ${LINE_LIMIT} lines. Do not create new files."; then
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     log_info "Step 5 completed successfully"
     mark_step_completed 5

@@ -11,7 +11,4 @@ category: Survey, Cnsmr
 release: -5
 scaler: standard
 impute: null
-block:
-- Block_Global
-- Block_Consumption
-- Block_Labor
+block: null

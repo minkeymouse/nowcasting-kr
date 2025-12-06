@@ -429,8 +429,22 @@ def _train_forecaster(
             forecaster = SktimeVAR(maxlags=int(maxlags), trend=str(trend))
         print(f"Max lags: {maxlags}, Trend: {trend}, Series: {y_train.shape[1]}")
     
-    # Fit model
-    forecaster.fit(y_train)
+    # Get target series for evaluation and naming
+    target_col = None
+    if 'experiment' in cfg and 'target_series' in cfg.experiment:
+        target_col = cfg.experiment.target_series
+    elif 'target_series' in cfg:
+        target_col = cfg.target_series
+    
+    # CRITICAL FIX: Split data BEFORE fitting to avoid data leakage
+    # Split data for evaluation (80/20 split)
+    split_idx = int(len(y_train) * 0.8)
+    y_train_eval = y_train.iloc[:split_idx]
+    y_test_eval = y_train.iloc[split_idx:]
+    
+    # Fit model on training split only (not full data)
+    # This ensures no data leakage - model never sees test data during training
+    forecaster.fit(y_train_eval)
     print(f"{'='*70}\n")
     
     # Get horizons
@@ -460,22 +474,16 @@ def _train_forecaster(
         except ImportError:
             from ..eval.evaluation import evaluate_forecaster
     
-    # Get target series for evaluation and naming
-    target_col = None
-    if 'experiment' in cfg and 'target_series' in cfg.experiment:
-        target_col = cfg.experiment.target_series
-    elif 'target_series' in cfg:
-        target_col = cfg.target_series
-    
-    # Split data for evaluation
-    split_idx = int(len(y_train) * 0.8)
-    y_train_eval = y_train.iloc[:split_idx]
-    y_test_eval = y_train.iloc[split_idx:]
-    
     if len(y_test_eval) > 0:
+        # Note: evaluate_forecaster will refit on y_train_eval, but that's fine
+        # since we already fitted on y_train_eval above. The refit ensures consistency.
         forecast_metrics = evaluate_forecaster(
             forecaster, y_train_eval, y_test_eval, horizons, target_series=target_col
         )
+    
+    # Refit on full data for production use (model saved will use full training data)
+    # This is for production deployment, not for evaluation
+    forecaster.fit(y_train)
     
     # Save model
     if target_col:

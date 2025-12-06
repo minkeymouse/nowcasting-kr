@@ -11,6 +11,4 @@ category: Price
 release: 3
 scaler: standard
 impute: null
-block:
-- Block_Global
-- Block_Nominal
+block: null

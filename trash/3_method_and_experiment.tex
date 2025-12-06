@@ -1,0 +1,31 @@
+\section{데이터 및 방법론}
+
+\subsection{데이터}
+
+본 연구는 한국은행 경제통계시스템(ECOS) 데이터를 활용함. 데이터 기간은 1985년 4월부터 2025년 11월까지이며, 총 2,538개 관측치와 101개 시계열 변수로 구성됨. 월간 변수 87개와 분기별 변수 8개를 사용하며, 변수들은 생산, 설문, 금융, 무역, 거시경제, 노동, 투자, 소비, 물가 등으로 분류됨.
+
+\subsubsection{목표 변수}
+본 연구의 예측 대상은 다음과 같은 4개의 거시경제 변수임:
+\begin{itemize}
+    \item \textbf{KOEQUIPTE}: 설비투자 지수 (Equipment Investment Index)
+    \item \textbf{KOWRCCNSE}: 도소매판매액 (Wholesale and Retail Trade Sales)
+    \item \textbf{KOIPALL.G}: 전산업생산지수 (Industrial Production Index, All Industries)
+    \item \textbf{KOMPRI30G}: 제조업생산지수 (Manufacturing Production Index)
+\end{itemize}
+
+\subsection{전처리}
+
+각 시계열은 메타데이터에 명시된 변환 방법(chg, cha, lin)에 따라 전처리되며, 모든 변수는 표준화를 통해 평균 0, 표준편차 1로 변환됨. 결측치는 전방 채우기 및 후방 채우기로 처리함.
+
+\subsection{예측 모형}
+
+본 연구에서는 4개 모형을 비교함: (1) \textbf{ARIMA}: 단변량 자기회귀 통합 이동평균 모형, (2) \textbf{VAR}: 벡터 자기회귀 모형으로 다변량 관계를 직접 모델링, (3) \textbf{DFM}: EM 알고리즘을 통한 동적 요인 모형, (4) \textbf{DDFM}: 자기인코더 기반 심층 동적 요인 모형.
+
+DFM과 DDFM은 dfm-python 패키지를 활용하며, clock 프레임워크를 통해 혼합 빈도 데이터를 처리함. Clock 빈도는 월간('m')으로 설정하여 분기별 목표 변수를 월간 고빈도 지표로부터 예측함. 텐트 커널을 사용하여 저빈도 시계열을 고빈도 요인으로부터 생성함.
+
+\subsection{실험 설계}
+
+데이터를 80:20 비율로 훈련/테스트 세트로 분할하며, 시간 순서를 유지함. 평가는 1일, 7일, 28일 예측 기간에 대해 표준화된 MSE, MAE, RMSE를 계산함. 표준화는 훈련 데이터의 표준편차로 나누어 수행하여 서로 다른 스케일의 변수 간 공정한 비교가 가능하도록 함.
+
+DFM 설정: 요인 개수 2-4개, AR 차수 1, EM 알고리즘 수렴 기준 1e-5, 최대 반복 5000회. DDFM 설정: 인코더 구조 [64, 32], 요인 개수 2-4개, 학습률 0.005, 배치 크기 100, 에폭 100, 활성화 함수 ReLU.
+

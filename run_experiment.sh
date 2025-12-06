@@ -35,20 +35,23 @@ else
 fi
 
 # Target series (define before validation)
-TARGETS=("KOGDP...D" "KOCNPER.D" "KOGFCF..D")
+TARGETS=("KOEQUIPTE" "KOWRCCNSE" "KOIPALL.G" "KOMPRI30G")
 
 # Function to map target series to config name
 get_config_name() {
     local target=$1
     case "$target" in
-        "KOGDP...D")
-            echo "experiment/kogdp_report"
+        "KOEQUIPTE")
+            echo "experiment/koequipte_report"
             ;;
-        "KOCNPER.D")
-            echo "experiment/kocnper_report"
+        "KOWRCCNSE")
+            echo "experiment/kowrccnse_report"
             ;;
-        "KOGFCF..D")
-            echo "experiment/kogfcf_report"
+        "KOIPALL.G")
+            echo "experiment/koipallg_report"
+            ;;
+        "KOMPRI30G")
+            echo "experiment/kompri30g_report"
             ;;
         *)
             # Fallback: try to construct config name from target
@@ -453,7 +456,7 @@ echo "  - Aggregated results: outputs/experiments/"
 echo ""
 
 # Count results
-result_dirs=$(find outputs/comparisons -maxdepth 1 -type d -name "KOGDP*" -o -name "KOCNPER*" -o -name "KOGFCF*" 2>/dev/null | wc -l)
+result_dirs=$(find outputs/comparisons -maxdepth 1 -type d -name "KOEQUIPTE*" -o -name "KOWRCCNSE*" -o -name "KOIPALL.G*" -o -name "KOMPRI30G*" 2>/dev/null | wc -l)
 log_files=$(find outputs/comparisons -maxdepth 1 -type f -name "*.log" 2>/dev/null | wc -l)
 
 echo "Generated:"

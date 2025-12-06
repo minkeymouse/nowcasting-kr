@@ -2,20 +2,20 @@
 
 ## Project Overview
 
-**Goal**: Complete 20-30 page LaTeX report comparing 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean macroeconomic targets (GDP, Consumption, Investment) across 3 forecast horizons (1, 7, 28 days). Finalize dfm-python package.
+**Goal**: Complete under 15 page LaTeX report comparing 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 4 Korean macroeconomic targets (Production: KOIPALL.G, KOMPRI30G; Investment: KOEQUIPTE; Consumption: KOWRCCNSE) across 3 forecast horizons (1, 7, 28 days). Finalize dfm-python package.
 
 **Experiment Configuration**:
-- **3 Targets**: KOGDP...D (GDP, 55 series), KOCNPER.D (Consumption, 50 series), KOGFCF..D (Investment, 19 series)
+- **4 Targets**: KOEQUIPTE (Equipment Investment Index), KOWRCCNSE (Wholesale and Retail Trade Sales), KOIPALL.G (Industrial Production Index, All Industries), KOMPRI30G (Manufacturing Production Index)
 - **4 Models**: ARIMA (sktime), VAR (sktime), DFM (EM algorithm), DDFM (PyTorch Lightning)
 - **3 Horizons**: 1, 7, 28 days
-- **Total**: 36 combinations (3 × 4 × 3)
+- **Total**: 48 combinations (4 × 4 × 3)
 
-**Current Status (2025-12-06 - End of Iteration 63)**: 
-- ✅ **Experiments**: 28/36 complete (77.8%) - ARIMA 9/9, VAR 9/9, DFM 4/9, DDFM 6/9. All available experiments done.
-- ✅ **Report**: Complete with all available results integrated, all metric values verified (match aggregated_results.csv exactly, 0 discrepancies), all LaTeX cross-references verified, all images confirmed, all citations verified (all match references.bib)
-- ✅ **Package**: dfm-python finalized with consistent naming, clean code patterns
-- ✅ **All Verification Tasks**: All comparison results verified (0 discrepancies), experiment completion verified, metric values verified, citations verified, LaTeX syntax verified, tracking files (all under 1000 lines)
-- ⏳ **Next**: PDF compilation (external dependency - requires LaTeX installation) [BLOCKER] - LaTeX not installed, all prerequisites verified and ready
+**Current Status (2025-12-06 - New Experiment Phase)**: 
+- ✅ **Configuration**: All 4 target configs created, series configs updated (block: null), data path fixed
+- ✅ **Scripts**: `run_experiment.sh` and `run_test_experiment.sh` finalized and verified
+- ✅ **Report Structure**: 6 sections ready (condensed to under 15 pages)
+- ⏳ **Experiments**: Need to run for 4 new targets (0/48 complete)
+- ⏳ **Report Content**: Need to populate with actual experiment results
 
 ## Architecture Overview
 
@@ -26,15 +26,15 @@
 - **dfm-python/**: Core DFM/DDFM package (submodule) - Finalized
   - Lightning-based training, EM algorithm (DFM), PyTorch encoder (DDFM)
   - Consistent naming: snake_case functions, PascalCase classes
-- **nowcasting-report/**: LaTeX report (20-30 pages target)
-  - Contents: 8 sections (intro, lit review, theory, method, results, discussion, conclusion, acknowledgement)
-  - Tables: 4 tables (tab_overall_metrics, tab_by_target, tab_by_horizon, tab_nowcasting)
-  - Images: 4 plots (model_comparison, horizon_trend, accuracy_heatmap, forecast_vs_actual)
+- **nowcasting-report/**: LaTeX report (under 15 pages target)
+  - Contents: 6 sections (Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion)
+  - Tables: Structure ready (tab_overall_metrics, tab_by_target, tab_by_horizon)
+  - Images: Need to generate with new target data
   - Code: plot.py generates plots from outputs/
 - **config/**: Hydra YAML configs
-  - experiment/: 3 target configs (kogdp_report, kocnper_report, kogfcf_report)
+  - experiment/: 4 target configs (koequipte_report, kowrccnse_report, koipallg_report, kompri30g_report)
   - model/: Model-specific parameters (arima, var, dfm, ddfm)
-  - series/: 100+ series configs (frequency, transformation, blocks)
+  - series/: 101 series configs (frequency, transformation, block: null - only global block)
 - **outputs/**: Experiment results
   - comparisons/: Per-target results (comparison_results.json, comparison_table.csv)
   - models/: Trained models (model.pkl per target/model)
@@ -53,7 +53,7 @@
 **dfm-python/ Package**:
 - Models: DFM (EM algorithm), DDFM (PyTorch encoder + VAE)
 - Lightning: DataModule, KalmanFilter, EMAlgorithm (PyTorch Lightning integration)
-- Features: Clock-based mixed-frequency, block-structured factors, Hydra YAML config
+- Features: Clock-based mixed-frequency, block-structured factors (only global block now), Hydra YAML config
 
 ## Experiment Pipeline
 
@@ -70,23 +70,23 @@ run_experiment.sh
 
 **Result Structure**:
 - Per-target: `outputs/comparisons/{target}_{timestamp}/comparison_results.json`
-- Aggregated: `outputs/experiments/aggregated_results.csv` (36 rows: 3 targets × 4 models × 3 horizons)
-- Models: `outputs/models/{target}_{model}/model.pkl` (12 total)
+- Aggregated: `outputs/experiments/aggregated_results.csv` (48 rows: 4 targets × 4 models × 3 horizons)
+- Models: `outputs/models/{target}_{model}/model.pkl` (16 total)
 
 **Configuration**:
 - Experiment: `config/experiment/{target}_report.yaml` - Target, models, horizons, series
 - Model: `config/model/{model}.yaml` - Model-specific parameters
-- Series: `config/series/{series_id}.yaml` - Frequency, transformation, blocks
+- Series: `config/series/{series_id}.yaml` - Frequency, transformation, block: null (only global block)
 
 ## Data Flow
 
-1. **Config → Model Setup**: Hydra loads experiment config → Extract series → Build dfm-python config
-2. **Data → Preprocessing**: Load CSV → Apply per-series transformations → Standardize
+1. **Config → Model Setup**: Hydra loads experiment config → Extract series → Build dfm-python config (only global block)
+2. **Data → Preprocessing**: Load CSV (`data/data.csv`) → Apply per-series transformations → Standardize
 3. **Training**: Create forecaster → fit() → EM (DFM) or PyTorch Lightning (DDFM)
 4. **Evaluation**: Train/test split (80/20) → predict() → calculate_standardized_metrics()
 5. **Comparison**: Aggregate across models → generate_comparison_table() → Save JSON/CSV
 6. **Visualization**: Load JSON → Extract metrics → Generate plots → Save PNG
-7. **Report**: Update tables → Compile PDF
+7. **Report**: Update tables → Compile PDF (under 15 pages)
 
 ## Key Design Patterns
 
@@ -95,12 +95,18 @@ run_experiment.sh
 - **Modular Preprocessing**: Per-series transformations via sktime FunctionTransformer
 - **Standardized Metrics**: sMSE, sMAE, sRMSE (normalized by training std)
 - **Output Structure**: outputs/{models,comparisons,experiments}/ with timestamps
+- **Block Structure**: Only global block used (all series have `block: null`)
 
 ## Usage
 
 **Run all experiments**:
 ```bash
 bash run_experiment.sh
+```
+
+**Run test verification**:
+```bash
+bash run_test_experiment.sh
 ```
 
 **Run specific models** (for incremental testing):
@@ -110,7 +116,7 @@ MODELS="var dfm" bash run_experiment.sh
 
 **Run single model/target**:
 ```bash
-.venv/bin/python3 src/train.py compare --config-name experiment/kogdp_report --models var --horizons 1
+.venv/bin/python3 src/train.py compare --config-name experiment/koequipte_report --models var
 ```
 
 **Generate aggregated results**:
@@ -125,24 +131,27 @@ python3 nowcasting-report/code/plot.py
 
 ## Report Update Workflow
 
-1. Run experiments → `bash run_experiment.sh` (or with MODELS filter)
-2. Generate aggregated CSV → `python3 -c "from src.eval import main_aggregator; main_aggregator()"`
-3. Generate plots → `python3 nowcasting-report/code/plot.py`
-4. Update LaTeX tables → From aggregated_results.csv (replace "---" placeholders)
-5. Update results section → `contents/5_result.tex` with specific numbers
-6. Update discussion → `contents/6_discussion.tex` with real findings and insights
-7. Update conclusion → `contents/7_conclusion.tex` to reflect actual results
-8. Finalize report → Compile PDF, verify 20-30 pages, no placeholders
+1. Run test verification → `./run_test_experiment.sh` (verify all targets/models)
+2. Run experiments → `./run_experiment.sh` (all 4 targets × 4 models × 3 horizons)
+3. Generate aggregated CSV → `python3 -c "from src.eval import main_aggregator; main_aggregator()"`
+4. Generate plots → `python3 nowcasting-report/code/plot.py`
+5. Update LaTeX tables → From aggregated_results.csv (populate with actual metrics)
+6. Update result sections → `contents/3_production_model.tex`, `contents/4_investment_model.tex`, `contents/5_consumption_model.tex` with specific numbers
+7. Update conclusion → `contents/6_conclusion.tex` to reflect actual results
+8. Finalize report → Compile PDF, verify under 15 pages, no placeholders
 
-## Latest Updates (Iteration 63 - 2025-12-06)
+## Latest Updates (2025-12-06)
 
 **Completed**:
-- ✅ All development tasks complete: Experiments (28/36), report content (8 sections, 4 tables, 4 plots, 21 citations), code finalized (src/ 15 files, dfm-python finalized)
-- ✅ All verification tasks complete: Comparison results verified (0 discrepancies), experiment completion verified, metric values verified, citations verified, LaTeX syntax verified, tracking files (all under 1000 lines)
-- ✅ Incremental improvements: Path setup consolidation, report section flow review, unused imports cleanup
+- ✅ Configuration updated: 4 new target configs created, series configs updated (block: null)
+- ✅ Data path fixed: All configs use `data/data.csv`
+- ✅ Report structure: 6 sections ready (condensed to under 15 pages)
+- ✅ Scripts finalized: `run_experiment.sh` and `run_test_experiment.sh` ready
+- ✅ Test verification: ARIMA and VAR tests passing
 
 **For Next Iteration**: 
-- ⏳ **BLOCKER**: PDF compilation (Tasks 2.1-2.4) - Requires LaTeX installation (external dependency). All prerequisites verified and ready.
-- **Next Action**: Install LaTeX (Task 2.1) → Initial PDF Compilation (Task 2.2) → PDF Quality Verification (Task 2.3) → PDF Finalization (Task 2.4)
+- ⏳ **NEXT**: Run test verification (`./run_test_experiment.sh`) to verify all targets and models
+- ⏳ **After verification**: Run full experiments (`./run_experiment.sh`) for all 48 combinations
+- ⏳ **After experiments**: Update report with actual results, generate plots, compile PDF
 
-**Status**: All report content is complete and verified. All metric values match aggregated_results.csv exactly. All citations verified. LaTeX syntax verified. Code finalized. Ready for PDF compilation (external dependency - requires LaTeX installation).
+**Status**: Configuration ready, experiments pending. Report structure ready, need results to populate content.

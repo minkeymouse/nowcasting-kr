@@ -1,0 +1,43 @@
+\section{실험 결과}
+\label{sec:results}
+
+\subsection{전체 모형 성능 비교}
+
+본 절에서는 4개 예측 모형(ARIMA, VAR, DFM, DDFM)의 성능을 4개 목표 변수(KOEQUIPTE, KOWRCCNSE, KOIPALL.G, KOMPRI30G)와 3개 예측 기간(1일, 7일, 28일)에 대해 비교 분석함.
+
+표 \ref{tab:overall_metrics}는 모든 모형에 대한 표준화된 MSE, MAE, RMSE를 보여줌. 전체 모형 성능 비교 결과, VAR 모형이 가장 우수한 성능을 보였으며, ARIMA가 그 다음으로 좋은 성능을 보였음. VAR의 전체 평균 sRMSE는 매우 낮은 수준으로, 거시경제 변수 예측에서 우수한 성능임. DDFM은 ARIMA보다 낮은 성능을 보였으나, DFM은 일부 목표 변수에서 높은 오차를 보여 전체 평균이 높게 나타났음.
+
+\input{tables/tab_overall_metrics}
+
+표 \ref{tab:overall_metrics_by_target}는 목표 변수별 모형 성능을 보여줌. VAR은 모든 목표 변수에서 우수한 성능을 보였으며, ARIMA도 전반적으로 양호한 성능을 보였음. DDFM은 일부 목표 변수에서 상대적으로 양호한 성능을 보였으나, DFM은 일부 목표 변수에서 수치적 불안정성으로 인해 결과가 없음.
+
+\input{tables/tab_overall_metrics_by_target}
+
+표 \ref{tab:overall_metrics_by_horizon}는 예측 기간별 모형 성능을 보여줌. VAR은 모든 예측 기간에서 우수한 성능을 보였으며, 특히 1일 예측에서 가장 우수함. ARIMA는 28일 예측에서 상대적으로 좋은 성능을 보였음. DFM과 DDFM의 28일 예측은 테스트 세트 크기 부족(80/20 분할로 인해 테스트 세트가 28개 미만)으로 인해 평가 불가능함.
+
+\input{tables/tab_overall_metrics_by_horizon}
+
+\subsection{DFM과 DDFM의 혼합 빈도 예측 성능}
+
+DFM과 DDFM은 혼합 빈도 데이터를 처리할 수 있는 고유한 장점을 가짐. dfm-python을 활용한 모형은 clock 프레임워크를 통해 혼합 빈도 데이터를 처리하며, 분기별 목표 변수를 월간 고빈도 지표로부터 예측함. DFM 모형은 EM 알고리즘을 통해 파라미터를 추정하며, 일부 목표 변수에서 수치적 불안정성을 보임. DDFM 모형은 PyTorch Lightning 기반으로 학습되며, 비선형 인코더를 통해 복잡한 요인 구조를 학습할 수 있음.
+
+\subsection{시각화}
+
+그림 \ref{fig:model_comparison}은 모형별 성능을 비교한 막대 그래프를 보여줌. VAR이 모든 예측 기간에서 가장 우수한 성능을 보이며, ARIMA가 그 다음으로 좋은 성능을 보임을 확인할 수 있음.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{images/model_comparison.png}
+\caption{모형별 성능 비교 (표준화된 RMSE)}
+\label{fig:model_comparison}
+\end{figure}
+
+그림 \ref{fig:horizon_trend}는 예측 기간별 성능 추이를 보여줌. VAR이 모든 예측 기간에서 가장 우수한 성능을 보이며, ARIMA는 28일 예측에서 상대적으로 좋은 성능을 보임을 확인할 수 있음.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{images/horizon_trend.png}
+\caption{예측 기간별 성능 추이 (표준화된 RMSE)}
+\label{fig:horizon_trend}
+\end{figure}
+

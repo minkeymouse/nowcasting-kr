@@ -1,10 +1,11 @@
-# Quick test config for DFM/DDFM fixes
-# Single target, single horizon, DFM and DDFM only
-target_series: KOGDP...D
-data_path: data/sample_data.csv
-forecast_horizons: [1]
+# Manufacturing Production Index (KOMPRI30G) Experiment Configuration
+target_series: KOMPRI30G
+data_path: data/data.csv
+forecast_horizons: [1, 7, 28]
 
 models:
+  - arima
+  - var
   - dfm
   - ddfm
 
@@ -39,7 +40,13 @@ series:
   - KOPOPACTE
   - KOPPSRM.F
   - KOPROPRCF
+  - KORCNST
+  - KORELEC
+  - KORFBEV
+  - KORMACH
+  - KORMCMP
   - KOROCOINF
+  - KORWHLS
   - KOSHRPRCF
   - KOSIARRLE
   - KOSSBFMBE
@@ -47,18 +54,26 @@ series:
   - KOVALCONA
   - KOWRCCNSE
 
-# Model-specific parameter overrides for quick testing
+# Model-specific parameter overrides (optional)
 model_overrides:
   dfm:
-    max_iter: 10  # Reduced for quick testing
-    threshold: 1.0e-4
+    max_iter: 5000
+    threshold: 1.0e-5
   ddfm:
-    epochs: 50  # Reduced for quick testing
+    epochs: 100
     encoder_layers: [64, 32]
     num_factors: 2
     activation: relu  # Updated to match original DDFM
-    learning_rate: 0.005  # Updated to match original DDFM
+    learning_rate: 0.005  # Updated to match original DDFM (was: 0.001)
     batch_size: 100  # Updated to match original DDFM (was: 32)
     decay_learning_rate: true  # Exponential decay scheduler (gamma=0.96)
-    max_iter: 50  # Reduced for quick testing
+    min_obs_pretrain: 50  # Minimum observations for pre-training
+    mult_epoch_pretrain: 1  # Multiplier for pre-training epochs
+  arima:
+    order: [1, 1, 1]
+    auto_arima:
+      enabled: false
+  var:
+    lag_order: 1
+    trend: c
 

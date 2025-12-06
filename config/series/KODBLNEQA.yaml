@@ -11,7 +11,4 @@ category: Finance
 release: 45
 scaler: standard
 impute: null
-block:
-- Block_Global
-- Block_Investment
-- Block_Nominal
+block: null
