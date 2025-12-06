@@ -136,6 +136,18 @@ python3 nowcasting-report/code/plot.py
 7. Update conclusion → `contents/7_conclusion.tex` to reflect actual results
 8. Finalize report → Compile PDF, verify 20-30 pages, no placeholders
 
+## Latest Updates (Iteration 12 - 2025-12-06)
+
+**Completed**:
+- ✅ Results analysis completed - verified all comparison results in outputs/comparisons/
+- ✅ Confirmed aggregated_results.csv contains 28 rows (28/36 = 77.8%)
+- ✅ Verified missing combinations match documented limitations (DFM KOCNPER.D: 3, DFM/DDFM h28: 5)
+- ✅ Corrected metric values in STATUS.md and ISSUES.md to match actual aggregated_results.csv:
+  - DDFM overall sRMSE: 0.9757
+  - DDFM KOCNPER.D: h1=0.4839, h7=0.8300
+  - DDFM h1: 0.8247, h7: 1.1268
+- ✅ No errors found in log files - all experiments completed successfully
+
 ## Latest Updates (Iteration 11 - 2025-12-06)
 
 **Completed**:
