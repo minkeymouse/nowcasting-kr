@@ -251,7 +251,14 @@ cleanup_old_results() {
 
 # Models to compare (as per experiment config files)
 # Note: Actual models are read from experiment config files
-MODELS=("arima" "var" "dfm" "ddfm")
+# Can be overridden via MODELS environment variable (e.g., MODELS="arima var" bash run_experiment.sh)
+if [ -n "$MODELS" ]; then
+    # Parse space-separated models from environment variable
+    read -ra MODELS_ARRAY <<< "$MODELS"
+    MODELS=("${MODELS_ARRAY[@]}")
+else
+    MODELS=("arima" "var" "dfm" "ddfm")
+fi
 
 # Horizons (all 3 as per RESULTS_NEEDED.md)
 HORIZONS=(1 7 28)
@@ -273,6 +280,9 @@ echo "Target Series: ${TARGETS[@]}"
 echo "Models: ${MODELS[@]}"
 echo "Horizons: ${HORIZONS[@]}"
 echo "Max Parallel: $MAX_PARALLEL"
+if [ -n "$MODELS" ]; then
+    echo "Note: Models filtered via MODELS environment variable"
+fi
 echo "Start Time: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=========================================="
 echo ""
@@ -295,8 +305,15 @@ run_experiment() {
     
     # Run experiment with timeout (24 hours max per experiment)
     # Use venv Python explicitly since background processes don't inherit venv activation
-    timeout 86400 .venv/bin/python3 src/train.py compare \
-        --config-name "$config_name" \
+    # If MODELS is set, filter to only run those models
+    local cmd_args=("--config-name" "$config_name")
+    if [ -n "$MODELS" ]; then
+        # Convert MODELS array to space-separated string for --models flag
+        local models_str="${MODELS[*]}"
+        cmd_args+=("--models" $models_str)
+    fi
+    
+    timeout 86400 .venv/bin/python3 src/train.py compare "${cmd_args[@]}" \
         > "$log_file" 2>&1
     
     EXIT_CODE=$?

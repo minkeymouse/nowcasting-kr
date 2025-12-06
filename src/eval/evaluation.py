@@ -65,6 +65,10 @@ def calculate_standardized_metrics(
     - Missing values (NaN) are automatically excluded from calculations
     - If all values are NaN, returns NaN for all metrics
     """
+    # Import logging for error messages
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # Convert to numpy arrays and track original types
     is_y_true_series = isinstance(y_true, pd.Series)
     is_y_true_dataframe = isinstance(y_true, pd.DataFrame)
@@ -102,7 +106,17 @@ def calculate_standardized_metrics(
         if isinstance(target_series, str):
             if is_y_true_dataframe:
                 # DataFrame: look up column name
-                col_idx = y_true.columns.get_loc(target_series)
+                try:
+                    col_idx = y_true.columns.get_loc(target_series)
+                except KeyError:
+                    # target_series not in columns - check if single column, use 0
+                    if len(y_true.columns) == 1:
+                        col_idx = 0
+                        # Update columns list to match
+                        columns = [y_true.columns[0]]
+                    else:
+                        # Multiple columns but target_series not found - can't proceed
+                        raise KeyError(f"target_series '{target_series}' not found in y_true.columns={list(y_true.columns)}")
             elif is_y_true_series:
                 # Series: check if name matches, otherwise use index 0
                 if y_true.name == target_series:
@@ -126,7 +140,24 @@ def calculate_standardized_metrics(
             train_arr = y_train.values
             if target_series is not None:
                 if isinstance(target_series, str):
-                    col_idx = y_train.columns.get_loc(target_series)
+                    try:
+                        col_idx = y_train.columns.get_loc(target_series)
+                    except KeyError:
+                        # target_series not in y_train.columns - check if single column, use 0
+                        if len(y_train.columns) == 1:
+                            col_idx = 0
+                        else:
+                            # Multiple columns but target_series not found - use same col_idx from y_true extraction
+                            # This handles case where VAR returns all columns but with different names
+                            if is_y_true_dataframe:
+                                try:
+                                    col_idx = y_true.columns.get_loc(target_series)
+                                except KeyError:
+                                    # Fallback: use first column if target_series not found in either
+                                    col_idx = 0
+                                    logger.warning(f"target_series '{target_series}' not found in y_train.columns={list(y_train.columns)} or y_true.columns={list(y_true.columns)}, using column 0")
+                            else:
+                                col_idx = 0
                 else:
                     col_idx = target_series
                 train_arr = train_arr[:, col_idx:col_idx+1]
@@ -862,31 +893,61 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
     rows = []
     
     for target_series, results_list in all_results.items():
-        for result_data in results_list:
-            comparison = result_data.get('comparison', {})
-            metrics_table = comparison.get('metrics_table')
-            
-            if metrics_table is None:
+        # Use the latest result for each target
+        result_data = results_list[-1] if results_list else None
+        if not result_data:
+            continue
+        
+        results = result_data.get('results', {})
+        horizons = result_data.get('horizons', [1, 7, 28])
+        
+        # Extract metrics from each model
+        for model_name, model_data in results.items():
+            if not isinstance(model_data, dict):
                 continue
             
-            # Convert to DataFrame if it's a dict
-            if isinstance(metrics_table, dict):
-                df = pd.DataFrame(metrics_table)
-            elif isinstance(metrics_table, pd.DataFrame):
-                df = metrics_table
-            else:
+            metrics = model_data.get('metrics', {})
+            if not isinstance(metrics, dict):
                 continue
             
-            # Add target_series column
-            df['target_series'] = target_series
+            forecast_metrics = metrics.get('forecast_metrics', {})
+            if not isinstance(forecast_metrics, dict):
+                continue
             
-            rows.append(df)
+            # Extract metrics for each horizon
+            for horizon in horizons:
+                horizon_str = str(horizon)
+                if horizon_str not in forecast_metrics:
+                    continue
+                
+                horizon_metrics = forecast_metrics[horizon_str]
+                if not isinstance(horizon_metrics, dict):
+                    continue
+                
+                n_valid = horizon_metrics.get('n_valid', 0)
+                
+                # Only include if we have valid predictions
+                if n_valid and n_valid > 0:
+                    row = {
+                        'target': target_series,
+                        'model': model_name.upper(),
+                        'horizon': horizon,
+                        'sMSE': horizon_metrics.get('sMSE'),
+                        'sMAE': horizon_metrics.get('sMAE'),
+                        'sRMSE': horizon_metrics.get('sRMSE'),
+                        'MSE': horizon_metrics.get('MSE'),
+                        'MAE': horizon_metrics.get('MAE'),
+                        'RMSE': horizon_metrics.get('RMSE'),
+                        'sigma': horizon_metrics.get('sigma'),
+                        'n_valid': n_valid
+                    }
+                    rows.append(row)
     
     if not rows:
         return pd.DataFrame()
     
-    # Concatenate all DataFrames
-    aggregated = pd.concat(rows, ignore_index=True)
+    # Create DataFrame from rows
+    aggregated = pd.DataFrame(rows)
     return aggregated
 
 

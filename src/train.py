@@ -137,6 +137,7 @@ def main():
     compare_parser = subparsers.add_parser('compare', help='Compare multiple models (requires experiment config)')
     compare_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/kogdp_report)")
     compare_parser.add_argument("--override", action="append", help="Hydra config override")
+    compare_parser.add_argument("--models", nargs="+", help="Filter models to run (e.g., --models arima var). If not specified, runs all models from config.")
     
     args = parser.parse_args()
     
@@ -151,10 +152,17 @@ def main():
         print(f"\n✓ Model saved to: {result['model_dir']}")
         
     elif args.command == 'compare':
+        # Filter models if --models flag is provided
+        overrides = list(args.override) if args.override else []
+        if args.models:
+            # Override models list in config
+            models_str = ",".join(args.models)
+            overrides.append(f"models=[{models_str}]")
+        
         result = compare_models_by_config(
             config_name=args.config_name,
             config_dir=config_path,
-            overrides=args.override
+            overrides=overrides
         )
         print(f"\n✓ Comparison saved to: {result['output_dir']}")
         if result.get('failed_models'):
