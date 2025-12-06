@@ -7,7 +7,7 @@ This project implements a systematic comparison framework for nowcasting Korean 
 
 ### Experiment Status
 
-**Latest Update**: 2025-12-06 (Report Complete - All Available Results Integrated)
+**Latest Update**: 2025-12-06 (Priority 1 Tasks Completed - Methodology Enhanced, Values Verified)
 
 **Completed** (29/36 = 80.6%):
 - ✅ **ARIMA**: All 9 combinations (3 targets × 3 horizons, n_valid=1)
@@ -24,7 +24,7 @@ This project implements a systematic comparison framework for nowcasting Korean 
   - KOCNPER.D: All horizons failed (n_valid=0) - numerical instability (inf, -inf, extreme values)
 - ⚠️ **DDFM**: 6/9 combinations (all h1,h7; all h28 failed)
   - KOGDP...D: h1 (sRMSE 0.706), h7 (sRMSE 0.361), h28 (n_valid=0)
-  - KOCNPER.D: h1 (sRMSE 0.484), h7 (sRMSE 0.830), h28 (n_valid=0)
+  - KOCNPER.D: h1 (sRMSE 0.450), h7 (sRMSE 0.796), h28 (n_valid=0)
   - KOGFCF..D: h1 (sRMSE 1.284), h7 (sRMSE 2.189), h28 (n_valid=0)
 
 **Total Progress**: 29/36 = 80.6% complete
@@ -100,6 +100,22 @@ This project implements a systematic comparison framework for nowcasting Korean 
 - Execution: `run_experiment.sh` with parallel processing, MODELS filter support
 - Results: Per-target JSON, aggregated CSV, model pickles
 
+## Results Analysis (2025-12-06)
+
+### Analysis Summary ✅
+- ✅ **Results Verified**: All comparison results in `/data/nowcasting-kr/outputs/comparisons/` analyzed
+- ✅ **Numbers Corrected**: DDFM KOCNPER.D values corrected (h1: 0.484 → 0.450, h7: 0.830 → 0.796)
+- ✅ **Status Confirmed**: All 29/36 combinations (80.6%) correctly documented
+- ✅ **Issues Verified**: DFM KOCNPER.D numerical instability confirmed (all horizons n_valid=0, NaN values)
+- ✅ **Limitations Confirmed**: Horizon 28 unavailable for all DFM/DDFM (test set <28 points) - 6 combinations
+- ✅ **Performance Issues**: DFM KOGFCF..D poor performance confirmed (sRMSE 7.965 h1, 8.870 h7) - model completes but forecasts are poor
+
+**Key Findings**:
+1. All ARIMA/VAR results complete and correct (18/18 combinations)
+2. DFM: 5/9 complete - KOCNPER.D fails due to numerical instability (extreme values: inf, -inf, 1e+35, -3e+38)
+3. DDFM: 6/9 complete - all h1,h7 available, all h28 unavailable due to test set size
+4. Aggregated results CSV matches individual comparison results (29 rows total)
+
 ## Work Completed (2025-12-06)
 
 ### Report Completion ✅
@@ -115,19 +131,36 @@ This project implements a systematic comparison framework for nowcasting Korean 
 - ✅ **Experiment Script**: Verified run_experiment.sh correctly skips completed experiments
 - ✅ **Package Status**: dfm-python finalized, legacy code cleaned up, all tests passing (133 passed, 8 skipped)
 
+## Work Completed (2025-12-06 Update)
+
+### Priority 1 Tasks Completed ✅
+1. ✅ **Task R1.1: Methodology Detail Enhancement**: Added detailed train/test split (80/20) and evaluation procedure to contents/4_method_and_experiment.tex
+   - Added explicit description of data splitting procedure
+   - Added step-by-step evaluation procedure
+   - Added detailed explanation of standardized metrics calculation
+2. ✅ **Task R1.2: Report Consistency Final Check**: Cross-checked all metric values across abstract, results, discussion, conclusion
+   - Fixed DDFM overall values: 0.9758 → 0.9644 (sRMSE)
+   - Fixed DDFM horizon values: h1 0.8248 → 0.8134, h7 1.1268 → 1.1154
+   - Fixed DDFM KOCNPER.D values: 0.6571 → 0.6229 (target average), 0.464/0.810 → 0.450/0.796 (h1/h7)
+   - Verified all values match aggregated_results.csv
+3. ✅ **Task R1.3: Table/Figure Final Verification**: Verified all 4 tables and 4 figures
+   - All tables updated to match aggregated_results.csv
+   - All 4 figures exist and are properly referenced
+   - All N/A entries properly footnoted
+
 ## Next Steps (For Next Iteration)
 
-### Immediate Actions
-1. **Compile PDF and verify**: Compile LaTeX report to ensure all tables and figures render correctly (LaTeX not installed in current environment)
-2. **Final review**: Review report for consistency and completeness (all values verified against aggregated_results.csv)
+### Completed This Iteration ✅
+- ✅ **All Priority 1 Tasks**: Methodology enhancement, report consistency check, table/figure verification
+- ✅ **Code Quality Verification**: dfm-python naming consistency, LaTeX cross-references verified
+- ✅ **Report Complete**: All 8 sections complete with 29/36 results (80.6%), all values verified
 
-### Optional Improvements (Low Priority)
-- **dfm-python naming verification**: Verify snake_case/PascalCase consistency (Task 2.2) - 20-30 min
-- **DFM numerical stability**: Document potential improvements for KOCNPER.D instability (Task 3.1) - 15-20 min
-- **EM algorithm review**: Review convergence checks (Task 3.2) - 20-30 min
-- **Report details**: Add missing details in methodology/results interpretation (Task 5.2) - 30-40 min
+### Remaining Tasks (Optional, Low Priority)
+1. **PDF Compilation**: Compile LaTeX report to verify rendering (LaTeX not installed in current environment)
+2. **EM Algorithm Review** (Optional): Document DFM KOCNPER.D numerical instability limitations - 20-30 min
+3. **Discussion Enhancement** (Optional): Add technical details on DFM numerical stability - 20-30 min
 
-**Note**: All critical tasks completed. Remaining tasks are optional improvements.
+**Status**: Report is complete and ready for final compilation. All critical tasks completed. Remaining items are optional polish.
 
 ## Experiment Configuration
 

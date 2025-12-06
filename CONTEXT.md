@@ -137,10 +137,11 @@ python3 nowcasting-report/code/plot.py
 
 **Latest Updates (2025-12-06)**:
 - ✅ Report complete: All 8 sections complete with available results (29/36 combinations, 80.6%)
+- ✅ Results analysis: All comparison results verified, DDFM KOCNPER.D values corrected (h1: 0.450, h7: 0.796)
 - ✅ All metric values verified: Abstract, discussion, conclusion sections match aggregated_results.csv exactly
 - ✅ Report quality: Fixed nowcasting section, language consistency, plot placeholders, conclusion improvements
 - ✅ Code quality: src/ directory reviewed (15 files), no major issues found
 - ✅ Package finalized: dfm-python with consistent naming, legacy code cleaned up
 - ✅ Experiment status: All available experiments complete (29/36), 7 unavailable due to data/model limitations
-- ⚠️ Limitations documented: DFM KOCNPER.D numerical instability, horizon 28 test set size issues
+- ⚠️ Limitations documented: DFM KOCNPER.D numerical instability (all horizons n_valid=0, extreme values), horizon 28 test set size issues
 - **Next iteration**: Compile PDF and final review (all critical tasks completed)
