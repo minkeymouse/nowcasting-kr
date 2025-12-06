@@ -904,8 +904,18 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
     rows = []
     
     for target_series, results_list in all_results.items():
-        # Use the latest result for each target
-        result_data = results_list[-1] if results_list else None
+        # Sort by timestamp and use the latest result for each target
+        if results_list:
+            # Sort by timestamp (newest first)
+            results_list_sorted = sorted(
+                results_list,
+                key=lambda x: x.get('timestamp', ''),
+                reverse=True
+            )
+            result_data = results_list_sorted[0] if results_list_sorted else None
+        else:
+            result_data = None
+        
         if not result_data:
             continue
         
