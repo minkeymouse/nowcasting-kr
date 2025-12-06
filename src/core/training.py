@@ -610,7 +610,56 @@ def train(
     config_overrides: Optional[list] = None,
     horizons: Optional[List[int]] = None
 ) -> Dict[str, Any]:
-    """Train model with Hydra configuration and save to outputs."""
+    """Train a single forecasting model using Hydra configuration.
+    
+    This function provides a unified interface for training all model types
+    (ARIMA, VAR, DFM, DDFM) using sktime forecaster interface. The model is
+    trained, evaluated on specified horizons, and saved to outputs/models/.
+    
+    Parameters
+    ----------
+    config_name : str
+        Hydra config name (e.g., 'experiment/kogdp_report'). Must be a valid
+        config file in config/ directory.
+    config_path : str, optional
+        Path to config directory. If None, uses default config/ directory.
+    data_path : str, optional
+        Path to data CSV file. If None, uses default data/sample_data.csv.
+    model_name : str, optional
+        Model name for saving. If None, auto-generates from model type and target.
+        Format: "{model_type}_{target}_{timestamp}"
+    config_overrides : list, optional
+        List of Hydra config override strings (e.g., ['model_overrides.dfm.max_iter=10']).
+    horizons : list of int, optional
+        Forecast horizons to evaluate (e.g., [1, 7, 28]). If None, uses horizons
+        from experiment config.
+        
+    Returns
+    -------
+    dict
+        Training result dictionary with keys:
+        - status: 'completed' or 'failed'
+        - model_name: Name of trained model
+        - model_dir: Path to saved model directory
+        - metrics: Dictionary of forecast metrics per horizon
+        - model_type: Type of model trained ('arima', 'var', 'dfm', 'ddfm')
+        - target_series: Target series name
+        - error: Error message if status is 'failed'
+        
+    Raises
+    ------
+    ValueError
+        If config_name is invalid or required config fields are missing.
+    FileNotFoundError
+        If data_path or config_path does not exist.
+        
+    Notes
+    -----
+    - All models use sktime forecaster interface for consistency
+    - DFM/DDFM models require dfm-python package and PyTorch
+    - Model is saved as pickle file in outputs/models/{model_name}/model.pkl
+    - Evaluation metrics are calculated using standardized metrics (sMSE, sMAE, sRMSE)
+    """
     config_path = config_path or str(Path(__file__).parent.parent.parent / "config")
     outputs_dir = Path(__file__).parent.parent / "outputs" / "models"
     outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -1136,11 +1185,55 @@ def compare_models(
     config_name: Optional[str] = None,
     config_overrides: Optional[List[str]] = None
 ) -> Dict[str, Any]:
-    """Train multiple models and compare results (internal function).
+    """Train multiple models and compare their performance.
     
-    This is the low-level implementation. For programmatic use, prefer:
-    - train_model() from src.train for single model training
-    - compare_models_by_config() from src.train for model comparison
+    This function trains multiple forecasting models (ARIMA, VAR, DFM, DDFM)
+    on the same target series and evaluates them on specified forecast horizons.
+    Results are saved to outputs/comparisons/ with comparison tables and metrics.
+    
+    Parameters
+    ----------
+    target_series : str
+        Target series name (e.g., 'KOGDP...D', 'KOCNPER.D', 'KOGFCF..D').
+    models : list of str
+        List of model names to compare (e.g., ['arima', 'var', 'dfm', 'ddfm']).
+        Valid model types: 'arima', 'var', 'dfm', 'ddfm'.
+    horizons : list of int, default [1, 7, 28]
+        Forecast horizons to evaluate (in days).
+    data_path : str, optional
+        Path to data CSV file. If None, uses default data/sample_data.csv.
+    config_dir : str, optional
+        Path to config directory. If None, uses default config/ directory.
+    config_name : str, optional
+        Hydra config name. If None, auto-derives from target_series:
+        - 'KOGDP...D' -> 'experiment/kogdp_report'
+        - 'KOCNPER.D' -> 'experiment/kocnper_report'
+        - 'KOGFCF..D' -> 'experiment/kogfcf_report'
+    config_overrides : list of str, optional
+        List of Hydra config override strings.
+        
+    Returns
+    -------
+    dict
+        Comparison result dictionary with keys:
+        - target_series: Target series name
+        - models: List of model names
+        - horizons: List of forecast horizons
+        - results: Dictionary of training results per model
+        - comparison: Aggregated comparison metrics and tables
+        - timestamp: ISO timestamp of comparison
+        - output_dir: Path to output directory
+        - failed_models: List of models that failed during training
+        
+    Notes
+    -----
+    - This is a low-level function. For programmatic use, prefer:
+      - train_model() from src.train for single model training
+      - compare_models_by_config() from src.train for model comparison
+    - Results are saved to outputs/comparisons/{target_series}_{timestamp}/
+    - Comparison table is saved as comparison_table.csv
+    - Full results are saved as comparison_results.json
+    - Failed models are included in results with status='failed'
     """
     config_dir = config_dir or str(Path(__file__).parent.parent.parent / "config")
     data_path = data_path or str(Path(__file__).parent.parent.parent / "data" / "sample_data.csv")
