@@ -14,9 +14,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 
-# Set up paths using centralized utility (relative import since we're in src/)
-from ..utils.config_parser import setup_paths
-setup_paths(include_app=True)
+# Path setup is handled in entry points (train.py, infer.py)
 
 # Import custom exceptions for error handling
 from ..utils.config_parser import ValidationError, ConfigError

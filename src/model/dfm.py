@@ -4,9 +4,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Union
 from datetime import datetime
 
-# Set up paths using centralized utility
-from ..utils.config_parser import setup_paths
-setup_paths(include_dfm_python=True, include_src=True, include_app=True)
+# Path setup is handled in entry points (train.py, infer.py)
 
 # Import custom exceptions for error handling
 from ..utils.config_parser import ValidationError

@@ -5,11 +5,8 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 import json
 import numpy as np
-import sys
 
-# Set up paths using centralized utility
-from ..utils.config_parser import setup_paths
-setup_paths(include_dfm_python=True, include_src=True, include_app=True)
+# Path setup is handled in entry points (train.py, infer.py)
 
 from ..utils.config_parser import (
     ValidationError,

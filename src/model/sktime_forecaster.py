@@ -10,9 +10,7 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 
-# Set up paths
-from ..utils.config_parser import setup_paths
-setup_paths(include_dfm_python=True, include_src=True, include_app=True)
+# Path setup is handled in entry points (train.py, infer.py)
 
 try:
     from sktime.forecasting.base import BaseForecaster
