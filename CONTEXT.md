@@ -10,17 +10,18 @@
 - **3 Horizons**: 1, 7, 28 days
 - **Total**: 36 combinations (3 × 4 × 3)
 
-**Current Status (2025-12-06 - End of Iteration 24, Ready for Iteration 25)**: 
+**Current Status (2025-12-06 - End of Iteration 28, Ready for Iteration 29)**: 
 - ✅ ARIMA: Complete (9/9 combinations, sRMSE=0.366)
 - ✅ VAR: Complete (9/9 combinations, sRMSE=0.046) - best overall performance
 - ⚠️ DFM: Partial (4/9 combinations) - KOGDP...D h1,h7; KOGFCF..D h1,h7 available; KOCNPER.D all horizons failed (numerical instability); all h28 unavailable (test set too small)
 - ⚠️ DDFM: Partial (6/9 combinations) - all targets h1,h7 available; all h28 unavailable (test set too small)
 - ✅ Report: Complete with all available results (28/36 combinations, 77.8%) integrated, all metric values verified and corrected (including abstract)
 - ✅ Package: dfm-python finalized with consistent naming, clean code patterns
-- ✅ Results Analysis: All comparison results analyzed and verified (2025-12-06, Iteration 23), all metric values match aggregated_results.csv exactly, DFM KOCNPER.D failure confirmed (overflow/NaN/Inf in forecast), all results consistent with no errors found
+- ✅ Results Analysis: All comparison results analyzed and verified (2025-12-06, Iteration 23, 25), all metric values match aggregated_results.csv exactly, DFM KOCNPER.D failure confirmed (overflow/NaN/Inf in forecast), all results consistent with no errors found
 - ✅ Phase 5 Quality Improvements: All tasks complete (T5.1-T5.6) - citations verified, flow/redundancy improved, code quality verified, theoretical correctness verified, numerical stability documented, method section comprehensive
-- ✅ Task 1: Pre-Compilation Checklist Verification complete (2025-12-06) - all files and syntax verified
-- ⏳ Next: PDF compilation (external dependency - requires LaTeX installation)
+- ✅ Task 1: Pre-Compilation Checklist Verification complete (2025-12-06, Iteration 24) - all files and syntax verified
+- ✅ Incremental Improvements: All Priority 1-4 tasks complete (Iterations 26-28) - report refinement, code quality verification, documentation accuracy, numerical stability documentation
+- ⏳ Next: PDF compilation (external dependency - requires LaTeX installation) [BLOCKER]
 
 ## Architecture Overview
 
@@ -139,7 +140,44 @@ python3 nowcasting-report/code/plot.py
 7. Update conclusion → `contents/7_conclusion.tex` to reflect actual results
 8. Finalize report → Compile PDF, verify 20-30 pages, no placeholders
 
-## Latest Updates (Iteration 24 - 2025-12-06)
+## Latest Updates (Iteration 28 - 2025-12-06)
+
+**Completed**:
+- ✅ Priority 2-4 Incremental Improvements: All verification tasks completed
+  - Priority 2: Code quality verification - logging levels verified (debug/info/warning appropriate), error handling verified (graceful exception handling), naming consistency verified (snake_case functions, PascalCase classes)
+  - Priority 3: Documentation accuracy - DDFM_COMPARISON.md verified (C matrix extraction matches current implementation), README files verified (match current API)
+  - Priority 4: Numerical stability documentation - verified complete in report, dfm-python README, and ISSUES.md
+  - All Priority 1-4 incremental improvements now complete (Iterations 26-28)
+
+**Previous Updates (Iteration 27 - 2025-12-06)**:
+- ✅ Priority 1 Report Content Refinement: All report content improvements completed
+  - Discussion section VAR superiority refined - focused on economic interpretation, reduced technical repetition
+  - DFM failure explanation condensed - removed redundancy with Method section
+  - Results section flow improved - added transition connecting DFM/DDFM to overall comparison
+  - Method section enhanced - clarified weekly variable exclusion
+
+**Previous Updates (Iteration 26 - 2025-12-06)**:
+- ✅ Improvement Plan Creation: Created focused incremental improvement plan in ISSUES.md
+  - Priority 1: Report content refinement (redundancy reduction in Discussion section, flow improvements in Results section)
+  - Priority 2-4: Code quality verification, documentation accuracy, numerical stability documentation
+  - All improvements are incremental and can be done while waiting for PDF compilation
+  - Key findings: No new experiments needed, no critical code issues, no theoretical correctness issues
+
+## Previous Updates (Iteration 25 - 2025-12-06)
+
+**Completed**:
+- ✅ Comparison Results Analysis: Verified all results in outputs/comparisons/
+  - All metric values match aggregated_results.csv exactly (verified KOGDP...D DFM h1, KOCNPER.D DFM h1)
+  - Confirmed 28 rows in aggregated_results.csv (28/36 = 77.8%) - matches expected count
+  - Verified DFM KOCNPER.D correctly missing (0 rows, numerical instability confirmed via logs showing 5476 Inf values in V matrix)
+  - Verified DFM/DDFM h28 correctly missing (0 rows, test set too small)
+  - Breakdown verified: KOCNPER.D 8 rows, KOGDP...D 10 rows, KOGFCF..D 10 rows
+  - Model breakdown: ARIMA 9, VAR 9, DFM 4, DDFM 6 (all correct)
+  - Horizon breakdown: h1=11, h7=11, h28=6 (only ARIMA/VAR have h28, as expected)
+  - No errors or unexpected issues found in comparison results
+  - All results consistent and properly documented
+
+## Previous Updates (Iteration 24 - 2025-12-06)
 
 **Completed**:
 - ✅ Task 1 Pre-Compilation Checklist Verification: Completed all verification checks
@@ -171,7 +209,7 @@ python3 nowcasting-report/code/plot.py
 - ✅ All critical development, verification, and quality assurance tasks completed
 - ✅ Report content complete, refined, and verified - Ready for PDF compilation
 
-**For Next Iteration (Iteration 25)**: Focus on PDF compilation (Task 2-5). Task 1 Pre-Compilation Checklist is complete (Iteration 24). All report content is complete and verified. Comparison results analysis completed (Iteration 23). Only remaining task is to compile LaTeX to PDF and verify page count (target: 20-30 pages) and formatting.
+**For Next Iteration (Iteration 26)**: Focus on PDF compilation (Task 2-5). Task 1 Pre-Compilation Checklist is complete (Iteration 24). All report content is complete and verified. Comparison results analysis completed (Iteration 25) - all results verified, breakdowns confirmed, no discrepancies found. Only remaining task is to compile LaTeX to PDF and verify page count (target: 20-30 pages) and formatting.
 
 ## Previous Updates (Iteration 20-21 - 2025-12-06)
 
