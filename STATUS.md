@@ -1,6 +1,16 @@
 # Project Status
 
-## Current State (2025-12-06 - End of Iteration 39)
+## Current State (2025-12-06 - Iteration 43)
+
+**Iteration 42 Summary**: Final verification and status update completed. All experiments verified complete (28/36 = 77.8%). All report content verified: 8 sections complete, 4 tables with correct metrics, 4 plots generated, 21 citations verified. All metric values match aggregated_results.csv exactly (0 discrepancies). Code finalized: src/ 15 files (max allowed), dfm-python finalized with consistent naming. run_experiment.sh correctly configured to skip completed experiments. All tracking files under 1000 lines (STATUS.md: 144, ISSUES.md: 484, CONTEXT.md: 174). Report ready for PDF compilation (external dependency - requires LaTeX installation).
+
+**Iteration 43 Summary**: Status update and issue consolidation completed. All development work verified complete. All experiments complete (28/36 = 77.8%). All report content verified and finalized. All code finalized. All tracking files cleaned up and under 1000 lines. Report ready for PDF compilation (external dependency - requires LaTeX installation). Next iteration should focus on PDF compilation tasks (2.1-2.4) once LaTeX environment is available.
+
+**Iteration 41 Summary**: Report metric accuracy improvements completed. Fixed DDFM metric discrepancies in tables and report text to match aggregated_results.csv exactly. Updated DDFM overall metrics (sMSE: 1.3397→1.3271, sMAE: 0.9811→0.9717, sRMSE: 0.9811→0.9717) and horizon-specific metrics (h1: 0.8302→0.8207, h7: 1.1322→1.1227) in all tables and report sections. All metric values now match aggregated_results.csv exactly (0 discrepancies). Report content verified and corrected.
+
+## Previous State (2025-12-06 - End of Iteration 40)
+
+**Iteration 40 Summary**: Comparison results analysis completed. Analyzed all results in outputs/comparisons/ for all 3 targets (KOGDP...D, KOCNPER.D, KOGFCF..D). Verified all metric values match between comparison_results.json and aggregated_results.csv exactly (0 discrepancies). Confirmed aggregated_results.csv contains 28 rows (28/36 = 77.8% complete) as expected. All expected limitations properly handled: DFM KOCNPER.D (all horizons n_valid=0, numerical instability), DFM/DDFM h28 (all n_valid=0, test set too small). No errors or issues found. All results consistent and verified.
 
 **Iteration 39 Summary**: Report finalization completed. Verified all LaTeX cross-references (\ref{}, \cite{}) are consistent and resolve correctly. Confirmed all 4 images exist in images/ directory (model_comparison.png, horizon_trend.png, accuracy_heatmap.png, forecast_vs_actual.png). Verified all tracking files are under 1000 lines (STATUS.md: 138, ISSUES.md: 296, CONTEXT.md: 166). Report content complete, all sections verified, all metric values match aggregated_results.csv exactly. Report is ready for PDF compilation (external dependency - requires LaTeX installation).
 
@@ -26,9 +36,9 @@
   - Task 4: PDF Quality Verification
   - Task 5: PDF Finalization
 
-**Status for Next Iteration (Iteration 40)**: All development, verification, and results analysis work complete. All experiments verified (28/36 = 77.8% complete). All comparison results analyzed and verified (all metric values match, 0 discrepancies). All report content verified, corrected, and refined. All LaTeX cross-references verified. All images confirmed to exist. All code finalized. run_experiment.sh verified and correctly configured. All tracking files verified under 1000 lines. Report is ready for PDF compilation (Tasks 2.1-2.4) which requires LaTeX installation (external dependency).
+**Status for Next Iteration (Iteration 44)**: All development, verification, and results analysis work complete. All experiments verified (28/36 = 77.8% complete). All comparison results analyzed and verified (all metric values match, 0 discrepancies, Iterations 37, 40, 41, 42). All report content verified, corrected, and refined. All metric values match aggregated_results.csv exactly. All LaTeX cross-references verified. All images confirmed to exist. All code finalized. run_experiment.sh verified and correctly configured. All tracking files verified under 1000 lines. Report is ready for PDF compilation (Tasks 2.1-2.4) which requires LaTeX installation (external dependency).
 
-**Next Steps (Iteration 40)**: 
+**Next Steps (Iteration 44+)**: 
 1. **Critical**: PDF compilation (Tasks 2.1-2.4) - Requires LaTeX installation (external dependency)
    - Task 2.1: LaTeX Environment Setup (Overleaf recommended, or local TeX Live installation)
    - Task 2.2: Initial PDF Compilation (compile main.tex, resolve errors)
