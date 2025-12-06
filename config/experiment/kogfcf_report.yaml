@@ -1,0 +1,55 @@
+# Gross Fixed Capital Formation (KOGFCF..D) Experiment Configuration
+target_series: KOGFCF..D
+data_path: data/sample_data.csv
+forecast_horizons: [1, 7, 28]
+
+models:
+  - arima
+  - var
+  - dfm
+  - ddfm
+
+series:
+  - KOCALL.
+  - KOCNGOV.D
+  - KOCONPRCF
+  - KOCYLEADR
+  - KOEXNGS.D
+  - KOEXPPRCF
+  - KOIMNGS.D
+  - KOIMPGDSA
+  - KOIMPPRCF
+  - KOIPALL.G
+  - KOMPRI30G
+  - KONETTRDF
+  - KOPROPRCF
+  - KORCNST
+  - KORELEC
+  - KORMACH
+  - KORMCMP
+  - KOROCOINF
+  - KOUS$...
+
+# Model-specific parameter overrides (optional)
+model_overrides:
+  dfm:
+    max_iter: 5000
+    threshold: 1.0e-5
+  ddfm:
+    epochs: 100
+    encoder_layers: [64, 32]
+    num_factors: 2
+    activation: relu  # Updated to match original DDFM
+    learning_rate: 0.005  # Updated to match original DDFM (was: 0.001)
+    batch_size: 100  # Updated to match original DDFM (was: 32)
+    decay_learning_rate: true  # Exponential decay scheduler (gamma=0.96)
+    min_obs_pretrain: 50  # Minimum observations for pre-training
+    mult_epoch_pretrain: 1  # Multiplier for pre-training epochs
+  arima:
+    order: [1, 1, 1]
+    auto_arima:
+      enabled: false
+  var:
+    lag_order: 1
+    trend: c
+

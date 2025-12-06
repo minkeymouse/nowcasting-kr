@@ -1,0 +1,16 @@
+[submodule "Nowcasting"]
+	path = Nowcasting
+	url = https://github.com/FRBNY-TimeSeriesAnalysis/Nowcasting.git
+
+[submodule "DDFM"]
+	path = DDFM
+	url = https://github.com/cosimoizzo/DDFM.git
+
+[submodule "dfm-python"]
+	path = dfm-python
+	url = https://github.com/minkeymouse/dfm-python.git
+
+[submodule "nowcasting-report"]
+	path = nowcasting-report
+	url = https://github.com/minkeymouse/nowcasting-report.git
+

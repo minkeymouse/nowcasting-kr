@@ -1,0 +1,75 @@
+# Private Consumption (KOCNPER.D) Experiment Configuration
+target_series: KOCNPER.D
+data_path: data/sample_data.csv
+forecast_horizons: [1, 7, 28]
+
+models:
+  - arima
+  - var
+  - dfm
+  - ddfm
+
+series:
+  - KOBSESI.R
+  - KOCALL.
+  - KOCNFCONR
+  - KOCNGOV.D
+  - KOCONPMTH
+  - KOCONSTRP
+  - KOCSECEMR
+  - KOCSEMEMR
+  - KOCSPHIMR
+  - KOCYLEADR
+  - KOEMPCONF
+  - KOEMPMANF
+  - KOEMPTOTO
+  - KOEXCHINA
+  - KOEXNGS.D
+  - KOEXPGDSA
+  - KOEXPPRCF
+  - KOGCFFNVD
+  - KOHWRWEMP
+  - KOIMNGS.D
+  - KOIMPGDSA
+  - KOIMPPRCF
+  - KOIPALL.G
+  - KOMSCAPGG
+  - KONETTRDF
+  - KOPOPACTE
+  - KOPPSRM.F
+  - KOPROPRCF
+  - KORELEC
+  - KORFBEV
+  - KORMCMP
+  - KOROCOINF
+  - KORWHLS
+  - KOSHRPRCF
+  - KOSIARRLE
+  - KOSSBFMBE
+  - KOUS$...
+  - KOVALCONA
+  - KOWRCCNSE
+
+# Model-specific parameter overrides (optional)
+model_overrides:
+  dfm:
+    max_iter: 5000
+    threshold: 1.0e-5
+  ddfm:
+    epochs: 100
+    encoder_layers: [64, 32]
+    num_factors: 2
+    activation: relu  # Updated to match original DDFM
+    learning_rate: 0.005  # Updated to match original DDFM (was: 0.001)
+    batch_size: 100  # Updated to match original DDFM (was: 32)
+    decay_learning_rate: true  # Exponential decay scheduler (gamma=0.96)
+    min_obs_pretrain: 50  # Minimum observations for pre-training
+    mult_epoch_pretrain: 1  # Multiplier for pre-training epochs
+  arima:
+    order: [1, 1, 1]
+    auto_arima:
+      enabled: false
+  var:
+    lag_order: 1
+    trend: c
+

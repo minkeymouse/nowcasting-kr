@@ -172,12 +172,14 @@ workflow_context() {
 # RESOURCES
 - CONTEXT.md: Use this file for context offloading for persistence if necessary.
 - STATUS.md: Use this file to track the progress and leave the status for next iteration on updates.
-- src/ : engine for running the experiment. This module provides wrapper for @sktime and @dfm-python packages with preprocessing - training - inference.
+- ISSUES.md: Track resolved issues and next steps. Keep file under 1000 lines. Mark resolved issues clearly.
+- src/ : engine for running the experiment. This module provides wrapper for @sktime and @dfm-python packages with preprocessing - training - inference. Maximum 15 files including __init__.py.
+- dfm-python/ : Core DFM/DDFM package - finalized with clean code patterns, consistent naming, legacy code cleaned up.
 - nowcasting-report/code/plot.py : Code for creating plots used in the paper based on the results in outputs/ directory. Images should be created at nowcasting-report/images/*.png and used in the report properly.
 - neo4j mcp : knowledgebase containing references. NEVER hallucinate.
 - outputs/ : directory containing experiment results from @run_experiment.sh
-- SKTIME.md : offload the @sktime docs contents here for later usage.
-- ISSUES.md : offload issues in the runs. If issues are resolved, mark them as resolved. Remove the old issues and keep the file under 1000 lines.
+- config/ : Hydra YAML configs in config/experiment/, config/model/, config/series/
+- DDFM_COMPARISON.md : Comparison of original ddfm implementation and dfm-python
 
 EOF
 }
@@ -342,6 +344,8 @@ step1_run_experiment() {
   activate_venv
   cd "$REPO_ROOT"
   log_info "Note: run_experiment.sh should only run experiments that are not already complete. Check outputs/ directory for existing results before running new experiments."
+  log_info "For incremental testing, use MODELS filter: MODELS=\"dfm\" bash run_experiment.sh or MODELS=\"ddfm\" bash run_experiment.sh"
+  log_info "Current status: ARIMA (9/9 complete), VAR (9/9 complete), DFM (1/9 tested, ready for full run), DDFM (1/9 tested, ready for full run)"
   if bash run_experiment.sh; then
     log_info "Step 1 completed successfully"
     mark_step_completed 1
@@ -359,11 +363,11 @@ step2_inspect_code() {
   cd "$REPO_ROOT"
   local out_dir
   out_dir=$(latest_output_dir 2>/dev/null || echo "")
-  local prompt="Inspect the @src/ @dfm-python/ and @nowcasting-report/ to understand the project structure, components, and data flow."
+  local prompt="Inspect the @src/ @dfm-python/ and @nowcasting-report/ to understand the project structure, components, and data flow. Check @STATUS.md and @ISSUES.md for current state and pending tasks."
   if [[ -n "$out_dir" ]] && [[ -d "$out_dir" ]]; then
     prompt+=" Study the experiment run output in ${out_dir} (latest run) and plan how to update the @nowcasting-report with results. Check which experiments have already been completed by examining the outputs/ directory structure and log files."
   fi
-  prompt+=" IMPORTANT: When planning how to update the report, also consider which experiments are still missing. If new experiments are needed to complete the report, note that run_experiment.sh should be updated in later steps to include only missing experiments (not re-run completed ones). This is a fresh new start - provide a comprehensive understanding of the project."
+  prompt+=" Current experiment status: 18/36 complete (ARIMA 9, VAR 9), 18 pending (DFM 8, DDFM 8). IMPORTANT: When planning how to update the report, also consider which experiments are still missing. If new experiments are needed to complete the report, note that run_experiment.sh should be updated in later steps to include only missing experiments (not re-run completed ones). This is a fresh new start - provide a comprehensive understanding of the project."
   if cursor_text "$prompt"; then
     log_info "Step 2 completed successfully"
     mark_step_completed 2
@@ -406,7 +410,7 @@ step4_analyze_results() {
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
-  if cursor_force "Analyze the results in ${out_dir}. If there are errors or issues, update them in STATUS.md and inspect what happened. If there's something wrong with the numbers, also update them in STATUS.md and think about what happened. Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files."; then
+  if cursor_force "Analyze the results in ${out_dir}. If there are errors or issues, update them in STATUS.md and ISSUES.md and inspect what happened. If there's something wrong with the numbers, also update them in STATUS.md and think about what happened. Mark resolved issues clearly in ISSUES.md (use ✅ RESOLVED status). Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files."; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
@@ -425,7 +429,7 @@ step5_plan_improvements() {
   validate_prerequisites 5
   cd "$REPO_ROOT"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
-  if cursor_force "Plan how to improve the dfm-python package and nowcasting-report paper. If there are improvement points in the codes, such as numerical stability, convergence issues, theoretically wrong implementation (refer to knowledgebase and legacy clone repos if needed), include the improvements on them in the plan. If there are improvement points in the report, such as hallucination, lack of detail, redundancy, unnatural flow, include the improvements in the plan. If there are improvement points in the code quality such as redundancies, non-generic naming in dfm-python, inefficient logic, monkey patch, temporal fixes, include them in the plan. If there are any new experiments needed for the report or extensions, changes in experiment, include them in the plan. IMPORTANT: When planning new experiments, also update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them from run_experiment.sh. This ensures each iteration only runs missing experiments needed to complete the report. Do not make the plan too long. Leave the tasks at ISSUES.md and work incrementally. Plan with manageable tasks. Keep ISSUES.md under ${LINE_LIMIT} lines. Do not create new files."; then
+  if cursor_force "Plan how to improve the dfm-python package and nowcasting-report paper. If there are improvement points in the codes, such as numerical stability, convergence issues, theoretically wrong implementation (refer to knowledgebase and legacy clone repos if needed), include the improvements on them in the plan. If there are improvement points in the report, such as hallucination, lack of detail, redundancy, unnatural flow, include the improvements in the plan. If there are improvement points in the code quality such as redundancies, non-generic naming in dfm-python, inefficient logic, monkey patch, temporal fixes, include them in the plan. Note: Legacy code cleanup is completed. dfm-python is finalized with consistent naming and clean patterns. If there are any new experiments needed for the report or extensions, changes in experiment, include them in the plan. IMPORTANT: When planning new experiments, also update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them from run_experiment.sh. This ensures each iteration only runs missing experiments needed to complete the report. Do not make the plan too long. Leave the tasks at ISSUES.md and work incrementally. Plan with manageable tasks. Keep ISSUES.md under ${LINE_LIMIT} lines. Do not create new files."; then
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     log_info "Step 5 completed successfully"
     mark_step_completed 5
@@ -486,7 +490,7 @@ step8_summarize_iteration() {
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
-  if cursor_force "Identify the work done in this iteration. Identify what's done, what's not done. Update CONTEXT.md, STATUS.md, and ISSUES.md for the next iteration. Next iteration will start fresh so you need to leave the proper context for next iteration. Keep each file under ${LINE_LIMIT} lines. Do not create new files."; then
+  if cursor_force "Identify the work done in this iteration. Identify what's done, what's not done. Update STATUS.md and ISSUES.md for the next iteration. Mark resolved issues clearly in ISSUES.md. Remove old resolved issues to keep file under ${LINE_LIMIT} lines. Update experiment status in STATUS.md (completed/pending combinations). Next iteration will start fresh so you need to leave the proper context for next iteration. Keep each file under ${LINE_LIMIT} lines. Do not create new files."; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"

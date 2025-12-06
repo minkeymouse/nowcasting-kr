@@ -149,6 +149,13 @@ def _train_forecaster(
         )
         
         # DFM uses multivariate data (all series from config)
+        # IMPORTANT: Include target_series in training data so DFM can predict it (same as VAR)
+        target_series = None
+        if 'experiment' in cfg and 'target_series' in cfg.experiment:
+            target_series = cfg.experiment.target_series
+        elif 'target_series' in cfg:
+            target_series = cfg.target_series
+        
         # IMPORTANT: Filter data columns to match filtered_series_list from config_dict
         # This ensures data shape matches the series IDs in the config after frequency hierarchy filtering
         filtered_series_ids = []
@@ -159,6 +166,9 @@ def _train_forecaster(
         if filtered_series_ids:
             # Use only series IDs from filtered config
             available_series = [s for s in filtered_series_ids if s in data.columns]
+            # Add target_series if not already included
+            if target_series and target_series in data.columns and target_series not in available_series:
+                available_series.append(target_series)
             if len(available_series) > 0:
                 y_train = data[available_series].dropna()
             else:
@@ -167,21 +177,28 @@ def _train_forecaster(
             series_ids = OmegaConf.to_container(cfg.experiment.series, resolve=True)
             if isinstance(series_ids, list):
                 available_series = [s for s in series_ids if s in data.columns]
+                # Add target_series if not already included
+                if target_series and target_series in data.columns and target_series not in available_series:
+                    available_series.append(target_series)
                 if len(available_series) > 0:
                     y_train = data[available_series].dropna()
                 else:
                     y_train = data.select_dtypes(include=[np.number]).dropna()
         else:
+            # Use all numeric columns, but ensure target_series is included
             y_train = data.select_dtypes(include=[np.number]).dropna()
+            if target_series and target_series in data.columns and target_series not in y_train.columns:
+                y_train[target_series] = data[target_series]
         
-        print(f"Max iterations: {max_iter}, Threshold: {threshold}, Series: {y_train.shape[1]} (filtered from config)")
+        print(f"Max iterations: {max_iter}, Threshold: {threshold}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
         
     elif model_type == 'ddfm':
         # DDFM using sktime forecaster
         epochs = model_params.get('epochs', 100)
         encoder_layers = model_params.get('encoder_layers', [64, 32])
         num_factors = model_params.get('num_factors', 1)
-        learning_rate = model_params.get('learning_rate', 0.001)
+        # Reduce learning rate for numerical stability (default 0.001 -> 0.0001)
+        learning_rate = model_params.get('learning_rate', 0.0001)
         batch_size = model_params.get('batch_size', 32)
         
         # Prepare config_dict for DDFMForecaster
@@ -199,6 +216,13 @@ def _train_forecaster(
         )
         
         # DDFM uses multivariate data (all series from config)
+        # IMPORTANT: Include target_series in training data so DDFM can predict it (same as VAR/DFM)
+        target_series = None
+        if 'experiment' in cfg and 'target_series' in cfg.experiment:
+            target_series = cfg.experiment.target_series
+        elif 'target_series' in cfg:
+            target_series = cfg.target_series
+        
         # IMPORTANT: Filter data columns to match filtered_series_list from config_dict
         # This ensures data shape matches the series IDs in the config after frequency hierarchy filtering
         filtered_series_ids = []
@@ -209,6 +233,9 @@ def _train_forecaster(
         if filtered_series_ids:
             # Use only series IDs from filtered config
             available_series = [s for s in filtered_series_ids if s in data.columns]
+            # Add target_series if not already included
+            if target_series and target_series in data.columns and target_series not in available_series:
+                available_series.append(target_series)
             if len(available_series) > 0:
                 y_train = data[available_series].dropna()
             else:
@@ -217,14 +244,20 @@ def _train_forecaster(
             series_ids = OmegaConf.to_container(cfg.experiment.series, resolve=True)
             if isinstance(series_ids, list):
                 available_series = [s for s in series_ids if s in data.columns]
+                # Add target_series if not already included
+                if target_series and target_series in data.columns and target_series not in available_series:
+                    available_series.append(target_series)
                 if len(available_series) > 0:
                     y_train = data[available_series].dropna()
                 else:
                     y_train = data.select_dtypes(include=[np.number]).dropna()
         else:
+            # Use all numeric columns, but ensure target_series is included
             y_train = data.select_dtypes(include=[np.number]).dropna()
+            if target_series and target_series in data.columns and target_series not in y_train.columns:
+                y_train[target_series] = data[target_series]
         
-        print(f"Epochs: {epochs}, Encoder layers: {encoder_layers}, Factors: {num_factors}, Series: {y_train.shape[1]} (filtered from config)")
+        print(f"Epochs: {epochs}, Encoder layers: {encoder_layers}, Factors: {num_factors}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
         
     elif model_type == 'arima':
         # Prepare training data for ARIMA (univariate)

@@ -1,0 +1,64 @@
+# Quick test config for DFM/DDFM fixes
+# Single target, single horizon, DFM and DDFM only
+target_series: KOGDP...D
+data_path: data/sample_data.csv
+forecast_horizons: [1]
+
+models:
+  - dfm
+  - ddfm
+
+series:
+  - KOBSESI.R
+  - KOCALL.
+  - KOCNFCONR
+  - KOCNGOV.D
+  - KOCONPMTH
+  - KOCONPRCF
+  - KOCONSTRP
+  - KOCSECEMR
+  - KOCSEMEMR
+  - KOCSPHIMR
+  - KOCYLEADR
+  - KOEMPCONF
+  - KOEMPMANF
+  - KOEMPTOTO
+  - KOEXCHINA
+  - KOEXNGS.D
+  - KOEXPGDSA
+  - KOEXPPRCF
+  - KOGCFFNVD
+  - KOHWRWEMP
+  - KOIMNGS.D
+  - KOIMPGDSA
+  - KOIMPPRCF
+  - KOIPALL.G
+  - KOMPRI30G
+  - KOMSCAPGG
+  - KONETTRDF
+  - KOPOPACTE
+  - KOPPSRM.F
+  - KOPROPRCF
+  - KOROCOINF
+  - KOSHRPRCF
+  - KOSIARRLE
+  - KOSSBFMBE
+  - KOUS$...
+  - KOVALCONA
+  - KOWRCCNSE
+
+# Model-specific parameter overrides for quick testing
+model_overrides:
+  dfm:
+    max_iter: 10  # Reduced for quick testing
+    threshold: 1.0e-4
+  ddfm:
+    epochs: 50  # Reduced for quick testing
+    encoder_layers: [64, 32]
+    num_factors: 2
+    activation: relu  # Updated to match original DDFM
+    learning_rate: 0.005  # Updated to match original DDFM
+    batch_size: 100  # Updated to match original DDFM (was: 32)
+    decay_learning_rate: true  # Exponential decay scheduler (gamma=0.96)
+    max_iter: 50  # Reduced for quick testing
+

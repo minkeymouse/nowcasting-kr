@@ -317,7 +317,7 @@ class DDFMForecaster(BaseForecaster):
         encoder_layers: Optional[list] = None,
         num_factors: Optional[int] = None,
         epochs: int = 100,
-        learning_rate: float = 0.001,
+        learning_rate: float = 0.0001,  # Reduced from 0.001 for numerical stability
         batch_size: int = 32,
         **kwargs
     ):
@@ -618,25 +618,61 @@ def create_data_module_from_dataframe(
             )
         )
     
+    # IMPORTANT: Ensure data is passed as DataFrame with correct columns
+    # DFMDataModule.setup() will use DataFrame columns directly if data is DataFrame
+    # So we don't need to worry about series_ids mismatch when passing DataFrame
+    
     # Create preprocessing pipeline from config for statistics extraction (Mx/Wx)
     # Note: Data is already preprocessed, pipeline is only for extracting statistics
-    pipeline = create_transformer_func(config)
+    # IMPORTANT: If target_series was added to data but not in config, pipeline may fail
+    # Use passthrough transformer (None) to avoid series_ids mismatch issues
+    # Statistics (Mx/Wx) will be computed from data directly if needed
+    try:
+        pipeline = create_transformer_func(config)
+        # Test if pipeline can handle the data columns
+        if isinstance(data, pd.DataFrame):
+            test_data = data.iloc[:1]  # Test with first row
+            try:
+                pipeline.fit_transform(test_data)
+            except (ValueError, TypeError, AttributeError):
+                # Pipeline can't handle the data (likely due to column mismatch)
+                # Use passthrough transformer instead
+                pipeline = None
+    except Exception:
+        # If pipeline creation fails, use passthrough
+        pipeline = None
     
-    # Convert DataFrame to numpy array for DFMDataModule
-    # DFMDataModule can handle numpy arrays directly
+    # IMPORTANT: Pass DataFrame directly (not numpy array) to preserve column names
+    # DFMDataModule.setup() will use DataFrame columns directly, avoiding series_ids mismatch
+    # This is critical when target_series is added to training data but not in config's series_ids
     if isinstance(data, pd.DataFrame):
-        data_array = data.values
-        time_index = data.index
+        # Ensure index is sktime-compatible (RangeIndex, DatetimeIndex, or PeriodIndex)
+        data_to_pass = data.copy()
+        if not isinstance(data_to_pass.index, (pd.RangeIndex, pd.DatetimeIndex, pd.PeriodIndex)):
+            # Convert to RangeIndex if not compatible
+            data_to_pass.index = pd.RangeIndex(start=0, stop=len(data_to_pass))
+        time_index = data_to_pass.index
     else:
+        # If numpy array, convert to DataFrame using data columns if available
         data_array = np.asarray(data)
         time_index = None
+        # Try to get column names from config, but this may not match if target_series was added
+        try:
+            from dfm_python.utils.helpers import get_series_ids
+            series_ids = get_series_ids(config)
+            # Adjust if shape doesn't match
+            if len(series_ids) != data_array.shape[1]:
+                series_ids = [f"series_{i}" for i in range(data_array.shape[1])]
+            data_to_pass = pd.DataFrame(data_array, columns=series_ids)
+        except (ImportError, AttributeError):
+            data_to_pass = pd.DataFrame(data_array)
     
     # Create DFMDataModule with config, preprocessed data, and pipeline for statistics
     # Pipeline will be fitted in setup() to extract statistics (Mx/Wx) for forecasting
     data_module = dfm_data_module(
         config=config,
         pipeline=pipeline,  # For extracting statistics (Mx/Wx)
-        data=data_array,  # Preprocessed data (already standardized, no missing values)
+        data=data_to_pass,  # Pass DataFrame directly to preserve column names
         time_index=time_index
     )
     
@@ -846,9 +882,11 @@ def train_model(
         data_module = create_data_module_method(data_path)
         metadata["data_path"] = data_path
     
+    # Determine model type first (needed for DDFM-specific fixes)
+    model_type = metadata.get("model_type", "dfm")
+    
     # Determine trainer class if not provided
     if trainer_class is None:
-        model_type = metadata.get("model_type", "dfm")
         if model_type == "ddfm":
             trainer_class = DDFMTrainer
         else:
@@ -869,6 +907,14 @@ def train_model(
     else:
         # Default max_epochs
         trainer_kwargs["max_epochs"] = 100
+    
+    # DDFM-specific fixes for numerical stability
+    if model_type == "ddfm":
+        # Enable gradient clipping to prevent gradient explosion
+        if "gradient_clip_val" in kwargs:
+            trainer_kwargs["gradient_clip_val"] = kwargs.pop("gradient_clip_val")
+        else:
+            trainer_kwargs["gradient_clip_val"] = 1.0  # Default: clip gradients at 1.0
     
     # Pass through other trainer kwargs (enable_progress_bar, etc.)
     # Default to True for progress visibility

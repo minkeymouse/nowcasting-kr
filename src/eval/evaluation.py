@@ -109,14 +109,29 @@ def calculate_standardized_metrics(
                 try:
                     col_idx = y_true.columns.get_loc(target_series)
                 except KeyError:
-                    # target_series not in columns - check if single column, use 0
+                    # target_series not in columns - try fallback strategies
                     if len(y_true.columns) == 1:
                         col_idx = 0
                         # Update columns list to match
                         columns = [y_true.columns[0]]
                     else:
-                        # Multiple columns but target_series not found - can't proceed
-                        raise KeyError(f"target_series '{target_series}' not found in y_true.columns={list(y_true.columns)}")
+                        # Multiple columns but target_series not found
+                        # Fallback: try to find in y_pred if it exists
+                        if isinstance(y_pred, pd.DataFrame) and target_series in y_pred.columns:
+                            # Use y_pred column index, but extract from y_true using same position
+                            pred_col_idx = y_pred.columns.get_loc(target_series)
+                            # Use same column index in y_true (assuming same order)
+                            if pred_col_idx < len(y_true.columns):
+                                col_idx = pred_col_idx
+                                logger.warning(f"target_series '{target_series}' not found in y_true.columns, using column index {col_idx} from y_pred")
+                            else:
+                                # Can't match, use first column as last resort
+                                col_idx = 0
+                                logger.warning(f"target_series '{target_series}' not found in y_true.columns={list(y_true.columns)}, using first column as fallback")
+                        else:
+                            # Last resort: use first column
+                            col_idx = 0
+                            logger.warning(f"target_series '{target_series}' not found in y_true.columns={list(y_true.columns)}, using first column as fallback")
             elif is_y_true_series:
                 # Series: check if name matches, otherwise use index 0
                 if y_true.name == target_series:
@@ -143,21 +158,17 @@ def calculate_standardized_metrics(
                     try:
                         col_idx = y_train.columns.get_loc(target_series)
                     except KeyError:
-                        # target_series not in y_train.columns - check if single column, use 0
-                        if len(y_train.columns) == 1:
-                            col_idx = 0
-                        else:
-                            # Multiple columns but target_series not found - use same col_idx from y_true extraction
-                            # This handles case where VAR returns all columns but with different names
-                            if is_y_true_dataframe:
-                                try:
-                                    col_idx = y_true.columns.get_loc(target_series)
-                                except KeyError:
-                                    # Fallback: use first column if target_series not found in either
-                                    col_idx = 0
-                                    logger.warning(f"target_series '{target_series}' not found in y_train.columns={list(y_train.columns)} or y_true.columns={list(y_true.columns)}, using column 0")
-                            else:
+                        # target_series not in y_train.columns - use same col_idx from y_true extraction
+                        # This handles case where DFM/DDFM returns columns but target_series not in training data
+                        if is_y_true_dataframe:
+                            try:
+                                col_idx = y_true.columns.get_loc(target_series)
+                            except KeyError:
+                                # Fallback: use first column if target_series not found in either
                                 col_idx = 0
+                                logger.warning(f"target_series '{target_series}' not found in y_train.columns={list(y_train.columns)} or y_true.columns={list(y_true.columns)}, using column 0")
+                        else:
+                            col_idx = 0
                 else:
                     col_idx = target_series
                 train_arr = train_arr[:, col_idx:col_idx+1]

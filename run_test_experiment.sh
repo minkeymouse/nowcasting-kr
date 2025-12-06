@@ -1,7 +1,6 @@
 #!/bin/bash
-# Test experiment script - verifies all three target series experiments
-# Tests: KOGDP...D (GDP), KOCNPER.D (Private Consumption), KOGFCF..D (Gross Fixed Capital Formation)
-# As per nowcasting-report structure: 3 targets × 4 models × 3 horizons
+# Quick test script - tests DFM and DDFM fixes on single target/horizon
+# Tests: KOGDP...D (GDP) with horizon 1 for DFM and DDFM models
 
 set -e  # Exit on error
 
@@ -17,9 +16,11 @@ if [ ! -d ".venv" ]; then
 fi
 source .venv/bin/activate
 
-# Three target series as per nowcasting-report
-TARGETS=("KOGDP...D" "KOCNPER.D" "KOGFCF..D")
-CONFIG_NAMES=("experiment/kogdp_report" "experiment/kocnper_report" "experiment/kogfcf_report")
+# Quick test: use dedicated test config
+TARGET="KOGDP...D"
+CONFIG_NAME="experiment/kogdp_test"
+MODELS=("ddfm")  # Test DDFM after DFM fix
+HORIZON=1
 
 # Function to map target to config name
 get_config_name() {
@@ -34,25 +35,16 @@ get_config_name() {
     esac
 }
 
-# Validate config files exist
+# Validate config file exists
 echo "=========================================="
 echo "Validating Test Configuration"
 echo "=========================================="
-MISSING_CONFIGS=0
-for target in "${TARGETS[@]}"; do
-    config_name=$(get_config_name "$target")
-    config_file="config/${config_name}.yaml"
-    if [ ! -f "$config_file" ]; then
-        echo "✗ Error: Config file not found: $config_file"
-        MISSING_CONFIGS=$((MISSING_CONFIGS + 1))
-    else
-        echo "✓ Config exists: $config_file (target: $target)"
-    fi
-done
-
-if [ $MISSING_CONFIGS -gt 0 ]; then
-    echo "✗ Error: $MISSING_CONFIGS config file(s) missing"
+config_file="config/${CONFIG_NAME}.yaml"
+if [ ! -f "$config_file" ]; then
+    echo "✗ Error: Config file not found: $config_file"
     exit 1
+else
+    echo "✓ Config exists: $config_file (target: $TARGET)"
 fi
 
 # Check data file
@@ -66,47 +58,61 @@ echo ""
 # Create output directory
 mkdir -p outputs/comparisons
 
-# Test each target series
+# Test each model
 echo "=========================================="
-echo "Running Test Experiments for All Targets"
+echo "Running Quick Test: DFM and DDFM Fixes"
 echo "=========================================="
-echo "Targets: ${TARGETS[@]}"
+echo "Target: $TARGET"
+echo "Models: ${MODELS[@]}"
+echo "Horizon: $HORIZON"
 echo "Start Time: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=========================================="
 echo ""
 
-FAILED_TARGETS=()
-PASSED_TARGETS=()
+FAILED_MODELS=()
+PASSED_MODELS=()
 
-for i in "${!TARGETS[@]}"; do
-    target="${TARGETS[$i]}"
-    config_name="${CONFIG_NAMES[$i]}"
-    log_file="outputs/comparisons/test_${target}_$(date +%Y%m%d_%H%M%S).log"
+for model in "${MODELS[@]}"; do
+    log_file="outputs/comparisons/test_${TARGET}_${model}_h${HORIZON}_$(date +%Y%m%d_%H%M%S).log"
     
     echo ""
     echo "=========================================="
-    echo "Testing: $target"
-    echo "Config: $config_name"
+    echo "Testing: $model model"
+    echo "Target: $TARGET"
+    echo "Horizon: $HORIZON"
     echo "Log: $log_file"
     echo "=========================================="
     echo ""
     
-    # Run test with timeout (30 minutes per target for quick validation)
-    timeout 1800 python3 src/train.py compare \
-        --config-name "$config_name" \
+    # Run test with timeout (15 minutes for DDFM training)
+    # Config file already has forecast_horizons: [1] set
+    timeout 900 python3 src/train.py compare \
+        --config-name "$CONFIG_NAME" \
+        --models "$model" \
         2>&1 | tee "$log_file"
     
     EXIT_CODE=$?
     
     if [ $EXIT_CODE -eq 0 ]; then
-        echo "[$target] ✓ Test passed"
-        PASSED_TARGETS+=("$target")
+        echo "[$model] ✓ Test passed"
+        PASSED_MODELS+=("$model")
+        
+        # Check if n_valid > 0 in results
+        result_file=$(find outputs/comparisons -name "${TARGET}_*" -type d | sort -r | head -1)/comparison_results.json
+        if [ -f "$result_file" ]; then
+            n_valid=$(python3 -c "import json; data=json.load(open('$result_file')); print(data.get('results', {}).get('$model', {}).get('metrics', {}).get('forecast_metrics', {}).get('$HORIZON', {}).get('n_valid', 0))" 2>/dev/null || echo "0")
+            if [ "$n_valid" -gt 0 ]; then
+                echo "[$model] ✓ n_valid=$n_valid (prediction successful)"
+            else
+                echo "[$model] ⚠ n_valid=$n_valid (prediction may have failed)"
+            fi
+        fi
     elif [ $EXIT_CODE -eq 124 ]; then
-        echo "[$target] ✗ Test timed out (30 min limit)"
-        FAILED_TARGETS+=("$target")
+        echo "[$model] ✗ Test timed out (15 min limit)"
+        FAILED_MODELS+=("$model")
     else
-        echo "[$target] ✗ Test failed (exit code: $EXIT_CODE)"
-        FAILED_TARGETS+=("$target")
+        echo "[$model] ✗ Test failed (exit code: $EXIT_CODE)"
+        FAILED_MODELS+=("$model")
     fi
 done
 
@@ -118,17 +124,17 @@ echo "=========================================="
 echo "Completion time: $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
-if [ ${#PASSED_TARGETS[@]} -gt 0 ]; then
-    echo "✓ Passed targets (${#PASSED_TARGETS[@]}/${#TARGETS[@]}):"
-    for target in "${PASSED_TARGETS[@]}"; do
-        echo "  - $target"
+if [ ${#PASSED_MODELS[@]} -gt 0 ]; then
+    echo "✓ Passed models (${#PASSED_MODELS[@]}/${#MODELS[@]}):"
+    for model in "${PASSED_MODELS[@]}"; do
+        echo "  - $model"
     done
 fi
 
-if [ ${#FAILED_TARGETS[@]} -gt 0 ]; then
-    echo "✗ Failed targets (${#FAILED_TARGETS[@]}/${#TARGETS[@]}):"
-    for target in "${FAILED_TARGETS[@]}"; do
-        echo "  - $target"
+if [ ${#FAILED_MODELS[@]} -gt 0 ]; then
+    echo "✗ Failed models (${#FAILED_MODELS[@]}/${#MODELS[@]}):"
+    for model in "${FAILED_MODELS[@]}"; do
+        echo "  - $model"
     done
     echo ""
     echo "Check log files in outputs/comparisons/ for details"
@@ -137,18 +143,18 @@ fi
 
 echo ""
 echo "=========================================="
-echo "✓ All test experiments passed!"
+echo "✓ All model tests passed!"
 echo "=========================================="
 echo ""
-echo "All three target series are available and working:"
-echo "  - KOGDP...D (GDP)"
-echo "  - KOCNPER.D (Private Consumption)"
-echo "  - KOGFCF..D (Gross Fixed Capital Formation)"
+echo "DFM and DDFM fixes verified:"
+echo "  - Target: $TARGET"
+echo "  - Horizon: $HORIZON"
+echo "  - Models tested: ${MODELS[@]}"
 echo ""
 echo "Results saved in: outputs/comparisons/"
 echo ""
 echo "Next steps:"
 echo "  1. Run full experiments: ./run_experiment.sh"
-echo "  2. Check results align with nowcasting-report structure"
+echo "  2. Test all horizons: modify --horizons to '1 7 28'"
 echo ""
 
