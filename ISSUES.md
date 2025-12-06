@@ -1,20 +1,20 @@
 # Issues and Action Plan
 
-## Executive Summary (2025-12-06 - Iteration 15)
+## Executive Summary (2025-12-06 - Iteration 17)
 
 **Current State**: 
 - ✅ **Experiments**: 28/36 complete (77.8%) - All available experiments done
-- ✅ **Report**: Content complete and refined - All 8 sections, 4 tables, 4 plots, 21 citations, all metric values verified and corrected to match aggregated_results.csv exactly
+- ✅ **Report**: Content complete and refined - All 8 sections, 4 tables, 4 plots, 21 citations, all metric values verified and corrected
 - ✅ **Code**: dfm-python finalized with consistent naming, src/ verified (15 files), all tests passing (133 passed, 8 skipped)
-- ✅ **Quality**: All Phases 1-7 completed, Task Groups A (Pre-Compilation Verification), C (Content Refinement), D (Code Quality) completed
+- ✅ **Quality**: All verification tasks completed, all incremental improvements completed
 - ⚠️ **Unavailable**: 8/36 combinations (DFM KOCNPER.D: 3, DFM/DDFM h28: 6) - due to data/model limitations
 
 **Goal**: Complete 20-30 page LaTeX report with experimental results  
-**Status**: ✅ Report content complete and refined - All metric values match aggregated_results.csv exactly - All LaTeX structure verified - Code finalized - Ready for PDF compilation (external dependency)  
+**Status**: ✅ Report content complete and refined - All metric values verified and corrected - All LaTeX structure verified - Code finalized - Incremental improvements completed - Ready for PDF compilation (external dependency)  
 **Progress**: 28/36 = 77.8% complete (8 unavailable due to fundamental limitations)
 
-**Next Steps**: 
-1. **PDF compilation** (external dependency): Requires LaTeX installation - Task B1 (LaTeX Environment Setup)
+**Next Steps**:
+- **PDF compilation** (external dependency): Requires LaTeX installation - See Phase 4 below
 
 ## Experiment Status (2025-12-06)
 
@@ -33,22 +33,15 @@
 - DFM KOCNPER.D: 3 combinations (numerical instability - EM algorithm fails)
 - DFM/DDFM h28: 6 combinations (test set <28 points due to 80/20 split)
 
-## ✅ Resolved Issues (Iterations 11-14 - 2025-12-06)
+## ✅ Resolved Issues (Iterations 11-17)
 
 **All Critical Tasks Completed**:
-- ✅ **Task Group A (Pre-Compilation Verification)**: All metric values verified and corrected to match aggregated_results.csv exactly. All LaTeX structure verified (\input{}, \ref{}, \cite{}, image paths). All citations verified (21 references, 12 unique keys).
-- ✅ **Task Group C (Report Content Refinement)**: Discussion section enhanced with economic reasoning, redundancy removed from results section, conclusion refined, technical details added to method section. All metric values corrected.
-- ✅ **Task Group D (Code Quality Verification)**: Naming consistency verified (snake_case functions, PascalCase classes), error handling graceful, src/ has exactly 15 files (max allowed), run_experiment.sh correctly skips completed experiments.
+- ✅ **Metric Value Discrepancies**: All DDFM metric values corrected in 7 files (tables, contents, main.tex). All values now match aggregated_results.csv exactly.
+- ✅ **Pre-Compilation Verification**: All metric values verified and corrected. All LaTeX structure verified (\input{}, \ref{}, \cite{}, image paths). All citations verified (21 references, 12 unique keys).
+- ✅ **Report Content Refinement**: Discussion section enhanced with economic reasoning, redundancy removed, technical details added. All metric values corrected.
+- ✅ **Code Quality Verification**: Naming consistency verified (snake_case functions, PascalCase classes), error handling graceful, src/ has exactly 15 files (max allowed).
+- ✅ **Incremental Improvements**: E1 (Code Documentation), E2 (Report Content Final Check), E3 (Experiment Script Verification) all completed.
 - ✅ **Results Analysis**: All 28 experiments verified, aggregated_results.csv contains 28 rows (28/36 = 77.8%), all metric values match actual results.
-
-**Key Resolutions**:
-- ✅ All metric values match aggregated_results.csv exactly
-- ✅ All citations verified (21 references, 12 unique keys)
-- ✅ All cross-references verified (\ref{}, \cite{})
-- ✅ LaTeX syntax verified (all \ref{}, \cite{}, \input{} verified, all labels match, all environments balanced)
-- ✅ File structure verified (all required files exist: images, tables, references.bib, preamble.tex)
-- ✅ Report content refined with economic reasoning, technical details, redundancy removed
-- ✅ Code finalized with consistent naming and clean patterns
 
 ## Known Limitations (Documented in Report)
 
@@ -61,11 +54,8 @@
 
 ## Action Plan
 
-### Task Groups A, C, D: [Status: ✅ Completed]
-All pre-compilation verification, content refinement, and code quality tasks completed in Iterations 11-14.
-
-### Task Group B: PDF Compilation (External Dependency)
-**Status**: Pending - Requires LaTeX installation
+### Phase 4: PDF Compilation (External Dependency) [Status: Pending]
+**Rationale**: Required for final deliverable, but requires LaTeX installation.
 
 **B1. LaTeX Environment Setup** [Priority: High - Blocking for PDF]
 - [ ] Choose LaTeX distribution option:
@@ -75,24 +65,27 @@ All pre-compilation verification, content refinement, and code quality tasks com
 - [ ] Install/configure LaTeX distribution
 - [ ] Verify Korean font support (if using Korean text)
 - **Estimated time**: 30-60 minutes (setup only)
+- **Blockers**: Requires LaTeX installation (external dependency)
 
 **B2. Initial PDF Compilation** [Priority: High - After B1]
 - [ ] Compile `nowcasting-report/main.tex` with pdfLaTeX (or XeLaTeX for Korean)
-- [ ] Document any compilation errors
-- [ ] Resolve missing package errors
-- [ ] Resolve syntax errors
+- [ ] Document any compilation errors in a log file
+- [ ] Resolve missing package errors (install via package manager)
+- [ ] Resolve syntax errors (fix LaTeX code)
 - **Files**: `nowcasting-report/main.tex`
 - **Estimated time**: 1-2 hours (including error resolution)
+- **Dependencies**: B1 must be completed first
 
 **B3. PDF Quality Verification** [Priority: High - After B2]
-- [ ] Verify page count is 20-30 pages
-- [ ] Check all figures render correctly (not missing or broken)
-- [ ] Verify all tables format correctly (no overflow, proper alignment)
-- [ ] Check bibliography compiles correctly (all citations appear)
+- [ ] Verify page count is 20-30 pages (target range)
+- [ ] Check all figures render correctly (4 PNG files: model_comparison, horizon_trend, accuracy_heatmap, forecast_vs_actual)
+- [ ] Verify all tables format correctly (4 tables: tab_overall_metrics, tab_by_target, tab_by_horizon, tab_nowcasting)
+- [ ] Check bibliography compiles correctly (all 21 citations appear)
 - [ ] Verify Korean text renders correctly (if applicable)
 - [ ] Check for overfull/underfull hboxes (formatting issues)
 - [ ] Verify all cross-references (\ref{}, \cite{}) resolve correctly in PDF
 - **Estimated time**: 30-60 minutes
+- **Dependencies**: B2 must be completed first
 
 **B4. PDF Finalization** [Priority: Medium - After B3]
 - [ ] Fix any formatting issues identified in B3
@@ -100,48 +93,32 @@ All pre-compilation verification, content refinement, and code quality tasks com
 - [ ] Generate final PDF
 - [ ] Verify PDF is complete and ready for submission
 - **Estimated time**: 30-60 minutes
+- **Dependencies**: B3 must be completed first
 
-## Experiment Completeness Analysis
+## Experiment Status
 
-**Available for report**: 28/36 combinations (77.8%)
-**Unavailable (documented limitations)**: 8/36 combinations (22.2%)
-  - DFM KOCNPER.D: 3 combinations (numerical instability - fundamental model limitation)
-  - DFM/DDFM h28: 6 combinations (test set <28 points - data limitation from 80/20 split)
+**Completed** (28/36 = 77.8%):
+- ✅ **ARIMA**: 9/9 combinations - Overall sRMSE=0.366
+- ✅ **VAR**: 9/9 combinations - Overall sRMSE=0.046 (best performance)
+- ⚠️ **DFM**: 4/9 combinations (KOGDP...D h1,h7; KOGFCF..D h1,h7; KOCNPER.D failed)
+- ⚠️ **DDFM**: 6/9 combinations (all targets h1,h7; h28 unavailable)
 
-**Conclusion**: All feasible experiments are complete. No additional experiments needed for report.
+**Unavailable** (8/36 = 22.2%):
+- DFM KOCNPER.D: 3 combinations (numerical instability - EM algorithm fails)
+- DFM/DDFM h28: 6 combinations (test set <28 points due to 80/20 split)
 
-**run_experiment.sh Status**:
-- ✅ Correctly checks for completed experiments before running (via `is_experiment_complete()` function)
-- ✅ Handles model filtering via MODELS environment variable
-- ✅ Aggregates results after completion via `main_aggregator()`
-- ✅ Skips already-completed experiments automatically
-- **Action**: No changes needed - script is working correctly. If new experiments are needed in future, script will automatically handle them.
-
-## Task Prioritization
-
-### Phase 1: PDF Compilation (External Dependency) [Status: Pending]
-**Rationale**: Required for final deliverable
-- **B1. LaTeX Environment Setup** [Priority: High] - Blocking for PDF generation
-- **B2. Initial PDF Compilation** [Priority: High] - After B1
-- **B3. PDF Quality Verification** [Priority: High] - After B2
-- **B4. PDF Finalization** [Priority: Medium] - After B3
-
-**Estimated total time**: 3-5 hours (excluding setup time)
-**Blockers**: LaTeX installation required
-
-**Note**: All experiments are complete. No new experiments needed. run_experiment.sh is working correctly and will handle any future experiments automatically.
+**Status**: All feasible experiments are complete. No additional experiments needed. The 8 unavailable combinations are due to fundamental limitations (model numerical instability, data split constraints) that are properly documented in the report.
 
 ## Success Criteria
 
-**✅ Completed (Iterations 11-14 - 2025-12-06)**:
+**✅ Completed**:
 - ✅ All metric values match aggregated_results.csv exactly
 - ✅ All limitations documented (DFM KOCNPER.D, horizon 28)
 - ✅ All citations verified (21 references, 12 unique keys)
 - ✅ Code finalized and tested (src/ 15 files, dfm-python finalized, all tests passing)
 - ✅ Experiments complete (28/36, all available)
-- ✅ LaTeX syntax verified - All \ref{}, \cite{}, \input{} verified, all labels match, all environments balanced
+- ✅ LaTeX syntax verified - All \ref{}, \cite{}, \input{} verified, all labels match
 - ✅ File structure verified - All required files exist (images, tables, references.bib, preamble.tex)
-- ✅ Content final review completed - All metric values corrected to match aggregated_results.csv exactly
 - ✅ Report content refined - Discussion enhanced, redundancy removed, technical details added
 - ✅ Code quality verified - Naming consistency, error handling, run_experiment.sh verified
 

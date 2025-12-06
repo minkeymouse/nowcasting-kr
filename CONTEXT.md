@@ -10,14 +10,14 @@
 - **3 Horizons**: 1, 7, 28 days
 - **Total**: 36 combinations (3 × 4 × 3)
 
-**Current Status (2025-12-06 - Iteration 11)**: 
+**Current Status (2025-12-06 - Iteration 17)**: 
 - ✅ ARIMA: Complete (9/9 combinations, sRMSE=0.366)
 - ✅ VAR: Complete (9/9 combinations, sRMSE=0.046) - best overall performance
 - ⚠️ DFM: Partial (4/9 combinations) - KOGDP...D h1,h7; KOGFCF..D h1,h7 available; KOCNPER.D all horizons failed (numerical instability); all h28 unavailable (test set too small)
 - ⚠️ DDFM: Partial (6/9 combinations) - all targets h1,h7 available; all h28 unavailable (test set too small)
-- ✅ Report: Complete with all available results (28/36 combinations, 77.8%) integrated
+- ✅ Report: Complete with all available results (28/36 combinations, 77.8%) integrated, all metric values verified and corrected
 - ✅ Package: dfm-python finalized with consistent naming, clean code patterns
-- ✅ Results Analysis: All comparison results verified, values match aggregated_results.csv
+- ✅ Results Analysis: All comparison results verified, all metric values match aggregated_results.csv exactly
 
 ## Architecture Overview
 
@@ -136,28 +136,18 @@ python3 nowcasting-report/code/plot.py
 7. Update conclusion → `contents/7_conclusion.tex` to reflect actual results
 8. Finalize report → Compile PDF, verify 20-30 pages, no placeholders
 
-## Latest Updates (Iteration 12 - 2025-12-06)
+## Latest Updates (Iteration 17 - 2025-12-06)
 
 **Completed**:
-- ✅ Results analysis completed - verified all comparison results in outputs/comparisons/
-- ✅ Confirmed aggregated_results.csv contains 28 rows (28/36 = 77.8%)
-- ✅ Verified missing combinations match documented limitations (DFM KOCNPER.D: 3, DFM/DDFM h28: 5)
-- ✅ Corrected metric values in STATUS.md and ISSUES.md to match actual aggregated_results.csv:
-  - DDFM overall sRMSE: 0.9757
-  - DDFM KOCNPER.D: h1=0.4839, h7=0.8300
-  - DDFM h1: 0.8247, h7: 1.1268
-- ✅ No errors found in log files - all experiments completed successfully
-
-## Latest Updates (Iteration 11 - 2025-12-06)
-
-**Completed**:
-- ✅ All pre-compilation verification tasks (Task Group A) completed
 - ✅ All metric values verified and corrected to match aggregated_results.csv exactly
+- ✅ All pre-compilation verification tasks completed
 - ✅ All LaTeX structure verified (\input{}, \ref{}, \cite{}, image paths)
-- ✅ Experiment count corrected: 28/36 (77.8%) consistently across all files
 - ✅ Report content complete with all 28 available experiments integrated
+- ✅ All incremental improvements completed (E1, E2, E3)
+- ✅ Code finalized with consistent naming and clean patterns
+- ✅ Results analysis completed - all comparison results verified
 
 **Pending**:
 - ⏳ PDF compilation (external dependency - requires LaTeX installation)
 
-**Status**: All report content is complete and verified. All metric values match aggregated_results.csv. All citations verified. LaTeX syntax verified. Ready for PDF compilation.
+**Status**: All report content is complete and verified. All metric values match aggregated_results.csv. All citations verified. LaTeX syntax verified. Code finalized. Ready for PDF compilation.
