@@ -118,7 +118,7 @@ class DFMForecaster(BaseForecaster):
             Returns self for method chaining
         """
         # Import here to avoid circular import
-        from .dfm import DFM
+        from .dfm_models import DFM
         # Initialize DFM model
         self._dfm_model = DFM()
         
@@ -338,7 +338,7 @@ class DDFMForecaster(BaseForecaster):
         """Fit the DDFM model to training data."""
         # Initialize DDFM model
         # Import here to avoid circular import
-        from .ddfm import DDFM
+        from .dfm_models import DDFM
         ddfm_params = {}
         if self.encoder_layers:
             ddfm_params['encoder_layers'] = self.encoder_layers

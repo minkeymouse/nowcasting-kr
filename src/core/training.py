@@ -21,8 +21,7 @@ except ImportError as e:
     raise ImportError(f"Required dependencies not available: {e}")
 
 # Import model wrappers
-from ..model.dfm import DFM
-from ..model.ddfm import DDFM
+from ..model.dfm_models import DFM, DDFM
 
 
 def _extract_target_series(cfg: DictConfig) -> Optional[str]:

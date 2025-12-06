@@ -1,7 +1,6 @@
 """Model wrappers for dfm-python package."""
 
-from .dfm import DFM
-from .ddfm import DDFM
+from .dfm_models import DFM, DDFM
 
 # Optional sktime forecasters (require sktime to be installed)
 try:
