@@ -37,3 +37,4 @@ outputs/
 */.venv/*
 
 .cursor-logs/
+lightning_logs/
