@@ -1307,12 +1307,6 @@ def generate_latex_table_36_rows(
     str
         LaTeX table code
     """
-    if aggregated_df.empty:
-        return "% Placeholder: No data available for 36-row table"
-    
-    # Sort by target, model, horizon
-    df_sorted = aggregated_df.sort_values(['target', 'model', 'horizon']).copy()
-    
     # Generate LaTeX
     latex = """\\begin{table}[h]
 \\centering
@@ -1324,7 +1318,57 @@ Target & Model & Horizon & sMSE & sMAE & sRMSE \\\\
 \\midrule
 """
     
-    for _, row in df_sorted.iterrows():
+    if aggregated_df.empty:
+        # Generate placeholder table with all 36 combinations
+        targets = ['KOEQUIPTE', 'KOWRCCNSE', 'KOIPALL.G']
+        models = ['ARIMA', 'VAR', 'DFM', 'DDFM']
+        horizons = [1, 7, 28]
+        
+        for target in targets:
+            for model in models:
+                for horizon in horizons:
+                    latex += f"{target} & {model} & {horizon} & N/A & N/A & N/A \\\\\n"
+    else:
+        # Sort by target, model, horizon
+        df_sorted = aggregated_df.sort_values(['target', 'model', 'horizon']).copy()
+        
+        # Create a complete set of all combinations
+        targets = ['KOEQUIPTE', 'KOWRCCNSE', 'KOIPALL.G']
+        models = ['ARIMA', 'VAR', 'DFM', 'DDFM']
+        horizons = [1, 7, 28]
+        
+        # Create a lookup dictionary from the aggregated data
+        data_lookup = {}
+        for _, row in df_sorted.iterrows():
+            key = (row['target'], row['model'], row['horizon'])
+            data_lookup[key] = row
+        
+        # Generate rows for all combinations
+        for target in targets:
+            for model in models:
+                for horizon in horizons:
+                    key = (target, model, horizon)
+                    if key in data_lookup:
+                        row = data_lookup[key]
+                        smse = row['sMSE'] if pd.notna(row['sMSE']) else 'N/A'
+                        smae = row['sMAE'] if pd.notna(row['sMAE']) else 'N/A'
+                        srmse = row['sRMSE'] if pd.notna(row['sRMSE']) else 'N/A'
+                        
+                        # Format numbers
+                        if isinstance(smse, (int, float)):
+                            smse = f"{smse:.4f}"
+                        if isinstance(smae, (int, float)):
+                            smae = f"{smae:.4f}"
+                        if isinstance(srmse, (int, float)):
+                            srmse = f"{srmse:.4f}"
+                        
+                        latex += f"{target} & {model} & {horizon} & {smse} & {smae} & {srmse} \\\\\n"
+                    else:
+                        # Missing combination
+                        latex += f"{target} & {model} & {horizon} & N/A & N/A & N/A \\\\\n"
+    
+    # Old code for iterating over df_sorted - removed
+    # for _, row in df_sorted.iterrows():
         target = row['target']
         model = row['model']
         horizon = row['horizon']

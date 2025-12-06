@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 import json
 import numpy as np
+import pandas as pd
 
 # Path setup is handled in entry points (train.py, infer.py)
 
