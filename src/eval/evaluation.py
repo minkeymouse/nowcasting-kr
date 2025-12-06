@@ -1367,25 +1367,6 @@ Target & Model & Horizon & sMSE & sMAE & sRMSE \\\\
                         # Missing combination
                         latex += f"{target} & {model} & {horizon} & N/A & N/A & N/A \\\\\n"
     
-    # Old code for iterating over df_sorted - removed
-    # for _, row in df_sorted.iterrows():
-        target = row['target']
-        model = row['model']
-        horizon = row['horizon']
-        smse = row['sMSE'] if pd.notna(row['sMSE']) else 'N/A'
-        smae = row['sMAE'] if pd.notna(row['sMAE']) else 'N/A'
-        srmse = row['sRMSE'] if pd.notna(row['sRMSE']) else 'N/A'
-        
-        # Format numbers
-        if isinstance(smse, (int, float)):
-            smse = f"{smse:.4f}"
-        if isinstance(smae, (int, float)):
-            smae = f"{smae:.4f}"
-        if isinstance(srmse, (int, float)):
-            srmse = f"{srmse:.4f}"
-        
-        latex += f"{target} & {model} & {horizon} & {smse} & {smae} & {srmse} \\\\\n"
-    
     latex += """\\bottomrule
 \\end{tabular}
 \\end{table}"""

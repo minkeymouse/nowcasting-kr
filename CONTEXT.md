@@ -10,16 +10,16 @@
 - **3 Horizons**: 1, 7, 28 days
 - **Total**: 36 combinations (3 × 4 × 3)
 
-**Current Status (2025-12-07 - Results Analysis)**: 
-- ✅ **Import Error**: Fixed and verified (pandas import present, `python3 -m py_compile` passes) - experiments can now run
-- ✅ **Report Translation**: All 6 sections translated to English, updated for 3 targets
-- ✅ **Configuration**: All 3 target configs created, series configs updated (block: null), data path fixed
-- ✅ **Scripts**: `run_experiment.sh` and `run_test_experiment.sh` finalized and verified
-- ✅ **Code Infrastructure**: Table/plot generation code ready (auto-generate when results exist)
-- ⚠️ **Code Consolidation**: src/ has 22 files (max 15 required) - can be done incrementally
-- ⏳ **Experiments**: Not yet run (0/36 combinations) - old error logs in outputs/comparisons/ from previous failed runs
-- ⏳ **Results**: No comparison_results.json or aggregated_results.csv - experiments need to be re-run
-- ⏳ **Report Content**: Tables have placeholders, waiting for experiment results
+**Current Status (2025-12-07 - Report Content Complete)**: 
+- ✅ **Experiments**: ARIMA and VAR completed (18/36 combinations) - Results available in `outputs/experiments/aggregated_results.csv`
+- ✅ **Tables**: All 3 required tables generated with actual ARIMA/VAR results
+- ✅ **Plots**: All 3 required plots generated (forecast vs actual, accuracy heatmap, horizon trend)
+- ✅ **Report Sections**: All 6 sections updated with actual findings and limitations
+- ⚠️ **Code Consolidation**: src/ has 20 files (max 15 required) - consolidation in progress (reduced from 22)
+- ⚠️ **Evaluation Design Limitation**: All results show n_valid=1 - Single-step evaluation design (uses only 1 test point per horizon, see `src/eval/evaluation.py` line 504)
+- ⚠️ **VAR Instability**: Severe numerical instability for horizons 7/28 (errors > 10¹¹, up to 10¹¹⁷) - documented in report
+- ❌ **DFM/DDFM**: Unavailable (package not installed) - blocks 18/36 experiments
+- ⏳ **Report Verification**: PDF compilation and page count check pending
 
 ## Architecture Overview
 
@@ -146,13 +146,15 @@ python3 nowcasting-report/code/plot.py
 7. Update conclusion → `contents/6_conclusion.tex` to reflect actual results
 8. Finalize report → Compile PDF, verify under 15 pages, no placeholders
 
-## Latest Updates (2025-12-07)
+## Latest Updates (2025-12-07 - Results Analysis)
 
 **Results Analysis**:
-- ✅ **Code Verification**: pandas import confirmed in `src/core/training.py` (line 8), file compiles successfully
-- ⚠️ **Outputs Directory**: Only old error log files found in `outputs/comparisons/` (from previous failed runs before fix)
-- ❌ **Missing Results**: No `comparison_results.json` files, no `aggregated_results.csv` - experiments need to be re-run
-- ✅ **Code Status**: All fixes verified, ready for experiments
+- ✅ **Experiments Completed**: ARIMA and VAR experiments completed (18/36 combinations)
+- ✅ **Results Available**: `comparison_results.json` files exist for all 3 targets, `aggregated_results.csv` has 18 rows
+- ✅ **ARIMA Performance**: Consistent across all targets and horizons (sRMSE: 0.06-1.67)
+- ⚠️ **VAR Performance**: Excellent for horizon 1 (sRMSE: ~0.0001), severe numerical instability for horizons 7/28 (errors > 10¹¹, up to 10¹¹⁷ for horizon 28)
+- ⚠️ **Evaluation Design Limitation**: All results show n_valid=1 - This is a design limitation where evaluation code (`src/eval/evaluation.py` line 504) uses only 1 test point per horizon (`y_test.iloc[test_pos:test_pos+1]`). This is single-step evaluation rather than multi-point evaluation. Should be documented in report methodology.
+- ❌ **DFM/DDFM**: Unavailable (package not installed)
 
 **Completed**:
 - ✅ Configuration updated: 3 target configs created (KOEQUIPTE, KOWRCCNSE, KOIPALL.G), series configs updated (block: null)
@@ -161,13 +163,11 @@ python3 nowcasting-report/code/plot.py
 - ✅ Report structure: 6 sections ready (condensed to under 15 pages)
 - ✅ Scripts finalized: `run_experiment.sh` and `run_test_experiment.sh` ready for 3 targets
 - ✅ Import error fixed: Missing pandas import added and verified
+- ✅ Experiments: ARIMA and VAR completed (18/36 combinations)
 
 **For Next Iteration**: 
-- ✅ **Import Error**: Fixed and verified - experiments can proceed
-- ✅ **Report Translation**: Complete - all sections in English
-- ⏳ **NEXT PRIORITY**: Run test verification (`./run_test_experiment.sh`) to verify all 3 targets and models
-- ⏳ **After verification**: Run full experiments (`./run_experiment.sh`) for all 36 combinations
-- ⏳ **After experiments**: Tables/plots will auto-generate, then update report sections with actual results
-- ⚠️ **Optional**: Consolidate src/ files (22 → ≤15) - can be done incrementally
+- ⏳ **Report Verification**: Compile PDF, verify page count (<15), check for placeholders/hallucinations
+- ⏳ **Code Consolidation**: Consolidate src/ files (20 → 15) - Required by rules
+- ⚠️ **DFM/DDFM**: Blocked by package installation - cannot proceed without package (blocks 18/36 experiments)
 
-**Status**: Import error fixed and verified. Report translation complete. Configuration ready. Old error logs remain but no results exist. Experiments ready to run. Code consolidation needed but not blocking.
+**Status**: ARIMA/VAR experiments complete (18/36). All tables, plots, and report sections complete with actual results. Report content ready. PDF verification and code consolidation pending. DFM/DDFM unavailable.
