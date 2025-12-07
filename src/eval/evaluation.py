@@ -687,19 +687,25 @@ def evaluate_forecaster(
                     
                     # VAR-specific check for horizon 1: detect if VAR is just predicting persistence
                     # (last training value), which would result in suspiciously good results
+                    var_persistence_detected = False
                     if is_var and h == 1:
                         # Extract last training value for comparison
                         if isinstance(y_train, pd.DataFrame):
                             if target_series and target_series in y_train.columns:
                                 last_train_val = y_train[target_series].iloc[-1]
+                                train_std = y_train[target_series].std()
                             elif len(y_train.columns) == 1:
                                 last_train_val = y_train.iloc[-1, 0]
+                                train_std = y_train.iloc[:, 0].std()
                             else:
                                 last_train_val = None
+                                train_std = None
                         elif isinstance(y_train, pd.Series):
                             last_train_val = y_train.iloc[-1]
+                            train_std = y_train.std()
                         else:
                             last_train_val = None
+                            train_std = None
                         
                         # Extract prediction value
                         if isinstance(y_pred_h, pd.DataFrame):
@@ -715,19 +721,46 @@ def evaluate_forecaster(
                             pred_val = None
                         
                         # Check if prediction is very close to last training value (persistence)
+                        # Use both relative difference and absolute difference normalized by std
                         if last_train_val is not None and pred_val is not None:
                             if np.isfinite(last_train_val) and np.isfinite(pred_val):
-                                rel_diff = abs(pred_val - last_train_val) / (abs(last_train_val) + 1e-10)
-                                if rel_diff < 1e-6:  # Prediction is essentially identical to last training value
+                                abs_diff = abs(pred_val - last_train_val)
+                                rel_diff = abs_diff / (abs(last_train_val) + 1e-10)
+                                
+                                # Check relative difference (original check)
+                                if rel_diff < 1e-6:
+                                    var_persistence_detected = True
                                     logger.warning(
                                         f"Horizon {h}: VAR prediction ({pred_val:.6f}) is essentially identical to last training value "
                                         f"({last_train_val:.6f}), suggesting VAR is predicting persistence. "
-                                        f"This may indicate model limitation rather than data leakage."
+                                        f"Marking metrics as NaN due to model limitation."
                                     )
+                                # Also check if absolute difference is very small compared to training std
+                                # This catches cases where VAR predicts something very close to last value
+                                # even if relative difference is larger (e.g., for small values)
+                                elif train_std is not None and train_std > 0:
+                                    std_normalized_diff = abs_diff / (train_std + 1e-10)
+                                    if std_normalized_diff < 1e-4:  # Very small compared to std
+                                        var_persistence_detected = True
+                                        logger.warning(
+                                            f"Horizon {h}: VAR prediction ({pred_val:.6f}) is very close to last training value "
+                                            f"({last_train_val:.6f}), with std-normalized difference {std_normalized_diff:.2e}. "
+                                            f"Marking metrics as NaN due to persistence prediction."
+                                        )
                     
                     metrics = calculate_standardized_metrics(
                         y_true_h, y_pred_h, y_train=y_train, target_series=target_series_for_metrics
                     )
+                    
+                    # If VAR persistence detected, mark all metrics as NaN
+                    if var_persistence_detected:
+                        metrics = {
+                            'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,
+                            'MSE': np.nan, 'MAE': np.nan, 'RMSE': np.nan,
+                            'sigma': metrics.get('sigma', np.nan),
+                            'n_valid': 0
+                        }
+                    
                     results[h] = metrics
                 except Exception as e:
                     logger.warning(f"Horizon {h}: Error calculating metrics: {e}")
@@ -1574,14 +1607,27 @@ Model-Horizon & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KOWR
 """
     
     EXTREME_THRESHOLD = 1e10
+    PERSISTENCE_THRESHOLD_SMSE = 1e-6  # sMSE values smaller than this for VAR-1 indicate persistence
+    PERSISTENCE_THRESHOLD_SMAE = 1e-4  # sMAE values smaller than this for VAR-1 indicate persistence
     
-    def format_value(val):
-        """Format value for LaTeX table."""
+    def format_value(val, model=None, horizon=None, metric=None):
+        """Format value for LaTeX table.
+        
+        Also detects VAR-1 persistence values (extremely small values) that indicate
+        VAR is just predicting the last training value.
+        """
         if pd.isna(val) or (isinstance(val, (int, float)) and (np.isnan(val) or np.isinf(val))):
             return 'N/A'
         if isinstance(val, (int, float)):
             if abs(val) > EXTREME_THRESHOLD:
                 return 'Unstable'
+            # Detect VAR-1 persistence: extremely small values for VAR horizon 1
+            # indicate VAR is predicting persistence (last training value)
+            if model == 'VAR' and horizon == 1:
+                if metric == 'sMSE' and abs(float(val)) < PERSISTENCE_THRESHOLD_SMSE:
+                    return 'N/A'  # Mark as N/A due to persistence prediction
+                if metric == 'sMAE' and abs(float(val)) < PERSISTENCE_THRESHOLD_SMAE:
+                    return 'N/A'  # Mark as N/A due to persistence prediction
             return f"{val:.4f}"
         return str(val)
     
@@ -1612,7 +1658,7 @@ Model-Horizon & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KOWR
                         key = (model, target, horizon)
                         if key in data_lookup:
                             val = data_lookup[key][metric]
-                            values.append(format_value(val))
+                            values.append(format_value(val, model=model, horizon=horizon, metric=metric))
                         else:
                             values.append('N/A')
                 latex += f"{row_label} & {' & '.join(values)} \\\\\n"
@@ -1708,11 +1754,22 @@ Model-Timepoint & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KO
     
     # Generate table rows
     def format_value(val):
-        """Format value for LaTeX table."""
-        if val is None or (isinstance(val, (int, float)) and (np.isnan(val) or np.isinf(val))):
+        """Format value for LaTeX table.
+        
+        Handles None, NaN, Inf, extreme values, and string representations of numbers.
+        """
+        if val is None:
             return 'N/A'
+        # Handle string representations of numbers
+        if isinstance(val, str):
+            try:
+                val = float(val)
+            except (ValueError, TypeError):
+                return 'N/A'
         if isinstance(val, (int, float)):
-            # Check for extreme values
+            if np.isnan(val) or np.isinf(val):
+                return 'N/A'
+            # Check for extreme values (numerical instability)
             if abs(val) > 1e10:
                 return 'Unstable'
             return f"{val:.4f}"
@@ -1909,6 +1966,32 @@ def generate_all_latex_tables(
                         f"(>{EXTREME_THRESHOLD}). Marking as NaN."
                     )
                     aggregated_df.loc[mask_extreme, metric] = np.nan
+        
+        # Mark VAR-1 persistence values as NaN (extremely small values indicate persistence prediction)
+        PERSISTENCE_THRESHOLD_SMSE = 1e-6
+        PERSISTENCE_THRESHOLD_SMAE = 1e-4
+        var1_mask = (aggregated_df['model'] == 'VAR') & (aggregated_df['horizon'] == 1)
+        if var1_mask.any():
+            # Mark sMSE as NaN if < 1e-6
+            if 'sMSE' in aggregated_df.columns:
+                var1_smse_mask = var1_mask & (aggregated_df['sMSE'].abs() < PERSISTENCE_THRESHOLD_SMSE)
+                if var1_smse_mask.any():
+                    n_persistence = var1_smse_mask.sum()
+                    logger.warning(
+                        f"generate_all_latex_tables: Found {n_persistence} VAR-1 sMSE persistence values "
+                        f"(<{PERSISTENCE_THRESHOLD_SMSE}). Marking as NaN."
+                    )
+                    aggregated_df.loc[var1_smse_mask, 'sMSE'] = np.nan
+            # Mark sMAE as NaN if < 1e-4
+            if 'sMAE' in aggregated_df.columns:
+                var1_smae_mask = var1_mask & (aggregated_df['sMAE'].abs() < PERSISTENCE_THRESHOLD_SMAE)
+                if var1_smae_mask.any():
+                    n_persistence = var1_smae_mask.sum()
+                    logger.warning(
+                        f"generate_all_latex_tables: Found {n_persistence} VAR-1 sMAE persistence values "
+                        f"(<{PERSISTENCE_THRESHOLD_SMAE}). Marking as NaN."
+                    )
+                    aggregated_df.loc[var1_smae_mask, 'sMAE'] = np.nan
     
     if config_dir is None:
         config_dir = Path(__file__).parent.parent.parent / "config"

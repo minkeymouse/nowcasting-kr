@@ -526,9 +526,24 @@ def run_backtest_evaluation(
     dfm_model = None
     
     if supports_nowcast_manager:
-        dfm_model = model_data.get('dfm_model') or model_data.get('ddfm_model')
+        # For DFM/DDFM, the forecaster wraps the underlying model
+        # Extract from forecaster's _dfm_model or _ddfm_model attribute
+        forecaster = model_data.get('forecaster')
+        if forecaster is None:
+            raise ValueError(f"Model file does not contain forecaster for {model.upper()} model")
+        
+        # Extract underlying DFM/DDFM model from forecaster
+        if hasattr(forecaster, '_dfm_model'):
+            dfm_model = forecaster._dfm_model
+        elif hasattr(forecaster, '_ddfm_model'):
+            dfm_model = forecaster._ddfm_model
+        else:
+            raise ValueError(f"Forecaster does not contain {model.upper()} model (missing _dfm_model or _ddfm_model attribute)")
+        
         if dfm_model is None:
-            raise ValueError(f"Model file does not contain {model.upper()} model")
+            raise ValueError(f"{model.upper()} model is None - model may not be trained")
+        
+        # Get nowcast manager from underlying model
         nowcast_manager = dfm_model.nowcast
     else:
         # ARIMA/VAR: use forecaster directly

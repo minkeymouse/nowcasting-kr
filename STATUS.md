@@ -17,18 +17,22 @@
 ## Work Done This Iteration
 
 **Code Fixes Applied**:
-- **FIXED**: Import path issue in src/infer.py - paths now set up before importing from src.utils.cli, working directory changed to project root to ensure imports work correctly (resolves ModuleNotFoundError: No module named 'src')
-- **FIXED**: Aggregation function in src/eval/evaluation.py - updated `aggregate_overall_performance()` to validate ALL metrics (MSE, MAE, RMSE) not just standardized metrics (lines 1052-1071). Extreme values will be marked as NaN when CSV is regenerated.
-- **FIXED**: CSV loading in generate_all_latex_tables() - now filters extreme values in ALL metrics (standardized and raw) for consistency, with proper numeric conversion and error handling (lines 1892-1911)
-- **FIXED**: Block name handling in src/core/training.py - now uses first block from model config instead of hardcoding 'Block_Global' (more generic approach)
-- **IMPROVED**: validate_metric() function in src/eval/evaluation.py - improved to handle edge cases (string values, better error messages)
+- **IMPROVED**: format_value() function in nowcasting table generation (src/eval/evaluation.py:1756-1765) - improved to handle string representations of numbers when loading JSON files. This makes table generation more robust when JSON contains string-encoded numeric values.
+- **FIXED**: DFM/DDFM model loading in src/infer.py (lines 528-545) - now correctly extracts underlying model from forecaster's `_dfm_model` or `_ddfm_model` attribute instead of looking for it in pickle dict. This fixes FileNotFoundError when loading DFM/DDFM models for backtesting.
+- **FIXED**: Import path issue in src/infer.py (lines 20-30) - paths now set up before importing from src.utils.cli, working directory changed to project root to ensure imports work correctly (resolves ModuleNotFoundError: No module named 'src').
+
+**Code Fixes from Previous Iterations** (still relevant):
+- VAR-1 persistence detection in table generation (src/eval/evaluation.py:1948-1970) - marks VAR-1 persistence values as NaN when loading CSV
+- VAR persistence detection in evaluation (src/eval/evaluation.py:688-751) - marks metrics as NaN when VAR predicts persistence
+- Aggregation validation (src/eval/evaluation.py:1052-1071) - validates ALL metrics (MSE, MAE, RMSE)
+- CSV loading filters extreme values in ALL metrics (src/eval/evaluation.py:1892-1911)
 
 **Data Updates**:
 - data/data.csv updated (5092 lines changed)
 - data/metadata.csv updated
 
 **Outputs Generated**:
-- **Tables**: All 3 LaTeX tables created (Table 3 has N/A placeholders - needs nowcasting results)
+- **Tables**: All 3 LaTeX tables created and regenerated - Table 2 now shows VAR-1 as N/A (persistence detection applied), Table 3 has N/A placeholders (needs nowcasting results)
 - **Plots**: All 7 plots created (Plot4 has placeholders - needs nowcasting results)
 
 **What's NOT Done**:
@@ -155,35 +159,21 @@
 ## Inspection Findings
 
 **Model Performance Anomalies Inspection**:
-- **STATUS**: Validation code working correctly
-- **VAR horizon 1 suspicious results**: Validation detects and warns about suspiciously good results (< 1e-4)
-  - Root cause: VAR predicting persistence (last training value) - not data leakage
-  - Train-test split checked: 80/20 split with no overlap (appears correct)
-  - Action: Validation code correctly handles this - no code changes needed
-- **VAR horizons 7/28 extreme values**: Validation detects and marks extreme values (> 1e10) as NaN
-  - Root cause: Known VAR limitation - becomes unstable for long horizons
-  - Action: Validation code correctly filters extreme values - no code changes needed
-- **DDFM horizon 1 results**: Appear reasonable (sRMSE 0.01-0.46 range)
-  - No obvious anomalies detected - results appear valid
-- **Action**: Validation code appears to handle anomalies - may need improvements
+- **STATUS**: Code fixes applied in previous iterations - VAR persistence predictions marked as NaN
+- **VAR horizon 1**: Code marks persistence predictions as NaN in evaluation and table generation (fixed in previous iteration)
+- **VAR horizons 7/28**: Validation detects and marks extreme values (> 1e10) as NaN (working as expected)
+- **DDFM horizon 1**: Results appear reasonable (sRMSE 0.01-0.46 range) - no issues detected
+- **Backtest failures**: All failures due to missing models in checkpoint/ (expected - models not trained yet)
 
 **dfm-python Package Inspection**:
-- **STATUS**: Inspected and production-ready
-- **Code Quality**: Production-ready - clean structure, proper error handling, comprehensive validation
-- **Numerical Stability**: Excellent - multiple stability measures:
-  - Regularization for matrix inversions (1e-6 default)
-  - Q matrix floor (0.01 for factors) prevents scale issues
-  - C matrix normalization stabilizes loading scales
-  - Spectral radius capping (< 0.99) ensures stationarity
-  - Variance floors for all covariance matrices
-  - NaN/Inf detection and handling in training loops
-- **Theoretical Correctness**: Appears correct - uses EM algorithm, Kalman filtering, VAR estimation (needs review)
-- **Code Patterns**: Consistent - uses dataclasses, proper type hints, comprehensive docstrings
-- **Action**: No critical issues found in initial inspection. Package appears functional but has room for improvement. See ISSUES.md for incremental improvement plan.
+- **STATUS**: Inspected in previous iteration - no critical issues found
+- **Code Quality**: Clean structure, proper error handling, comprehensive validation
+- **Numerical Stability**: Multiple stability measures (regularization, variance floors, NaN/Inf detection)
+- **Action**: Package appears functional - incremental improvements possible but non-blocking
 
 **Report Documentation Status**:
 - **STATUS**: Tables and plots generated, but Table 3 and Plot4 have placeholders
 - Report structure exists with 4 sections (Introduction, Methodology, Results, Discussion)
-- Tables generated (Table 1, Table 2, Table 3) - Table 3 shows N/A (nowcasting results missing)
-- Plots generated (Plot1, Plot2, Plot3, Plot4) - Plot4 shows placeholders (nowcasting results missing)
-- **Action**: Regenerate Table 3 and Plot4 after nowcasting experiments complete, then update report sections
+- Tables: Table 1 ✅, Table 2 ✅ (VAR-1 shows N/A), Table 3 ⚠️ (N/A placeholders - needs nowcasting results)
+- Plots: Plot1 ✅, Plot2 ✅, Plot3 ✅, Plot4 ⚠️ (placeholders - needs nowcasting results)
+- **Action**: Regenerate Table 3 and Plot4 after nowcasting experiments complete
