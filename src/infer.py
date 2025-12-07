@@ -361,6 +361,12 @@ def _get_current_factor_state(dfm_model: Any, logger: logging.Logger) -> np.ndar
     # Convert to torch tensor and transpose to (N x T) format expected by Kalman filter
     import torch
     
+    # CRITICAL: Replace Inf with NaN before processing (NaN is handled by Kalman filter, Inf is not)
+    if np.any(~np.isfinite(X_data)):
+        inf_count = np.sum(~np.isfinite(X_data))
+        logger.warning(f"Found {inf_count} non-finite values in data (Inf/NaN). Replacing Inf with NaN.")
+        X_data = np.where(np.isfinite(X_data), X_data, np.nan)
+    
     # Standardize: X_std = (X - Mx) / Wx
     # Ensure Mx and Wx are broadcastable with X_data
     # Handle Mx shape safely - it can be 1D array or scalar
@@ -374,8 +380,20 @@ def _get_current_factor_state(dfm_model: Any, logger: logging.Logger) -> np.ndar
         mx_shape = Mx.shape if hasattr(Mx, 'shape') else 'scalar'
         raise ValueError(f"Cannot broadcast Mx (shape {mx_shape}) with X_data (shape {X_data.shape})")
     
+    # CRITICAL: Check for Inf values after standardization (division by small Wx can create Inf)
+    if np.any(~np.isfinite(X_std)):
+        inf_count = np.sum(~np.isfinite(X_std))
+        logger.warning(f"Found {inf_count} non-finite values in standardized data. Replacing Inf with NaN.")
+        X_std = np.where(np.isfinite(X_std), X_std, np.nan)
+    
     # Convert to torch tensor: (N x T) format
     Y = torch.tensor(X_std.T, dtype=torch.float32)  # (N x T)
+    
+    # CRITICAL: Check for Inf values in torch tensor (NaN is OK, Inf is not)
+    if torch.any(~torch.isfinite(Y)):
+        inf_count = torch.sum(~torch.isfinite(Y)).item()
+        logger.warning(f"Found {inf_count} non-finite values in torch tensor Y. Replacing Inf with NaN.")
+        Y = torch.where(torch.isfinite(Y), Y, torch.tensor(float('nan'), dtype=torch.float32))
     
     # Convert parameters to torch
     A_torch = torch.tensor(A, dtype=torch.float32)
@@ -420,9 +438,62 @@ def _get_current_factor_state(dfm_model: Any, logger: logging.Logger) -> np.ndar
         return Z_last
         
     except Exception as e:
-        logger.warning(f"Failed to re-run Kalman filter with masked data: {type(e).__name__}: {str(e)}. Using training state as fallback.")
+        # CRITICAL: Log detailed error information for debugging DDFM constant predictions
+        model_type = type(dfm_model).__name__ if hasattr(dfm_model, '__class__') else 'Unknown'
+        
+        # Try DDFM-specific encoder path as fallback (if encoder is available)
+        if model_type == 'DDFM' or 'DDFM' in str(type(dfm_model)):
+            try:
+                # For DDFM, try using encoder to get factor state from last observation
+                # Handle both DDFMBase directly and DDFM wrapper (which stores model in _model)
+                encoder = None
+                if hasattr(dfm_model, 'encoder') and dfm_model.encoder is not None:
+                    encoder = dfm_model.encoder
+                elif hasattr(dfm_model, '_model') and hasattr(dfm_model._model, 'encoder') and dfm_model._model.encoder is not None:
+                    encoder = dfm_model._model.encoder
+                
+                if encoder is not None:
+                    logger.info(f"[{model_type}] Kalman filter failed, trying encoder-based factor extraction...")
+                    
+                    # Get last valid observation (handle NaN)
+                    X_last = X_data[-1, :]  # Last time step
+                    # Replace NaN with 0 for encoder (encoder can handle this better than Kalman filter)
+                    X_last_clean = np.where(np.isfinite(X_last), X_last, 0.0)
+                    
+                    # Standardize
+                    if hasattr(Mx, 'shape') and len(Mx.shape) == 1 and Mx.shape[0] == X_last_clean.shape[0]:
+                        X_last_std = (X_last_clean - Mx) / np.where(Wx != 0, Wx, 1.0)
+                    elif hasattr(Mx, 'shape') and len(Mx.shape) == 0:
+                        X_last_std = (X_last_clean - Mx) / np.where(Wx != 0, Wx, 1.0)
+                    else:
+                        raise ValueError(f"Cannot standardize for encoder: Mx shape mismatch")
+                    
+                    # Convert to torch and encode
+                    X_torch = torch.tensor(X_last_std, dtype=torch.float32).unsqueeze(0)  # (1, N)
+                    encoder.eval()
+                    with torch.no_grad():
+                        Z_encoded = encoder(X_torch)  # Should return (1, m)
+                        if isinstance(Z_encoded, tuple):
+                            Z_encoded = Z_encoded[0]  # Some encoders return tuple
+                        Z_last = Z_encoded.squeeze(0).cpu().numpy()  # (m,)
+                    
+                    logger.info(f"[{model_type}] Successfully extracted factor state using encoder: shape {Z_last.shape}")
+                    return Z_last
+            except Exception as encoder_error:
+                logger.warning(f"[{model_type}] Encoder-based extraction also failed: {type(encoder_error).__name__}: {str(encoder_error)}")
+        
+        # Log detailed error
+        logger.error(
+            f"CRITICAL: Failed to re-run Kalman filter for {model_type}: {type(e).__name__}: {str(e)}. "
+            f"Data shape: {X_data.shape if 'X_data' in locals() else 'unknown'}, "
+            f"Mx shape: {Mx.shape if hasattr(Mx, 'shape') else type(Mx)}, "
+            f"Wx shape: {Wx.shape if hasattr(Wx, 'shape') else type(Wx)}, "
+            f"Result has series_ids: {hasattr(result, 'series_ids') and result.series_ids is not None}. "
+            f"Using training state as fallback (this will produce constant predictions)."
+        )
         # Fallback to training state
         if hasattr(result, 'Z') and result.Z is not None and len(result.Z) > 0:
+            logger.warning(f"Falling back to training state (constant factor state): {result.Z[-1, :]}")
             return result.Z[-1, :].copy()
         else:
             raise RuntimeError(f"Cannot get factor state: Kalman filter failed and no training state available: {e}") from e
@@ -502,26 +573,140 @@ def _update_data_module_for_nowcasting(
     
     # CRITICAL: Filter data to only include series that the model was trained with
     # This ensures dimension matching and proper masking
-    if config is not None:
+    # First, try to get series_ids from model result (most reliable)
+    model_series_ids = None
+    expected_n_series = None
+    
+    # Get expected number of series from model's Mx/Wx dimensions
+    model_type = type(dfm_model).__name__ if hasattr(dfm_model, '__class__') else 'Unknown'
+    result = None
+    if hasattr(dfm_model, '_result') and dfm_model._result is not None:
+        result = dfm_model._result
+        # Get series_ids from result if available
+        if hasattr(result, 'series_ids') and result.series_ids is not None:
+            model_series_ids = result.series_ids
+            logger.info(f"[{model_type}] Got {len(model_series_ids)} series IDs from model result: {model_series_ids[:5]}...")
+        else:
+            logger.warning(f"[{model_type}] Result does not have series_ids attribute or it is None. Will try config fallback.")
+        
+        # Get expected dimension from Mx/Wx (CRITICAL for dimension-based fallback)
+        if hasattr(result, 'Mx') and result.Mx is not None:
+            Mx = result.Mx
+            if hasattr(Mx, '__len__') and not isinstance(Mx, str):
+                expected_n_series = len(Mx)
+            elif hasattr(Mx, 'shape') and len(Mx.shape) > 0:
+                expected_n_series = Mx.shape[0] if len(Mx.shape) == 1 else 1
+            else:
+                expected_n_series = 1
+            logger.info(f"[{model_type}] Expected {expected_n_series} series from Mx/Wx dimensions (Mx type: {type(Mx)}, shape: {Mx.shape if hasattr(Mx, 'shape') else 'N/A'})")
+        elif hasattr(result, 'Wx') and result.Wx is not None:
+            # Fallback to Wx if Mx not available
+            Wx = result.Wx
+            if hasattr(Wx, '__len__') and not isinstance(Wx, str):
+                expected_n_series = len(Wx)
+            elif hasattr(Wx, 'shape') and len(Wx.shape) > 0:
+                expected_n_series = Wx.shape[0] if len(Wx.shape) == 1 else 1
+            else:
+                expected_n_series = 1
+            logger.info(f"[{model_type}] Expected {expected_n_series} series from Wx dimensions (Mx not available)")
+        elif hasattr(result, 'C') and result.C is not None:
+            # Fallback to C matrix shape if Mx/Wx not available
+            C = result.C
+            if hasattr(C, 'shape') and len(C.shape) >= 1:
+                expected_n_series = C.shape[0]  # C is (N x m), so first dimension is number of series
+            else:
+                expected_n_series = None
+            logger.info(f"[{model_type}] Expected {expected_n_series} series from C matrix shape (Mx/Wx not available)")
+        else:
+            logger.warning(f"[{model_type}] Result does not have Mx, Wx, or C attributes - cannot determine expected series count")
+    
+    # Fallback: try to get from config
+    if model_series_ids is None and config is not None:
         try:
             from dfm_python.utils.helpers import get_series_ids
             model_series_ids = get_series_ids(config)
-            # Filter data_monthly to only include model's series
-            available_series = [s for s in model_series_ids if s in data_monthly.columns]
-            if len(available_series) == 0:
-                raise ValueError(f"No matching series found between model config ({len(model_series_ids)} series) and data ({len(data_monthly.columns)} columns)")
-            if len(available_series) != len(model_series_ids):
-                logger.warning(f"Only {len(available_series)}/{len(model_series_ids)} model series found in data. Using available series: {available_series[:5]}...")
-            # Reorder columns to match model's series order (CRITICAL for dimension matching)
-            data_monthly = data_monthly[available_series].copy()
-            logger.info(f"Filtered data from {len(data_monthly.columns) if hasattr(data_monthly, 'columns') else 'unknown'} to {len(available_series)} series matching model config")
-            
-            # Verify filtering worked
-            if len(data_monthly.columns) != len(available_series):
-                raise ValueError(f"Data filtering failed: expected {len(available_series)} columns but got {len(data_monthly.columns)}")
+            logger.debug(f"Got {len(model_series_ids)} series IDs from config")
         except Exception as e:
-            logger.warning(f"Failed to filter data by model series (will use all columns): {type(e).__name__}: {str(e)}")
-            # Continue with all columns if filtering fails
+            logger.warning(f"Failed to get series IDs from config: {type(e).__name__}: {str(e)}")
+    
+    # Filter data to match model's expected series
+    n_series_in_data = len(data_monthly.columns)
+    data_filtered = False
+    
+    if model_series_ids is not None and len(model_series_ids) > 0:
+        # Filter by series IDs
+        available_series = [s for s in model_series_ids if s in data_monthly.columns]
+        if len(available_series) == 0:
+            raise ValueError(
+                f"CRITICAL: No matching series found between model series IDs ({len(model_series_ids)} series: {model_series_ids[:5]}...) "
+                f"and data columns ({len(data_monthly.columns)} columns: {list(data_monthly.columns)[:5]}...). "
+                f"Cannot proceed with nowcasting."
+            )
+        if len(available_series) != len(model_series_ids):
+            logger.warning(
+                f"Only {len(available_series)}/{len(model_series_ids)} model series found in data. "
+                f"Missing: {set(model_series_ids) - set(available_series)}"
+            )
+        # Reorder columns to match model's series order (CRITICAL for dimension matching)
+        data_monthly = data_monthly[available_series].copy()
+        logger.info(f"Filtered data from {n_series_in_data} to {len(available_series)} series matching model series IDs")
+        data_filtered = True
+        
+        # Verify filtering worked
+        if len(data_monthly.columns) != len(available_series):
+            raise ValueError(f"Data filtering failed: expected {len(available_series)} columns but got {len(data_monthly.columns)}")
+    
+    # Fallback: filter by expected dimension if we know it
+    if not data_filtered and expected_n_series is not None and expected_n_series > 0:
+        if n_series_in_data > expected_n_series:
+            # CRITICAL: We need to filter to match model's expected dimension
+            # Try to match by series_ids from config first (if available)
+            if config is not None:
+                try:
+                    from dfm_python.utils.helpers import get_series_ids
+                    config_series_ids = get_series_ids(config)
+                    if config_series_ids is not None and len(config_series_ids) > 0:
+                        # Filter to only config series that exist in data
+                        available_config_series = [s for s in config_series_ids if s in data_monthly.columns]
+                        if len(available_config_series) >= expected_n_series:
+                            # Use config series order (take first expected_n_series that match)
+                            data_monthly = data_monthly[available_config_series[:expected_n_series]].copy()
+                            logger.info(f"Filtered data from {n_series_in_data} to {expected_n_series} series using config series IDs (first {expected_n_series} matching series)")
+                            data_filtered = True
+                except Exception as e:
+                    logger.debug(f"Failed to use config series IDs for filtering: {type(e).__name__}: {str(e)}")
+            
+            # If config-based filtering didn't work, use dimension-based fallback
+            if not data_filtered:
+                logger.warning(
+                    f"CRITICAL [{model_type}]: Data has {n_series_in_data} series but model expects {expected_n_series}. "
+                    f"Filtering to first {expected_n_series} columns. This may cause incorrect results if column order doesn't match."
+                )
+                data_monthly = data_monthly.iloc[:, :expected_n_series].copy()
+                logger.info(f"Filtered data from {n_series_in_data} to {expected_n_series} series by dimension (first N columns)")
+                data_filtered = True
+        elif n_series_in_data < expected_n_series:
+            raise ValueError(
+                f"CRITICAL: Data has {n_series_in_data} series but model expects {expected_n_series}. "
+                f"Cannot proceed with nowcasting - insufficient data."
+            )
+        elif n_series_in_data == expected_n_series:
+            # Dimensions already match - no filtering needed
+            logger.debug(f"Data already has correct dimension ({n_series_in_data} series), no filtering needed")
+            data_filtered = True
+    
+    # Final check: if we still haven't filtered and dimensions don't match, raise error
+    if not data_filtered:
+        if expected_n_series is not None and n_series_in_data != expected_n_series:
+            raise ValueError(
+                f"CRITICAL: Cannot filter data - data has {n_series_in_data} series but model expects {expected_n_series}. "
+                f"Model series IDs not available and dimension mismatch detected. Cannot proceed with nowcasting."
+            )
+        elif n_series_in_data > 100:  # Suspiciously large - likely unfiltered
+            logger.warning(
+                f"WARNING: Data has {n_series_in_data} series but no filtering was applied. "
+                f"This may cause dimension mismatch errors. Expected series count: {expected_n_series}"
+            )
     
     # Apply release date masking if config is available
     if config is not None:
@@ -560,13 +745,44 @@ def _update_data_module_for_nowcasting(
             logger.warning(f"Failed to apply release date masking (will use unmasked data): {type(e).__name__}: {str(e)}")
             # Continue with unmasked data if masking fails
     
+    # CRITICAL: Verify filtering worked before updating data_module
+    final_n_series = len(data_monthly.columns) if isinstance(data_monthly, pd.DataFrame) else (data_monthly.shape[1] if len(data_monthly.shape) > 1 else 1)
+    if expected_n_series is not None and final_n_series != expected_n_series:
+        # Log detailed information for debugging
+        logger.error(
+            f"CRITICAL [{model_type}]: Data filtering validation failed - after filtering, data has {final_n_series} series but model expects {expected_n_series}. "
+            f"Initial data had {n_series_in_data} series. "
+            f"Model series IDs available: {model_series_ids is not None and len(model_series_ids) > 0 if model_series_ids is not None else False}. "
+            f"Data filtering attempted: {data_filtered}. "
+            f"This will cause dimension mismatch in Kalman filter and constant predictions."
+        )
+        raise ValueError(
+            f"CRITICAL: Data filtering failed - after filtering, data has {final_n_series} series but model expects {expected_n_series}. "
+            f"Cannot proceed with nowcasting. This will cause dimension mismatch in Kalman filter."
+        )
+    
+    # Additional validation: Log successful filtering for debugging
+    if expected_n_series is not None and final_n_series == expected_n_series:
+        logger.info(f"[{model_type}] Data filtering successful: {n_series_in_data} → {final_n_series} series (expected: {expected_n_series})")
+    
     # Update data_module
     try:
         existing_data_module = dfm_model._data_module
         existing_data_module.data = data_monthly
         existing_data_module.time_index = time_index
         dfm_model._data_module = existing_data_module
-        logger.debug(f"Successfully updated data_module with {len(data_monthly)} monthly observations (view_date={view_date.strftime('%Y-%m-%d')})")
+        
+        # CRITICAL: Verify the assignment worked
+        if hasattr(existing_data_module, 'data') and existing_data_module.data is not None:
+            assigned_n_series = len(existing_data_module.data.columns) if isinstance(existing_data_module.data, pd.DataFrame) else (existing_data_module.data.shape[1] if len(existing_data_module.data.shape) > 1 else 1)
+            if expected_n_series is not None and assigned_n_series != expected_n_series:
+                raise RuntimeError(
+                    f"CRITICAL: data_module.data assignment failed - assigned data has {assigned_n_series} series but model expects {expected_n_series}. "
+                    f"This indicates data_module.data property may not allow direct assignment or was reset."
+                )
+            logger.info(f"Successfully updated data_module with {len(data_monthly)} monthly observations, {final_n_series} series (view_date={view_date.strftime('%Y-%m-%d')})")
+        else:
+            raise RuntimeError("data_module.data is None after assignment - assignment failed")
     except Exception as e:
         raise RuntimeError(f"Failed to update data_module: {type(e).__name__}: {str(e)}") from e
 
@@ -773,12 +989,18 @@ def run_backtest_evaluation(
                     # Note: data_module should already be updated with filtered and masked data
                     try:
                         Z_last_current = _get_current_factor_state(dfm_model, logger)
+                        logger.debug(f"Successfully got current factor state from masked data: shape {Z_last_current.shape}, values: {Z_last_current[:3] if len(Z_last_current) >= 3 else Z_last_current}")
                     except (ValueError, RuntimeError) as e:
                         # If Kalman filter re-run fails (e.g., dimension mismatch), use training state
-                        logger.warning(f"Failed to get current factor state from masked data: {type(e).__name__}: {str(e)}. Using training state.")
+                        model_type = type(dfm_model).__name__ if hasattr(dfm_model, '__class__') else 'Unknown'
+                        logger.error(
+                            f"CRITICAL [{model_type}]: Failed to get current factor state from masked data: {type(e).__name__}: {str(e)}. "
+                            f"This will cause constant predictions. Check data filtering and Kalman filter re-run logic."
+                        )
                         if hasattr(dfm_model, '_result') and dfm_model._result is not None:
                             if hasattr(dfm_model._result, 'Z') and dfm_model._result.Z is not None and len(dfm_model._result.Z) > 0:
                                 Z_last_current = dfm_model._result.Z[-1, :].copy()
+                                logger.warning(f"[{model_type}] Using training state (constant): {Z_last_current[:3] if len(Z_last_current) >= 3 else Z_last_current}")
                             else:
                                 raise RuntimeError("Cannot get factor state: Kalman filter failed and no training state available") from e
                         else:
