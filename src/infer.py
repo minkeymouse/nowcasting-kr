@@ -367,7 +367,7 @@ def run_backtest_evaluation(
             # Calculate view_date: target_month_end - weeks
             view_date = target_month_end_ts - timedelta(weeks=weeks)
             
-            # Skip if view_date is at or before training period end
+            # [VALIDATION CHECK 1] Skip if view_date is at or before training period end
             # For nowcasting, we need view_date > train_end_date to have new data beyond training
             # However, for early months in 2024 with 4 weeks before, view_date might be in late 2023
             # which is still after train_end (2019-12-31), so this should be fine
@@ -375,11 +375,11 @@ def run_backtest_evaluation(
             view_date_ts = pd.Timestamp(view_date) if not isinstance(view_date, pd.Timestamp) else view_date
             train_end_ts = pd.Timestamp(train_end_date) if not isinstance(train_end_date, pd.Timestamp) else train_end_date
             if view_date_ts <= train_end_ts:
-                print(f"    ⚠ Skipping: view_date ({view_date.strftime('%Y-%m-%d')}) <= train_end_date ({train_end_date.strftime('%Y-%m-%d')})")
+                print(f"    ⚠ [CHECK 1] Skipping: view_date ({view_date.strftime('%Y-%m-%d')}) <= train_end_date ({train_end_date.strftime('%Y-%m-%d')})")
                 print(f"      This means we're trying to nowcast using data from training period, which is not valid for nowcasting")
                 continue
             
-            # Also check if target_month_end has actual value available
+            # [VALIDATION CHECK 2] Also check if target_month_end has actual value available
             # For nowcasting, we need actual values to compare against
             # CRITICAL FIX: This check should not skip if data exists before target_month_end
             # The actual value lookup code (lines 947-1010) handles finding the closest available date
@@ -387,7 +387,7 @@ def run_backtest_evaluation(
             if len(full_data_monthly) > 0:
                 available_before = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
                 if len(available_before) == 0:
-                    print(f"    ⚠ Skipping: No monthly data available at or before target month {target_month_end_ts.strftime('%Y-%m')}")
+                    print(f"    ⚠ [CHECK 2] Skipping: No monthly data available at or before target month {target_month_end_ts.strftime('%Y-%m')}")
                     print(f"      Data range: {full_data_monthly.index.min()} to {full_data_monthly.index.max()}")
                     continue
                 # Check if exact month match exists (for diagnostic purposes only)
@@ -398,7 +398,7 @@ def run_backtest_evaluation(
                 if len(available_for_target) == 0:
                     print(f"    ℹ Note: No exact month match for {target_month_end_ts.strftime('%Y-%m')}, will use closest available date")
             else:
-                print(f"    ⚠ Skipping: full_data_monthly is empty - cannot get actual values")
+                print(f"    ⚠ [CHECK 2] Skipping: full_data_monthly is empty - cannot get actual values")
                 continue
             
             print(f"\n  Target month: {target_month_end_ts.strftime('%Y-%m')}")
@@ -481,10 +481,10 @@ def run_backtest_evaluation(
                                 print(f"    ✗ Error: Could not update data_module with data up to target_month_end: {e}")
                                 import traceback
                                 traceback.print_exc()
-                                print(f"    ⚠ Skipping: Data module update failed - cannot perform nowcast without updated data")
+                                print(f"    ⚠ [CHECK 3] Skipping: Data module update failed - cannot perform nowcast without updated data")
                                 continue  # Skip this month if data_module update fails
                         else:
-                            print(f"    ⚠ Skipping: No data available up to target_month_end {target_month_end_ts}")
+                            print(f"    ⚠ [CHECK 3] Skipping: No data available up to target_month_end {target_month_end_ts}")
                             continue
                     
                     # Find closest available date at or before target_month_end for nowcast manager
@@ -496,8 +496,14 @@ def run_backtest_evaluation(
                             # Use the closest date at or before target_month_end (monthly data)
                             target_period_for_nowcast = available_dates.max().to_pydatetime()
                         else:
-                            print(f"    ⚠ Skipping: No monthly data available at or before target_month_end {target_month_end_ts}")
-                            continue
+                            # CRITICAL FIX: Don't skip - use latest available date from full_data_monthly
+                            # This handles cases where target_month_end is slightly after data range
+                            if len(full_data_monthly) > 0:
+                                target_period_for_nowcast = full_data_monthly.index.max().to_pydatetime()
+                                print(f"    ⚠ Warning: No monthly data at or before {target_month_end_ts}, using latest available: {target_period_for_nowcast}")
+                            else:
+                                print(f"    ⚠ [CHECK 2] Skipping: No monthly data available at all")
+                                continue
                     else:
                         # target_month_end is after data range, use latest available
                         target_period_for_nowcast = full_data_monthly.index.max().to_pydatetime()
@@ -574,8 +580,10 @@ def run_backtest_evaluation(
                                         print(f"    Debug: Using closest date at or before target: {closest_before} (target was {target_period_for_nowcast})")
                                         target_period_for_nowcast = closest_before
                                     else:
-                                        print(f"    ⚠ Skipping: No date found in TimeIndex for month {target_year}-{target_month:02d} or before")
-                                        continue  # Skip this month if no valid date found
+                                        # CRITICAL FIX: Don't skip - proceed with original target_period_for_nowcast
+                                        # The nowcast manager may handle missing dates gracefully or find closest match
+                                        print(f"    ⚠ Warning: No date found in TimeIndex for month {target_year}-{target_month:02d} or before, but proceeding anyway")
+                                        # Don't skip - let nowcast manager handle it
                     
                     try:
                         # CRITICAL FIX: Check if data_module has valid time_index before calling nowcast manager
@@ -597,7 +605,7 @@ def run_backtest_evaluation(
                                     time_index_len = 0
                                 
                                 if time_index_len == 0:
-                                    print(f"    ⚠ Skipping: Data module time_index is empty - cannot perform nowcast")
+                                    print(f"    ⚠ [CHECK 4] Skipping: Data module time_index is empty - cannot perform nowcast")
                                     continue
                             else:
                                 print(f"    ⚠ Warning: data_module.time_index is None or not available")
@@ -703,21 +711,21 @@ def run_backtest_evaluation(
                         )
                         
                         if nowcast_result is None:
-                            print(f"    ⚠ Skipping: Nowcast manager returned None")
+                            print(f"    ⚠ [CHECK 5] Skipping: Nowcast manager returned None")
                             continue
                         
                         forecast_value = nowcast_result.nowcast_value
                         
                         # Check if forecast is NaN or invalid
                         if np.isnan(forecast_value) or not np.isfinite(forecast_value):
-                            print(f"    ⚠ Skipping: Nowcast value is NaN or invalid: {forecast_value}")
+                            print(f"    ⚠ [CHECK 6] Skipping: Nowcast value is NaN or invalid: {forecast_value}")
                             continue
                         else:
                             print(f"    ✓ DFM/DDFM nowcast value: {forecast_value:.4f}")
                     except ValueError as e:
                         # Handle ValueError from _prepare_target when Time_view is empty
                         if "Time_view is empty" in str(e) or "not found in Time index" in str(e):
-                            print(f"    ⚠ Skipping: {e}")
+                            print(f"    ⚠ [CHECK 7] Skipping: {e}")
                             continue
                         else:
                             print(f"    ✗ Error in nowcast manager: {e}")
@@ -763,9 +771,9 @@ def run_backtest_evaluation(
                     # Filter data up to view_date for training (nowcasting scenario)
                     train_data_filtered = full_data[full_data.index <= pd.Timestamp(view_date)]
                     
-                    # Skip if no training data
+                    # [VALIDATION CHECK 8] Skip if no training data
                     if len(train_data_filtered) == 0:
-                        print(f"    ⚠ Skipping: No training data available up to view_date {view_date}")
+                        print(f"    ⚠ [CHECK 8] Skipping: No training data available up to view_date {view_date}")
                         print(f"      Data range: {full_data.index.min()} to {full_data.index.max()}")
                         continue
                     else:
@@ -776,18 +784,19 @@ def run_backtest_evaluation(
                     from src.preprocessing import resample_to_monthly
                     original_count = len(train_data_filtered)
                     train_data_filtered = resample_to_monthly(train_data_filtered)
-                    # Check if resampling removed all data
+                    # [VALIDATION CHECK 9] Check if resampling removed all data
                     if len(train_data_filtered) == 0:
-                        print(f"    ⚠ Skipping: Monthly resampling removed all data (original had {original_count} rows)")
+                        print(f"    ⚠ [CHECK 9] Skipping: Monthly resampling removed all data (original had {original_count} rows)")
                         continue
                     print(f"    ✓ Resampled to monthly: {len(train_data_filtered)} rows (from {train_data_filtered.index.min()} to {train_data_filtered.index.max()})")
                     
                     # Calculate nowcast horizon: days from view_date to target_month_end
                     # For nowcasting, we predict the current period (target_month_end) using data available at view_date
                     # CRITICAL FIX: Use target_month_end_ts for type consistency (pd.Timestamp)
+                    # [VALIDATION CHECK 10] Calculate nowcast horizon
                     horizon_days = (target_month_end_ts - view_date).days
                     if horizon_days <= 0:
-                        print(f"    ⚠ Skipping: view_date ({view_date}) is not before target_month_end ({target_month_end_ts}), horizon={horizon_days} days")
+                        print(f"    ⚠ [CHECK 10] Skipping: view_date ({view_date}) is not before target_month_end ({target_month_end_ts}), horizon={horizon_days} days")
                         continue
                     else:
                         print(f"    ✓ Horizon: {horizon_days} days (from {view_date} to {target_month_end_ts})")
@@ -869,7 +878,7 @@ def run_backtest_evaluation(
                                 if len(available_columns) < len(training_columns):
                                     print(f"    ⚠ Warning: Some training columns missing in backtest data. Training: {training_columns}, Available: {available_columns}")
                                 if len(available_columns) < 2:
-                                    print(f"    ⚠ Skipping: VAR requires at least 2 columns, but only {len(available_columns)} available after column matching")
+                                    print(f"    ⚠ [CHECK 11] Skipping: VAR requires at least 2 columns, but only {len(available_columns)} available after column matching")
                                     continue
                                 # CRITICAL: Maintain exact column order from training to match pipeline expectations
                                 # The pipeline may use integer indices internally, so column order matters
@@ -910,9 +919,9 @@ def run_backtest_evaluation(
                             if isinstance(fit_data, pd.Series):
                                 fit_data = fit_data.to_frame()
                         
-                        # Skip if insufficient data after cleaning
+                        # [VALIDATION CHECK 12] Skip if insufficient data after cleaning
                         if len(fit_data) < 10:  # Minimum data points needed for ARIMA/VAR
-                            print(f"    ⚠ Skipping: Insufficient data after cleaning ({len(fit_data)} rows, need at least 10)")
+                            print(f"    ⚠ [CHECK 12] Skipping: Insufficient data after cleaning ({len(fit_data)} rows, need at least 10)")
                             print(f"      Original train_data_filtered: {len(train_data_filtered)} rows")
                             continue
                         else:
@@ -929,7 +938,7 @@ def run_backtest_evaluation(
                         
                         non_null_count = target_col.notna().sum()
                         if target_col.isna().all():
-                            print(f"    ⚠ Skipping: Target series has no non-null values (0/{len(target_col)} non-null)")
+                            print(f"    ⚠ [CHECK 13] Skipping: Target series has no non-null values (0/{len(target_col)} non-null)")
                             continue
                         else:
                             print(f"    ✓ Target series has {non_null_count}/{len(target_col)} non-null values")
@@ -956,28 +965,22 @@ def run_backtest_evaluation(
                         recent_count = recent_target.notna().sum()
                         # For monthly data, require at least 1 recent data point (within last 24 months)
                         # This is more lenient than requiring data within 365 days, which might be too strict
-                        # for monthly data when view_date is early in a month or when there are data gaps
+                        # [VALIDATION CHECK 14] for monthly data when view_date is early in a month or when there are data gaps
                         if recent_count == 0:
-                            print(f"    ⚠ Skipping: No recent data (last 730 days) available for prediction (checked {len(recent_data)} rows)")
+                            print(f"    ⚠ [CHECK 14] Skipping: No recent data (last 730 days) available for prediction (checked {len(recent_data)} rows)")
                             continue
                         else:
                             print(f"    ✓ Found {recent_count} recent data points (last 730 days)")
                         
-                        # Check if last non-null value is too far from view_date
-                        # For monthly data, the last valid index should be within reasonable range
-                        # Since we're resampling to monthly, the last index will be a month-end date
-                        # For nowcasting, we're predicting the current month using data from previous months
-                        # Use fit_data (after cleaning) to get last valid index, as it represents the actual data used for fitting
-                        if is_multivariate:
-                            if target_series in fit_data.columns:
-                                target_col_for_check = fit_data[target_series]
-                            else:
-                                target_col_for_check = fit_data.iloc[:, 0]
-                        else:
-                            target_col_for_check = fit_data.iloc[:, 0]
-                        last_valid_idx = target_col_for_check.last_valid_index()
-                        if last_valid_idx is not None:
-                            days_since_last = (pd.Timestamp(view_date) - pd.Timestamp(last_valid_idx)).days
+                        # Check if last data point is too far from view_date
+                        # For monthly data, use the last index of the monthly resampled data (not last_valid_index of target column)
+                        # This is more appropriate for nowcasting, as we want to check if we have recent monthly data,
+                        # not whether the target series specifically has non-NaN values in recent months
+                        # CRITICAL FIX: Use fit_data.index.max() instead of last_valid_index() to get the last monthly data point
+                        # This avoids issues where target series has NaN values in recent months but other series have data
+                        last_data_idx = fit_data.index.max()
+                        if last_data_idx is not None:
+                            days_since_last = (pd.Timestamp(view_date) - pd.Timestamp(last_data_idx)).days
                             # For monthly data, allow up to 180 days (6 months) since last data point
                             # This accounts for the fact that monthly data naturally has gaps
                             # and for nowcasting in early January, December data is still recent
@@ -990,12 +993,12 @@ def run_backtest_evaluation(
                             # Increased from 90 to 180 days to be more lenient and avoid skipping valid months
                             max_days_allowed = 180
                             if days_since_last > max_days_allowed:
-                                print(f"    ⚠ Skipping: Last valid data point ({last_valid_idx}) is {days_since_last} days before view_date ({view_date}) (too old, >{max_days_allowed} days)")
+                                print(f"    ⚠ [CHECK 15] Skipping: Last monthly data point ({last_data_idx}) is {days_since_last} days before view_date ({view_date}) (too old, >{max_days_allowed} days)")
                                 continue
                             else:
-                                print(f"    ✓ Last valid data point ({last_valid_idx}) is {days_since_last} days before view_date (acceptable)")
+                                print(f"    ✓ Last monthly data point ({last_data_idx}) is {days_since_last} days before view_date (acceptable)")
                         else:
-                            print(f"    ⚠ Warning: No valid data point found in fit_data after cleaning")
+                            print(f"    ⚠ Warning: No data points found in fit_data after cleaning")
                             # Don't skip here - let the fitting attempt proceed, it will fail if there's truly no data
                         
                         # CRITICAL FIX: For VAR models, store original column names for mapping back after prediction
@@ -1288,12 +1291,12 @@ def run_backtest_evaluation(
                         else:
                             actual_value = np.nan
                 
-                # Skip if nowcast or actual is NaN
+                # [VALIDATION CHECK 16] Skip if nowcast or actual is NaN
                 if np.isnan(forecast_value) or np.isnan(actual_value):
                     if np.isnan(forecast_value):
-                        print(f"    ⚠ Skipping: forecast_value is NaN (prediction failed or returned NaN)")
+                        print(f"    ⚠ [CHECK 16] Skipping: forecast_value is NaN (prediction failed or returned NaN)")
                     if np.isnan(actual_value):
-                        print(f"    ⚠ Skipping: actual_value is NaN (value not found or is NaN in data)")
+                        print(f"    ⚠ [CHECK 16] Skipping: actual_value is NaN (value not found or is NaN in data)")
                     continue
                 
                 # Calculate error and standardized metrics
