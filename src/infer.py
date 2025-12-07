@@ -267,10 +267,14 @@ def run_backtest_evaluation(
     # Get training data std for standardization
     # Load full data once (will be reused for actual value lookup in backtests)
     from src.utils import get_project_root
+    from src.preprocessing import resample_to_monthly
     data_path_file = get_project_root() / "data" / "data.csv"
     if not data_path_file.exists():
         data_path_file = get_project_root() / "data" / "sample_data.csv"
     full_data = pd.read_csv(data_path_file, index_col=0, parse_dates=True)
+    # CRITICAL FIX: Aggregate to monthly for actual value lookup (targets are monthly)
+    # Weekly data needs to be aggregated to monthly to match target_month_end dates
+    full_data_monthly = resample_to_monthly(full_data)
     train_start_ts = pd.Timestamp(train_start)
     train_end_ts = pd.Timestamp(train_end)
     train_data_filtered = full_data[(full_data.index >= train_start_ts) & (full_data.index <= train_end_ts)]
@@ -334,19 +338,19 @@ def run_backtest_evaluation(
                             continue
                     
                     # Find closest available date at or before target_month_end for nowcast manager
-                    # (data is weekly, so exact month-end dates may not exist)
+                    # Use monthly aggregated data for monthly targets
                     target_period_for_nowcast = target_month_end
-                    if target_month_end <= full_data.index.max():
-                        available_dates = full_data.index[full_data.index <= target_month_end]
+                    if target_month_end <= full_data_monthly.index.max():
+                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end]
                         if len(available_dates) > 0:
-                            # Use the closest date at or before target_month_end
+                            # Use the closest date at or before target_month_end (monthly data)
                             target_period_for_nowcast = available_dates.max().to_pydatetime()
                         else:
-                            print(f"    ⚠ Skipping: No data available at or before target_month_end {target_month_end}")
+                            print(f"    ⚠ Skipping: No monthly data available at or before target_month_end {target_month_end}")
                             continue
                     else:
                         # target_month_end is after data range, use latest available
-                        target_period_for_nowcast = full_data.index.max().to_pydatetime()
+                        target_period_for_nowcast = full_data_monthly.index.max().to_pydatetime()
                     
                     try:
                         nowcast_result = nowcast_manager(
@@ -377,23 +381,23 @@ def run_backtest_evaluation(
                     # Get actual value from full data (target months are in 2024, after training period)
                     # Use full_data loaded before loop (contains all dates including 2024)
                     actual_value = np.nan
-                    if target_month_end <= full_data.index.max():
-                        # Find closest date at or before target_month_end
-                        available_dates = full_data.index[full_data.index <= target_month_end]
+                    if target_month_end <= full_data_monthly.index.max():
+                        # Find closest date at or before target_month_end (use monthly data)
+                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end]
                         if len(available_dates) > 0:
                             closest_date = available_dates.max()
-                            if target_series in full_data.columns:
-                                raw_value = full_data.loc[closest_date, target_series]
+                            if target_series in full_data_monthly.columns:
+                                raw_value = full_data_monthly.loc[closest_date, target_series]
                                 # Check if value is NaN in data
                                 if pd.isna(raw_value):
-                                    print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in data")
+                                    print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in monthly data")
                                     actual_value = np.nan
                                 else:
                                     actual_value = float(raw_value)
                             else:
-                                raw_value = full_data.loc[closest_date].iloc[0]
+                                raw_value = full_data_monthly.loc[closest_date].iloc[0]
                                 if pd.isna(raw_value):
-                                    print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in data")
+                                    print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in monthly data")
                                     actual_value = np.nan
                                 else:
                                     actual_value = float(raw_value)
@@ -414,6 +418,12 @@ def run_backtest_evaluation(
                         continue
                     else:
                         print(f"    ✓ Training data available: {len(train_data_filtered)} rows (from {train_data_filtered.index.min()} to {train_data_filtered.index.max()})")
+                    
+                    # CRITICAL FIX: Resample to monthly to match model training frequency
+                    # Models are trained on monthly data (resample_to_monthly), so backtest must use monthly data too
+                    from src.preprocessing import resample_to_monthly
+                    train_data_filtered = resample_to_monthly(train_data_filtered)
+                    print(f"    ✓ Resampled to monthly: {len(train_data_filtered)} rows (from {train_data_filtered.index.min()} to {train_data_filtered.index.max()})")
                     
                     # Calculate nowcast horizon: days from view_date to target_month_end
                     # For nowcasting, we predict the current period (target_month_end) using data available at view_date
@@ -509,12 +519,12 @@ def run_backtest_evaluation(
                         else:
                             print(f"    ✓ Target series has {non_null_count}/{len(target_col)} non-null values")
                         
-                        # Check if there's recent data (within last 180 days of view_date for weekly data with monthly targets)
-                        # For weekly data with monthly targets, use 180 days (6 months) to account for sparse weekly observations
-                        # This ensures we have enough recent information for nowcasting
-                        recent_cutoff = pd.Timestamp(view_date) - pd.Timedelta(days=180)
-                        # Use the original train_data_filtered for recent data check, not fit_data
-                        # fit_data may have been forward-filled and have sparse index
+                        # Check if there's recent data (within last 6 months for monthly data)
+                        # For monthly data, use 6 months to ensure we have enough recent information for nowcasting
+                        # However, for nowcasting scenarios where view_date is early in a month, we need to be more lenient
+                        # Use 365 days (12 months) to account for monthly data gaps and early-month view dates
+                        recent_cutoff = pd.Timestamp(view_date) - pd.Timedelta(days=365)
+                        # Use train_data_filtered (now monthly) for recent data check
                         recent_data = train_data_filtered[train_data_filtered.index >= recent_cutoff]
                         if is_multivariate:
                             if target_series in recent_data.columns:
@@ -528,15 +538,20 @@ def run_backtest_evaluation(
                                 recent_target = recent_data.iloc[:, 0]
                         
                         recent_count = recent_target.notna().sum()
+                        # For monthly data, require at least 1 recent data point (within last 12 months)
+                        # This is more lenient than requiring data within 180 days, which might be too strict
+                        # for monthly data when view_date is early in a month
                         if recent_count == 0:
-                            print(f"    ⚠ Skipping: No recent data (last 180 days) available for prediction (checked {len(recent_data)} rows)")
+                            print(f"    ⚠ Skipping: No recent data (last 365 days) available for prediction (checked {len(recent_data)} rows)")
                             continue
                         else:
-                            print(f"    ✓ Found {recent_count} recent data points (last 180 days)")
+                            print(f"    ✓ Found {recent_count} recent data points (last 365 days)")
                         
-                        # Check if last non-null value is too far from view_date (more than 180 days for weekly data with monthly targets)
-                        # For weekly data with monthly targets, allow up to 180 days (6 months) since last data point
-                        # Use original train_data_filtered to get last valid index, not fit_data (which may have been forward-filled)
+                        # Check if last non-null value is too far from view_date
+                        # For monthly data, the last valid index should be within reasonable range
+                        # Since we're resampling to monthly, the last index will be a month-end date
+                        # For nowcasting, we're predicting the current month using data from previous months
+                        # Use train_data_filtered (now monthly) to get last valid index, not fit_data (which may have been forward-filled)
                         if is_multivariate:
                             if target_series in train_data_filtered.columns:
                                 original_target_col = train_data_filtered[target_series]
@@ -550,8 +565,12 @@ def run_backtest_evaluation(
                         last_valid_idx = original_target_col.last_valid_index()
                         if last_valid_idx is not None:
                             days_since_last = (pd.Timestamp(view_date) - pd.Timestamp(last_valid_idx)).days
-                            if days_since_last > 180:
-                                print(f"    ⚠ Skipping: Last valid data point is {days_since_last} days before view_date (too old, >180 days)")
+                            # For monthly data, allow up to 90 days (3 months) since last data point
+                            # This accounts for the fact that monthly data naturally has gaps
+                            # and for nowcasting in early January, December data is still recent
+                            max_days_allowed = 90
+                            if days_since_last > max_days_allowed:
+                                print(f"    ⚠ Skipping: Last valid data point is {days_since_last} days before view_date (too old, >{max_days_allowed} days)")
                                 continue
                             else:
                                 print(f"    ✓ Last valid data point is {days_since_last} days before view_date (acceptable)")
@@ -570,14 +589,33 @@ def run_backtest_evaluation(
                         # Nowcast for target_month_end (horizon = horizon_days)
                         # This is nowcasting: predicting current period using incomplete data
                         # CRITICAL FIX: Convert horizon_days to periods based on data frequency
-                        # Data is weekly, so convert days to weeks (round to nearest integer)
-                        # For weekly data: 1 week = 7 days, so horizon_periods = horizon_days / 7
-                        # For monthly targets with weekly data, we typically want 1 period ahead (1 week)
-                        # But since target_month_end might be several weeks away, we calculate the number of weeks
-                        horizon_periods = max(1, round(horizon_days / 7.0))  # Convert days to weeks, minimum 1 period
+                        # Data is now monthly (resampled), so convert to months
+                        # For monthly data: find which month index corresponds to target_month_end
+                        # and which month index corresponds to the last month in train_data_filtered
+                        # Horizon = number of months ahead to predict
+                        last_train_month = train_data_filtered.index.max()
+                        # Find month index of target_month_end relative to last_train_month
+                        # Use relativedelta for accurate month difference calculation
+                        from dateutil.relativedelta import relativedelta
+                        # Convert to datetime if needed
+                        if isinstance(last_train_month, pd.Timestamp):
+                            last_train_dt = last_train_month.to_pydatetime()
+                        else:
+                            last_train_dt = last_train_month
+                        if isinstance(target_month_end, pd.Timestamp):
+                            target_dt = target_month_end.to_pydatetime()
+                        else:
+                            target_dt = target_month_end
+                        # Calculate months difference using relativedelta for accuracy
+                        delta = relativedelta(target_dt, last_train_dt)
+                        months_ahead = delta.years * 12 + delta.months
+                        # If target_month_end is in the same month or future month as last_train_month,
+                        # we need to predict at least 1 period ahead
+                        # If target_month_end is before last_train_month (shouldn't happen in nowcasting), use 1
+                        horizon_periods = max(1, months_ahead)
                         try:
                             fh = np.asarray([horizon_periods])
-                            print(f"    → Predicting with horizon={horizon_periods} periods ({horizon_days} days = {horizon_periods} weeks, from {view_date} to {target_month_end})")
+                            print(f"    → Predicting with horizon={horizon_periods} periods ({horizon_periods} months, from {view_date} to {target_month_end})")
                             y_pred = forecaster_clone.predict(fh=fh)
                             print(f"    → Prediction result type: {type(y_pred)}, shape: {getattr(y_pred, 'shape', 'N/A')}")
                         except Exception as e:
@@ -667,55 +705,55 @@ def run_backtest_evaluation(
                         else:
                             print(f"    ✓ Nowcast value extracted: {forecast_value:.4f} (horizon={horizon_days} days)")
                         
-                        # Get actual value from full data
-                        # Handle cases where target_month_end might not be exactly in index
-                        if target_month_end <= full_data.index.max():
-                            # Find closest date at or before target_month_end
-                            available_dates = full_data.index[full_data.index <= target_month_end]
-                            if len(available_dates) > 0:
-                                closest_date = available_dates.max()
-                                if target_series in full_data.columns:
-                                    raw_value = full_data.loc[closest_date, target_series]
-                                    # Check if value is NaN in data
-                                    if pd.isna(raw_value):
-                                        print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in data")
-                                        actual_value = np.nan
-                                    else:
-                                        actual_value = float(raw_value)
+                    # Get actual value from monthly aggregated data (targets are monthly)
+                    # Handle cases where target_month_end might not be exactly in index
+                    if target_month_end <= full_data_monthly.index.max():
+                        # Find closest date at or before target_month_end (use monthly data)
+                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end]
+                        if len(available_dates) > 0:
+                            closest_date = available_dates.max()
+                            if target_series in full_data_monthly.columns:
+                                raw_value = full_data_monthly.loc[closest_date, target_series]
+                                # Check if value is NaN in data
+                                if pd.isna(raw_value):
+                                    print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in monthly data")
+                                    actual_value = np.nan
                                 else:
-                                    raw_value = full_data.loc[closest_date].iloc[0]
-                                    if pd.isna(raw_value):
-                                        print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in data")
-                                        actual_value = np.nan
-                                    else:
-                                        actual_value = float(raw_value)
+                                    actual_value = float(raw_value)
                             else:
-                                actual_value = np.nan
+                                raw_value = full_data_monthly.loc[closest_date].iloc[0]
+                                if pd.isna(raw_value):
+                                    print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in monthly data")
+                                    actual_value = np.nan
+                                else:
+                                    actual_value = float(raw_value)
                         else:
-                            # target_month_end is after data range
                             actual_value = np.nan
+                    else:
+                        # target_month_end is after data range
+                        actual_value = np.nan
                         
                     except Exception as e:
                         print(f"    ✗ Error in prediction: {e}")
                         import traceback
                         traceback.print_exc()
                         forecast_value = np.nan
-                        # Try to get actual value even if prediction failed
-                        if target_month_end <= full_data.index.max():
-                            available_dates = full_data.index[full_data.index <= target_month_end]
+                        # Try to get actual value even if prediction failed (use monthly data)
+                        if target_month_end <= full_data_monthly.index.max():
+                            available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end]
                             if len(available_dates) > 0:
                                 closest_date = available_dates.max()
-                                if target_series in full_data.columns:
-                                    raw_value = full_data.loc[closest_date, target_series]
+                                if target_series in full_data_monthly.columns:
+                                    raw_value = full_data_monthly.loc[closest_date, target_series]
                                     if pd.isna(raw_value):
-                                        print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in data")
+                                        print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in monthly data")
                                         actual_value = np.nan
                                     else:
                                         actual_value = float(raw_value)
                                 else:
-                                    raw_value = full_data.loc[closest_date].iloc[0]
+                                    raw_value = full_data_monthly.loc[closest_date].iloc[0]
                                     if pd.isna(raw_value):
-                                        print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in data")
+                                        print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in monthly data")
                                         actual_value = np.nan
                                     else:
                                         actual_value = float(raw_value)
