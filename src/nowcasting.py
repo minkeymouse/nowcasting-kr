@@ -752,12 +752,13 @@ class NowcastResult:
 # ============================================================================
 # Helper Functions
 # ============================================================================
-from dfm_python.utils.helpers import (
-    calc_backward_date,
-    get_forecast_horizon,
-    check_config,
-    extract_news,
-)
+# calc_backward_date is defined in this file (line 235), not imported from dfm_python
+# from dfm_python.utils.helpers import (
+#     calc_backward_date,  # This is defined locally, not in dfm_python
+#     get_forecast_horizon,
+#     check_config,
+#     extract_news,
+# )
 
 
 class Nowcast:

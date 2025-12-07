@@ -17,20 +17,20 @@
   - Total: 3 targets × 4 models × 12 months × 2 timepoints = 288 nowcasting predictions
 
 **ACTUAL Current Status**:
-- **checkpoint/**: **10 model.pkl files** - **10/12 models trained** ⚠️ (Missing: KOIPALL.G_ddfm, KOIPALL.G_dfm)
+- **checkpoint/**: **EMPTY** - **0/12 models trained** ⚠️ (All models need training)
 - **outputs/backtest/**: **12 JSON files with "status": "no_results"** - **0/12 nowcasting experiments completed** ⚠️
-  - Root cause identified: ValueError raised when target period not found in Time index
-  - Code fixes applied this iteration: _prepare_target and __call__ methods now handle empty Time_view gracefully
+  - Root causes identified: UnboundLocalError, ValueError, Inf handling issues
+  - Code fixes applied this iteration: UnboundLocalError (Mx/Wx extraction), ValueError (empty Time_view handling), Inf detection (Kalman filter and data views), AttributeError (Mx.shape access), backtest status check
   - Code fixes NOT verified by re-running backtests (Step 1 will handle automatically)
-- **outputs/experiments/aggregated_results.csv**: **EXISTS** - Forecasting results aggregated (36 rows, extreme VAR values filtered on load)
-- **outputs/comparisons/**: Contains comparison_results.json files - forecasting completed successfully
-- **nowcasting-report/tables/**: **3 tables generated** (tab_dataset_params.tex, tab_forecasting_results.tex, tab_nowcasting_backtest.tex)
-- **nowcasting-report/images/**: **7 plots generated** (forecast_vs_actual_*.png × 3, accuracy_heatmap.png, horizon_trend.png, nowcasting_comparison_*.png × 3)
+- **outputs/experiments/aggregated_results.csv**: **EXISTS** - Forecasting results aggregated (36 rows, extreme VAR values filtered on load) - from previous runs
+- **outputs/comparisons/**: Contains comparison_results.json files - forecasting completed successfully (from previous runs)
+- **nowcasting-report/tables/**: **3 tables generated** (tab_dataset_params.tex, tab_forecasting_results.tex, tab_nowcasting_backtest.tex with N/A placeholders)
+- **nowcasting-report/images/**: **7 plots generated** (forecast_vs_actual_*.png × 3, accuracy_heatmap.png, horizon_trend.png, nowcasting_comparison_*.png × 3 with placeholders)
 
 **What This Means**:
-- ⚠️ **Training INCOMPLETE** - Only 10/12 models trained (missing KOIPALL.G_ddfm, KOIPALL.G_dfm)
-- ⚠️ **Nowcasting experiments FAILED** - All 12 JSON files have "no_results" status. Root cause fixed (ValueError handling), but fixes NOT verified by re-running backtests.
-- ✅ **Forecasting results exist** - Table 2 can be generated (extreme values filtered when loading)
+- ⚠️ **Training NOT DONE** - checkpoint/ is empty, all 12 models need training
+- ⚠️ **Nowcasting experiments FAILED** - All 12 JSON files have "no_results" status. Code fixes applied (UnboundLocalError, ValueError, Inf handling, AttributeError, backtest check) but NOT verified by re-running backtests.
+- ✅ **Forecasting results exist** - Table 2 can be generated (extreme values filtered when loading, all models completed successfully) - from previous runs
 - ⚠️ **Tables and plots generated** - Table 3 and Plot4 have placeholders (nowcasting results missing)
 
 **Next Steps** (Step 1 will automatically handle):
@@ -77,7 +77,7 @@ run_train.sh (or agent_execute.sh train)
     → _train_forecaster() → Load data (1985-2019) → Preprocess → Create forecaster → fit()
     → Save to checkpoint/{target}_{model}/model.pkl
 ```
-**Status**: checkpoint/ has 10/12 model.pkl files - training INCOMPLETE (missing KOIPALL.G_ddfm, KOIPALL.G_dfm)
+**Status**: checkpoint/ is EMPTY - training NOT DONE (0/12 models trained)
 
 **Forecasting Flow** (DONE):
 ```
@@ -101,16 +101,16 @@ run_backtest.sh (or agent_execute.sh backtest)
         → Calculate sMSE, sMAE
     → Save to outputs/backtest/{target}_{model}_backtest.json
 ```
-**Status**: outputs/backtest/ has 12 JSON files with "status": "no_results" - nowcasting FAILED (code fixes present but NOT verified)
+**Status**: outputs/backtest/ has 12 JSON files with "status": "no_results" - nowcasting FAILED (code fixes applied this iteration but NOT verified by re-running backtests)
 
 ---
 
 ## Result Structure
 
 **Forecasting**:
-- Per-target: `outputs/comparisons/{target}_{timestamp}/comparison_results.json` (exists - used to generate Plot1-3)
-- Aggregated: `outputs/experiments/aggregated_results.csv` (**EXISTS**, 36 rows)
-- Models: `checkpoint/{target}_{model}/model.pkl` (**10 files - checkpoint/ has 10/12 model.pkl files**)
+- Per-target: `outputs/comparisons/{target}_{timestamp}/comparison_results.json` (exists - used to generate Plot1-3, from previous runs)
+- Aggregated: `outputs/experiments/aggregated_results.csv` (**EXISTS**, 36 rows, from previous runs)
+- Models: `checkpoint/{target}_{model}/model.pkl` (**0 files - checkpoint/ is EMPTY, 0/12 models trained**)
 
 **Nowcasting**:
 - Per-target-model: `outputs/backtest/{target}_{model}_backtest.json` (**12 files - all with "status": "no_results"**)
@@ -121,32 +121,32 @@ run_backtest.sh (or agent_execute.sh backtest)
 
 ## Usage
 
-**Training (save models to checkpoint/)** - **INCOMPLETE**:
+**Training (save models to checkpoint/)** - **NOT DONE**:
 ```bash
 bash agent_execute.sh train
 # Or: bash run_train.sh
 # Trains all models for all targets, saves to checkpoint/{target}_{model}/model.pkl
 # Training data: 1985-01-01 to 2019-12-31 (no data leakage)
-# Status: checkpoint/ has 10/12 model.pkl files - missing KOIPALL.G_ddfm, KOIPALL.G_dfm
+# Status: checkpoint/ is EMPTY - 0/12 models trained
 ```
 
-**Forecasting (load from checkpoint/, generate forecasts)** - **DONE**:
+**Forecasting (load from checkpoint/, generate forecasts)** - **DONE** (from previous runs):
 ```bash
 bash agent_execute.sh forecast
 # Or: bash run_forecast.sh
 # Loads models from checkpoint/, generates forecasts for all horizons (1-30)
 # Aggregates results to outputs/experiments/aggregated_results.csv
-# Status: aggregated_results.csv EXISTS with 36 rows
+# Status: aggregated_results.csv EXISTS with 36 rows (from previous runs)
 ```
 
-**Nowcasting Backtest (multiple time points)** - **FAILED**:
+**Nowcasting Backtest (multiple time points)** - **FAILED** (code fixes applied, NOT verified):
 ```bash
 bash agent_execute.sh backtest
 # Or: bash run_backtest.sh
 # Runs backtest for all models and targets
 # For each target month (2024-01 ~ 2024-12), predicts at 4 weeks and 1 week before
 # Saves to outputs/backtest/{target}_{model}_backtest.json
-# Status: outputs/backtest/ has 12 JSON files with "status": "no_results" - code fixes present but NOT verified
+# Status: outputs/backtest/ has 12 JSON files with "status": "no_results" - code fixes applied this iteration but NOT verified
 ```
 
 **Generate tables**:
@@ -166,14 +166,14 @@ python3 nowcasting-report/code/plot.py
 ## Report Update Workflow
 
 **Forecasting Workflow**:
-1. Train models → `bash agent_execute.sh train` (saves to checkpoint/) - **INCOMPLETE** (10/12 models)
-2. Run forecasts → `bash agent_execute.sh forecast` (loads from checkpoint/, generates forecasts for 1-30 horizons) - **DONE**
-3. Generate aggregated CSV → `outputs/experiments/aggregated_results.csv` - **EXISTS** (36 rows)
-4. Generate plots → `python3 nowcasting-report/code/plot.py` (Plot1, Plot2, Plot3) - **DONE**
-5. Update LaTeX tables → Table 1 (dataset/params), Table 2 (forecasting results) - **DONE**
+1. Train models → `bash agent_execute.sh train` (saves to checkpoint/) - **NOT DONE** (0/12 models)
+2. Run forecasts → `bash agent_execute.sh forecast` (loads from checkpoint/, generates forecasts for 1-30 horizons) - **DONE** (from previous runs)
+3. Generate aggregated CSV → `outputs/experiments/aggregated_results.csv` - **EXISTS** (36 rows, from previous runs)
+4. Generate plots → `python3 nowcasting-report/code/plot.py` (Plot1, Plot2, Plot3) - **DONE** (from previous runs)
+5. Update LaTeX tables → Table 1 (dataset/params), Table 2 (forecasting results) - **DONE** (from previous runs)
 
 **Nowcasting Workflow**:
-1. Run backtests → `bash agent_execute.sh backtest` (all models, all targets, 4 weeks and 1 week before) - **FAILED** (all 12 JSON files have "no_results")
+1. Run backtests → `bash agent_execute.sh backtest` (all models, all targets, 4 weeks and 1 week before) - **FAILED** (all 12 JSON files have "no_results", code fixes applied but NOT verified)
 2. Generate table 3 → From outputs/backtest/*_backtest.json (8 rows × 7 columns) - **GENERATED WITH N/A** (needs regeneration after backtests succeed)
 3. Generate plot4 → From outputs/backtest/*_backtest.json (3 pairs, 6 plots total) - **GENERATED WITH PLACEHOLDERS** (needs regeneration after backtests succeed)
 4. Update report → Nowcasting section in 3_results.tex with table 3 and plot4 - **BLOCKED** (needs actual results)
@@ -194,10 +194,17 @@ python3 nowcasting-report/code/plot.py
 - Report structure ready (methodology, results, discussion sections)
 
 **What's Actually Missing**:
-- ⚠️ **Training INCOMPLETE** - Only 10/12 models trained (missing KOIPALL.G_ddfm, KOIPALL.G_dfm)
-- ⚠️ **Nowcasting experiments FAILED** - All 12 JSON files have "no_results" status (code fixes present but NOT verified)
+- ⚠️ **Training NOT DONE** - checkpoint/ is empty (0/12 models trained)
+- ⚠️ **Nowcasting experiments FAILED** - All 12 JSON files have "no_results" status (code fixes applied this iteration but NOT verified by re-running backtests)
 - ⚠️ **Table 3 generated but shows N/A** (needs regeneration after backtests succeed)
 - ⚠️ **Plot4 generated but shows placeholders** (needs regeneration after backtests succeed)
+
+**Code Fixes Applied This Iteration** (NOT verified):
+- UnboundLocalError fix: Mx/Wx extraction moved before use in src/infer.py
+- AttributeError fix: Safe Mx.shape access in src/infer.py
+- ValueError fix: Empty Time_view handling in src/nowcasting.py
+- Inf detection: Added in Kalman filter (dfm-python) and data views (src/nowcasting.py)
+- Backtest status check fix: Correct status checking in agent_execute.sh
 
 **Next Steps**:
 - Step 1 will automatically check and run needed experiments

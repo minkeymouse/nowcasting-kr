@@ -242,6 +242,192 @@ def _save_json_results(
         raise
 
 
+def _get_current_factor_state(dfm_model: Any, logger: logging.Logger) -> np.ndarray:
+    """Get current factor state by re-running Kalman filter with masked data.
+    
+    This function re-runs Kalman filter using the updated data_module data
+    to get the current factor state, which reflects the masked data.
+    
+    Args:
+        dfm_model: DFMBase or DDFMBase model instance
+        logger: Logger instance
+        
+    Returns:
+        Current factor state (last row of smoothed factors), shape (m,)
+        
+    Raises:
+        RuntimeError: If model doesn't have required attributes or Kalman filter fails
+    """
+    # Try to get result if not available
+    if not hasattr(dfm_model, '_result') or dfm_model._result is None:
+        # Try to get result from model
+        if hasattr(dfm_model, 'get_result'):
+            try:
+                dfm_model._result = dfm_model.get_result()
+                logger.debug("Retrieved result using get_result() method")
+            except Exception as e:
+                logger.warning(f"Failed to get result using get_result(): {type(e).__name__}: {str(e)}")
+                raise RuntimeError("Model result not available - cannot get current factor state") from e
+        else:
+            raise RuntimeError("Model result not available and no get_result() method - cannot get current factor state")
+    
+    if not hasattr(dfm_model, '_data_module') or dfm_model._data_module is None:
+        raise RuntimeError("DataModule not available - cannot get current factor state")
+    
+    result = dfm_model._result
+    data_module = dfm_model._data_module
+    
+    # Get model parameters from result
+    A = result.A
+    C = result.C
+    Q = result.Q
+    R = result.R
+    Z_0 = result.Z_0
+    V_0 = result.V_0
+    
+    # Get masked data from data_module
+    # CRITICAL: data_module.data should already be filtered to match model's series
+    if not hasattr(data_module, 'data') or data_module.data is None:
+        raise RuntimeError("DataModule.data not available")
+    
+    data_masked = data_module.data
+    
+    # Extract Mx and Wx from result FIRST (before using them)
+    # Standardize data using result's Wx and Mx
+    # CRITICAL: Extract these before any validation checks to avoid UnboundLocalError
+    if not hasattr(result, 'Wx') or result.Wx is None:
+        raise RuntimeError("Model result missing Wx parameter - cannot standardize data for Kalman filter re-run")
+    if not hasattr(result, 'Mx') or result.Mx is None:
+        raise RuntimeError("Model result missing Mx parameter - cannot standardize data for Kalman filter re-run")
+    
+    Wx = result.Wx
+    Mx = result.Mx
+    
+    # Verify data has been filtered to match model's series count
+    # If not, this will cause dimension mismatch in Kalman filter
+    if isinstance(data_masked, pd.DataFrame):
+        n_series_in_data = len(data_masked.columns)
+    else:
+        n_series_in_data = data_masked.shape[1] if len(data_masked.shape) > 1 else 1
+    
+    # Get expected series count from Mx
+    if hasattr(Mx, '__len__') and not isinstance(Mx, str):
+        n_series_expected = len(Mx)
+    elif hasattr(Mx, 'shape') and len(Mx.shape) > 0:
+        n_series_expected = Mx.shape[0] if len(Mx.shape) == 1 else 1
+    else:
+        n_series_expected = 1
+    
+    if n_series_in_data != n_series_expected:
+        logger.error(
+            f"CRITICAL: data_module.data has {n_series_in_data} series but model expects {n_series_expected}. "
+            f"This indicates data filtering failed. Cannot proceed with Kalman filter re-run."
+        )
+        # This should not happen if _update_data_module_for_nowcasting worked correctly
+        raise ValueError(
+            f"DataModule data dimension mismatch: {n_series_in_data} series in data_module.data "
+            f"but {n_series_expected} expected from model parameters. "
+            f"Data filtering in _update_data_module_for_nowcasting may have failed."
+        )
+    
+    # Convert to numpy if DataFrame
+    if isinstance(data_masked, pd.DataFrame):
+        X_data = data_masked.values
+    else:
+        X_data = np.asarray(data_masked)
+    
+    # Validate dimensions match
+    n_series_data = X_data.shape[1] if len(X_data.shape) > 1 else 1
+    # Handle Mx/Wx - they can be 1D arrays or scalars
+    if hasattr(Mx, '__len__') and not isinstance(Mx, str):
+        n_series_params = len(Mx)
+    elif hasattr(Mx, 'shape') and len(Mx.shape) > 0:
+        n_series_params = Mx.shape[0] if len(Mx.shape) == 1 else 1
+    else:
+        n_series_params = 1
+    
+    if n_series_data != n_series_params:
+        error_msg = f"Series count mismatch: data has {n_series_data} series but Mx/Wx have {n_series_params}. Cannot re-run Kalman filter."
+        logger.warning(error_msg)
+        # Fallback to training state
+        if hasattr(result, 'Z') and result.Z is not None and len(result.Z) > 0:
+            logger.debug("Using training state as fallback for factor state")
+            return result.Z[-1, :].copy()
+        else:
+            raise ValueError(error_msg)
+    
+    # Handle NaN values (masked data)
+    # For Kalman filter, we need to handle missing data properly
+    # Convert to torch tensor and transpose to (N x T) format expected by Kalman filter
+    import torch
+    
+    # Standardize: X_std = (X - Mx) / Wx
+    # Ensure Mx and Wx are broadcastable with X_data
+    # Handle Mx shape safely - it can be 1D array or scalar
+    if hasattr(Mx, 'shape') and len(Mx.shape) == 1 and Mx.shape[0] == X_data.shape[1]:
+        # Mx is (N,), X_data is (T, N), so broadcasting works
+        X_std = (X_data - Mx) / np.where(Wx != 0, Wx, 1.0)
+    elif hasattr(Mx, 'shape') and len(Mx.shape) == 0:
+        # Mx is scalar, broadcast to all series
+        X_std = (X_data - Mx) / np.where(Wx != 0, Wx, 1.0)
+    else:
+        mx_shape = Mx.shape if hasattr(Mx, 'shape') else 'scalar'
+        raise ValueError(f"Cannot broadcast Mx (shape {mx_shape}) with X_data (shape {X_data.shape})")
+    
+    # Convert to torch tensor: (N x T) format
+    Y = torch.tensor(X_std.T, dtype=torch.float32)  # (N x T)
+    
+    # Convert parameters to torch
+    A_torch = torch.tensor(A, dtype=torch.float32)
+    C_torch = torch.tensor(C, dtype=torch.float32)
+    Q_torch = torch.tensor(Q, dtype=torch.float32)
+    R_torch = torch.tensor(R, dtype=torch.float32)
+    Z_0_torch = torch.tensor(Z_0, dtype=torch.float32)
+    V_0_torch = torch.tensor(V_0, dtype=torch.float32)
+    
+    # Re-run Kalman filter with masked data
+    try:
+        # Check if model has kalman attribute (DFM) or needs to use result's kalman
+        kalman = None
+        if hasattr(dfm_model, 'kalman') and dfm_model.kalman is not None:
+            kalman = dfm_model.kalman
+        elif hasattr(dfm_model, '_model') and hasattr(dfm_model._model, 'kalman'):
+            kalman = dfm_model._model.kalman
+        
+        # For DDFM, we might not have kalman attribute, so create one
+        if kalman is None:
+            from dfm_python.ssm.kalman import KalmanFilter
+            kalman = KalmanFilter(
+                min_eigenval=1e-8,
+                inv_regularization=1e-6,
+                cholesky_regularization=1e-8
+            )
+            logger.debug("Created new KalmanFilter instance for nowcasting (model doesn't have kalman attribute)")
+        
+        # Run Kalman smoother
+        zsmooth, Vsmooth, _, _ = kalman(
+            Y, A_torch, C_torch, Q_torch, R_torch, Z_0_torch, V_0_torch
+        )
+        
+        # zsmooth is (m x (T+1)), transpose to ((T+1) x m)
+        Zsmooth = zsmooth.T  # ((T+1) x m)
+        
+        # Get last factor state (skip initial state at index 0)
+        Z_last = Zsmooth[-1, :].cpu().numpy()  # (m,)
+        
+        logger.debug(f"Re-ran Kalman filter with masked data: got factor state shape {Z_last.shape}")
+        
+        return Z_last
+        
+    except Exception as e:
+        logger.warning(f"Failed to re-run Kalman filter with masked data: {type(e).__name__}: {str(e)}. Using training state as fallback.")
+        # Fallback to training state
+        if hasattr(result, 'Z') and result.Z is not None and len(result.Z) > 0:
+            return result.Z[-1, :].copy()
+        else:
+            raise RuntimeError(f"Cannot get factor state: Kalman filter failed and no training state available: {e}") from e
+
+
 def _update_data_module_for_nowcasting(
     dfm_model: Any,
     data_up_to_target: pd.DataFrame,
@@ -314,6 +500,29 @@ def _update_data_module_for_nowcasting(
         elif hasattr(dfm_model, 'config'):
             config = dfm_model.config
     
+    # CRITICAL: Filter data to only include series that the model was trained with
+    # This ensures dimension matching and proper masking
+    if config is not None:
+        try:
+            from dfm_python.utils.helpers import get_series_ids
+            model_series_ids = get_series_ids(config)
+            # Filter data_monthly to only include model's series
+            available_series = [s for s in model_series_ids if s in data_monthly.columns]
+            if len(available_series) == 0:
+                raise ValueError(f"No matching series found between model config ({len(model_series_ids)} series) and data ({len(data_monthly.columns)} columns)")
+            if len(available_series) != len(model_series_ids):
+                logger.warning(f"Only {len(available_series)}/{len(model_series_ids)} model series found in data. Using available series: {available_series[:5]}...")
+            # Reorder columns to match model's series order (CRITICAL for dimension matching)
+            data_monthly = data_monthly[available_series].copy()
+            logger.info(f"Filtered data from {len(data_monthly.columns) if hasattr(data_monthly, 'columns') else 'unknown'} to {len(available_series)} series matching model config")
+            
+            # Verify filtering worked
+            if len(data_monthly.columns) != len(available_series):
+                raise ValueError(f"Data filtering failed: expected {len(available_series)} columns but got {len(data_monthly.columns)}")
+        except Exception as e:
+            logger.warning(f"Failed to filter data by model series (will use all columns): {type(e).__name__}: {str(e)}")
+            # Continue with all columns if filtering fails
+    
     # Apply release date masking if config is available
     if config is not None:
         try:
@@ -342,7 +551,11 @@ def _update_data_module_for_nowcasting(
                 time_index = time_index_masked
             
             data_monthly = data_monthly_masked
-            logger.debug(f"Applied release date masking for view_date={view_date.strftime('%Y-%m-%d')}")
+            # Debug: Log masking statistics
+            nan_count = data_monthly.isnull().sum().sum() if isinstance(data_monthly, pd.DataFrame) else data_monthly.isnull().sum()
+            total_cells = data_monthly.size if hasattr(data_monthly, 'size') else len(data_monthly)
+            nan_pct = (nan_count / total_cells * 100) if total_cells > 0 else 0
+            logger.debug(f"Applied release date masking for view_date={view_date.strftime('%Y-%m-%d')}: {nan_count}/{total_cells} NaN ({nan_pct:.1f}%)")
         except Exception as e:
             logger.warning(f"Failed to apply release date masking (will use unmasked data): {type(e).__name__}: {str(e)}")
             # Continue with unmasked data if masking fails
@@ -512,7 +725,30 @@ def run_backtest_evaluation(
                     elif hasattr(dfm_model, 'config'):
                         config = dfm_model.config
                     
+                    # Debug: Log data before masking
+                    data_before_mask = resample_to_monthly(data_up_to_view)
+                    nan_count_before = data_before_mask.isnull().sum().sum() if isinstance(data_before_mask, pd.DataFrame) else data_before_mask.isnull().sum()
+                    
+                    # Store data hash before masking for comparison
+                    import hashlib
+                    data_before_hash = hashlib.md5(pd.util.hash_pandas_object(data_before_mask.fillna(0)).values).hexdigest() if isinstance(data_before_mask, pd.DataFrame) else None
+                    
                     _update_data_module_for_nowcasting(dfm_model, data_up_to_view, pd.Timestamp(view_date), config=config)
+                    
+                    # Debug: Log data after masking
+                    if hasattr(dfm_model, '_data_module') and dfm_model._data_module is not None:
+                        data_after_mask = dfm_model._data_module.data
+                        nan_count_after = data_after_mask.isnull().sum().sum() if isinstance(data_after_mask, pd.DataFrame) else data_after_mask.isnull().sum()
+                        data_after_hash = hashlib.md5(pd.util.hash_pandas_object(data_after_mask.fillna(0)).values).hexdigest() if isinstance(data_after_mask, pd.DataFrame) else None
+                        logger.info(f"Masking for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}, weeks={weeks}): NaN before={nan_count_before}, NaN after={nan_count_after}, data_changed={data_before_hash != data_after_hash if data_before_hash and data_after_hash else 'N/A'}")
+                        
+                        # Log target series specific masking
+                        if isinstance(data_after_mask, pd.DataFrame) and target_series in data_after_mask.columns:
+                            target_nan_before = data_before_mask[target_series].isnull().sum() if isinstance(data_before_mask, pd.DataFrame) else 0
+                            target_nan_after = data_after_mask[target_series].isnull().sum()
+                            target_last_valid_before = data_before_mask[target_series].last_valid_index() if isinstance(data_before_mask, pd.DataFrame) else None
+                            target_last_valid_after = data_after_mask[target_series].last_valid_index()
+                            logger.debug(f"  Target {target_series}: NaN before={target_nan_before}, NaN after={target_nan_after}, last_valid before={target_last_valid_before}, last_valid after={target_last_valid_after}")
                 except (RuntimeError, ValueError) as e:
                     logger.warning(f"Failed to update data_module for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {str(e)}")
                     continue
@@ -529,8 +765,41 @@ def run_backtest_evaluation(
                 horizon = max(1, min(months_ahead, 22)) if months_ahead >= 0 else 1
                 
                 try:
-                    # Use dfm_model.predict() directly (it's DFMBase/DDFMBase instance)
-                    X_pred, Z_pred = dfm_model.predict(horizon=horizon, return_series=True, return_factors=True)
+                    # CRITICAL: For nowcasting, we need to use the current masked data, not training state
+                    # The predict() method uses result.Z[-1, :] from training, which doesn't reflect masked data
+                    # Solution: Re-run Kalman filter with masked data to get current factor state
+                    
+                    # Get current factor state from masked data by re-running Kalman filter
+                    # Note: data_module should already be updated with filtered and masked data
+                    try:
+                        Z_last_current = _get_current_factor_state(dfm_model, logger)
+                    except (ValueError, RuntimeError) as e:
+                        # If Kalman filter re-run fails (e.g., dimension mismatch), use training state
+                        logger.warning(f"Failed to get current factor state from masked data: {type(e).__name__}: {str(e)}. Using training state.")
+                        if hasattr(dfm_model, '_result') and dfm_model._result is not None:
+                            if hasattr(dfm_model._result, 'Z') and dfm_model._result.Z is not None and len(dfm_model._result.Z) > 0:
+                                Z_last_current = dfm_model._result.Z[-1, :].copy()
+                            else:
+                                raise RuntimeError("Cannot get factor state: Kalman filter failed and no training state available") from e
+                        else:
+                            raise RuntimeError("Cannot get factor state: Kalman filter failed and no result available") from e
+                    
+                    # Temporarily update result.Z[-1, :] with current state
+                    original_Z_last = None
+                    if hasattr(dfm_model, '_result') and dfm_model._result is not None:
+                        if hasattr(dfm_model._result, 'Z') and dfm_model._result.Z is not None:
+                            original_Z_last = dfm_model._result.Z[-1, :].copy()
+                            dfm_model._result.Z[-1, :] = Z_last_current
+                            logger.debug(f"Updated result.Z[-1, :] with current factor state from masked data (shape: {Z_last_current.shape})")
+                    
+                    try:
+                        # Use dfm_model.predict() - now it will use the updated factor state
+                        X_pred, Z_pred = dfm_model.predict(horizon=horizon, return_series=True, return_factors=True)
+                    finally:
+                        # Restore original state
+                        if original_Z_last is not None:
+                            dfm_model._result.Z[-1, :] = original_Z_last
+                            logger.debug("Restored original result.Z[-1, :]")
                     
                     # Extract target series value
                     # If horizon > 1, we need to select the appropriate time step
@@ -541,6 +810,13 @@ def run_backtest_evaluation(
                     forecast_value = _extract_target_forecast(
                         X_pred, pred_step, dfm_model, target_series
                     )
+                    
+                    # Debug: Log prediction for comparison (use INFO level for visibility)
+                    logger.info(f"Prediction for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}, weeks={weeks}): forecast_value={forecast_value:.6f}, horizon={horizon}, months_ahead={months_ahead}, pred_step={pred_step}")
+                    
+                    # Also log prediction array shape for debugging
+                    if hasattr(X_pred, 'shape'):
+                        logger.debug(f"  X_pred shape: {X_pred.shape}, target_series index in model: checking...")
                     
                     if not np.isfinite(forecast_value):
                         logger.debug(f"Non-finite forecast value for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {forecast_value}")

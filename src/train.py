@@ -881,28 +881,54 @@ def compare_models(
                         if not Path(actual_data_path).exists():
                             actual_data_path = str(project_root / "data" / "sample_data.csv")
                     
-                    data = pd.read_csv(actual_data_path, index_col=0, parse_dates=True)
+                    # Load full data to get both training and test periods
+                    full_data = pd.read_csv(actual_data_path, index_col=0, parse_dates=True)
+                    
+                    # Training period: 1985-2019
                     train_start = pd.Timestamp('1985-01-01')
                     train_end = pd.Timestamp('2019-12-31')
-                    data = data[(data.index >= train_start) & (data.index <= train_end)]
-                    data = resample_to_monthly(data)
+                    train_data = full_data[(full_data.index >= train_start) & (full_data.index <= train_end)]
+                    train_data = resample_to_monthly(train_data)
+                    
+                    # Test period: 2024-2025 (actual future data, not split from training)
+                    test_start = pd.Timestamp('2024-01-01')
+                    test_end = pd.Timestamp('2025-10-31')
+                    test_data = full_data[(full_data.index >= test_start) & (full_data.index <= test_end)]
+                    test_data = resample_to_monthly(test_data)
+                    
+                    # Validate train-test split to prevent data leakage
+                    if len(train_data) == 0:
+                        raise ValidationError(f"No training data available in period 1985-2019. Data range: {full_data.index.min()} to {full_data.index.max()}")
+                    if len(test_data) == 0:
+                        raise ValidationError(f"No test data available in period 2024-2025. Data range: {full_data.index.min()} to {full_data.index.max()}")
+                    if train_data.index.max() >= test_data.index.min():
+                        raise ValidationError(f"Data leakage detected: Training period ends at {train_data.index.max()} but test period starts at {test_data.index.min()}. There must be a gap between training and test periods.")
+                    
+                    logger.info(f"Train period: {train_data.index.min()} to {train_data.index.max()} ({len(train_data)} points)")
+                    logger.info(f"Test period: {test_data.index.min()} to {test_data.index.max()} ({len(test_data)} points)")
                     
                     # VAR cannot handle missing data - must impute before evaluation
                     if model_name.lower() == 'var':
                         from src.preprocessing import impute_missing_values
-                        data = impute_missing_values(data, model_type='var')
-                        if data.isnull().any().any():
-                            nan_count = data.isnull().sum().sum()
-                            logger.warning(f"VAR: {nan_count} NaN values remain after imputation. Dropping rows with NaN...")
-                            data = data.dropna()
-                            if len(data) == 0:
-                                raise ValidationError(f"VAR: All data was dropped after imputation. Cannot evaluate.")
+                        train_data = impute_missing_values(train_data, model_type='var')
+                        test_data = impute_missing_values(test_data, model_type='var')
+                        if train_data.isnull().any().any():
+                            nan_count = train_data.isnull().sum().sum()
+                            logger.warning(f"VAR: {nan_count} NaN values remain in training data after imputation. Dropping rows with NaN...")
+                            train_data = train_data.dropna()
+                        if test_data.isnull().any().any():
+                            nan_count = test_data.isnull().sum().sum()
+                            logger.warning(f"VAR: {nan_count} NaN values remain in test data after imputation. Dropping rows with NaN...")
+                            test_data = test_data.dropna()
+                        if len(train_data) == 0:
+                            raise ValidationError(f"VAR: All training data was dropped after imputation. Cannot evaluate.")
+                        if len(test_data) == 0:
+                            raise ValidationError(f"VAR: All test data was dropped after imputation. Cannot evaluate.")
                     
-                    split_idx = int(len(data) * 0.8)
-                    y_train_eval = data.iloc[:split_idx]
-                    y_test_eval = data.iloc[split_idx:]
+                    y_train_eval = train_data
+                    y_test_eval = test_data
                     
-                    logger.info(f"Evaluation data: train={len(y_train_eval)} points, test={len(y_test_eval)} points")
+                    logger.info(f"Evaluation data: train={len(y_train_eval)} points ({train_start} to {train_end}), test={len(y_test_eval)} points ({test_start} to {test_end})")
                     
                     from src.evaluation import evaluate_forecaster
                     try:

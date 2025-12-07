@@ -393,10 +393,11 @@ CRITICAL PRIORITY - FIND AND FIX REAL PROBLEMS:
    - Don't just document - actually MODIFY the code to improve it
 
 3. REPORT DOCUMENTATION: ACTUALLY GENERATE missing tables/plots:
-   - If tables are missing, GENERATE them from outputs/
+   - If tables are missing, GENERATE them using nowcasting-report/code/table.py
    - If plots are missing, GENERATE them using nowcasting-report/code/plot.py
    - If methodology is incomplete, ACTUALLY WRITE the missing sections
    - Don't just say "should be documented" - actually CREATE the content
+   - After generating tables/plots, UPDATE the report sections to reference them
 
 4. REAL STATUS CHECK: Check ACTUAL state, not what you wish it was:
    - If checkpoint/ is empty, models are NOT trained - this is a REAL problem
@@ -404,6 +405,13 @@ CRITICAL PRIORITY - FIND AND FIX REAL PROBLEMS:
    - If aggregated_results.csv is missing, forecasting is NOT complete - this is a REAL problem
    - Don't claim "complete" or "verified" when things are actually missing
    - FIX the problems by ensuring Step 1 runs the needed experiments
+
+5. TABLE/PLOT GENERATION: MUST regenerate after any result changes:
+   - After Step 1 runs experiments, regenerate tables and plots
+   - After fixing code issues, regenerate tables and plots
+   - After updating report sections, verify tables/plots are up to date
+   - Use: python3 nowcasting-report/code/table.py and python3 nowcasting-report/code/plot.py
+   - Verify outputs exist in nowcasting-report/tables/ and nowcasting-report/images/
 
 CRITICAL: DO NOT use words like "complete", "verified", "resolved", "no issues", "production ready", "done", "everything works", or "all fixed" unless you actually FIXED or IMPROVED something in code or files. Always acknowledge there's room for improvement. Never claim things are "done" or "finished" - there's always more to improve.
 EOF
@@ -421,6 +429,11 @@ PRIORITY ORDER:
 7) Build/update report sections using generated tables and plots - ensure all theoretically correct details are documented as specified in WORKFLOW.md
 8) OPTIONAL: Check LaTeX PDF compilation if needed (LaTeX is installed: cd nowcasting-report && ./compile.sh) - verify page count <15, check for errors. All build artifacts are saved to compiled/ directory.
 9) COMMIT & PUSH: Ensure all changes are committed and pushed to remote origin
+
+CRITICAL: Tables and plots MUST be regenerated whenever experiment results are updated. Use:
+- python3 nowcasting-report/code/table.py (generates all LaTeX tables)
+- python3 nowcasting-report/code/plot.py (generates all plots)
+These scripts automatically check for available data and generate tables/plots accordingly.
 EOF
 }
 
@@ -623,6 +636,64 @@ safe_git_submodule_push() {
   return $failed
 }
 
+# Table and plot generation functions
+generate_tables_and_plots() {
+  log_info "Generating tables and plots from experiment results"
+  activate_venv
+  cd "$REPO_ROOT" || {
+    log_error "Failed to cd to $REPO_ROOT"
+    return 1
+  }
+  
+  local tables_generated=0
+  local plots_generated=0
+  
+  # Generate tables
+  if [[ -f "nowcasting-report/code/table.py" ]]; then
+    log_info "Generating LaTeX tables..."
+    if python3 nowcasting-report/code/table.py 2>&1; then
+      log_info "✓ Tables generated successfully"
+      tables_generated=1
+    else
+      log_warn "⚠ Table generation had errors (may be due to missing data)"
+    fi
+  else
+    log_warn "⚠ nowcasting-report/code/table.py not found"
+  fi
+  
+  # Generate plots
+  if [[ -f "nowcasting-report/code/plot.py" ]]; then
+    log_info "Generating plots..."
+    if python3 nowcasting-report/code/plot.py 2>&1; then
+      log_info "✓ Plots generated successfully"
+      plots_generated=1
+    else
+      log_warn "⚠ Plot generation had errors (may be due to missing data)"
+    fi
+  else
+    log_warn "⚠ nowcasting-report/code/plot.py not found"
+  fi
+  
+  # Verify outputs
+  if [[ $tables_generated -eq 1 ]]; then
+    local table_count=0
+    if [[ -d "nowcasting-report/tables" ]]; then
+      table_count=$(find nowcasting-report/tables -name "*.tex" 2>/dev/null | wc -l)
+      log_info "Found $table_count LaTeX table(s) in nowcasting-report/tables/"
+    fi
+  fi
+  
+  if [[ $plots_generated -eq 1 ]]; then
+    local plot_count=0
+    if [[ -d "nowcasting-report/images" ]]; then
+      plot_count=$(find nowcasting-report/images -name "*.png" 2>/dev/null | wc -l)
+      log_info "Found $plot_count plot(s) in nowcasting-report/images/"
+    fi
+  fi
+  
+  return 0
+}
+
 # Step implementations
 step1_run_experiment() {
   ensure_env
@@ -647,6 +718,11 @@ step1_run_experiment() {
   log_info "Running agent_execute.sh (automatically checks and runs only missing experiments)"
   if bash agent_execute.sh; then
     log_info "Step 1 completed successfully"
+    
+    # Regenerate tables and plots after experiments complete
+    log_info "Regenerating tables and plots after experiments..."
+    generate_tables_and_plots || log_warn "Table/plot generation had errors, but continuing"
+    
     mark_step_completed 1
     return 0
   else
@@ -735,12 +811,17 @@ step4_analyze_results() {
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Analyze the results in ${out_dir}. CRITICAL INSPECTIONS: 1) Check comparison_results.json to see if any models failed and FIX the root cause in code. 2) INSPECT MODEL PERFORMANCE ANOMALIES: If you find near-perfect, too good, or too poor results indicating data leakage, numerical instability, or implementation errors, FIX them in @src/core/training.py, @src/eval/evaluation.py, or model implementations. Don't just document - actually FIX the code. 3) If any models failed due to missing package dependencies or other issues, FIX the installation or code. 4) Check checkpoint/, outputs/comparisons/, outputs/backtest/ to see which experiments appear complete - but verify actual state, don't assume. If experiments are missing, note them in ISSUES.md - Step 1 will automatically run them in the next iteration. Agent ONLY modifies code - Agent MUST NOT execute any scripts. If there are errors or issues, FIX them in code, don't just document. If there's something wrong with the numbers, FIX the calculation code. Only mark issues as addressed AFTER you've actually attempted to fix them in code - but acknowledge there may still be improvements needed. Check @FEEDBACK.md for any user feedback related to results. Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files. CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', 'no issues', or 'done' unless you actually FIXED something in code. Always acknowledge there's room for improvement."
+  local prompt="Analyze the results in ${out_dir}. CRITICAL INSPECTIONS: 1) Check comparison_results.json to see if any models failed and FIX the root cause in code. 2) INSPECT MODEL PERFORMANCE ANOMALIES: If you find near-perfect, too good, or too poor results indicating data leakage, numerical instability, or implementation errors, FIX them in @src/core/training.py, @src/eval/evaluation.py, or model implementations. Don't just document - actually FIX the code. 3) If any models failed due to missing package dependencies or other issues, FIX the installation or code. 4) Check checkpoint/, outputs/comparisons/, outputs/backtest/ to see which experiments appear complete - but verify actual state, don't assume. If experiments are missing, note them in ISSUES.md - Step 1 will automatically run them in the next iteration. 5) After analyzing results, ensure tables and plots are regenerated from latest results using nowcasting-report/code/table.py and nowcasting-report/code/plot.py. Agent ONLY modifies code - Agent MUST NOT execute any scripts. If there are errors or issues, FIX them in code, don't just document. If there's something wrong with the numbers, FIX the calculation code. Only mark issues as addressed AFTER you've actually attempted to fix them in code - but acknowledge there may still be improvements needed. Check @FEEDBACK.md for any user feedback related to results. Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files. CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', 'no issues', or 'done' unless you actually FIXED something in code. Always acknowledge there's room for improvement."
   
   if cursor_force "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
+    
+    # Generate tables and plots after analysis
+    log_info "Regenerating tables and plots after result analysis..."
+    generate_tables_and_plots || log_warn "Table/plot generation had errors, but continuing"
+    
     log_info "Step 4 completed successfully"
     mark_step_completed 4
     return 0
@@ -784,16 +865,21 @@ step6_execute_plan() {
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Work on the plan. Execute the active plan items in ISSUES.md following the priority order. CRITICAL PRIORITIES: 1) INSPECT AND FIX MODEL PERFORMANCE ANOMALIES: If you find models showing near-perfect, too good, or too poor results, FIX them in @src/core/training.py and @src/eval/evaluation.py. Don't just document - actually FIX data leakage issues, numerical instability, or implementation errors in code. 2) INSPECT dfm-python PACKAGE: If you find code quality, numerical stability, or theoretical correctness issues, FIX them in @dfm-python/. Don't just document - actually MODIFY the code. 3) ENSURE REPORT DOCUMENTATION: If tables/plots are missing, GENERATE them. If report sections are incomplete, WRITE them. Don't just verify - actually CREATE the missing content. 4) Check if DFM/DDFM package is installed. If DFM/DDFM experiments are failing, note in ISSUES.md - Step 1 will handle experiment execution automatically. "
+  local prompt="Work on the plan. Execute the active plan items in ISSUES.md following the priority order. CRITICAL PRIORITIES: 1) INSPECT AND FIX MODEL PERFORMANCE ANOMALIES: If you find models showing near-perfect, too good, or too poor results, FIX them in @src/core/training.py and @src/eval/evaluation.py. Don't just document - actually FIX data leakage issues, numerical instability, or implementation errors in code. 2) INSPECT dfm-python PACKAGE: If you find code quality, numerical stability, or theoretical correctness issues, FIX them in @dfm-python/. Don't just document - actually MODIFY the code. 3) ENSURE REPORT DOCUMENTATION: If tables/plots are missing, GENERATE them using nowcasting-report/code/table.py and nowcasting-report/code/plot.py. If report sections are incomplete, WRITE them. Don't just verify - actually CREATE the missing content. 4) Check if DFM/DDFM package is installed. If DFM/DDFM experiments are failing, note in ISSUES.md - Step 1 will handle experiment execution automatically. "
   prompt+="CRITICAL: Agent ONLY modifies code - Agent MUST NOT execute any scripts (run_train.sh, run_forecast.sh, run_backtest.sh, agent_execute.sh). If experiments are missing, note them in ISSUES.md - Step 1 will automatically run them in the next iteration. "
-  prompt+="CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED something in code or files. If you find problems, FIX them. If tables/plots are missing, GENERATE them. If report is incomplete, WRITE it. Don't just document that 'everything is fine' - actually MAKE CHANGES. "
+  prompt+="CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED something in code or files. If you find problems, FIX them. If tables/plots are missing, GENERATE them by calling the table/plot generation functions or updating the generation scripts. If report is incomplete, WRITE it. Don't just document that 'everything is fine' - actually MAKE CHANGES. "
   prompt+="$(build_priority_order_prompt) "
-  prompt+="Check @FEEDBACK.md for user feedback and incorporate feedback into updates. Apply code/report updates needed for dfm-python and nowcasting-report. OPTIONAL: If LaTeX is available, check PDF compilation (cd nowcasting-report && ./compile.sh) to verify report compiles correctly. All build artifacts are saved to compiled/ directory. Focus on incremental improvements and FIX as many problems as possible. Do not create new files. Use existing files only and keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
+  prompt+="Check @FEEDBACK.md for user feedback and incorporate feedback into updates. Apply code/report updates needed for dfm-python and nowcasting-report. After code changes, ensure tables and plots are regenerated. OPTIONAL: If LaTeX is available, check PDF compilation (cd nowcasting-report && ./compile.sh) to verify report compiles correctly. All build artifacts are saved to compiled/ directory. Focus on incremental improvements and FIX as many problems as possible. Do not create new files. Use existing files only and keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
   
   if cursor_stream "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
+    
+    # Generate tables and plots after agent work
+    log_info "Regenerating tables and plots after code changes..."
+    generate_tables_and_plots || log_warn "Table/plot generation had errors, but continuing"
+    
     log_info "Step 6 completed successfully"
     mark_step_completed 6
     return 0
@@ -812,16 +898,21 @@ step7_continue_plan() {
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Keep working on the plan with any unfinished tasks. Continue remaining items from ISSUES.md following the priority order. CRITICAL PRIORITIES: 1) FIX model performance anomalies in code if found (near-perfect, too good, or too poor results). 2) FIX dfm-python package issues in code if found. 3) GENERATE missing tables/plots and WRITE missing report sections as specified in WORKFLOW.md. 4) If DFM/DDFM package is not installed or experiments are failing, note in ISSUES.md - Step 1 will handle experiment execution automatically. "
+  local prompt="Keep working on the plan with any unfinished tasks. Continue remaining items from ISSUES.md following the priority order. CRITICAL PRIORITIES: 1) FIX model performance anomalies in code if found (near-perfect, too good, or too poor results). 2) FIX dfm-python package issues in code if found. 3) GENERATE missing tables/plots using nowcasting-report/code/table.py and nowcasting-report/code/plot.py, and WRITE missing report sections as specified in WORKFLOW.md. 4) If DFM/DDFM package is not installed or experiments are failing, note in ISSUES.md - Step 1 will handle experiment execution automatically. "
   prompt+="CRITICAL: Agent ONLY modifies code - Agent MUST NOT execute any scripts (run_train.sh, run_forecast.sh, run_backtest.sh, agent_execute.sh). If experiments are missing, note them in ISSUES.md - Step 1 will automatically run them in the next iteration. "
-  prompt+="CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED something in code or files. If you find problems, FIX them. If tables/plots are missing, GENERATE them. If report is incomplete, WRITE it. Don't just document that 'everything is fine' - actually MAKE CHANGES. "
+  prompt+="CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED something in code or files. If you find problems, FIX them. If tables/plots are missing, GENERATE them by calling the table/plot generation functions or updating the generation scripts. If report is incomplete, WRITE it. Don't just document that 'everything is fine' - actually MAKE CHANGES. "
   prompt+="$(build_priority_order_prompt) "
-  prompt+="Check @FEEDBACK.md for any new user feedback and incorporate into ongoing work. OPTIONAL: If LaTeX is available and report sections are updated, check PDF compilation to verify changes compile correctly. Focus on incremental improvements and FIX as many problems as possible. Do not create new files. Keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
+  prompt+="Check @FEEDBACK.md for any new user feedback and incorporate into ongoing work. After code changes, ensure tables and plots are regenerated. OPTIONAL: If LaTeX is available and report sections are updated, check PDF compilation to verify changes compile correctly. Focus on incremental improvements and FIX as many problems as possible. Do not create new files. Keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
   
   if cursor_stream "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
+    
+    # Generate tables and plots after agent work
+    log_info "Regenerating tables and plots after code changes..."
+    generate_tables_and_plots || log_warn "Table/plot generation had errors, but continuing"
+    
     log_info "Step 7 completed successfully"
     mark_step_completed 7
     return 0

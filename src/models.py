@@ -814,10 +814,16 @@ def _convert_horizon(fh: Union[int, List, np.ndarray]) -> int:
         fh: Forecast horizon (int, list, or array)
         
     Returns:
-        Integer horizon value
+        Integer horizon value. For lists/arrays, returns the maximum value (for fh=[1,2,3] returns 3)
+        or the single value if list has one element (for fh=[5] returns 5).
     """
     if isinstance(fh, (list, np.ndarray)):
-        return len(fh) if len(fh) > 0 else int(fh[0]) if len(fh) == 1 else 1
+        if len(fh) == 0:
+            return 1
+        # For list/array, take the maximum value (e.g., fh=[1,2,3] -> 3, fh=[5] -> 5)
+        # This handles both single values and ranges
+        fh_array = np.asarray(fh)
+        return int(np.max(fh_array))
     return int(fh)
 
 
