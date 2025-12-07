@@ -1231,9 +1231,9 @@ def generate_latex_table_forecasting_results(
     metrics = ['sMAE', 'sMSE']
     
     # Generate LaTeX
-    latex = r"""\begin{table}[h]
-\centering
-\caption[Forecasting Results by Model-Horizon and Target-Metric]{Forecasting Results by Model-Horizon and Target-Metric\footnote{Experiments evaluate all horizons from 1 to 22 months (2024--01 to 2025--10), but table shows only selected horizons (1, 11, 22 months) for readability. Full results for all horizons are available in aggregated\_results.csv.}}
+    latex = """\\begin{table}[h]
+\\centering
+\\caption[Forecasting Results by Model-Horizon and Target-Metric]{Forecasting Results by Model-Horizon and Target-Metric\\footnote{Experiments evaluate all horizons from 1 to 22 months (2024--01 to 2025--10), but table shows only selected horizons (1, 11, 22 months) for readability. Full results for all horizons are available in aggregated\\_results.csv.}}
 \\label{tab:forecasting_results}
 \\begin{tabular}{lcccccc}
 \\toprule
@@ -1352,9 +1352,9 @@ def generate_latex_table_nowcasting_backtest(
     backtest_dir = outputs_dir / "backtest"
     
     # Generate LaTeX
-    latex = r"""\begin{table}[h]
-\centering
-\caption[Nowcasting Backtest Results by Model-Timepoint and Target-Metric]{Nowcasting Backtest Results by Model-Timepoint and Target-Metric\footnote{Train with data from 1985 to 2019, nowcast from Jan 2024 to Oct 2025 (22 months). For each target month, perform nowcasting at multiple time points (4 weeks before, 1 week before month end). By masking unavailable data based on release dates, generate 1 horizon forecast at each time point. Calculate sMSE, sMAE for each month and time point, then average across 22 months.}}
+    latex = """\\begin{table}[h]
+\\centering
+\\caption[Nowcasting Backtest Results by Model-Timepoint and Target-Metric]{Nowcasting Backtest Results by Model-Timepoint and Target-Metric\\footnote{Train with data from 1985 to 2019, nowcast from Jan 2024 to Oct 2025 (22 months). For each target month, perform nowcasting at multiple time points (4 weeks before, 1 week before month end). By masking unavailable data based on release dates, generate 1 horizon forecast at each time point. Calculate sMSE, sMAE for each month and time point, then average across 22 months.}}
 \\label{tab:nowcasting_backtest}
 \\begin{tabular}{lcccccc}
 \\toprule
@@ -1545,9 +1545,9 @@ def generate_latex_table_dataset_params(
     avg_series_count = int(sum(series_counts.values()) / len(series_counts)) if series_counts else 0
     
     # Generate LaTeX
-    latex = r"""\begin{table}[h]
-\centering
-\caption[Dataset Details and Model Parameters]{Dataset Details and Model Parameters\footnote{Dataset: 3 target variables (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) with average of """ + str(avg_series_count) + r""" series per target. Training period: 1985-2019, Nowcasting period: 2024-2025.}}
+    latex = """\\begin{table}[h]
+\\centering
+\\caption[Dataset Details and Model Parameters]{Dataset Details and Model Parameters\\footnote{Dataset: 3 target variables (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) with average of """ + str(avg_series_count) + """ series per target. Training period: 1985-2019, Nowcasting period: 2024-2025.}}
 \\label{tab:dataset_params}
 \\begin{tabular}{ll}
 \\toprule
