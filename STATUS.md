@@ -11,7 +11,7 @@
 - ✅ **Data Leakage Verification**: Code-level verification confirms no data leakage (train/test split correct)
 - ✅ **Results Consistency Check**: Verified all comparison_results.json match aggregated_results.csv (36 rows)
 - ✅ **Documentation Update**: Updated ISSUES.md with inspection findings
-- ⏳ **Pending Commit**: Changes to STATUS.md and ISSUES.md need to be committed and pushed to origin/main
+- ✅ **Commit & Push Complete**: INSPECTION_SUMMARY.md committed and pushed to origin/main (commit faca9b1)
 
 **All Critical Tasks Complete**:
 - ✅ **Experiments**: 36/36 combinations complete (30 valid + 6 NaN for DFM/DDFM h28 - data limitation)
@@ -37,7 +37,7 @@
 
 **Status for Next Iteration**:
 - ✅ **All Critical Tasks Complete**: Report ready for final submission
-- ⏳ **Commit & Push**: STATUS.md and ISSUES.md changes need to be committed and pushed to origin/main
+- ✅ **Commit & Push Complete**: INSPECTION_SUMMARY.md committed and pushed to origin/main
 - ⏳ **User Review**: User will review report (submodules pushed every 2 iterations) and provide feedback in FEEDBACK.md
 - ⏳ **Optional Enhancements**: See ISSUES.md for optional code quality improvements (not required for report completion)
 
