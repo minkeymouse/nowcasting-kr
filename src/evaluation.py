@@ -1202,14 +1202,11 @@ def generate_latex_table_forecasting_results(
 ) -> str:
     """Generate LaTeX table for forecasting results (Table 2).
     
-    Table structure: Rows = model-horizon combinations (12 rows: ARIMA-1, ARIMA-11, ARIMA-22, 
-    VAR-1, VAR-11, VAR-22, DFM-1, DFM-11, DFM-22, DDFM-1, DDFM-11, DDFM-22).
-    Columns = target-metric combinations (6 columns: KOIPALL.G_sMAE, KOIPALL.G_sMSE, 
-    KOEQUIPTE_sMAE, KOEQUIPTE_sMSE, KOWRCCNSE_sMAE, KOWRCCNSE_sMSE).
-    Total: 12 rows × 7 columns (including model-horizon column).
-    
-    Note: Experiments evaluate all horizons from 1 to 22 months (2024-01 to 2025-10),
-    but table shows only selected horizons (1, 11, 22 months) for readability.
+    Table structure: Rows = model-target combinations (12 rows: ARIMA-KOIPALL.G, ARIMA-KOEQUIPTE, 
+    ARIMA-KOWRCCNSE, VAR-KOIPALL.G, ..., DDFM-KOWRCCNSE).
+    Columns = metrics (2 columns: sMAE, sMSE).
+    Each cell contains the average metric value across all horizons (1-22 months).
+    Total: 12 rows × 3 columns (including model-target column).
     
     Parameters
     ----------
@@ -1223,148 +1220,279 @@ def generate_latex_table_forecasting_results(
     str
         LaTeX table code
     """
-    # Selected horizons for display in table (1, 2, 3, 4, 6, 12, 22 months)
-    display_horizons = [1, 2, 3, 4, 6, 12, 22]
-    # Check if horizons exist in data, filter to available ones
-    if not aggregated_df.empty:
-        available_horizons = sorted(set(aggregated_df['horizon'].unique()))
-        display_horizons = [h for h in display_horizons if h in available_horizons]
-        if len(display_horizons) == 0:
-            display_horizons = available_horizons[:7]  # Take first 7 available if none match
-    
     models = ['ARIMA', 'VAR', 'DFM', 'DDFM']
     targets = ['KOIPALL.G', 'KOEQUIPTE', 'KOWRCCNSE']
     metrics = ['sMAE', 'sMSE']
     
+    # Calculate averages across all horizons for each model-target combination
+    avg_data = {}  # (model, target) -> {metric: average_value}
+    EXTREME_THRESHOLD = 1e10
+    
+    if not aggregated_df.empty:
+        for model in models:
+            for target in targets:
+                # Get all horizons for this model-target combination
+                model_target_data = aggregated_df[
+                    (aggregated_df['model'] == model) & 
+                    (aggregated_df['target'] == target)
+                ]
+                
+                if len(model_target_data) == 0:
+                    continue
+                
+                avg_values = {}
+                for metric in metrics:
+                    values = []
+                    for _, row in model_target_data.iterrows():
+                        val = row[metric]
+                        if not pd.isna(val) and isinstance(val, (int, float)) and not np.isnan(val) and not np.isinf(val):
+                            if abs(val) < EXTREME_THRESHOLD:
+                                values.append(val)
+                    
+                    if values:
+                        avg_values[metric] = np.mean(values)
+                    else:
+                        avg_values[metric] = np.nan
+                
+                if avg_values:
+                    avg_data[(model, target)] = avg_values
+    
+    # Find minimum values for each metric (for bold formatting)
+    min_values = {}  # metric -> min_value
+    for metric in metrics:
+        values = []
+        for (model, target), metrics_dict in avg_data.items():
+            if metric in metrics_dict:
+                val = metrics_dict[metric]
+                if not pd.isna(val):
+                    values.append(val)
+        if values:
+            min_values[metric] = min(values)
+    
     # Generate LaTeX with merged headers
-    # Structure: Model (merged) | Horizon | Target1 (merged) | Target2 (merged) | Target3 (merged)
-    #            |              |         | sMAE | sMSE      | sMAE | sMSE      | sMAE | sMSE
-    num_horizons = len(display_horizons)
+    # Structure: Model (merged) | Target | sMAE | sMSE
     num_targets = len(targets)
-    num_metrics = len(metrics)
     
     latex = """\\begin{table}[h]
 \\centering
-\\caption[Forecasting Results by Model-Horizon and Target-Metric]{Forecasting Results by Model-Horizon and Target-Metric\\footnote{Experiments evaluate all horizons from 1 to 22 months (2024--01 to 2025--10), but table shows selected horizons (1, 2, 3, 4, 6, 12, 22 months) for readability. Full results for all horizons are available in aggregated\\_results.csv. Bold values indicate the best (lowest) metric for each target-metric combination.}}
+\\caption[Forecasting Results by Model-Target (Average across Horizons)]{Forecasting Results by Model-Target (Average across Horizons)\\footnote{Experiments evaluate all horizons from 1 to 22 months (2024--01 to 2025--10). This table shows the average metric values across all horizons for each model-target combination. Bold values indicate the best (lowest) metric for each metric type. Full results for all horizons are available in the appendix.}}
 \\label{tab:forecasting_results}
-\\begin{tabular}{l|l|cc|cc|cc}
+\\begin{tabular}{l|l|cc}
 \\toprule
-\\multirow{2}{*}{Model} & \\multirow{2}{*}{Horizon} & \\multicolumn{2}{c|}{KOIPALL.G} & \\multicolumn{2}{c|}{KOEQUIPTE} & \\multicolumn{2}{c}{KOWRCCNSE} \\\\
-\\cmidrule(lr){3-4}\\cmidrule(lr){5-6}\\cmidrule(lr){7-8}
- & & sMAE & sMSE & sMAE & sMSE & sMAE & sMSE \\\\
+\\multirow{2}{*}{Model} & Target & \\multicolumn{2}{c}{Metrics} \\\\
+\\cmidrule(lr){3-4}
+ & & sMAE & sMSE \\\\
 \\midrule
 """
     
     EXTREME_THRESHOLD = 1e10
-    PERSISTENCE_THRESHOLD_SMSE = 1e-6  # sMSE values smaller than this for VAR-1 indicate persistence
-    PERSISTENCE_THRESHOLD_SMAE = 1e-4  # sMAE values smaller than this for VAR-1 indicate persistence
     
-    def format_value(val, model=None, horizon=None, metric=None):
-        """Format value for LaTeX table.
-        
-        Also detects VAR-1 persistence values (extremely small values) that indicate
-        VAR is just predicting the last training value.
-        """
+    def format_value(val):
+        """Format value for LaTeX table."""
         if pd.isna(val) or (isinstance(val, (int, float)) and (np.isnan(val) or np.isinf(val))):
             return 'N/A'
         if isinstance(val, (int, float)):
             if abs(val) > EXTREME_THRESHOLD:
                 return 'Unstable'
-            # Detect VAR-1 persistence: extremely small values for VAR horizon 1
-            # indicate VAR is predicting persistence (last training value)
-            # If persistence detected in sMSE or sMAE, mark ALL metrics (including sRMSE) as N/A
-            if model == 'VAR' and horizon == 1:
-                # Check if this row has persistence (check sMSE or sMAE from the row)
-                # We need to check the actual row values, not just the current metric
-                # For now, mark individual metrics as N/A when they indicate persistence
-                if metric == 'sMSE' and abs(float(val)) < PERSISTENCE_THRESHOLD_SMSE:
-                    return 'N/A'  # Mark as N/A due to persistence prediction
-                if metric == 'sMAE' and abs(float(val)) < PERSISTENCE_THRESHOLD_SMAE:
-                    return 'N/A'  # Mark as N/A due to persistence prediction
-                # Also mark sRMSE if sMSE indicates persistence (sRMSE = sqrt(sMSE))
-                # This ensures consistency - if sMSE is extremely small, sRMSE should also be marked
-                if metric == 'sRMSE':
-                    # We can't check other metrics in format_value, but if sMSE was already NaN/N/A
-                    # in the dataframe, this will be handled. For now, we rely on CSV loading
-                    # to mark sRMSE as NaN when sMSE persistence is detected.
-                    pass
             return f"{val:.4f}"
         return str(val)
     
-    # Create lookup dictionary first
-    data_lookup = {}
-    if not aggregated_df.empty:
-        for _, row in aggregated_df.iterrows():
-            key = (row['model'], row['target'], row['horizon'])
-            data_lookup[key] = row
-    
-    # Find minimum values for each target-metric combination (for bold formatting)
-    min_values = {}  # (target, metric) -> min_value
-    if not aggregated_df.empty:
-        for target in targets:
-            for metric in metrics:
-                # Get all values for this target-metric across all models and horizons
-                values = []
-                for model in models:
-                    for horizon in display_horizons:
-                        key = (model, target, horizon)
-                        if key in data_lookup:
-                            val = data_lookup[key][metric]
-                            if not pd.isna(val) and isinstance(val, (int, float)) and not np.isnan(val) and not np.isinf(val):
-                                if abs(val) < EXTREME_THRESHOLD:
-                                    values.append(val)
-                if values:
-                    min_values[(target, metric)] = min(values)
-    
-    if aggregated_df.empty:
+    # Generate rows for model-target combinations
+    if len(avg_data) == 0:
         # Generate placeholder table
-        for model_idx, model in enumerate(models):
-            for horizon_idx, horizon in enumerate(display_horizons):
+        for model in models:
+            for target_idx, target in enumerate(targets):
                 values = []
-                for target in targets:
-                    for metric in metrics:
-                        values.append('N/A')
-                
-                # First row of each model: show model name, subsequent rows: empty
-                if horizon_idx == 0:
-                    latex += f"\\multirow{{{num_horizons}}}{{*}}{{{model}}} & {horizon} & {' & '.join(values)} \\\\\n"
-                else:
-                    latex += f" & {horizon} & {' & '.join(values)} \\\\\n"
-    else:
-        # Generate rows for model-horizon combinations (data_lookup already created above)
-        for model_idx, model in enumerate(models):
-            for horizon_idx, horizon in enumerate(display_horizons):
-                values = []
-                for target in targets:
-                    for metric in metrics:
-                        key = (model, target, horizon)
-                        if key in data_lookup:
-                            val = data_lookup[key][metric]
-                            formatted_val = format_value(val, model=model, horizon=horizon, metric=metric)
-                            
-                            # Check if this is the minimum value for this target-metric
-                            if formatted_val != 'N/A' and formatted_val != 'Unstable':
-                                try:
-                                    val_float = float(val)
-                                    if (target, metric) in min_values:
-                                        if abs(val_float - min_values[(target, metric)]) < 1e-6:  # Allow small floating point differences
-                                            formatted_val = f"\\textbf{{{formatted_val}}}"
-                                except (ValueError, TypeError):
-                                    pass
-                            
-                            values.append(formatted_val)
-                        else:
-                            values.append('N/A')
+                for metric in metrics:
+                    values.append('N/A')
                 
                 # First row of each model: show model name with multirow, subsequent rows: empty
-                if horizon_idx == 0:
-                    latex += f"\\multirow{{{num_horizons}}}{{*}}{{{model}}} & {horizon} & {' & '.join(values)} \\\\\n"
+                if target_idx == 0:
+                    latex += f"\\multirow{{{num_targets}}}{{*}}{{{model}}} & {target} & {' & '.join(values)} \\\\\n"
                 else:
-                    latex += f" & {horizon} & {' & '.join(values)} \\\\\n"
+                    latex += f" & {target} & {' & '.join(values)} \\\\\n"
+                # Add horizontal line after each model group
+                if target_idx == len(targets) - 1 and model != models[-1]:
+                    latex += "\\midrule\n"
+    else:
+        # Generate rows for model-target combinations
+        for model_idx, model in enumerate(models):
+            for target_idx, target in enumerate(targets):
+                values = []
+                for metric in metrics:
+                    key = (model, target)
+                    if key in avg_data and metric in avg_data[key]:
+                        val = avg_data[key][metric]
+                        formatted_val = format_value(val)
+                        
+                        # Check if this is the minimum value for this metric
+                        if formatted_val != 'N/A' and formatted_val != 'Unstable':
+                            try:
+                                val_float = float(val)
+                                if metric in min_values:
+                                    if abs(val_float - min_values[metric]) < 1e-6:  # Allow small floating point differences
+                                        formatted_val = f"\\textbf{{{formatted_val}}}"
+                            except (ValueError, TypeError):
+                                pass
+                        
+                        values.append(formatted_val)
+                    else:
+                        values.append('N/A')
+                
+                # First row of each model: show model name with multirow, subsequent rows: empty
+                if target_idx == 0:
+                    latex += f"\\multirow{{{num_targets}}}{{*}}{{{model}}} & {target} & {' & '.join(values)} \\\\\n"
+                else:
+                    latex += f" & {target} & {' & '.join(values)} \\\\\n"
+                # Add horizontal line after each model group (except last)
+                if target_idx == len(targets) - 1 and model_idx < len(models) - 1:
+                    latex += "\\midrule\n"
     
     latex += """\\bottomrule
 \\end{tabular}
 \\end{table}"""
+    
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(latex)
+    
+    return latex
+
+
+def generate_latex_table_appendix_forecasting(
+    aggregated_df: pd.DataFrame,
+    target: Optional[str] = None,
+    output_path: Optional[Path] = None
+) -> str:
+    """Generate LaTeX table for appendix forecasting results (all horizons).
+    
+    Table structure: Rows = horizons (22 rows: 1, 2, ..., 22 months).
+    Columns = model-metric combinations (8 columns: ARIMA_sMAE, ARIMA_sMSE, VAR_sMAE, VAR_sMSE, 
+    DFM_sMAE, DFM_sMSE, DDFM_sMAE, DDFM_sMSE).
+    Total: 22 rows × 9 columns (including horizon column).
+    
+    If target is None, generates a table with all targets combined (averaged across targets).
+    
+    Parameters
+    ----------
+    aggregated_df : pd.DataFrame
+        DataFrame from aggregate_overall_performance()
+    target : str, optional
+        Target series name (KOIPALL.G, KOEQUIPTE, KOWRCCNSE). If None, averages across all targets.
+    output_path : Path, optional
+        Path to save the LaTeX table file
+        
+    Returns
+    -------
+    str
+        LaTeX table code
+    """
+    models = ['ARIMA', 'VAR', 'DFM', 'DDFM']
+    metrics = ['sMAE', 'sMSE']
+    horizons = list(range(1, 23))  # 1 to 22 months
+    
+    EXTREME_THRESHOLD = 1e10
+    
+    def format_value(val):
+        """Format value for LaTeX table."""
+        if pd.isna(val) or (isinstance(val, (int, float)) and (np.isnan(val) or np.isinf(val))):
+            return 'N/A'
+        if isinstance(val, (int, float)):
+            if abs(val) > EXTREME_THRESHOLD:
+                return 'Unstable'
+            return f"{val:.4f}"
+        return str(val)
+    
+    # Filter data by target if specified
+    if target is not None:
+        filtered_df = aggregated_df[aggregated_df['target'] == target].copy()
+        caption_target = target
+    else:
+        # Average across all targets
+        filtered_df = aggregated_df.copy()
+        caption_target = "All Targets (Averaged)"
+    
+    # Create lookup dictionary: (horizon, model) -> {metric: value}
+    data_lookup = {}
+    if not filtered_df.empty:
+        if target is None:
+            # Average across targets for each horizon-model combination
+            for horizon in horizons:
+                for model in models:
+                    horizon_model_data = filtered_df[
+                        (filtered_df['horizon'] == horizon) & 
+                        (filtered_df['model'] == model)
+                    ]
+                    if len(horizon_model_data) > 0:
+                        avg_metrics = {}
+                        for metric in metrics:
+                            values = []
+                            for _, row in horizon_model_data.iterrows():
+                                val = row[metric]
+                                if not pd.isna(val) and isinstance(val, (int, float)) and not np.isnan(val) and not np.isinf(val):
+                                    if abs(val) < EXTREME_THRESHOLD:
+                                        values.append(val)
+                            if values:
+                                avg_metrics[metric] = np.mean(values)
+                            else:
+                                avg_metrics[metric] = np.nan
+                        if avg_metrics:
+                            data_lookup[(horizon, model)] = avg_metrics
+        else:
+            # Single target
+            for _, row in filtered_df.iterrows():
+                key = (row['horizon'], row['model'])
+                if key not in data_lookup:
+                    data_lookup[key] = {}
+                for metric in metrics:
+                    val = row[metric]
+                    if not pd.isna(val) and isinstance(val, (int, float)) and not np.isnan(val) and not np.isinf(val):
+                        if abs(val) < EXTREME_THRESHOLD:
+                            data_lookup[key][metric] = val
+                        else:
+                            data_lookup[key][metric] = np.nan
+    
+    # Generate LaTeX
+    table_label = f"tab:appendix_forecasting_{target.lower().replace('.', '_')}" if target else "tab:appendix_forecasting_all"
+    latex = f"""\\begin{{longtable}}{{l|cc|cc|cc|cc}}
+\\caption{{Forecasting Results by Horizon for {caption_target} (All Horizons)}}\\label{{{table_label}}} \\\\
+\\toprule
+Horizon & \\multicolumn{{2}}{{c}}{{ARIMA}} & \\multicolumn{{2}}{{c}}{{VAR}} & \\multicolumn{{2}}{{c}}{{DFM}} & \\multicolumn{{2}}{{c}}{{DDFM}} \\\\
+\\cmidrule(lr){{2-3}}\\cmidrule(lr){{4-5}}\\cmidrule(lr){{6-7}}\\cmidrule(lr){{8-9}}
+ & sMAE & sMSE & sMAE & sMSE & sMAE & sMSE & sMAE & sMSE \\\\
+\\midrule
+\\endfirsthead
+\\multicolumn{{9}}{{c}}{{{{Continued from previous page}}}} \\\\
+\\toprule
+Horizon & \\multicolumn{{2}}{{c}}{{ARIMA}} & \\multicolumn{{2}}{{c}}{{VAR}} & \\multicolumn{{2}}{{c}}{{DFM}} & \\multicolumn{{2}}{{c}}{{DDFM}} \\\\
+\\cmidrule(lr){{2-3}}\\cmidrule(lr){{4-5}}\\cmidrule(lr){{6-7}}\\cmidrule(lr){{8-9}}
+ & sMAE & sMSE & sMAE & sMSE & sMAE & sMSE & sMAE & sMSE \\\\
+\\midrule
+\\endhead
+\\midrule
+\\multicolumn{{9}}{{r}}{{{{Continued on next page}}}} \\\\
+\\endfoot
+\\bottomrule
+\\endlastfoot
+"""
+    
+    # Generate rows for each horizon
+    for horizon in horizons:
+        values = []
+        for model in models:
+            for metric in metrics:
+                key = (horizon, model)
+                if key in data_lookup and metric in data_lookup[key]:
+                    val = data_lookup[key][metric]
+                    formatted_val = format_value(val)
+                    values.append(formatted_val)
+                else:
+                    values.append('N/A')
+        
+        latex += f"{horizon} & {' & '.join(values)} \\\\\n"
+    
+    latex += """\\end{longtable}"""
     
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
