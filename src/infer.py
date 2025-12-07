@@ -1,12 +1,18 @@
-"""Inference/Nowcasting module - supports both CLI and programmatic API.
+"""Nowcasting module - supports both CLI and programmatic API.
 
-This module provides inference and nowcasting functionality that can be used:
-- As CLI: python src/infer.py nowcast --config-name experiment/investment_koequipte_report
-- As API: from src.infer import run_nowcasting_evaluation, run_backtest_evaluation
+This module provides NOWCASTING functionality only (not forecasting).
+Forecasting is handled separately via train.py compare (see run_forecast.sh).
+
+NOWCAST vs FORECAST:
+- NOWCAST: Estimate current period using incomplete data (publication lag considered)
+- FORECAST: Predict future periods using complete historical data
+
+This module can be used:
+- As CLI: python src/infer.py backtest --config-name experiment/investment_koequipte_report --model dfm
+- As API: from src.infer import run_backtest_evaluation
 
 Functions exported for programmatic use:
-- run_nowcasting_evaluation: Run nowcasting evaluation with masked data
-- run_backtest_evaluation: Run backtest evaluation for all models with multiple time points
+- run_backtest_evaluation: Run nowcasting backtest for all models with multiple time points
 """
 from pathlib import Path
 import sys
@@ -18,407 +24,29 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
 # Set up paths BEFORE importing from src
-# Get script directory (e.g., src/)
+# Minimal path setup to allow importing setup_cli_environment
 script_dir = Path(__file__).parent.resolve()
-# Get project root (parent of src/)
 project_root = script_dir.parent.resolve()
 
-# Add to sys.path if not already there (use insert(0) to prioritize)
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 if str(script_dir) not in sys.path:
     sys.path.insert(0, str(script_dir))
 
-# Change to project root to ensure relative imports work
-import os
-original_cwd = os.getcwd()
-try:
-    os.chdir(str(project_root))
-    
-    # Now we can import from src
-    from src.utils.cli import setup_cli_environment
-    setup_cli_environment()
-finally:
-    # Restore original working directory
-    os.chdir(original_cwd)
+# Now we can import from src
+from src.utils import setup_cli_environment
+setup_cli_environment()  # This sets up all paths properly
 
 # Now use absolute imports
-from src.utils.config_parser import get_project_root
-
-from src.utils.config_parser import (
+from src.utils import (
+    get_project_root,
     parse_experiment_config,
     extract_experiment_params,
     validate_experiment_config
 )
 
-def mask_recent_observations(
-    data: Union[pd.DataFrame, pd.Series, np.ndarray],
-    mask_days: int,
-    date_index: Optional[pd.DatetimeIndex] = None,
-    target_date: Optional[Union[datetime, str]] = None,
-    mask_columns: Optional[Union[list, str]] = None
-) -> Tuple[Union[pd.DataFrame, pd.Series, np.ndarray], np.ndarray]:
-    """Mask recent observations to simulate publication lag.
-    
-    This function masks the most recent `mask_days` days of data to simulate
-    a nowcasting scenario where recent data is not yet available due to
-    publication lags.
-    
-    Parameters
-    ----------
-    data : pd.DataFrame, pd.Series, or np.ndarray
-        Time series data (T × N) or (T,)
-    mask_days : int
-        Number of days to mask from the end (simulates publication lag)
-    date_index : pd.DatetimeIndex, optional
-        Date index for the data. If None and data is DataFrame/Series with
-        DatetimeIndex, uses data.index
-    target_date : datetime or str, optional
-        Target date to mask from. If None, uses the last date in data.
-        Data after (target_date - mask_days) will be masked.
-    mask_columns : list or str, optional
-        Columns to mask (for DataFrame). If None, masks all columns.
-        If string, masks only that column.
-        
-    Returns
-    -------
-    masked_data : pd.DataFrame, pd.Series, or np.ndarray
-        Data with recent observations masked (set to NaN)
-    mask : np.ndarray
-        Boolean mask indicating which observations were masked (True = masked)
-    """
-    # Get date index
-    if date_index is None:
-        if isinstance(data, (pd.DataFrame, pd.Series)):
-            if isinstance(data.index, pd.DatetimeIndex):
-                date_index = data.index
-            else:
-                # Integer index - create dummy dates
-                date_index = pd.date_range('2000-01-01', periods=len(data), freq='D')
-        else:
-            # Numpy array - create dummy dates
-            date_index = pd.date_range('2000-01-01', periods=len(data), freq='D')
-    
-    # Determine target date
-    if target_date is None:
-        target_date = date_index[-1]
-    elif isinstance(target_date, str):
-        target_date = pd.to_datetime(target_date)
-    
-    # Calculate cutoff date
-    cutoff_date = target_date - timedelta(days=mask_days)
-    
-    # Create mask: True for dates after cutoff (to be masked)
-    mask = date_index > cutoff_date
-    
-    # Apply mask to data
-    if isinstance(data, pd.DataFrame):
-        masked_data = data.copy()
-        if mask_columns is None:
-            # Mask all columns
-            masked_data.loc[mask, :] = np.nan
-        elif isinstance(mask_columns, str):
-            # Mask single column
-            masked_data.loc[mask, mask_columns] = np.nan
-        else:
-            # Mask specified columns
-            masked_data.loc[mask, mask_columns] = np.nan
-    elif isinstance(data, pd.Series):
-        masked_data = data.copy()
-        masked_data.loc[mask] = np.nan
-    else:
-        # Numpy array
-        masked_data = data.copy()
-        if data.ndim == 1:
-            masked_data[mask] = np.nan
-        else:
-            masked_data[mask, :] = np.nan
-    
-    return masked_data, mask
-
-
-def create_nowcasting_splits(
-    data: Union[pd.DataFrame, pd.Series],
-    target_dates: list,
-    mask_days: int,
-    train_size: Optional[int] = None,
-    test_size: int = 1
-) -> list:
-    """Create train/test splits for nowcasting backtesting.
-    
-    For each target date, creates a split where:
-    - Training data: All data available up to (target_date - mask_days)
-    - Test data: Target date (to be nowcasted)
-    
-    Parameters
-    ----------
-    data : pd.DataFrame or pd.Series
-        Time series data with DatetimeIndex
-    target_dates : list
-        List of target dates (datetime or str) to nowcast
-    mask_days : int
-        Publication lag in days (data after target_date - mask_days is masked)
-    train_size : int, optional
-        Maximum number of training samples. If None, uses all available data.
-    test_size : int, default=1
-        Number of test samples (typically 1 for nowcasting)
-        
-    Returns
-    -------
-    list
-        List of tuples (train_idx, test_idx) for each target date
-    """
-    if not isinstance(data.index, pd.DatetimeIndex):
-        raise ValueError("data must have DatetimeIndex")
-    
-    splits = []
-    
-    for target_date in target_dates:
-        if isinstance(target_date, str):
-            target_date = pd.to_datetime(target_date)
-        
-        # Calculate cutoff date
-        cutoff_date = target_date - timedelta(days=mask_days)
-        
-        # Find indices
-        train_mask = data.index <= cutoff_date
-        test_mask = data.index == target_date
-        
-        train_idx = np.where(train_mask)[0]
-        test_idx = np.where(test_mask)[0]
-        
-        # Limit training size if specified
-        if train_size is not None and len(train_idx) > train_size:
-            train_idx = train_idx[-train_size:]
-        
-        if len(train_idx) > 0 and len(test_idx) > 0:
-            splits.append((train_idx, test_idx))
-    
-    return splits
-
-
-def simulate_nowcasting_evaluation(
-    forecaster,
-    data: Union[pd.DataFrame, pd.Series],
-    target_dates: list,
-    mask_days: int,
-    horizons: Union[list, np.ndarray] = [1],
-    target_series: Optional[Union[str, int]] = None
-) -> Dict[str, Any]:
-    """Simulate nowcasting evaluation with publication lag masking.
-    
-    This function simulates a nowcasting scenario by:
-    1. Masking recent observations (publication lag)
-    2. Training on available data
-    3. Evaluating on target dates
-    4. Comparing with full-data forecasts
-    
-    Parameters
-    ----------
-    forecaster : sktime BaseForecaster or callable
-        Forecaster to evaluate. If callable, should accept (y_train, fh) and return predictions.
-    data : pd.DataFrame or pd.Series
-        Full time series data with DatetimeIndex
-    target_dates : list
-        List of target dates to nowcast
-    mask_days : int
-        Publication lag in days
-    horizons : list or np.ndarray, default=[1]
-        Forecast horizons to evaluate
-    target_series : str or int, optional
-        Target series to evaluate (for multivariate data)
-        
-    Returns
-    -------
-    dict
-        Dictionary with evaluation results:
-        - 'nowcast_metrics': Metrics for nowcasting (with masked data)
-        - 'full_metrics': Metrics for full-data forecasting (baseline)
-        - 'improvement': Improvement of full-data over nowcasting
-        - 'target_dates': List of evaluated target dates
-    """
-    if not isinstance(data.index, pd.DatetimeIndex):
-        raise ValueError("data must have DatetimeIndex")
-    
-    # Create splits
-    splits = create_nowcasting_splits(data, target_dates, mask_days)
-    
-    nowcast_results = []
-    full_results = []
-    
-    for train_idx, test_idx in splits:
-        if len(test_idx) == 0:
-            continue
-        
-        # Get training and test data
-        y_train = data.iloc[train_idx]
-        y_test = data.iloc[test_idx]
-        target_date = data.index[test_idx[0]]
-        
-        # Nowcasting: Use masked training data
-        y_train_masked, _ = mask_recent_observations(
-            y_train, mask_days=mask_days, target_date=target_date
-        )
-        
-        # Remove rows that are all NaN
-        y_train_masked = y_train_masked.dropna(how='all')
-        
-        if len(y_train_masked) == 0:
-            continue
-        
-        # Fit and predict with masked data (nowcasting)
-        try:
-            if hasattr(forecaster, 'fit') and hasattr(forecaster, 'predict'):
-                # sktime forecaster
-                forecaster.fit(y_train_masked)
-                fh = np.asarray(horizons)
-                y_pred_nowcast = forecaster.predict(fh=fh)
-            else:
-                # Callable
-                y_pred_nowcast = forecaster(y_train_masked, fh=horizons)
-            
-            # Calculate nowcasting metrics
-            from src.eval.evaluation import calculate_metrics_per_horizon
-            nowcast_metrics = calculate_metrics_per_horizon(
-                y_test, y_pred_nowcast, horizons, y_train=y_train_masked,
-                target_series=target_series
-            )
-            nowcast_results.append({
-                'target_date': target_date,
-                'metrics': nowcast_metrics
-            })
-        except Exception as e:
-            print(f"Error in nowcasting evaluation for {target_date}: {e}")
-            continue
-        
-        # Full data: Use all training data (baseline)
-        try:
-            if hasattr(forecaster, 'fit') and hasattr(forecaster, 'predict'):
-                forecaster.fit(y_train)
-                fh = np.asarray(horizons)
-                y_pred_full = forecaster.predict(fh=fh)
-            else:
-                y_pred_full = forecaster(y_train, fh=horizons)
-            
-            full_metrics = calculate_metrics_per_horizon(
-                y_test, y_pred_full, horizons, y_train=y_train,
-                target_series=target_series
-            )
-            full_results.append({
-                'target_date': target_date,
-                'metrics': full_metrics
-            })
-        except Exception as e:
-            print(f"Error in full-data evaluation for {target_date}: {e}")
-            continue
-    
-    return {
-        'nowcast_metrics': nowcast_results,
-        'full_metrics': full_results,
-        'target_dates': target_dates
-    }
-
-
-def run_nowcasting_evaluation(
-    config_name: str,
-    config_dir: Optional[str] = None,
-    mask_days: int = 30,
-    overrides: Optional[List[str]] = None
-) -> Dict[str, Any]:
-    """Run nowcasting evaluation with masked data (programmatic API).
-    
-    Parameters
-    ----------
-    config_name : str
-        Experiment config name (e.g., 'experiment/investment_koequipte_report')
-    config_dir : str, optional
-        Config directory path. If None, uses default config/ directory.
-    mask_days : int, default=30
-        Number of days to mask for nowcasting simulation
-    overrides : list of str, optional
-        Hydra config overrides
-        
-    Returns
-    -------
-    dict
-        Nowcasting evaluation results
-    """
-    if config_dir is None:
-        config_dir = str(get_project_root() / "config")
-    
-    cfg = parse_experiment_config(config_name, config_dir, overrides)
-    validate_experiment_config(cfg, require_target=True, require_models=True)
-    
-    params = extract_experiment_params(cfg)
-    target_series = params['target_series']
-    models = params['models']
-    
-    print("=" * 70)
-    print(f"Running nowcasting evaluation for {target_series}")
-    print(f"Models: {', '.join(models)}")
-    print(f"Mask days: {mask_days}")
-    print("=" * 70)
-    
-    # Load data
-    data_path = params.get('data_path') or str(get_project_root() / "data" / "sample_data.csv")
-    data = pd.read_csv(data_path, index_col=0, parse_dates=True)
-    
-    # Generate target dates (last 12 months)
-    end_date = data.index[-1]
-    target_dates = []
-    current = end_date.replace(day=1)
-    for _ in range(12):
-        if current.month == 12:
-            last_day = current.replace(day=31)
-        else:
-            next_month = current.replace(month=current.month + 1, day=1)
-            last_day = next_month - timedelta(days=1)
-        target_dates.append(last_day)
-        current -= relativedelta(months=1)
-    target_dates.reverse()
-    
-    results = {}
-    for model_name in models:
-        print(f"\nEvaluating {model_name.upper()}...")
-        
-        # Load model
-        from pathlib import Path
-        import pickle
-        
-        model_dir = None
-        for comparison_dir in Path("outputs/comparisons").glob(f"{target_series}_*"):
-            model_path = comparison_dir / model_name.lower() / "model.pkl"
-            if model_path.exists():
-                model_dir = comparison_dir / model_name.lower()
-                break
-        
-        if model_dir is None:
-            print(f"  ✗ Model not found, skipping")
-            continue
-        
-        with open(model_dir / "model.pkl", 'rb') as f:
-            model_data = pickle.load(f)
-        
-        forecaster = model_data.get('forecaster')
-        if forecaster is None:
-            print(f"  ✗ Forecaster not found, skipping")
-            continue
-        
-        # Run evaluation
-        eval_result = simulate_nowcasting_evaluation(
-            forecaster=forecaster,
-            data=data,
-            target_dates=target_dates,
-            mask_days=mask_days,
-            horizons=[1],
-            target_series=target_series
-        )
-        
-        results[model_name] = eval_result
-        print(f"  ✓ Completed")
-    
-    return results
-
+# Removed unused functions: mask_recent_observations, create_nowcasting_splits, simulate_nowcasting_evaluation, run_nowcasting_evaluation
+# These were only used by the 'nowcast' CLI command which is not used in the actual pipeline (run_backtest.sh uses 'backtest' command)
 
 def run_backtest_evaluation(
     config_name: str,
@@ -475,7 +103,7 @@ def run_backtest_evaluation(
         weeks_before = [4, 1]
     
     # Backtest supports all models, but DFM/DDFM use nowcast manager
-    # ARIMA/VAR use simulate_nowcasting_evaluation (with release-based masking)
+    # ARIMA/VAR use direct prediction with release-based masking
     supports_nowcast_manager = model.lower() in ['dfm', 'ddfm']
     
     cfg = parse_experiment_config(config_name, config_dir, overrides)
@@ -493,7 +121,7 @@ def run_backtest_evaluation(
     
     # Load trained model
     from pathlib import Path
-    from src.model.dfm_models import DFM, DDFM
+    from src.models import DFM, DDFM
     import pickle
     
     # Find trained model - first check checkpoint/, then outputs/comparisons/
@@ -564,10 +192,10 @@ def run_backtest_evaluation(
         # Data module may not be preserved after pickling, so recreate if needed
         if not hasattr(dfm_model, '_data_module') or dfm_model._data_module is None:
             # Recreate data module from config and data file
-            from src.utils.config_parser import get_project_root
-            from src.model.sktime_forecaster import create_data_module_from_dataframe
+            from src.utils import get_project_root
+            from src.models import create_data_module_from_dataframe
             from dfm_python.lightning import DFMDataModule
-            from src.preprocess.utils import create_transformer_from_config
+            from src.preprocessing import create_transformer_from_config
             
             # Load training data
             data_path_file = get_project_root() / "data" / "data.csv"
@@ -638,7 +266,7 @@ def run_backtest_evaluation(
     
     # Get training data std for standardization
     # Load full data once (will be reused for actual value lookup in backtests)
-    from src.utils.config_parser import get_project_root
+    from src.utils import get_project_root
     data_path_file = get_project_root() / "data" / "data.csv"
     if not data_path_file.exists():
         data_path_file = get_project_root() / "data" / "sample_data.csv"
@@ -666,6 +294,7 @@ def run_backtest_evaluation(
             # Skip if view_date is at or before training period end
             # For nowcasting, we need view_date > train_end_date to have new data beyond training
             if view_date <= train_end_date:
+                print(f"    ⚠ Skipping: view_date ({view_date.strftime('%Y-%m-%d')}) <= train_end_date ({train_end_date.strftime('%Y-%m-%d')})")
                 continue
             
             print(f"\n  Target month: {target_month_end.strftime('%Y-%m')}")
@@ -680,9 +309,9 @@ def run_backtest_evaluation(
                     # needs data up to view_date (2024) to have Time_view that includes 2024 dates
                     if hasattr(dfm_model, '_data_module') and dfm_model._data_module is not None:
                         # Update data_module with full data up to view_date
-                        from src.model.sktime_forecaster import create_data_module_from_dataframe
+                        from src.models import create_data_module_from_dataframe
                         from dfm_python.lightning import DFMDataModule
-                        from src.preprocess.utils import create_transformer_from_config
+                        from src.preprocessing import create_transformer_from_config
                         
                         # Get data up to view_date (not just training period)
                         data_up_to_view = full_data[full_data.index <= pd.Timestamp(view_date)]
@@ -737,6 +366,8 @@ def run_backtest_evaluation(
                         if np.isnan(forecast_value) or not np.isfinite(forecast_value):
                             print(f"    ⚠ Skipping: Nowcast value is NaN or invalid: {forecast_value}")
                             continue
+                        else:
+                            print(f"    ✓ DFM/DDFM nowcast value: {forecast_value:.4f}")
                     except Exception as e:
                         print(f"    ✗ Error in nowcast manager: {e}")
                         import traceback
@@ -752,9 +383,20 @@ def run_backtest_evaluation(
                         if len(available_dates) > 0:
                             closest_date = available_dates.max()
                             if target_series in full_data.columns:
-                                actual_value = float(full_data.loc[closest_date, target_series])
+                                raw_value = full_data.loc[closest_date, target_series]
+                                # Check if value is NaN in data
+                                if pd.isna(raw_value):
+                                    print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in data")
+                                    actual_value = np.nan
+                                else:
+                                    actual_value = float(raw_value)
                             else:
-                                actual_value = float(full_data.loc[closest_date].iloc[0])
+                                raw_value = full_data.loc[closest_date].iloc[0]
+                                if pd.isna(raw_value):
+                                    print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in data")
+                                    actual_value = np.nan
+                                else:
+                                    actual_value = float(raw_value)
                     else:
                         # target_month_end is after data range
                         actual_value = np.nan
@@ -767,16 +409,22 @@ def run_backtest_evaluation(
                     
                     # Skip if no training data
                     if len(train_data_filtered) == 0:
-                        print(f"    ⚠ Skipping: No training data available up to view_date")
+                        print(f"    ⚠ Skipping: No training data available up to view_date {view_date}")
+                        print(f"      Data range: {full_data.index.min()} to {full_data.index.max()}")
                         continue
+                    else:
+                        print(f"    ✓ Training data available: {len(train_data_filtered)} rows (from {train_data_filtered.index.min()} to {train_data_filtered.index.max()})")
                     
-                    # Calculate forecast horizon: days from view_date to target_month_end
+                    # Calculate nowcast horizon: days from view_date to target_month_end
+                    # For nowcasting, we predict the current period (target_month_end) using data available at view_date
                     horizon_days = (target_month_end - view_date).days
                     if horizon_days <= 0:
-                        print(f"    ⚠ Skipping: view_date ({view_date}) is not before target_month_end ({target_month_end})")
+                        print(f"    ⚠ Skipping: view_date ({view_date}) is not before target_month_end ({target_month_end}), horizon={horizon_days} days")
                         continue
+                    else:
+                        print(f"    ✓ Horizon: {horizon_days} days (from {view_date} to {target_month_end})")
                     
-                    # Fit forecaster on data up to view_date
+                    # Fit forecaster on data up to view_date (nowcasting: incomplete data scenario)
                     try:
                         # Clone forecaster to avoid modifying the original
                         from sklearn.base import clone
@@ -840,7 +488,10 @@ def run_backtest_evaluation(
                         # Skip if insufficient data after cleaning
                         if len(fit_data) < 10:  # Minimum data points needed for ARIMA/VAR
                             print(f"    ⚠ Skipping: Insufficient data after cleaning ({len(fit_data)} rows, need at least 10)")
+                            print(f"      Original train_data_filtered: {len(train_data_filtered)} rows")
                             continue
+                        else:
+                            print(f"    ✓ Data after cleaning: {len(fit_data)} rows")
                         
                         # Check if target series has any non-null values
                         if is_multivariate:
@@ -851,35 +502,61 @@ def run_backtest_evaluation(
                         else:
                             target_col = fit_data.iloc[:, 0]
                         
+                        non_null_count = target_col.notna().sum()
                         if target_col.isna().all():
-                            print(f"    ⚠ Skipping: Target series has no non-null values")
+                            print(f"    ⚠ Skipping: Target series has no non-null values (0/{len(target_col)} non-null)")
                             continue
+                        else:
+                            print(f"    ✓ Target series has {non_null_count}/{len(target_col)} non-null values")
                         
-                        # Check if there's recent data (within last 90 days of view_date for monthly data)
-                        # For monthly series, data might only be available at month end, so use 90 days (3 months)
+                        # Check if there's recent data (within last 180 days of view_date for weekly data with monthly targets)
+                        # For weekly data with monthly targets, use 180 days (6 months) to account for sparse weekly observations
                         # This ensures we have enough recent information for nowcasting
-                        recent_cutoff = pd.Timestamp(view_date) - pd.Timedelta(days=90)
-                        recent_data = fit_data[fit_data.index >= recent_cutoff]
+                        recent_cutoff = pd.Timestamp(view_date) - pd.Timedelta(days=180)
+                        # Use the original train_data_filtered for recent data check, not fit_data
+                        # fit_data may have been forward-filled and have sparse index
+                        recent_data = train_data_filtered[train_data_filtered.index >= recent_cutoff]
                         if is_multivariate:
                             if target_series in recent_data.columns:
                                 recent_target = recent_data[target_series]
                             else:
                                 recent_target = recent_data.iloc[:, 0]
                         else:
-                            recent_target = recent_data.iloc[:, 0]
+                            if target_series in recent_data.columns:
+                                recent_target = recent_data[target_series]
+                            else:
+                                recent_target = recent_data.iloc[:, 0]
                         
-                        if recent_target.notna().sum() == 0:
-                            print(f"    ⚠ Skipping: No recent data (last 90 days) available for prediction")
+                        recent_count = recent_target.notna().sum()
+                        if recent_count == 0:
+                            print(f"    ⚠ Skipping: No recent data (last 180 days) available for prediction (checked {len(recent_data)} rows)")
                             continue
+                        else:
+                            print(f"    ✓ Found {recent_count} recent data points (last 180 days)")
                         
-                        # Check if last non-null value is too far from view_date (more than 120 days for monthly data)
-                        # For monthly series, allow up to 120 days (4 months) since last data point
-                        last_valid_idx = target_col.last_valid_index()
+                        # Check if last non-null value is too far from view_date (more than 180 days for weekly data with monthly targets)
+                        # For weekly data with monthly targets, allow up to 180 days (6 months) since last data point
+                        # Use original train_data_filtered to get last valid index, not fit_data (which may have been forward-filled)
+                        if is_multivariate:
+                            if target_series in train_data_filtered.columns:
+                                original_target_col = train_data_filtered[target_series]
+                            else:
+                                original_target_col = train_data_filtered.iloc[:, 0]
+                        else:
+                            if target_series in train_data_filtered.columns:
+                                original_target_col = train_data_filtered[target_series]
+                            else:
+                                original_target_col = train_data_filtered.iloc[:, 0]
+                        last_valid_idx = original_target_col.last_valid_index()
                         if last_valid_idx is not None:
                             days_since_last = (pd.Timestamp(view_date) - pd.Timestamp(last_valid_idx)).days
-                            if days_since_last > 120:
-                                print(f"    ⚠ Skipping: Last valid data point is {days_since_last} days before view_date (too old, >120 days)")
+                            if days_since_last > 180:
+                                print(f"    ⚠ Skipping: Last valid data point is {days_since_last} days before view_date (too old, >180 days)")
                                 continue
+                            else:
+                                print(f"    ✓ Last valid data point is {days_since_last} days before view_date (acceptable)")
+                        else:
+                            print(f"    ⚠ Warning: No valid data point found in train_data_filtered")
                         
                         # Fit on training data
                         try:
@@ -890,10 +567,19 @@ def run_backtest_evaluation(
                             traceback.print_exc()
                             continue
                         
-                        # Predict for target_month_end (horizon = horizon_days)
+                        # Nowcast for target_month_end (horizon = horizon_days)
+                        # This is nowcasting: predicting current period using incomplete data
+                        # CRITICAL FIX: Convert horizon_days to periods based on data frequency
+                        # Data is weekly, so convert days to weeks (round to nearest integer)
+                        # For weekly data: 1 week = 7 days, so horizon_periods = horizon_days / 7
+                        # For monthly targets with weekly data, we typically want 1 period ahead (1 week)
+                        # But since target_month_end might be several weeks away, we calculate the number of weeks
+                        horizon_periods = max(1, round(horizon_days / 7.0))  # Convert days to weeks, minimum 1 period
                         try:
-                            fh = np.asarray([horizon_days])
+                            fh = np.asarray([horizon_periods])
+                            print(f"    → Predicting with horizon={horizon_periods} periods ({horizon_days} days = {horizon_periods} weeks, from {view_date} to {target_month_end})")
                             y_pred = forecaster_clone.predict(fh=fh)
+                            print(f"    → Prediction result type: {type(y_pred)}, shape: {getattr(y_pred, 'shape', 'N/A')}")
                         except Exception as e:
                             print(f"    ✗ Error in prediction: {e}")
                             import traceback
@@ -902,47 +588,84 @@ def run_backtest_evaluation(
                             forecast_value = np.nan
                             y_pred = None
                         
-                        # Extract forecast value
+                        # Extract nowcast value
                         if y_pred is None:
                             forecast_value = np.nan
+                            print(f"    ⚠ Prediction returned None")
                         elif isinstance(y_pred, pd.DataFrame):
                             if len(y_pred) == 0:
                                 forecast_value = np.nan
+                                print(f"    ⚠ Prediction DataFrame is empty")
                             elif target_series in y_pred.columns:
-                                forecast_value = float(y_pred[target_series].iloc[0])
+                                raw_val = y_pred[target_series].iloc[0]
+                                if pd.isna(raw_val):
+                                    forecast_value = np.nan
+                                    print(f"    ⚠ Prediction value for {target_series} is NaN in DataFrame")
+                                else:
+                                    forecast_value = float(raw_val)
                             elif len(y_pred.columns) > 0:
                                 # Use first column if target_series not found
                                 # Handle both string and integer column indices
                                 try:
-                                    forecast_value = float(y_pred.iloc[0, 0])
+                                    raw_val = y_pred.iloc[0, 0]
+                                    if pd.isna(raw_val):
+                                        forecast_value = np.nan
+                                        print(f"    ⚠ Prediction value at iloc[0,0] is NaN")
+                                    else:
+                                        forecast_value = float(raw_val)
                                 except (KeyError, IndexError, TypeError) as e:
                                     # If iloc fails, try accessing by column name/index
                                     first_col = y_pred.columns[0]
                                     if isinstance(first_col, (int, np.integer)):
-                                        forecast_value = float(y_pred.iloc[0, first_col])
+                                        raw_val = y_pred.iloc[0, first_col]
                                     else:
-                                        forecast_value = float(y_pred[first_col].iloc[0])
+                                        raw_val = y_pred[first_col].iloc[0]
+                                    if pd.isna(raw_val):
+                                        forecast_value = np.nan
+                                        print(f"    ⚠ Prediction value from column {first_col} is NaN")
+                                    else:
+                                        forecast_value = float(raw_val)
                             else:
                                 forecast_value = np.nan
+                                print(f"    ⚠ Prediction DataFrame has no columns")
                         elif isinstance(y_pred, pd.Series):
                             if len(y_pred) > 0:
-                                forecast_value = float(y_pred.iloc[0])
+                                raw_val = y_pred.iloc[0]
+                                if pd.isna(raw_val):
+                                    forecast_value = np.nan
+                                    print(f"    ⚠ Prediction value in Series is NaN")
+                                else:
+                                    forecast_value = float(raw_val)
                             else:
                                 forecast_value = np.nan
+                                print(f"    ⚠ Prediction Series is empty")
                         elif hasattr(y_pred, '__len__') and len(y_pred) > 0:
                             try:
-                                forecast_value = float(y_pred[0] if hasattr(y_pred, '__getitem__') else y_pred)
-                            except (TypeError, IndexError, KeyError):
+                                raw_val = y_pred[0] if hasattr(y_pred, '__getitem__') else y_pred
+                                if pd.isna(raw_val) if hasattr(pd, 'isna') else (raw_val is None or (isinstance(raw_val, float) and np.isnan(raw_val))):
+                                    forecast_value = np.nan
+                                    print(f"    ⚠ Prediction value from array-like is NaN")
+                                else:
+                                    forecast_value = float(raw_val)
+                            except (TypeError, IndexError, KeyError) as e:
                                 forecast_value = np.nan
+                                print(f"    ⚠ Error extracting prediction from array-like: {e}")
                         else:
                             try:
-                                forecast_value = float(y_pred) if not np.isnan(y_pred) else np.nan
-                            except (TypeError, ValueError):
+                                if pd.isna(y_pred) if hasattr(pd, 'isna') else (y_pred is None or (isinstance(y_pred, float) and np.isnan(y_pred))):
+                                    forecast_value = np.nan
+                                    print(f"    ⚠ Prediction scalar value is NaN")
+                                else:
+                                    forecast_value = float(y_pred)
+                            except (TypeError, ValueError) as e:
                                 forecast_value = np.nan
+                                print(f"    ⚠ Error converting prediction to float: {e}")
                         
-                        # Check if forecast is NaN
+                        # Check if nowcast is NaN
                         if np.isnan(forecast_value):
-                            print(f"    ⚠ Prediction returned NaN (horizon={horizon_days} days)")
+                            print(f"    ⚠ Nowcast returned NaN (horizon={horizon_days} days)")
+                        else:
+                            print(f"    ✓ Nowcast value extracted: {forecast_value:.4f} (horizon={horizon_days} days)")
                         
                         # Get actual value from full data
                         # Handle cases where target_month_end might not be exactly in index
@@ -952,9 +675,20 @@ def run_backtest_evaluation(
                             if len(available_dates) > 0:
                                 closest_date = available_dates.max()
                                 if target_series in full_data.columns:
-                                    actual_value = float(full_data.loc[closest_date, target_series])
+                                    raw_value = full_data.loc[closest_date, target_series]
+                                    # Check if value is NaN in data
+                                    if pd.isna(raw_value):
+                                        print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in data")
+                                        actual_value = np.nan
+                                    else:
+                                        actual_value = float(raw_value)
                                 else:
-                                    actual_value = float(full_data.loc[closest_date].iloc[0])
+                                    raw_value = full_data.loc[closest_date].iloc[0]
+                                    if pd.isna(raw_value):
+                                        print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in data")
+                                        actual_value = np.nan
+                                    else:
+                                        actual_value = float(raw_value)
                             else:
                                 actual_value = np.nan
                         else:
@@ -972,17 +706,30 @@ def run_backtest_evaluation(
                             if len(available_dates) > 0:
                                 closest_date = available_dates.max()
                                 if target_series in full_data.columns:
-                                    actual_value = float(full_data.loc[closest_date, target_series])
+                                    raw_value = full_data.loc[closest_date, target_series]
+                                    if pd.isna(raw_value):
+                                        print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in data")
+                                        actual_value = np.nan
+                                    else:
+                                        actual_value = float(raw_value)
                                 else:
-                                    actual_value = float(full_data.loc[closest_date].iloc[0])
+                                    raw_value = full_data.loc[closest_date].iloc[0]
+                                    if pd.isna(raw_value):
+                                        print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in data")
+                                        actual_value = np.nan
+                                    else:
+                                        actual_value = float(raw_value)
                             else:
                                 actual_value = np.nan
                         else:
                             actual_value = np.nan
                 
-                # Skip if forecast or actual is NaN
+                # Skip if nowcast or actual is NaN
                 if np.isnan(forecast_value) or np.isnan(actual_value):
-                    print(f"    ⚠ Skipping: forecast={forecast_value}, actual={actual_value}")
+                    if np.isnan(forecast_value):
+                        print(f"    ⚠ Skipping: forecast_value is NaN (prediction failed or returned NaN)")
+                    if np.isnan(actual_value):
+                        print(f"    ⚠ Skipping: actual_value is NaN (value not found or is NaN in data)")
                     continue
                 
                 # Calculate error and standardized metrics
@@ -1007,7 +754,7 @@ def run_backtest_evaluation(
                     'sMAE': float(sMAE)
                 })
                 
-                print(f"    ✓ Forecast: {forecast_value:.4f}, Actual: {actual_value:.4f}, Error: {error:.4f}")
+                print(f"    ✓ Nowcast: {forecast_value:.4f}, Actual: {actual_value:.4f}, Error: {error:.4f}")
                 
             except Exception as e:
                 print(f"    ✗ Error: {e}")
@@ -1074,14 +821,8 @@ def main():
     parser = argparse.ArgumentParser(description="Run inference and nowcasting using Hydra config")
     subparsers = parser.add_subparsers(dest='command', required=True)
     
-    # Nowcasting evaluation command
-    nowcast_parser = subparsers.add_parser('nowcast', help='Run nowcasting evaluation (requires experiment config)')
-    nowcast_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/investment_koequipte_report)")
-    nowcast_parser.add_argument("--override", action="append", help="Hydra config override")
-    nowcast_parser.add_argument("--mask-days", type=int, default=30, help="Number of days to mask for nowcasting simulation")
-    
-    # Backtest command
-    backtest_parser = subparsers.add_parser('backtest', help='Run backtest evaluation for all models (requires experiment config)')
+    # Nowcasting backtest command (NOT forecasting - this is for nowcasting backtesting)
+    backtest_parser = subparsers.add_parser('backtest', help='Run nowcasting backtest evaluation for all models (requires experiment config)')
     backtest_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/investment_koequipte_report)")
     backtest_parser.add_argument("--model", required=True, choices=['arima', 'var', 'dfm', 'ddfm'], help="Model to backtest")
     backtest_parser.add_argument("--train-start", default="1985-01-01", help="Training period start (YYYY-MM-DD)")
@@ -1095,16 +836,7 @@ def main():
     
     config_path = str(get_project_root() / "config")
     
-    if args.command == 'nowcast':
-        result = run_nowcasting_evaluation(
-            config_name=args.config_name,
-            config_dir=config_path,
-            mask_days=args.mask_days,
-            overrides=args.override
-        )
-        print(f"\n✓ Nowcasting evaluation completed")
-    
-    elif args.command == 'backtest':
+    if args.command == 'backtest':
         result = run_backtest_evaluation(
             config_name=args.config_name,
             model=args.model,
@@ -1116,7 +848,7 @@ def main():
             config_dir=config_path,
             overrides=args.override
         )
-        print(f"\n✓ Backtest completed")
+        print(f"\n✓ Nowcasting backtest completed (this is nowcasting, not forecasting)")
 
 
 if __name__ == "__main__":

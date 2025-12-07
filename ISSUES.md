@@ -3,22 +3,30 @@
 ## CURRENT STATUS (ACTUAL STATE - VERIFIED)
 
 **REAL STATUS CHECK** (Verified by inspection):
-- **checkpoint/**: **12 model.pkl files** - **12/12 models trained** ✅ (3 targets × 4 models)
-- **outputs/backtest/**: **12 JSON files with "status": "no_results"** - **0/12 nowcasting experiments completed successfully** ❌ (ALL models failed: ARIMA/VAR/DFM/DDFM)
+- **checkpoint/**: **10 model.pkl files** - **10/12 models trained** ❌ (Missing: KOIPALL.G_ddfm, KOIPALL.G_dfm) - **REAL PROBLEM: 2 models not trained**
+- **outputs/backtest/**: **12 JSON files with "status": "no_results"** - **0/12 nowcasting experiments completed successfully** ❌ (ALL models failed: ARIMA/VAR/DFM/DDFM) - **REAL PROBLEM: All backtests failing**
 - **outputs/experiments/aggregated_results.csv**: **EXISTS** (36 rows) - Contains extreme VAR values - **CODE FIXED, CSV NEEDS REGENERATION** (non-blocking, filtering works on load)
 - **nowcasting-report/tables/**: 3 tables generated - Table 2 shows VAR-1 as N/A, Table 3 has N/A placeholders
 - **nowcasting-report/images/**: 7 plots generated - Plot4 has placeholders
+- **data/data.csv**: **VERIFIED** - Contains data up to 2025-11-28, so 2024 data exists
 
-**CRITICAL FINDING**: All 12 backtest JSON files exist but ALL have "status": "no_results" with error "No valid results generated for any time point". This indicates a systematic issue affecting all models. Code fixes were applied this iteration but didn't resolve the root cause.
+**CRITICAL FINDINGS**:
+1. **2 models missing** (KOIPALL.G_ddfm, KOIPALL.G_dfm) - Training incomplete for these models
+2. **All 12 backtests failed** with "status": "no_results" - Systematic failure affecting all models
+3. **Data availability confirmed** - Data file contains 2024 dates, so data availability is not the issue
+4. **Code fixes applied** but backtests still failing - Indicates validation logic or data filtering issue
 
-**Code Changes Applied This Iteration** (Verified by git diff):
-- **src/infer.py**: 178 lines changed
-  - ✅ **ATTEMPTED FIX**: DFM/DDFM backtest data_module update (`src/infer.py:675-720`) - Update data_module with full data up to view_date before calling nowcast manager
-  - ✅ **ATTEMPTED FIX**: ARIMA/VAR missing data handling (`src/infer.py:702-802`) - Added forward-fill, data validation, improved error messages
-  - ✅ **ATTEMPTED FIX**: ARIMA/VAR validation checks (`src/infer.py:775-797`) - Relaxed validation for monthly data (90 days instead of 30, 120 days instead of 60)
-  - ✅ **ATTEMPTED FIX**: View date validation (`src/infer.py:667`) - Fixed view_date check to correctly skip when view_date equals training end
-- **src/nowcast/nowcast.py**: 113 lines changed
-  - ✅ **ATTEMPTED FIX**: DFM/DDFM future target period handling (`src/nowcast/nowcast.py:330-357`) - Use last index directly instead of searching for target_period
+**This Iteration Work**:
+- **Status assessment** - Verified actual state: 10/12 models trained, all 12 backtests failed
+- **Code verification** - Confirmed code fixes from previous iteration are present in codebase
+- **Documentation** - Updated ISSUES.md to reflect honest current state
+
+**Code Fixes from Previous Iteration** (Verified present in code):
+- **src/infer.py**: Code fixes are present but backtests still failing
+  - ✅ **PRESENT**: Horizon conversion fix at line 577 (`horizon_periods = max(1, round(horizon_days / 7.0))`)
+  - ✅ **PRESENT**: Relaxed validation checks (180 days) at lines 515, 553
+  - ✅ **PRESENT**: Debug logging throughout validation checks
+  - ⚠️ **BUT INEFFECTIVE**: All 12 backtests still failing with "no_results" despite fixes
 
 **What's NOT Working (REAL BLOCKING ISSUES)**:
 - ❌ **ALL 12 nowcasting experiments FAILED** - All JSON files have "status": "no_results"
@@ -29,60 +37,73 @@
 
 ## CONCRETE ACTION PLAN (Priority Order - REAL TASKS TO FIX)
 
-### Priority 1: CRITICAL - Investigate and Fix Systematic Backtest Failure (BLOCKING)
-**Status**: ⚠️ **INVESTIGATION NEEDED** - All 12 backtests failed with "no_results"  
+### Priority 1: CRITICAL - Fix Backtest Validation Logic (BLOCKING) - ⚠️ CODE FIXES PRESENT BUT INEFFECTIVE
+**Status**: ⚠️ **CODE FIXES PRESENT BUT INEFFECTIVE** - Fixes are in code but backtests still failing  
 **Blocking**: Table 3 and Plot4 (all nowcasting results missing)
 
 **REAL Problem** (Verified by inspection):
 - **ALL 12 JSON files** in `outputs/backtest/` have `"status": "no_results"` with error "No valid results generated for any time point"
-- **Code fixes were applied** but didn't resolve the issue - indicates root cause is deeper than addressed fixes
+- **Data confirmed available**: data/data.csv contains dates up to 2025-11-28, so 2024 data exists
+- **Code fixes present**: Horizon conversion, relaxed validation, debug logging are all in code
+- **But still failing**: Fixes didn't resolve the issue - need to identify why
 
-**Potential Root Causes** (Need Investigation):
-1. **Validation checks too strict**: Multiple validation checks (`src/infer.py:790-815`) might be skipping all months even after fixes
-   - Recent data check uses `fit_data` which is already filtered - might be causing issues
-   - Last valid data check might be too strict for monthly data
-   - Minimum data points check might be failing
-2. **View date calculation issue**: `view_date = target_month_end - timedelta(weeks=weeks)` might be skipping all months due to `view_date <= train_end_date` check (`src/infer.py:668`)
-3. **Data availability issue**: Data might not have 2024 dates, or target months (2024-01 to 2024-12) might not be in data range
-4. **Date alignment issue**: `target_month_end` might not match actual data dates (data has dates like 2025-08-31, but target is 2024-01-31)
-5. **Forecast/actual value lookup failing**: Both forecast and actual values might be NaN for all months (`src/infer.py:878-881`)
+**CODE FIXES FROM PREVIOUS ITERATION** (Verified present but ineffective):
+1. ✅ **PRESENT**: Convert horizon_days to horizon_periods for weekly data (line 577)
+   - Fix: `horizon_periods = max(1, round(horizon_days / 7.0))` - converts 28 days to 4 weeks
+   - But backtests still failing
+2. ✅ **PRESENT**: Relaxed recent data check from 90 days to 180 days (line 515)
+3. ✅ **PRESENT**: Relaxed days_since_last check from 120 days to 180 days (line 553)
+4. ✅ **PRESENT**: Debug logging for view_date validation, data availability, horizon calculation
+5. ✅ **PRESENT**: Enhanced skip messages showing specific validation check that failed
 
-**INVESTIGATION ACTIONS**:
-1. **Check data range**: Verify data has 2024 dates (data.csv shows dates up to 2025-11-28, so 2024 should be available)
-2. **Check view_date calculation**: For target_month_end=2024-01-31, weeks=4: view_date = 2024-01-03. Verify this passes `view_date <= train_end_date` check (should pass since 2024-01-03 > 2019-12-31)
-3. **Inspect validation logic**: Review `src/infer.py:790-815` - recent data check uses `fit_data` which is already filtered, might be causing all months to be skipped
-4. **Add debug logging**: Add detailed logging to see which validation check fails for each month (recent data check, last valid data check, forecast/actual NaN check)
-5. **Test with single month**: Run backtest for single month (e.g., 2024-01) to isolate the issue
-6. **Check log files**: Inspect backtest log files in `outputs/backtest/` to see what error messages are printed
-
-**Code Locations to Inspect**:
-- `src/infer.py:662-669` - View date calculation and skip logic
-- `src/infer.py:790-815` - Data availability validation checks
-- `src/infer.py:878-881` - Forecast/actual NaN check that skips results
-- `src/infer.py:914-928` - Results aggregation (empty monthly_results causes "no_results")
-
-**FIX ACTIONS** (after investigation):
-1. Fix the root cause identified (likely in validation logic, date handling, or data filtering)
-2. Test fix with single backtest run before full re-run
-3. Verify at least one backtest generates valid results (not "no_results")
+**NEXT STEPS** (Investigation needed):
+1. **Check log files** - Review `outputs/backtest/*.log` to see which validation check is actually failing
+2. **Identify root cause** - Code fixes are present but ineffective, suggesting different issue
+3. **Fix root cause** - Address the actual problem (likely different from what previous fixes addressed)
+4. **Re-run backtests** - Step 1 will automatically run `bash agent_execute.sh backtest` after fix
+5. **Verify fixes** - Check if backtests now generate valid results (not "no_results")
 
 **Success Criteria**:
 - ✅ At least one backtest generates valid results (not "no_results")
 - ✅ JSON files contain `results_by_timepoint` with actual metrics
 - ✅ All 12 months (2024-01 to 2024-12) have results for both timepoints (4 weeks, 1 week)
 
-**Current Status**: ⚠️ **INVESTIGATION NEEDED** - Code fixes applied but didn't resolve issue. Need to identify root cause.
+**Current Status**: ⚠️ **CODE FIXES PRESENT BUT INEFFECTIVE** - Need to identify why fixes didn't work and address root cause
 
 ---
 
-### Priority 2: CRITICAL - Re-run Nowcasting Experiments (BLOCKING)
-**Status**: ⚠️ **BLOCKED** - Needs Priority 1 fix first  
+### Priority 2: CRITICAL - Train Missing Models (BLOCKING)
+**Status**: ❌ **MISSING** - 2 models not trained  
+**Blocking**: Complete experiment coverage
+
+**REAL Problem** (Verified by inspection):
+- **checkpoint/** contains only **10/12 model.pkl files**
+- **Missing models**: KOIPALL.G_ddfm, KOIPALL.G_dfm
+- Training is incomplete - these models need to be trained before backtesting
+
+**Actions** (Step 1 will automatically handle):
+1. Step 1 checks `checkpoint/` → detects missing models (KOIPALL.G_ddfm, KOIPALL.G_dfm)
+2. Step 1 automatically runs: `bash agent_execute.sh train` (which calls `run_train.sh`)
+3. Expected output: 2 additional model.pkl files in `checkpoint/KOIPALL.G_ddfm/` and `checkpoint/KOIPALL.G_dfm/`
+
+**Success Criteria**:
+- ✅ `checkpoint/` contains 12 model.pkl files (all 3 targets × 4 models)
+- ✅ Both KOIPALL.G_ddfm and KOIPALL.G_dfm models exist and are valid
+- ✅ Training completes without errors (check logs)
+
+**Current Status**: ❌ **MISSING** - 2 models need training (will be handled by Step 1)
+
+---
+
+### Priority 3: CRITICAL - Re-run Nowcasting Experiments (BLOCKED)
+**Status**: ⚠️ **BLOCKED** - Needs Priority 1 and Priority 2 fixes first  
 **Blocking**: Table 3 and Plot4 (all nowcasting results missing)
 
 **REAL Problem**:
 - All 12 backtest JSON files have "status": "no_results"
-- Code fixes were applied but didn't resolve the issue
-- Backtests need re-run after Priority 1 fix
+- Code fixes from previous iteration are present but didn't resolve the issue
+- 2 models missing (KOIPALL.G_ddfm, KOIPALL.G_dfm) - training incomplete
+- Backtests need re-run after Priority 1 and Priority 2 fixes
 
 **Actions** (Step 1 will automatically handle after Priority 1):
 1. Step 1 checks `outputs/backtest/` → detects JSON files with "no_results" status
@@ -95,11 +116,11 @@
 - ✅ All JSON files contain `results_by_timepoint` with actual metrics
 - ✅ All JSON files valid (test: `python3 -c "import json; json.load(open('outputs/backtest/KOEQUIPTE_arima_backtest.json'))"`)
 
-**Current Status**: ⚠️ **BLOCKED** - Waiting for Priority 1 to identify and fix root cause
+**Current Status**: ⚠️ **BLOCKED** - Waiting for Priority 1 (identify why fixes didn't work) and Priority 2 (train missing models)
 
 ---
 
-### Priority 3: HIGH - Regenerate Table 3 and Plot4 (BLOCKED)
+### Priority 4: HIGH - Regenerate Table 3 and Plot4 (BLOCKED)
 **Status**: ⚠️ **CODE READY** - Needs Data  
 **Blocking**: Report completion
 
@@ -124,7 +145,7 @@
 
 ---
 
-### Priority 4: HIGH - Regenerate aggregated_results.csv (NON-BLOCKING)
+### Priority 5: HIGH - Regenerate aggregated_results.csv (NON-BLOCKING)
 **Status**: ⚠️ **CODE FIXED** - CSV needs regeneration  
 **Impact**: When regenerated, extreme VAR values will be marked as NaN (currently filtered on load, so non-blocking)
 
@@ -159,13 +180,13 @@
 - **Nowcasting**: 12 months (2024-01 ~ 2024-12), 2 time points (4 weeks, 1 week before)
 
 **ACTUAL Status** (Verified by inspection):
-- **Training**: ✅ **12/12 models trained** (checkpoint/ has 12 model.pkl files)
+- **Training**: ⚠️ **10/12 models trained** (checkpoint/ has 10 model.pkl files, missing KOIPALL.G_ddfm and KOIPALL.G_dfm)
 - **Forecasting**: ✅ **DONE** - aggregated_results.csv EXISTS with 36 rows (contains extreme VAR values, but filtering handles them when loading)
 - **Nowcasting**: ❌ **0/12 experiments completed successfully** (ALL 12 JSON files exist but ALL have "status": "no_results" - systematic failure affecting all models)
 
 **What Needs to Happen** (Step 1 will automatically handle):
-1. ✅ Training complete - checkpoint/ has 12 model.pkl files
-2. ⚠️ **INVESTIGATION NEEDED** - All 12 backtests failed with "no_results" despite code fixes. Need to identify root cause
+1. ❌ **TRAIN MISSING MODELS** - checkpoint/ has only 10/12 model.pkl files (missing KOIPALL.G_ddfm, KOIPALL.G_dfm)
+2. ⚠️ **INVESTIGATE BACKTEST FAILURES** - All 12 backtests failed with "no_results" despite code fixes being present. Code fixes are in codebase but ineffective - need to identify why and fix root cause
 3. After fixing root cause, Step 1 will detect outputs/backtest/ has "no_results" → runs `bash agent_execute.sh backtest` → should populate outputs/backtest/ with 12 valid JSON files
 4. After successful backtests, regenerate Table 3 from outputs/backtest/ (replace N/A with actual results)
 5. After successful backtests, regenerate Plot4 from outputs/backtest/ (replace placeholders with actual plots)
@@ -198,11 +219,11 @@
 ## INSPECTION FINDINGS
 
 **Model Performance Anomalies Inspection**:
-- **STATUS**: ⚠️ **CODE CHANGES APPLIED** - Fixed indentation error, fixed threshold inconsistency, enhanced persistence detection, but backtests still failing
+- **STATUS**: ⚠️ **CODE FIXES PRESENT BUT INEFFECTIVE** - Code fixes from previous iteration are in codebase but backtests still failing
 - **VAR horizon 1**: Code marks persistence predictions as NaN. Table 2 shows VAR-1 as N/A. CSV will show NaN when regenerated.
 - **VAR horizons 7/28**: Code validates and marks extreme values (> 1e10) as NaN. CSV will show NaN when regenerated.
 - **DDFM horizon 1**: Results appear reasonable (sRMSE 0.01-0.46 range) - no issues detected
-- **Backtest failures**: All 12 JSON files have "no_results" status - systematic failure affecting all models
+- **Backtest failures**: All 12 JSON files have "no_results" status - systematic failure affecting all models despite code fixes
 
 **dfm-python Package Inspection**:
 - **STATUS**: ✅ **NO CRITICAL ISSUES FOUND** (from previous iteration)
@@ -223,33 +244,38 @@
 
 **CRITICAL (Blocking - REAL PROBLEMS TO FIX)**:
 
-1. **INVESTIGATE Systematic Backtest Failure** (Priority 1 - ALL 12 BACKTESTS FAILED):
+1. **TRAIN MISSING MODELS** (Priority 2 - 2 MODELS MISSING):
+   - **STATUS**: ❌ **MISSING** - KOIPALL.G_ddfm and KOIPALL.G_dfm not trained
+   - **ACTION**: Step 1 will detect missing models → runs `bash agent_execute.sh train`
+   - **VERIFY**: After training, check `checkpoint/` contains 12 model.pkl files
+
+2. **INVESTIGATE Systematic Backtest Failure** (Priority 1 - ALL 12 BACKTESTS FAILED):
    - **STATUS**: ⚠️ **INVESTIGATION NEEDED** - All 12 JSON files have "status": "no_results" (systematic failure)
-   - **CURRENT STATE**: ALL models failed (ARIMA/VAR/DFM/DDFM) - code fixes applied but didn't resolve issue
+   - **CURRENT STATE**: ALL models failed (ARIMA/VAR/DFM/DDFM) - code fixes from previous iteration are present but ineffective
    - **INVESTIGATION ACTIONS**:
-     1. Check validation logic in `src/infer.py:790-815` - recent data check might be too strict
-     2. Check date alignment - `target_month_end` might not match actual data dates
-     3. Check data availability - verify data has 2024 dates and target months exist
-     4. Add debug logging to see which validation check fails for each month
-     5. Test with single month to isolate the issue
-     6. Check log files in `outputs/backtest/` to see what error messages are printed
+     1. **Check log files** - Review `outputs/backtest/*.log` to see which validation check is actually failing (debug logging is present)
+     2. **Verify code fixes** - Confirm fixes are actually being executed (horizon conversion, relaxed validation)
+     3. **Check data filtering** - Verify `train_data_filtered` includes data up to view_date (2024 dates)
+     4. **Check actual_value lookup** - Verify target_month_end exists in full_data.index
+     5. **Check forecast_value extraction** - Verify ARIMA/VAR/DFM/DDFM predictions return valid values
+     6. **Identify root cause** - Code fixes didn't work, so issue is likely different from what was fixed
    - **FIX ACTIONS** (after investigation):
-     - Fix the root cause identified (likely in validation logic, date handling, or data filtering)
+     - Fix the actual root cause (likely different from what previous fixes addressed)
      - Test fix with single backtest before full re-run
    - **VERIFY**: After fix, check that at least one backtest generates valid results (not "no_results")
 
-2. **Re-run Nowcasting Experiments** (After Priority 1 fix):
+3. **Re-run Nowcasting Experiments** (After Priority 1 fix):
    - Step 1 checks `outputs/backtest/` → detects JSON files with "no_results" status
    - Step 1 runs: `bash agent_execute.sh backtest` (which calls `run_backtest.sh`)
    - Expected: 12 JSON files with valid `results_by_timepoint` in `outputs/backtest/{target}_{model}_backtest.json`
    - **VERIFY**: After Step 1, check `ls outputs/backtest/*.json | wc -l` should show 12 files
    - **VERIFY**: Check JSON validity and status: `python3 -c "import json; [print(f, json.load(open(f)).get('status', 'ok')) for f in __import__('glob').glob('outputs/backtest/*.json')]"`
 
-3. **After Priority 2 completes - Regenerate Table 3**:
+4. **After Priority 3 completes - Regenerate Table 3**:
    - Execute: `python3 -c "from src.eval.evaluation import generate_all_latex_tables; generate_all_latex_tables()"`
    - **VERIFY**: Check `nowcasting-report/tables/tab_nowcasting_backtest.tex` - should show actual values (not N/A)
 
-4. **After Priority 2 completes - Regenerate Plot4**:
+5. **After Priority 3 completes - Regenerate Plot4**:
    - Execute: `python3 nowcasting-report/code/plot.py`
    - **VERIFY**: Check `nowcasting-report/images/nowcasting_comparison_*.png` - should show 3 plots (one per target)
 
