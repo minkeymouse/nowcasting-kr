@@ -16,12 +16,14 @@
   - 1 horizon forecast at each time point
   - Total: 3 targets × 4 models × 12 months × 2 timepoints = 288 nowcasting predictions
 
-**ACTUAL Current Status**:
+**ACTUAL Current Status** (Verified This Iteration):
 - **checkpoint/**: **12 model.pkl files exist** ✅ - Training COMPLETE (3 targets × 4 models = 12 models)
 - **outputs/backtest/**: **12 JSON files exist** - Nowcasting experiments completed ✅
-  - DFM models (3): "status": "completed" ✅ - Working correctly (varying predictions)
+  - DFM models (3): "status": "completed" ⚠️ - **KOIPALL.G DFM shows repetitive predictions** (only 2 unique values: -12.904 and 13.468)
+  - DFM models (2): "status": "completed" ✅ - KOEQUIPTE and KOWRCCNSE show varying predictions
   - DDFM models (3): "status": "completed" ✅ - Working correctly (varying predictions)
   - ARIMA/VAR models (6): "status": "no_results" ✅ - Expected (not supported for nowcasting)
+- **outputs/comparisons/**: **3 comparison_results.json files exist** ✅ - All show "failed_models": [] (no failures)
 - **outputs/experiments/aggregated_results.csv**: **EXISTS** - Forecasting results aggregated (36 rows, extreme VAR values filtered on load) ✅
 - **outputs/comparisons/**: Contains comparison_results.json files - forecasting completed successfully ✅
 - **nowcasting-report/tables/**: **3 tables generated** (tab_dataset_params.tex, tab_forecasting_results.tex, tab_nowcasting_backtest.tex with correct results) ✅
@@ -29,13 +31,25 @@
 
 **What This Means**:
 - ✅ **Training COMPLETE** - checkpoint/ contains 12 model.pkl files (all models trained)
-- ✅ **Nowcasting experiments COMPLETED** - DFM and DDFM models produce varying predictions correctly
+- ✅ **Nowcasting experiments COMPLETED** - All backtest JSON files exist
+- ⚠️ **KOIPALL.G DFM repetitive predictions** - Only 2 unique values across all months (issue identified, enhanced logging added)
+- ✅ **Other DFM models work correctly** - KOEQUIPTE and KOWRCCNSE show varying predictions
+- ✅ **DDFM models work correctly** - All 3 targets show varying predictions
 - ✅ **Forecasting results exist** - Table 2 can be generated (extreme values filtered when loading)
 - ✅ **Tables and plots generated** - All required tables and plots exist with correct results
 
-**Next Steps** (Optional):
-1. Optional: Update report sections with nowcasting analysis (results already exist)
-2. Optional: Further analysis of model performance patterns
+**Code Improvements This Iteration**:
+- ✅ **Enhanced logging for DFM nowcasting debugging** in `src/infer.py`:
+  - Factor state logging: Shows first 5 values, norm, mean, std, min, max at INFO level
+  - Factor state update verification: Confirms result.Z[-1, :] update is applied correctly
+  - Data masking logging: Shows NaN counts, percentages, per-series masking at INFO level
+  - Prediction logging: Includes factor state summary in prediction logs
+- **Purpose**: Diagnose why KOIPALL.G DFM produces only 2 unique predictions (-12.904 and 13.468)
+
+**Next Steps**:
+1. **Re-run backtest experiments** to see enhanced logging output (will help diagnose KOIPALL.G DFM issue)
+2. Optional: Update report sections with nowcasting analysis (results already exist)
+3. Optional: Further analysis of model performance patterns
 
 ---
 

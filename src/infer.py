@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import pickle
 import json
+import hashlib
 
 # Set up paths
 script_dir = Path(__file__).parent.resolve()
@@ -291,6 +292,32 @@ def _get_current_factor_state(dfm_model: Any, logger: logging.Logger) -> np.ndar
     
     data_masked = data_module.data
     
+    # DEBUG: Log data statistics to diagnose why factor states might be repetitive
+    # This helps identify if data masking is actually changing between timepoints
+    if isinstance(data_masked, pd.DataFrame):
+        nan_count = data_masked.isnull().sum().sum()
+        total_cells = data_masked.size
+        nan_pct = (nan_count / total_cells * 100) if total_cells > 0 else 0
+        data_mean = data_masked.mean().mean() if len(data_masked.columns) > 0 else np.nan
+        data_std = data_masked.std().mean() if len(data_masked.columns) > 0 else np.nan
+        logger.debug(
+            f"_get_current_factor_state: Data statistics - "
+            f"shape {data_masked.shape}, NaN: {nan_count}/{total_cells} ({nan_pct:.1f}%), "
+            f"mean: {data_mean:.4f}, std: {data_std:.4f}"
+        )
+    else:
+        nan_count = np.sum(np.isnan(data_masked)) if hasattr(data_masked, '__array__') else 0
+        total_cells = data_masked.size if hasattr(data_masked, 'size') else len(data_masked)
+        nan_pct = (nan_count / total_cells * 100) if total_cells > 0 else 0
+        data_mean = np.nanmean(data_masked) if hasattr(data_masked, '__array__') else np.nan
+        data_std = np.nanstd(data_masked) if hasattr(data_masked, '__array__') else np.nan
+        logger.debug(
+            f"_get_current_factor_state: Data statistics - "
+            f"shape {data_masked.shape if hasattr(data_masked, 'shape') else 'unknown'}, "
+            f"NaN: {nan_count}/{total_cells} ({nan_pct:.1f}%), "
+            f"mean: {data_mean:.4f}, std: {data_std:.4f}"
+        )
+    
     # Extract Mx and Wx from result FIRST (before using them)
     # Standardize data using result's Wx and Mx
     # CRITICAL: Extract these before any validation checks to avoid UnboundLocalError
@@ -432,7 +459,11 @@ def _get_current_factor_state(dfm_model: Any, logger: logging.Logger) -> np.ndar
         # Get last factor state (skip initial state at index 0)
         Z_last = Zsmooth[-1, :].cpu().numpy()  # (m,)
         
-        logger.debug(f"Re-ran Kalman filter with masked data: got factor state shape {Z_last.shape}")
+        # Log factor state statistics for debugging
+        factor_norm = np.linalg.norm(Z_last)
+        factor_mean = np.mean(Z_last)
+        factor_std = np.std(Z_last)
+        logger.debug(f"Re-ran Kalman filter with masked data: got factor state shape {Z_last.shape}, norm={factor_norm:.4f}, mean={factor_mean:.4f}, std={factor_std:.4f}")
         
         return Z_last
         
@@ -735,10 +766,18 @@ def _update_data_module_for_nowcasting(
                 time_index = time_index_masked
             
             data_monthly = data_monthly_masked
-            # Debug: Log masking statistics
+            # Enhanced logging: Log masking statistics at INFO level for debugging repetitive predictions
             nan_count = data_monthly.isnull().sum().sum() if isinstance(data_monthly, pd.DataFrame) else data_monthly.isnull().sum()
             total_cells = data_monthly.size if hasattr(data_monthly, 'size') else len(data_monthly)
             nan_pct = (nan_count / total_cells * 100) if total_cells > 0 else 0
+            # Also log per-series NaN counts to see which series are masked
+            if isinstance(data_monthly, pd.DataFrame):
+                nan_per_series = data_monthly.isnull().sum()
+                series_with_nan = nan_per_series[nan_per_series > 0]
+                series_info = f", {len(series_with_nan)} series with NaN" if len(series_with_nan) > 0 else ", no series with NaN"
+            else:
+                series_info = ""
+            logger.info(f"Data masking for view_date={view_date.strftime('%Y-%m-%d')}: {nan_count}/{total_cells} NaN ({nan_pct:.1f}%){series_info}")
             logger.debug(f"Applied release date masking for view_date={view_date.strftime('%Y-%m-%d')}: {nan_count}/{total_cells} NaN ({nan_pct:.1f}%)")
         except Exception as e:
             logger.warning(f"Failed to apply release date masking (will use unmasked data): {type(e).__name__}: {str(e)}")
@@ -988,7 +1027,21 @@ def run_backtest_evaluation(
                     # Note: data_module should already be updated with filtered and masked data
                     try:
                         Z_last_current = _get_current_factor_state(dfm_model, logger)
-                        logger.debug(f"Successfully got current factor state from masked data: shape {Z_last_current.shape}, values: {Z_last_current[:3] if len(Z_last_current) >= 3 else Z_last_current}")
+                        # Log factor state values for debugging repetitive predictions
+                        # Enhanced logging: show first 5 values, norm, mean, std, and min/max
+                        factor_norm = np.linalg.norm(Z_last_current)
+                        factor_mean = np.mean(Z_last_current)
+                        factor_std = np.std(Z_last_current)
+                        factor_min = np.min(Z_last_current)
+                        factor_max = np.max(Z_last_current)
+                        factor_first5 = Z_last_current[:5] if len(Z_last_current) >= 5 else Z_last_current
+                        factor_state_str = (
+                            f"shape {Z_last_current.shape}, first 5: {factor_first5}, "
+                            f"norm: {factor_norm:.4f}, mean: {factor_mean:.4f}, std: {factor_std:.4f}, "
+                            f"min: {factor_min:.4f}, max: {factor_max:.4f}"
+                        )
+                        logger.info(f"[{target_series} DFM] Factor state from masked data ({target_month_end_ts.strftime('%Y-%m')}, weeks={weeks}): {factor_state_str}")
+                        logger.debug(f"Successfully got current factor state from masked data: {factor_state_str}")
                     except (ValueError, RuntimeError) as e:
                         # If Kalman filter re-run fails (e.g., dimension mismatch), use training state
                         model_type = type(dfm_model).__name__ if hasattr(dfm_model, '__class__') else 'Unknown'
@@ -1011,9 +1064,85 @@ def run_backtest_evaluation(
                         if hasattr(dfm_model._result, 'Z') and dfm_model._result.Z is not None:
                             original_Z_last = dfm_model._result.Z[-1, :].copy()
                             dfm_model._result.Z[-1, :] = Z_last_current
-                            logger.debug(f"Updated result.Z[-1, :] with current factor state from masked data (shape: {Z_last_current.shape})")
+                            # Enhanced logging: verify the update was applied
+                            Z_after_update = dfm_model._result.Z[-1, :]
+                            update_diff = np.linalg.norm(Z_after_update - Z_last_current)
+                            if update_diff > 1e-6:
+                                logger.warning(f"[{target_series} DFM] Factor state update may have failed: diff={update_diff:.6f}")
+                            logger.debug(f"Updated result.Z[-1, :] with current factor state from masked data (shape: {Z_last_current.shape}, diff={update_diff:.6e})")
                     
                     try:
+                        # Enhanced logging: verify factor state before prediction
+                        if hasattr(dfm_model, '_result') and dfm_model._result is not None:
+                            if hasattr(dfm_model._result, 'Z') and dfm_model._result.Z is not None:
+                                Z_before_predict = dfm_model._result.Z[-1, :]
+                                Z_diff_from_current = np.linalg.norm(Z_before_predict - Z_last_current)
+                                logger.debug(f"[{target_series} DFM] Factor state before predict(): norm={np.linalg.norm(Z_before_predict):.4f}, diff from current={Z_diff_from_current:.6e}")
+                        
+                        # CRITICAL: Store factor state for repetitive prediction detection
+                        # This helps diagnose why KOIPALL.G DFM produces only 2 unique predictions
+                        if not hasattr(run_backtest_evaluation, '_factor_states'):
+                            run_backtest_evaluation._factor_states = {}
+                        if not hasattr(run_backtest_evaluation, '_data_masking_history'):
+                            run_backtest_evaluation._data_masking_history = {}
+                        key = f"{target_series}_{model}"
+                        if key not in run_backtest_evaluation._factor_states:
+                            run_backtest_evaluation._factor_states[key] = []
+                        if key not in run_backtest_evaluation._data_masking_history:
+                            run_backtest_evaluation._data_masking_history[key] = []
+                        
+                        # Store data masking info to check if data is actually changing
+                        if hasattr(dfm_model, '_data_module') and dfm_model._data_module is not None:
+                            data_masked = dfm_model._data_module.data
+                            if isinstance(data_masked, pd.DataFrame):
+                                nan_count = data_masked.isnull().sum().sum()
+                                total_cells = data_masked.size
+                                nan_pct = (nan_count / total_cells * 100) if total_cells > 0 else 0
+                                # Create a hash of the masked data pattern to detect if it's changing
+                                data_hash = hashlib.md5(pd.util.hash_pandas_object(data_masked.fillna(0)).values).hexdigest() if isinstance(data_masked, pd.DataFrame) else None
+                                run_backtest_evaluation._data_masking_history[key].append({
+                                    'month': target_month_end_ts.strftime('%Y-%m'),
+                                    'weeks': weeks,
+                                    'nan_count': nan_count,
+                                    'nan_pct': nan_pct,
+                                    'data_hash': data_hash
+                                })
+                        
+                        run_backtest_evaluation._factor_states[key].append({
+                            'month': target_month_end_ts.strftime('%Y-%m'),
+                            'weeks': weeks,
+                            'factor_state': Z_last_current.copy(),
+                            'factor_norm': np.linalg.norm(Z_last_current),
+                            'factor_mean': np.mean(Z_last_current),
+                            'factor_std': np.std(Z_last_current)
+                        })
+                        
+                        # Check if factor states are repetitive (only 2 unique states)
+                        if len(run_backtest_evaluation._factor_states[key]) >= 5:
+                            # Compare factor states using norm (faster than full comparison)
+                            factor_norms = [s['factor_norm'] for s in run_backtest_evaluation._factor_states[key]]
+                            unique_norms = set(np.round(factor_norms, 6))  # Round to detect near-duplicates
+                            if len(unique_norms) <= 2:
+                                # Also check if data masking is changing
+                                data_changing = True
+                                if key in run_backtest_evaluation._data_masking_history and len(run_backtest_evaluation._data_masking_history[key]) >= 2:
+                                    data_hashes = [d['data_hash'] for d in run_backtest_evaluation._data_masking_history[key] if d.get('data_hash')]
+                                    unique_hashes = set(data_hashes)
+                                    data_changing = len(unique_hashes) > 1
+                                    if not data_changing:
+                                        logger.warning(
+                                            f"DATA MASKING NOT CHANGING for {target_series} {model}: "
+                                            f"All {len(run_backtest_evaluation._data_masking_history[key])} timepoints have same data hash. "
+                                            f"This explains why factor states are repetitive - data masking is identical across timepoints."
+                                        )
+                                
+                                logger.warning(
+                                    f"REPETITIVE FACTOR STATES DETECTED for {target_series} {model}: "
+                                    f"Only {len(unique_norms)} unique factor state norms in last {len(run_backtest_evaluation._factor_states[key])} timepoints: {sorted(unique_norms)}. "
+                                    f"Data masking changing: {data_changing}. "
+                                    f"This will cause repetitive predictions. Check data masking and Kalman filter re-run."
+                                )
+                        
                         # Use dfm_model.predict() - now it will use the updated factor state
                         X_pred, Z_pred = dfm_model.predict(horizon=horizon, return_series=True, return_factors=True)
                     finally:
@@ -1033,7 +1162,28 @@ def run_backtest_evaluation(
                     )
                     
                     # Debug: Log prediction for comparison (use INFO level for visibility)
-                    logger.info(f"Prediction for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}, weeks={weeks}): forecast_value={forecast_value:.6f}, horizon={horizon}, months_ahead={months_ahead}, pred_step={pred_step}")
+                    # Enhanced logging: include factor state info to diagnose repetitive predictions
+                    factor_state_summary = f"factor_norm={np.linalg.norm(Z_last_current):.4f}" if 'Z_last_current' in locals() else "factor_state=N/A"
+                    logger.info(f"[{target_series} DFM] Prediction for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}, weeks={weeks}): forecast_value={forecast_value:.6f}, horizon={horizon}, months_ahead={months_ahead}, pred_step={pred_step}, {factor_state_summary}")
+                    
+                    # CRITICAL: Detect repetitive predictions early
+                    # Store predictions to detect if we're only getting 2 unique values (like KOIPALL.G DFM)
+                    if not hasattr(run_backtest_evaluation, '_predictions'):
+                        run_backtest_evaluation._predictions = {}
+                    key = f"{target_series}_{model}"
+                    if key not in run_backtest_evaluation._predictions:
+                        run_backtest_evaluation._predictions[key] = []
+                    run_backtest_evaluation._predictions[key].append(forecast_value)
+                    
+                    # Check if we have repetitive predictions (only 2 unique values)
+                    if len(run_backtest_evaluation._predictions[key]) >= 5:
+                        unique_values = set(run_backtest_evaluation._predictions[key])
+                        if len(unique_values) <= 2:
+                            logger.warning(
+                                f"REPETITIVE PREDICTIONS DETECTED for {target_series} {model}: "
+                                f"Only {len(unique_values)} unique values in last {len(run_backtest_evaluation._predictions[key])} predictions: {sorted(unique_values)}. "
+                                f"This indicates factor state is not varying enough. Check data masking and Kalman filter re-run."
+                            )
                     
                     # Also log prediction array shape for debugging
                     if hasattr(X_pred, 'shape'):

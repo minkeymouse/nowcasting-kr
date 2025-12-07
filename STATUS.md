@@ -3,38 +3,63 @@
 ## Work Done This Iteration (HONEST ASSESSMENT)
 
 **CODE IMPROVEMENTS MADE** (This Iteration):
-- **Added defense-in-depth data leakage check in evaluate_forecaster()**: Added validation to ensure test data doesn't overlap with training data
-  - Location: `src/evaluation.py` lines 487-500
-  - Change: Added validation `if train_max >= test_min: raise ValueError("Data leakage detected...")`
-  - Impact: Provides additional validation beyond checks in `src/train.py` (line 904), ensuring no data leakage in evaluation function
-  - Status: ✅ Code improvement applied (verified in code via git diff)
+- **Added data masking change detection**: Added tracking of data masking history to detect if data is not changing between timepoints
+  - Location: `src/infer.py` lines 1081-1107
+  - Changes: Tracks data masking history (NaN counts, percentages, data hashes) for each timepoint and detects if data masking is identical across timepoints
+  - Impact: Will automatically detect and warn when data masking is not changing, which would explain why factor states are repetitive
+  - Status: ✅ Code improvements applied this iteration
+- **Added debug logging in DFM predict() method**: Added logging to verify factor state usage during prediction
+  - Location: `dfm-python/src/dfm_python/models/dfm.py` lines 737-747
+  - Changes: Logs factor state Z_last being used for prediction (shape, first 5 values, norm, mean, std)
+  - Impact: Helps verify that predict() is using the updated factor state from nowcasting, not cached/stale state
+  - Status: ✅ Code improvements applied this iteration
+- **Enhanced data statistics logging in _get_current_factor_state**: Added logging to diagnose data masking changes
+  - Location: `src/infer.py` lines 293-320
+  - Changes: Logs data statistics (shape, NaN count/percentage, mean, std) before Kalman filter re-run
+  - Impact: Helps diagnose if data masking is actually changing between timepoints, which could explain repetitive factor states
+  - Status: ✅ Code improvements applied this iteration
 
 **DOCUMENTATION UPDATES** (This Iteration):
 - Updated STATUS.md with honest assessment of work done this iteration
 - Updated ISSUES.md to reflect current state and remove old addressed issues
 
+**ANALYSIS COMPLETED** (This Iteration):
+- ✅ Analyzed all backtest results in outputs/backtest/
+- ✅ Verified no model failures: All comparison_results.json show "failed_models": []
+- ✅ Verified training complete: 12 model.pkl files exist in checkpoint/
+- ✅ Verified nowcasting complete: 12 backtest JSON files exist
+- ✅ Identified REAL problem: KOIPALL.G DFM produces only 2 unique predictions (-12.904 and 13.468) across all months
+- ✅ Other DFM models (KOEQUIPTE, KOWRCCNSE) show varying predictions - issue is specific to KOIPALL.G
+
 **WHAT WAS NOT DONE THIS ITERATION**:
 - ❌ No new experiments were run (training, forecasting, backtesting already completed in previous iterations)
 - ❌ No new tables/plots were generated (existing tables/plots already reflect results from previous iterations)
-- ❌ No report sections were updated
-- ❌ No dfm-python package code changes (extreme forecast value detection was done in previous iteration, not this one)
+- ❌ No report sections updated
+- ❌ DFM repetitive prediction root cause not fixed (added enhanced diagnostic logging including data masking change detection, but root cause investigation needs experiments to be re-run to see logs)
 
 **HONEST STATUS**: 
-- Only ONE code improvement was made this iteration: defense-in-depth data leakage check in evaluation.py
+- Code improvements made: 
+  - Added debug logging in DFM predict() to verify factor state usage
+  - Enhanced data statistics logging in _get_current_factor_state to diagnose data masking changes
+  - Added data masking change detection to track if data is actually changing between timepoints
+  - These improvements will help diagnose root cause when experiments are re-run
+- Analysis completed: Verified all experiments are complete, identified KOIPALL.G DFM repetitive prediction issue
 - All experiments were already completed in previous iterations
 - Models, results, tables, and plots already exist from previous work
-- This iteration was minimal - focused on adding one additional validation layer
+- KOIPALL.G DFM repetitive prediction issue identified - enhanced diagnostic logging added, needs experiments to be re-run to see logs and diagnose root cause
 
 ---
 
 ## Current State (ACTUAL - Verified by Inspection)
 
-**REAL STATUS CHECK**:
+**REAL STATUS CHECK** (Verified This Iteration):
 - **checkpoint/**: **12 model.pkl files exist** ✅ - Training COMPLETE (3 targets × 4 models = 12 models)
 - **outputs/backtest/**: **12 JSON files exist** ✅
-  - DFM models (3): "status": "completed" ✅ - Working correctly (varying predictions)
+  - DFM models (3): "status": "completed" ⚠️ - **KOIPALL.G DFM shows repetitive predictions** (only 2 unique values: -12.904 and 13.468)
+  - DFM models (2): "status": "completed" ✅ - KOEQUIPTE and KOWRCCNSE show varying predictions
   - DDFM models (3): "status": "completed" ✅ - Working correctly (varying predictions - different values per month)
   - ARIMA/VAR models (6): "status": "no_results" ✅ - Expected (not supported for nowcasting)
+- **outputs/comparisons/**: **3 comparison_results.json files exist** ✅ - All show "failed_models": [] (no failures)
 - **outputs/experiments/aggregated_results.csv**: **EXISTS** (265 lines, includes header and 264 data rows) ✅ - Forecasting results available (extreme VAR values filtered on load)
 - **nowcasting-report/tables/**: 3 tables generated ✅ - Table 3 shows DDFM with varying predictions (different values for 4weeks vs 1week)
 - **nowcasting-report/images/**: 11 plots generated ✅ - Plot4 shows DDFM varying predictions
@@ -68,7 +93,10 @@
 - **Scripts**: run_train.sh, run_forecast.sh, run_backtest.sh, agent_execute.sh ready
 - **Config**: All 3 target configs exist
 - **Models**: ✅ **12/12 trained** (checkpoint/ contains all model.pkl files)
-- **Code Changes This Iteration**: Added defense-in-depth data leakage check in evaluation.py (lines 487-500)
+- **Code Changes This Iteration**: 
+- Added data masking change detection in infer.py (lines 1081-1107)
+- Added debug logging in DFM predict() method (dfm-python/src/dfm_python/models/dfm.py lines 737-747)
+- Enhanced data statistics logging in _get_current_factor_state (infer.py lines 293-320)
 
 ---
 
@@ -81,7 +109,7 @@
 - **Plots**: Plot1 ✅, Plot2 ✅, Plot3 ✅, Plot4 ✅ (nowcasting comparison plots with actual results)
 
 **Report Updates This Iteration**:
-- ❌ **No report sections updated** - Report sections were not modified this iteration
+- ❌ **No report sections updated** - Report sections were not modified this iteration (results already exist, but analysis not added to report)
 
 ---
 
@@ -94,7 +122,8 @@
 - **Model performance validation**: Extreme values (> 1e10) and suspiciously good results (<= 1e-4) are properly filtered
 
 **Backtest Results Analysis**:
-- **DFM models (3)**: "status": "completed" ✅ - Working correctly, produce varying predictions
+- **DFM models (3)**: "status": "completed" ⚠️ - **KOIPALL.G DFM shows repetitive predictions** (only 2 unique values: -12.904 and 13.468)
+- **DFM models (2)**: "status": "completed" ✅ - KOEQUIPTE and KOWRCCNSE show varying predictions
 - **DDFM models (3)**: "status": "completed" ✅ - Working correctly, produce varying predictions (different values per month)
 - **ARIMA/VAR models (6)**: "status": "no_results" ✅ - Expected (not supported for nowcasting)
 
@@ -129,21 +158,37 @@
 
 ## Known Issues
 
-**No Critical Issues Identified**:
-- ✅ Training is complete (12/12 models in checkpoint/)
-- ✅ All experiments completed (forecasting and nowcasting)
-- ✅ Tables and plots generated
+**Critical Issues Identified**:
+- ⚠️ **KOIPALL.G DFM repetitive predictions**: Only 2 unique predictions across all months (-12.904 and 13.468)
+  - Issue identified, enhanced diagnostic logging added
+  - Root cause not fixed - needs experiments to be re-run to see logs and diagnose
+  - See ISSUES.md Issue 7 for details
+
+**Non-Critical Issues**:
+- ⚠️ **KOIPALL.G DFM numerical instability**: Very high sMSE (104.8 for 4weeks, 100.4 for 1weeks)
+  - Symptom handled (clipping prevents corruption)
+  - Root cause in EM algorithm still needs investigation
+  - See ISSUES.md Issue 5 for details
 
 **Potential Improvements** (Non-blocking):
 - Report sections could be updated with nowcasting analysis (optional)
 - dfm-python package could be reviewed for code quality improvements (optional)
-- Suspicious result filtering could be further refined based on analysis (optional)
 
 ---
 
 ## Next Iteration Actions
 
+**PRIORITY 1 (Critical)**:
+1. **Fix KOIPALL.G DFM repetitive predictions** - Re-run backtest with enhanced logging, analyze logs, fix root cause
+   - Enhanced diagnostic logging added this iteration
+   - Need to run experiments to see logs and diagnose root cause
+   - See ISSUES.md Issue 7 for detailed steps
+
+**PRIORITY 2 (Medium)**:
+2. **Investigate KOIPALL.G DFM numerical instability** - Analyze training logs, check EM convergence
+   - Symptom handled (clipping), but root cause needs investigation
+   - See ISSUES.md Issue 5 for detailed steps
+
 **OPTIONAL (Non-Blocking)**:
-1. **Report updates** - Update report sections with nowcasting analysis (optional, results already exist)
-2. **dfm-python improvements** - Review and improve code quality, naming consistency (optional)
-3. **Further analysis** - Analyze model performance patterns, identify improvement opportunities (optional)
+3. **Report updates** - Update report sections with nowcasting analysis (optional, results already exist)
+4. **dfm-python improvements** - Review and improve code quality, naming consistency (optional)
