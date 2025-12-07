@@ -305,8 +305,10 @@ def _train_forecaster(
         )
         
         target_series = _extract_target_series(cfg)
-        # Preprocess multivariate data for DFM (resample to monthly)
+        # Preprocess multivariate data for DFM (resample to monthly, set frequency)
+        # Note: DFM uses internal preprocessing pipeline (imputation + scaling), so we only do resampling and frequency setting here
         y_train = prepare_multivariate_data(data, config_dict, cfg, target_series, model_type='dfm')
+        y_train = set_dataframe_frequency(y_train)
         print(f"Max iterations: {max_iter}, Threshold: {threshold}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
         
     elif model_type == 'ddfm':
@@ -330,8 +332,10 @@ def _train_forecaster(
         )
         
         target_series = _extract_target_series(cfg)
-        # Preprocess multivariate data for DDFM (resample to monthly)
+        # Preprocess multivariate data for DDFM (resample to monthly, set frequency)
+        # Note: DDFM uses internal preprocessing pipeline (imputation + scaling), so we only do resampling and frequency setting here
         y_train = prepare_multivariate_data(data, config_dict, cfg, target_series, model_type='ddfm')
+        y_train = set_dataframe_frequency(y_train)
         print(f"Epochs: {epochs}, Encoder layers: {encoder_layers}, Factors: {num_factors}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
         
     elif model_type == 'arima':

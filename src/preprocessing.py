@@ -1382,7 +1382,11 @@ def prepare_multivariate_data(
         if target_series and target_series in data.columns and target_series not in available_series:
             available_series.append(target_series)
         if len(available_series) > 0:
-            selected_data = data[available_series].dropna()
+            selected_data = data[available_series]
+            # Note: dropna() is called here to remove rows with all NaN, but imputation will handle missing values later
+            # For VAR, impute_missing_values() will be called after this function
+            # For DFM/DDFM, missing values are handled by the preprocessing pipeline
+            selected_data = selected_data.dropna(how='all')  # Only drop rows where ALL values are NaN
             return resample_to_monthly(selected_data)
         else:
             raise ValidationError(
@@ -1397,15 +1401,22 @@ def prepare_multivariate_data(
             if target_series and target_series in data.columns and target_series not in available_series:
                 available_series.append(target_series)
             if len(available_series) > 0:
-                selected_data = data[available_series].dropna()
+                selected_data = data[available_series]
+                # Note: dropna(how='all') only removes rows where ALL values are NaN
+                # Missing values will be handled by imputation later (VAR) or preprocessing pipeline (DFM/DDFM)
+                selected_data = selected_data.dropna(how='all')
                 return resample_to_monthly(selected_data)
             else:
-                all_numeric = data.select_dtypes(include=[np.number]).dropna()
+                all_numeric = data.select_dtypes(include=[np.number])
+                all_numeric = all_numeric.dropna(how='all')
                 return resample_to_monthly(all_numeric)
     else:
-        y_train = data.select_dtypes(include=[np.number]).dropna()
+        y_train = data.select_dtypes(include=[np.number])
         if target_series and target_series in data.columns and target_series not in y_train.columns:
             y_train[target_series] = data[target_series]
+        # Note: dropna(how='all') only removes rows where ALL values are NaN
+        # Missing values will be handled by imputation later (VAR) or preprocessing pipeline (DFM/DDFM)
+        y_train = y_train.dropna(how='all')
         return resample_to_monthly(y_train)
 
 
