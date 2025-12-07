@@ -1380,11 +1380,11 @@ def generate_latex_table_nowcasting_backtest(
 ) -> str:
     """Generate LaTeX table for nowcasting backtest results (Table 3).
     
-    Table structure: Rows = model-timepoint combinations (8 rows: ARIMA-4weeks, ARIMA-1week, 
-    VAR-4weeks, VAR-1week, DFM-4weeks, DFM-1week, DDFM-4weeks, DDFM-1week).
+    Table structure: Rows = model-timepoint combinations (4 rows: DFM-4weeks, DFM-1week, 
+    DDFM-4weeks, DDFM-1week). Note: ARIMA and VAR are not included as they do not support nowcasting.
     Columns = target-metric combinations (6 columns: KOIPALL.G_sMAE, KOIPALL.G_sMSE, 
     KOEQUIPTE_sMAE, KOEQUIPTE_sMSE, KOWRCCNSE_sMAE, KOWRCCNSE_sMSE).
-    Total: 8 rows × 7 columns (including model-timepoint column).
+    Total: 4 rows × 7 columns (including model-timepoint column).
     
     Parameters
     ----------
@@ -1416,8 +1416,9 @@ Model-Timepoint & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KO
 """
     
     # Load backtest results
+    # Note: Only DFM and DDFM support nowcasting (ARIMA/VAR cannot handle missing data from release date masking)
     targets = ['KOIPALL.G', 'KOEQUIPTE', 'KOWRCCNSE']
-    models = ['ARIMA', 'VAR', 'DFM', 'DDFM']
+    models = ['DFM', 'DDFM']
     timepoints = ['4weeks', '1weeks']  # Note: JSON uses "4weeks" and "1weeks" (not "1week")
     
     # Collect results: (model, timepoint) -> {target: {sMAE, sMSE}}
