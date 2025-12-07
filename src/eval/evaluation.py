@@ -232,6 +232,25 @@ def calculate_standardized_metrics(
     sMAE = mae / sigma_mean if sigma_mean > 0 else np.nan
     sRMSE = rmse / sigma_mean if sigma_mean > 0 else np.nan
     
+    # Validate for extreme values (numerical instability)
+    # Threshold: values > 1e10 are considered unstable
+    EXTREME_THRESHOLD = 1e10
+    if isinstance(sMSE, (int, float)) and (abs(sMSE) > EXTREME_THRESHOLD or np.isinf(sMSE)):
+        logger.warning(f"calculate_standardized_metrics: Extreme sMSE detected: {sMSE}. This indicates numerical instability.")
+        sMSE = np.nan
+    if isinstance(sMAE, (int, float)) and (abs(sMAE) > EXTREME_THRESHOLD or np.isinf(sMAE)):
+        logger.warning(f"calculate_standardized_metrics: Extreme sMAE detected: {sMAE}. This indicates numerical instability.")
+        sMAE = np.nan
+    if isinstance(sRMSE, (int, float)) and (abs(sRMSE) > EXTREME_THRESHOLD or np.isinf(sRMSE)):
+        logger.warning(f"calculate_standardized_metrics: Extreme sRMSE detected: {sRMSE}. This indicates numerical instability.")
+        sRMSE = np.nan
+    
+    # Validate for suspiciously good results (potential data leakage or numerical precision issues)
+    # Threshold: sRMSE < 1e-4 is suspiciously good and may indicate issues
+    SUSPICIOUSLY_GOOD_THRESHOLD = 1e-4
+    if isinstance(sRMSE, (int, float)) and (0 < sRMSE < SUSPICIOUSLY_GOOD_THRESHOLD):
+        logger.warning(f"calculate_standardized_metrics: Suspiciously good sRMSE detected: {sRMSE}. This may indicate data leakage, numerical precision issues, or overfitting. Verify train-test split and model implementation.")
+    
     return {
         'sMSE': sMSE,
         'sMAE': sMAE,
@@ -331,23 +350,51 @@ def calculate_metrics_per_horizon(
         has_true = len(y_true_h) > 0 if hasattr(y_true_h, '__len__') else (y_true_h.size > 0 if hasattr(y_true_h, 'size') else False)
         
         # Calculate metrics for this horizon
-        if has_pred and has_true:
-            try:
-                # Fix: If y_true_h is Series (not DataFrame), target_series must be None or int, not string
-                target_series_for_metrics = target_series
-                if isinstance(y_true_h, pd.Series) and isinstance(target_series, str):
-                    # y_true_h is Series but target_series is string - set to None
-                    target_series_for_metrics = None
-                elif isinstance(y_true_h, pd.DataFrame) and len(y_true_h.columns) == 1:
-                    # Single column DataFrame - can use None or column name
-                    if isinstance(target_series, str) and target_series not in y_true_h.columns:
-                        # target_series string doesn't match column name - set to None
+            if has_pred and has_true:
+                try:
+                    # Fix: If y_true_h is Series (not DataFrame), target_series must be None or int, not string
+                    target_series_for_metrics = target_series
+                    if isinstance(y_true_h, pd.Series) and isinstance(target_series, str):
+                        # y_true_h is Series but target_series is string - set to None
                         target_series_for_metrics = None
-                
-                metrics = calculate_standardized_metrics(
-                    y_true_h, y_pred_h, y_train=y_train, target_series=target_series_for_metrics
-                )
-                results[h] = metrics
+                    elif isinstance(y_true_h, pd.DataFrame) and len(y_true_h.columns) == 1:
+                        # Single column DataFrame - can use None or column name
+                        if isinstance(target_series, str) and target_series not in y_true_h.columns:
+                            # target_series string doesn't match column name - set to None
+                            target_series_for_metrics = None
+                    
+                    # Additional validation: Check if prediction is suspiciously close to last training value
+                    # This can help detect if VAR is just predicting the last value (persistence)
+                    if h == 1 and y_train is not None:
+                        try:
+                            if isinstance(y_train, (pd.DataFrame, pd.Series)):
+                                last_train_val = y_train.iloc[-1]
+                                if isinstance(y_pred_h, (pd.DataFrame, pd.Series)):
+                                    pred_val = y_pred_h.iloc[0] if len(y_pred_h) > 0 else None
+                                    if pred_val is not None and isinstance(last_train_val, (pd.Series, pd.DataFrame)):
+                                        # Compare values
+                                        if isinstance(pred_val, pd.Series) and isinstance(last_train_val, pd.Series):
+                                            diff = (pred_val - last_train_val).abs()
+                                            if target_series_for_metrics is not None:
+                                                if isinstance(target_series_for_metrics, str) and target_series_for_metrics in diff.index:
+                                                    diff_val = diff[target_series_for_metrics]
+                                                elif isinstance(target_series_for_metrics, int) and target_series_for_metrics < len(diff):
+                                                    diff_val = diff.iloc[target_series_for_metrics]
+                                                else:
+                                                    diff_val = diff.iloc[0] if len(diff) > 0 else None
+                                            else:
+                                                diff_val = diff.iloc[0] if len(diff) > 0 else None
+                                            
+                                            # If prediction is extremely close to last training value, log warning
+                                            if diff_val is not None and diff_val < 1e-6:
+                                                logger.warning(f"Horizon {h}: Prediction is extremely close to last training value (diff={diff_val}). This may indicate VAR is essentially predicting persistence (last value), which could explain suspiciously good results.")
+                        except Exception as e:
+                            logger.debug(f"Horizon {h}: Could not check prediction vs last training value: {e}")
+                    
+                    metrics = calculate_standardized_metrics(
+                        y_true_h, y_pred_h, y_train=y_train, target_series=target_series_for_metrics
+                    )
+                    results[h] = metrics
             except Exception as e:
                 # If calculation fails, return NaN metrics
                 results[h] = {
@@ -792,103 +839,6 @@ def generate_comparison_table(
     return formatted_table
 
 
-def save_comparison_plots(
-    comparison_results: Dict[str, Any],
-    output_dir: str,
-    target_series: str
-) -> List[Path]:
-    """Save comparison plots for model results.
-    
-    This function generates and saves visualization plots comparing
-    multiple models' performance across different horizons.
-    
-    Parameters
-    ----------
-    comparison_results : dict
-        Results from compare_multiple_models() function
-    output_dir : str
-        Output directory for saving plots
-    target_series : str
-        Target series name (for plot titles)
-        
-    Returns
-    -------
-    List[Path]
-        List of paths to saved plot files
-        
-    Note
-    ----
-    This function requires matplotlib. Plots are saved to nowcasting-report/images/
-    if output_dir is set appropriately, otherwise to the specified output_dir.
-    """
-    try:
-        import matplotlib.pyplot as plt
-        import matplotlib
-        matplotlib.use('Agg')  # Non-interactive backend
-    except ImportError:
-        print("Warning: matplotlib not available, skipping plot generation")
-        return []
-    
-    metrics_table = comparison_results.get('metrics_table')
-    if metrics_table is None or len(metrics_table) == 0:
-        print("Warning: No metrics table available for plotting")
-        return []
-    
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-    
-    saved_plots = []
-    
-    # Plot 1: Log-likelihood comparison
-    if 'loglik' in metrics_table.columns and not metrics_table['loglik'].isna().all():
-        fig, ax = plt.subplots(figsize=(10, 6))
-        models = metrics_table['model']
-        logliks = metrics_table['loglik']
-        
-        ax.bar(models, logliks)
-        ax.set_xlabel('Model')
-        ax.set_ylabel('Log-Likelihood')
-        ax.set_title(f'Model Comparison: Log-Likelihood ({target_series})')
-        ax.tick_params(axis='x', rotation=45)
-        plt.tight_layout()
-        
-        plot_path = output_path / f"comparison_loglik_{target_series}.png"
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        saved_plots.append(plot_path)
-    
-    # Plot 2: Convergence status
-    if 'converged' in metrics_table.columns:
-        fig, ax = plt.subplots(figsize=(8, 6))
-        models = metrics_table['model']
-        converged = metrics_table['converged'].astype(int)
-        
-        ax.bar(models, converged, color=['red' if not c else 'green' for c in metrics_table['converged']])
-        ax.set_xlabel('Model')
-        ax.set_ylabel('Converged (1=Yes, 0=No)')
-        ax.set_title(f'Model Comparison: Convergence Status ({target_series})')
-        ax.set_ylim([-0.1, 1.1])
-        ax.tick_params(axis='x', rotation=45)
-        plt.tight_layout()
-        
-        plot_path = output_path / f"comparison_convergence_{target_series}.png"
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        saved_plots.append(plot_path)
-    
-    # Also save to nowcasting-report/images/ if possible
-    try:
-        report_images_dir = Path(__file__).parent.parent / "nowcasting-report" / "images"
-        if report_images_dir.exists():
-            for plot_path in saved_plots:
-                import shutil
-                shutil.copy(plot_path, report_images_dir / plot_path.name)
-    except Exception as e:
-        print(f"Warning: Could not copy plots to nowcasting-report/images/: {e}")
-    
-    return saved_plots
-
-
 # ========================================================================
 # Result Aggregation Functions
 # ========================================================================
@@ -976,15 +926,43 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
                 
                 n_valid = horizon_metrics.get('n_valid', 0)
                 
+                # Apply validation to filter extreme values (numerical instability)
+                # This ensures extreme VAR values (e.g., > 1e10) are marked as NaN
+                EXTREME_THRESHOLD = 1e10
+                
+                def validate_metric(val):
+                    """Validate metric value and return NaN if extreme."""
+                    if val is None:
+                        return None
+                    if isinstance(val, (int, float)):
+                        if np.isnan(val) or np.isinf(val):
+                            return np.nan
+                        if abs(val) > EXTREME_THRESHOLD:
+                            # Log warning for extreme values
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning(
+                                f"aggregate_overall_performance: Extreme value detected for "
+                                f"{model_name.upper()} {target_series} horizon {horizon}: {val}. "
+                                f"Marking as NaN due to numerical instability."
+                            )
+                            return np.nan
+                    return val
+                
+                # Validate standardized metrics
+                smse = validate_metric(horizon_metrics.get('sMSE'))
+                smae = validate_metric(horizon_metrics.get('sMAE'))
+                srmse = validate_metric(horizon_metrics.get('sRMSE'))
+                
                 # Include all horizons, even if n_valid=0 (for complete 36-row dataset)
                 # This allows the report to show NaN/N/A for unavailable combinations
                 row = {
                     'target': target_series,
                     'model': model_name.upper(),
                     'horizon': horizon,
-                    'sMSE': horizon_metrics.get('sMSE'),
-                    'sMAE': horizon_metrics.get('sMAE'),
-                    'sRMSE': horizon_metrics.get('sRMSE'),
+                    'sMSE': smse,
+                    'sMAE': smae,
+                    'sRMSE': srmse,
                     'MSE': horizon_metrics.get('MSE'),
                     'MAE': horizon_metrics.get('MAE'),
                     'RMSE': horizon_metrics.get('RMSE'),
@@ -1107,19 +1085,29 @@ Model & sMSE & sMAE & sRMSE \\\\
 \\midrule
 """
     
+    # Threshold for detecting extreme values (numerical instability)
+    EXTREME_THRESHOLD = 1e10  # Values above this are considered unstable
+    
     for _, row in model_avg.iterrows():
         model = row['model']
         smse = row['sMSE'] if pd.notna(row['sMSE']) else '--'
         smae = row['sMAE'] if pd.notna(row['sMAE']) else '--'
         srmse = row['sRMSE'] if pd.notna(row['sRMSE']) else '--'
         
-        # Format numbers
-        if isinstance(smse, (int, float)):
-            smse = f"{smse:.4f}"
-        if isinstance(smae, (int, float)):
-            smae = f"{smae:.4f}"
-        if isinstance(srmse, (int, float)):
-            srmse = f"{srmse:.4f}"
+        # Format numbers, handling extreme values
+        def format_metric(val):
+            if val == '--':
+                return '--'
+            if isinstance(val, (int, float)):
+                # Check for extreme values (numerical instability)
+                if abs(val) > EXTREME_THRESHOLD:
+                    return 'Unstable\\footnote{Numerical instability detected.}'
+                return f"{val:.4f}"
+            return str(val)
+        
+        smse = format_metric(smse)
+        smae = format_metric(smae)
+        srmse = format_metric(srmse)
         
         latex += f"{model} & {smse} & {smae} & {srmse} \\\\\n"
     
@@ -1205,13 +1193,22 @@ Model & Equipment Investment & Wholesale/Retail Sales & Industrial Production \\
             latex += f"{model} & -- & -- & -- \\\\\n"
             continue
         
+        # Threshold for detecting extreme values (numerical instability)
+        EXTREME_THRESHOLD = 1e10
+        
+        def format_metric(val):
+            if pd.isna(val):
+                return '--'
+            if isinstance(val, (int, float)):
+                if abs(val) > EXTREME_THRESHOLD:
+                    return 'Unstable\\footnote{Numerical instability detected.}'
+                return f"{val:.4f}"
+            return str(val)
+        
         values = []
         for target in targets:
             val = target_pivot.loc[model, target] if target in target_pivot.columns else np.nan
-            if pd.notna(val):
-                values.append(f"{val:.4f}")
-            else:
-                values.append("--")
+            values.append(format_metric(val))
         
         latex += f"{model} & {values[0]} & {values[1]} & {values[2]} \\\\\n"
     
@@ -1292,14 +1289,23 @@ Model & 1 day & 7 days & 28 days \\\\
             latex += f"{model} & -- & -- & -- \\\\\n"
             continue
         
+        # Threshold for detecting extreme values (numerical instability)
+        EXTREME_THRESHOLD = 1e10
+        
+        def format_metric(val, is_h28=False):
+            if pd.isna(val):
+                return "N/A\\footnotemark[1]" if is_h28 else "--"
+            if isinstance(val, (int, float)):
+                if abs(val) > EXTREME_THRESHOLD:
+                    return 'Unstable\\footnote{Numerical instability detected.}'
+                return f"{val:.4f}"
+            return str(val)
+        
         values = []
         for h in horizons:
             if h in horizon_pivot.columns:
                 val = horizon_pivot.loc[model, h]
-                if pd.notna(val):
-                    values.append(f"{val:.4f}")
-                else:
-                    values.append("N/A\\footnotemark[1]" if h == 28 else "--")
+                values.append(format_metric(val, is_h28=(h == 28)))
             else:
                 values.append("N/A\\footnotemark[1]" if h == 28 else "--")
         
@@ -1403,6 +1409,225 @@ Target & Model & Horizon & sMSE & sMAE & sRMSE \\\\
                     else:
                         # Missing combination
                         latex += f"{target} & {model} & {horizon} & N/A & N/A & N/A \\\\\n"
+    
+    latex += """\\bottomrule
+\\end{tabular}
+\\end{table}"""
+    
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(latex)
+    
+    return latex
+
+
+def generate_latex_table_forecasting_results(
+    aggregated_df: pd.DataFrame,
+    output_path: Optional[Path] = None
+) -> str:
+    """Generate LaTeX table for forecasting results (Table 2).
+    
+    Table structure: Rows = model-horizon combinations (12 rows: ARIMA-1, ARIMA-7, ARIMA-30, 
+    VAR-1, VAR-7, VAR-30, DFM-1, DFM-7, DFM-30, DDFM-1, DDFM-7, DDFM-30).
+    Columns = target-metric combinations (6 columns: KOIPALL.G_sMAE, KOIPALL.G_sMSE, 
+    KOEQUIPTE_sMAE, KOEQUIPTE_sMSE, KOWRCCNSE_sMAE, KOWRCCNSE_sMSE).
+    Total: 12 rows × 7 columns (including model-horizon column).
+    
+    Parameters
+    ----------
+    aggregated_df : pd.DataFrame
+        DataFrame from aggregate_overall_performance()
+    output_path : Path, optional
+        Path to save the LaTeX table file
+        
+    Returns
+    -------
+    str
+        LaTeX table code
+    """
+    # Selected horizons for display (1, 7, 30 days)
+    # Note: If data has horizon 28 instead of 30, use 28
+    display_horizons = [1, 7, 30]
+    # Check if horizon 30 exists in data, if not use 28
+    if not aggregated_df.empty:
+        available_horizons = set(aggregated_df['horizon'].unique())
+        if 30 not in available_horizons and 28 in available_horizons:
+            display_horizons = [1, 7, 28]
+    models = ['ARIMA', 'VAR', 'DFM', 'DDFM']
+    targets = ['KOIPALL.G', 'KOEQUIPTE', 'KOWRCCNSE']
+    metrics = ['sMAE', 'sMSE']
+    
+    # Generate LaTeX
+    latex = """\\begin{table}[h]
+\\centering
+\\caption[Forecasting Results by Model-Horizon and Target-Metric]{Forecasting Results by Model-Horizon and Target-Metric\\footnote{Experiments evaluate all horizons from 1 to 30 days, but table shows only selected horizons (1, 7, 30 days) for readability.}}
+\\label{tab:forecasting_results}
+\\begin{tabular}{lcccccc}
+\\toprule
+Model-Horizon & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KOWRCCNSE \\\\
+ & sMAE & sMSE & sMAE & sMSE & sMAE & sMSE \\\\
+\\midrule
+"""
+    
+    EXTREME_THRESHOLD = 1e10
+    
+    def format_value(val):
+        """Format value for LaTeX table."""
+        if pd.isna(val) or (isinstance(val, (int, float)) and (np.isnan(val) or np.isinf(val))):
+            return 'N/A'
+        if isinstance(val, (int, float)):
+            if abs(val) > EXTREME_THRESHOLD:
+                return 'Unstable'
+            return f"{val:.4f}"
+        return str(val)
+    
+    if aggregated_df.empty:
+        # Generate placeholder table
+        for model in models:
+            for horizon in display_horizons:
+                row_label = f"{model}-{horizon}"
+                values = []
+                for target in targets:
+                    for metric in metrics:
+                        values.append('N/A')
+                latex += f"{row_label} & {' & '.join(values)} \\\\\n"
+    else:
+        # Create lookup dictionary
+        data_lookup = {}
+        for _, row in aggregated_df.iterrows():
+            key = (row['model'], row['target'], row['horizon'])
+            data_lookup[key] = row
+        
+        # Generate rows for model-horizon combinations
+        for model in models:
+            for horizon in display_horizons:
+                row_label = f"{model}-{horizon}"
+                values = []
+                for target in targets:
+                    for metric in metrics:
+                        key = (model, target, horizon)
+                        if key in data_lookup:
+                            val = data_lookup[key][metric]
+                            values.append(format_value(val))
+                        else:
+                            values.append('N/A')
+                latex += f"{row_label} & {' & '.join(values)} \\\\\n"
+    
+    latex += """\\bottomrule
+\\end{tabular}
+\\end{table}"""
+    
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(latex)
+    
+    return latex
+
+
+def generate_latex_table_nowcasting_backtest(
+    outputs_dir: Optional[Path] = None,
+    output_path: Optional[Path] = None
+) -> str:
+    """Generate LaTeX table for nowcasting backtest results (Table 3).
+    
+    Table structure: Rows = model-timepoint combinations (8 rows: ARIMA-4weeks, ARIMA-1week, 
+    VAR-4weeks, VAR-1week, DFM-4weeks, DFM-1week, DDFM-4weeks, DDFM-1week).
+    Columns = target-metric combinations (6 columns: KOIPALL.G_sMAE, KOIPALL.G_sMSE, 
+    KOEQUIPTE_sMAE, KOEQUIPTE_sMSE, KOWRCCNSE_sMAE, KOWRCCNSE_sMSE).
+    Total: 8 rows × 7 columns (including model-timepoint column).
+    
+    Parameters
+    ----------
+    outputs_dir : Path, optional
+        Directory containing backtest results (default: project root / outputs)
+    output_path : Path, optional
+        Path to save the LaTeX table file
+        
+    Returns
+    -------
+    str
+        LaTeX table code
+    """
+    if outputs_dir is None:
+        outputs_dir = Path(__file__).parent.parent.parent / "outputs"
+    
+    backtest_dir = outputs_dir / "backtest"
+    
+    # Generate LaTeX
+    latex = """\\begin{table}[h]
+\\centering
+\\caption[Nowcasting Backtest Results by Model-Timepoint and Target-Metric]{Nowcasting Backtest Results by Model-Timepoint and Target-Metric\\footnote{Train with data from 1985 to 2019, nowcast from Jan 2024 to Dec 2024. For each target month, perform nowcasting at multiple time points (4 weeks before, 1 week before month end). By masking unavailable data based on release dates, generate 1 horizon forecast at each time point. Calculate sMSE, sMAE for each month and time point, then average across 12 months.}}
+\\label{tab:nowcasting_backtest}
+\\begin{tabular}{lcccccc}
+\\toprule
+Model-Timepoint & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KOWRCCNSE \\\\
+ & sMAE & sMSE & sMAE & sMSE & sMAE & sMSE \\\\
+\\midrule
+"""
+    
+    # Load backtest results
+    targets = ['KOIPALL.G', 'KOEQUIPTE', 'KOWRCCNSE']
+    models = ['ARIMA', 'VAR', 'DFM', 'DDFM']
+    timepoints = ['4weeks', '1weeks']  # Note: JSON uses "4weeks" and "1weeks" (not "1week")
+    
+    # Collect results: (model, timepoint) -> {target: {sMAE, sMSE}}
+    results_data = {}
+    
+    for target in targets:
+        for model in models:
+            model_lower = model.lower()
+            result_file = backtest_dir / f"{target}_{model_lower}_backtest.json"
+            if result_file.exists():
+                try:
+                    with open(result_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        results_by_timepoint = data.get('results_by_timepoint', {})
+                        
+                        for timepoint in timepoints:
+                            if timepoint in results_by_timepoint:
+                                tp_data = results_by_timepoint[timepoint]
+                                key = (model, timepoint)
+                                if key not in results_data:
+                                    results_data[key] = {}
+                                
+                                # Use overall metrics (averaged across months)
+                                results_data[key][target] = {
+                                    'sMAE': tp_data.get('overall_sMAE'),
+                                    'sMSE': tp_data.get('overall_sMSE')
+                                }
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Error loading {result_file}: {e}")
+                    continue
+    
+    # Generate table rows
+    def format_value(val):
+        """Format value for LaTeX table."""
+        if val is None or (isinstance(val, (int, float)) and (np.isnan(val) or np.isinf(val))):
+            return 'N/A'
+        if isinstance(val, (int, float)):
+            # Check for extreme values
+            if abs(val) > 1e10:
+                return 'Unstable'
+            return f"{val:.4f}"
+        return str(val)
+    
+    for model in models:
+        for timepoint in timepoints:
+            row_label = f"{model}-{timepoint}"
+            values = []
+            for target in targets:
+                key = (model, timepoint)
+                if key in results_data and target in results_data[key]:
+                    target_data = results_data[key][target]
+                    values.append(format_value(target_data.get('sMAE')))
+                    values.append(format_value(target_data.get('sMSE')))
+                else:
+                    values.extend(['N/A', 'N/A'])
+            latex += f"{row_label} & {' & '.join(values)} \\\\\n"
     
     latex += """\\bottomrule
 \\end{tabular}
@@ -1562,6 +1787,22 @@ def generate_all_latex_tables(
         aggregated_df = pd.DataFrame()
     else:
         aggregated_df = pd.read_csv(aggregated_file)
+        # Filter extreme values (numerical instability) - in case CSV was generated before validation
+        EXTREME_THRESHOLD = 1e10
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Filter extreme values in standardized metrics
+        for metric in ['sMSE', 'sMAE', 'sRMSE']:
+            if metric in aggregated_df.columns:
+                mask_extreme = aggregated_df[metric].abs() > EXTREME_THRESHOLD
+                if mask_extreme.any():
+                    n_extreme = mask_extreme.sum()
+                    logger.warning(
+                        f"generate_all_latex_tables: Found {n_extreme} extreme values in {metric} "
+                        f"(>{EXTREME_THRESHOLD}). Marking as NaN."
+                    )
+                    aggregated_df.loc[mask_extreme, metric] = np.nan
     
     if config_dir is None:
         config_dir = Path(__file__).parent.parent.parent / "config"
@@ -1571,39 +1812,25 @@ def generate_all_latex_tables(
     # Generate each table
     print("Generating LaTeX tables...")
     
-    # Table 0: Dataset and parameters
+    # Table 1: Dataset and parameters
     print("  - tab_dataset_params.tex")
     tables['dataset_params'] = generate_latex_table_dataset_params(
         config_dir,
         tables_dir / "tab_dataset_params.tex"
     )
     
-    # Table 1: Overall metrics
-    print("  - tab_overall_metrics.tex")
-    tables['overall_metrics'] = generate_latex_table_overall_metrics(
+    # Table 2: Forecasting results (model-horizon rows, target-metric columns)
+    print("  - tab_forecasting_results.tex")
+    tables['forecasting_results'] = generate_latex_table_forecasting_results(
         aggregated_df,
-        tables_dir / "tab_overall_metrics.tex"
+        tables_dir / "tab_forecasting_results.tex"
     )
     
-    # Table 2: By target
-    print("  - tab_overall_metrics_by_target.tex")
-    tables['by_target'] = generate_latex_table_by_target(
-        aggregated_df,
-        tables_dir / "tab_overall_metrics_by_target.tex"
-    )
-    
-    # Table 3: By horizon
-    print("  - tab_overall_metrics_by_horizon.tex")
-    tables['by_horizon'] = generate_latex_table_by_horizon(
-        aggregated_df,
-        tables_dir / "tab_overall_metrics_by_horizon.tex"
-    )
-    
-    # Table 4: 36-row detailed table
-    print("  - tab_metrics_36_rows.tex")
-    tables['36_rows'] = generate_latex_table_36_rows(
-        aggregated_df,
-        tables_dir / "tab_metrics_36_rows.tex"
+    # Table 3: Nowcasting backtest results
+    print("  - tab_nowcasting_backtest.tex")
+    tables['nowcasting_backtest'] = generate_latex_table_nowcasting_backtest(
+        outputs_dir,
+        tables_dir / "tab_nowcasting_backtest.tex"
     )
     
     print("✓ All LaTeX tables generated")

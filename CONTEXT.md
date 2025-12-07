@@ -2,186 +2,199 @@
 
 ## Project Overview
 
-**Goal**: Complete under 15 page LaTeX report comparing 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean macroeconomic targets (Production: KOIPALL.G; Investment: KOEQUIPTE; Consumption: KOWRCCNSE) across 3 forecast horizons (1, 7, 28 days). Finalize dfm-python package.
+**Goal**: Complete under 15 page LaTeX report comparing 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean macroeconomic targets (Production: KOIPALL.G; Investment: KOEQUIPTE; Consumption: KOWRCCNSE) across forecasting horizons (1-30 days) and nowcasting evaluation with multiple time points. Finalize dfm-python package.
 
 **Experiment Configuration**:
 - **3 Targets**: KOEQUIPTE (Equipment Investment Index), KOWRCCNSE (Wholesale and Retail Trade Sales), KOIPALL.G (Industrial Production Index, All Industries)
 - **4 Models**: ARIMA (sktime), VAR (sktime), DFM (EM algorithm), DDFM (PyTorch Lightning)
-- **3 Horizons**: 1, 7, 28 days
-- **Total**: 36 combinations (3 × 4 × 3)
+- **Forecasting Horizons**: 1-30 days (table shows 1, 7, 30)
+- **Nowcasting Configuration**: 
+  - All models (ARIMA, VAR, DFM, DDFM) and all targets (3)
+  - 12 target months (2024-01 ~ 2024-12)
+  - 2 time points per month (4 weeks before, 1 week before month end)
+  - Release date based masking
+  - 1 horizon forecast at each time point
+  - Total: 3 targets × 4 models × 12 months × 2 timepoints = 288 nowcasting predictions
 
-**Current Status (2025-12-07 - Final Verification Complete)**: 
-- ✅ **Experiments**: All 4 models completed (36/36 combinations, 30 valid + 6 NaN for DFM/DDFM h28) - Results available in `outputs/experiments/aggregated_results.csv`. All comparison_results.json show "failed_models": [] and status "completed" for all models/targets. Aggregated results CSV matches comparison results perfectly (all 36 rows verified).
-- ✅ **DFM/DDFM Package**: ✅ **VERIFIED WORKING** - Working correctly (importable via path, no dependency errors). All comparison_results.json show "failed_models": [] (empty list). NO package dependency errors found. **FINAL VERIFICATION (2025-12-07)**: All 3 comparison_results.json files inspected - confirmed empty failed_models lists, all models status "completed", no ModuleNotFoundError or package dependency errors. DFM/DDFM working correctly. All 4 models (ARIMA, VAR, DFM, DDFM) completed successfully for all 3 targets.
-- ✅ **Data Leakage Verification**: ✅ **CODE-LEVEL VERIFICATION COMPLETE** - Train/test split verified correct (80/20), evaluation design verified (single test point per horizon), model fitting verified (only on `y_train_eval`). VAR uses sktime's `SktimeVAR` forecaster, fitted only on training split. No test data used during training. **CONCLUSION**: No data leakage found. VAR h1 near-perfect results (sRMSE ~10^-5) are likely legitimate VAR advantage for 1-step ahead forecasts, not data leakage.
-- ✅ **Tables**: All 3 required tables generated and verified with actual results from all 4 models (Table 1: dataset/params, Table 2: 36 rows, Table 3: monthly backtest with limitation documentation)
-- ✅ **Plots**: All required plots generated and verified (forecast vs actual per target, accuracy heatmap, horizon trend, model comparison)
-- ✅ **Report Sections**: All 6 sections updated with actual results from all 4 models - All numbers verified against aggregated_results.csv, all citations verified in references.bib, no placeholders found
-- ✅ **LaTeX References**: All table/figure references verified (no broken references)
-- ✅ **Code Consolidation**: src/ has 15 files (max 15 required) - Complete
-- ⚠️ **Evaluation Design Limitation**: All results show n_valid=1 - Single-step evaluation design (uses only 1 test point per horizon, see `src/eval/evaluation.py` line 504) - Documented in methodology section
-- ⚠️ **VAR Performance Characteristics**: Horizon 1 excellent (sRMSE ~10^-5) - likely legitimate VAR advantage for 1-step ahead (code verification confirms no data leakage). Severe numerical instability for horizons 7/28 (errors > 10¹¹, up to 10¹²⁰) - documented in report, verified in results (model limitation, not fixable). VAR h7/h28 instability confirms VAR is working correctly but has limitations for multi-step ahead forecasts.
-- ⚠️ **DFM Numerical Instability**: DFM shows extreme values for KOWRCCNSE/KOIPALL.G (R=10000, Q=1e6, V_0=1e38) but still converged (num_iter=4, loglik=0.0). KOEQUIPTE DFM is stable (num_iter=100, loglik=-3993.23). This is an EM algorithm convergence issue, NOT a package dependency issue. Results still valid, documented in report.
-- ⚠️ **DDFM Performance Characteristics**: DDFM shows very good h1 results (sRMSE: 0.01-0.82, much better than ARIMA/DFM) - likely legitimate DDFM advantage for short horizons (code verification confirms no data leakage). DDFM h7 results (sRMSE: 1.36-1.91) are still good but not as extreme, suggesting legitimate performance rather than overfitting.
-- ⚠️ **DFM/DDFM h28 Limitation**: All DFM/DDFM h28 show NaN (n_valid=0) due to insufficient test data after 80/20 split. Root cause is data limitation, NOT package issues.
-- ⏳ **Report Verification**: PDF compilation and page count check pending (<15 pages target, LaTeX not installed but all content ready)
+**ACTUAL Current Status**:
+- **checkpoint/**: Empty or missing - **0 models trained** (12 models needed: 3 targets × 4 models)
+- **outputs/backtest/**: Missing - **0 nowcasting experiments run** (12 experiments needed: 3 targets × 4 models)
+- **outputs/experiments/aggregated_results.csv**: Missing - **Forecasting results not aggregated**
+- **outputs/comparisons/**: May contain comparison_results.json files, but need to verify
+
+**What This Means**:
+- Training has NOT been run - models need to be trained and saved to checkpoint/
+- Nowcasting experiments have NOT been run - outputs/backtest/ needs to be created
+- Forecasting results may exist but are NOT aggregated - aggregated_results.csv needs to be generated
+
+**Next Steps** (Step 1 will automatically handle):
+1. Check checkpoint/ - if empty, run `bash agent_execute.sh train`
+2. Check outputs/experiments/aggregated_results.csv - if missing, run `bash agent_execute.sh forecast`
+3. Check outputs/backtest/ - if missing, run `bash agent_execute.sh backtest`
+
+---
 
 ## Architecture Overview
 
 ### Directory Structure
 - **src/**: Experiment engine (15 files, max 15 required) - wrappers for sktime & dfm-python
-  - Entry points: train.py (compare), infer.py (nowcast)
+  - Entry points: train.py (train, compare), infer.py (backtest)
   - Core modules: core/training.py, eval/evaluation.py, model/, preprocess/, utils/, nowcast/
-  - Status: Refactored, legacy code removed, consistent patterns, syntax error fixed, consolidation complete
-- **dfm-python/**: Core DFM/DDFM package (submodule) - Finalized
+  - Status: Code ready, but models NOT trained
+- **dfm-python/**: Core DFM/DDFM package (submodule)
   - Lightning-based training, EM algorithm (DFM), PyTorch encoder (DDFM)
-  - Consistent naming: snake_case functions, PascalCase classes
+  - Status: Package structure ready
 - **nowcasting-report/**: LaTeX report (under 15 pages target)
-  - Contents: 6 sections (Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion)
-  - Tables: Structure ready (tab_overall_metrics, tab_by_target, tab_by_horizon)
-  - Images: Need to generate with new target data
+  - Contents: 4 sections (Introduction, Methodology, Results, Discussion)
+  - Results section: Forecasting, Nowcasting, Performance subsections
+  - Tables: Table 1 (dataset/params), Table 2 (forecasting), Table 3 (nowcasting - **NOT generated yet**)
+  - Images: Plot1 (forecast vs actual), Plot2 (heatmap), Plot3 (horizon trend), Plot4 (nowcasting comparison - **NOT generated yet**)
   - Code: plot.py generates plots from outputs/
 - **config/**: Hydra YAML configs
   - experiment/: 3 target configs (koequipte_report, kowrccnse_report, koipallg_report)
   - model/: Model-specific parameters (arima, var, dfm, ddfm)
   - series/: Series configs (frequency, transformation, block: null - only global block)
+- **checkpoint/**: **EMPTY** - Trained models should be saved here (12 models needed)
 - **outputs/**: Experiment results
-  - comparisons/: Per-target results (comparison_results.json, comparison_table.csv)
-  - models/: Trained models (model.pkl per target/model)
-  - experiments/: Aggregated results (aggregated_results.csv)
+  - comparisons/: Per-target forecasting results (may exist, need to verify)
+  - experiments/: Aggregated forecasting results (aggregated_results.csv - **MISSING**)
+  - backtest/: **MISSING** - Nowcasting backtest results (12 JSON files needed)
 
-### Key Components
-
-**src/ Module (Experiment Engine)**:
-- Entry: `train.py` (compare command), `infer.py` (nowcast command)
-- Core: `core/training.py` - Unified training via sktime forecasters
-- Model: `model/{dfm,ddfm,sktime_forecaster,_common}.py` - Model wrappers
-- Preprocess: `preprocess/{sktime,utils,transformations}.py` - Data preprocessing
-- Eval: `eval/evaluation.py` - Standardized metrics (sMSE, sMAE, sRMSE), aggregation
-- Utils: `utils/config_parser.py` - Hydra config parsing
-
-**dfm-python/ Package**:
-- Models: DFM (EM algorithm), DDFM (PyTorch encoder + VAE)
-- Lightning: DataModule, KalmanFilter, EMAlgorithm (PyTorch Lightning integration)
-- Features: Clock-based mixed-frequency, block-structured factors (only global block now), Hydra YAML config
+---
 
 ## Experiment Pipeline
 
-**Training Flow**:
+**Training Flow** (NOT RUN YET):
 ```
-run_experiment.sh
-  → src/train.py compare --config-name experiment/{target}_report [--models var dfm]
-    → parse_experiment_config() → compare_models()
-      → For each model: train() → _train_forecaster()
-        → Load data → Preprocess → Create forecaster → fit() → predict()
-        → evaluate_forecaster() → Save to outputs/models/
-      → _compare_results() → Save to outputs/comparisons/{target}_{timestamp}/
+run_train.sh (or agent_execute.sh train)
+  → src/train.py train --config-name experiment/{target}_report --model {model}
+    → _train_forecaster() → Load data (1985-2019) → Preprocess → Create forecaster → fit()
+    → Save to checkpoint/{target}_{model}/model.pkl
 ```
+**Status**: checkpoint/ is empty - training NOT done
 
-**Result Structure**:
-- Per-target: `outputs/comparisons/{target}_{timestamp}/comparison_results.json`
-- Aggregated: `outputs/experiments/aggregated_results.csv` (36 rows: 3 targets × 4 models × 3 horizons)
-- Models: `outputs/models/{target}_{model}/model.pkl` (12 total)
+**Forecasting Flow** (MAY BE PARTIALLY DONE):
+```
+run_forecast.sh (or agent_execute.sh forecast)
+  → src/train.py compare --config-name experiment/{target}_report
+    → Load models from checkpoint/ → Generate forecasts for all horizons (1-30)
+    → evaluate_forecaster() → Save to outputs/comparisons/
+    → Aggregate results → Save to outputs/experiments/aggregated_results.csv
+```
+**Status**: aggregated_results.csv missing - may need to run or regenerate
 
-**Configuration**:
-- Experiment: `config/experiment/{target}_report.yaml` - Target, models, horizons, series
-- Model: `config/model/{model}.yaml` - Model-specific parameters
-- Series: `config/series/{series_id}.yaml` - Frequency, transformation, block: null (only global block)
+**Nowcasting Flow** (NOT RUN YET):
+```
+run_backtest.sh (or agent_execute.sh backtest)
+  → src/infer.py backtest --config-name experiment/{target}_report --model {model} --weeks-before 4 1
+    → Load model from checkpoint/ → For each target month (2024-01 ~ 2024-12):
+      → For each time point (4 weeks, 1 week before):
+        → Calculate view_date = target_month_end - weeks
+        → Mask data based on release dates
+        → Generate 1 horizon forecast
+        → Calculate sMSE, sMAE
+    → Save to outputs/backtest/{target}_{model}_backtest.json
+```
+**Status**: outputs/backtest/ missing - nowcasting NOT done
 
-## Data Flow
+---
 
-1. **Config → Model Setup**: Hydra loads experiment config → Extract series → Build dfm-python config (only global block)
-2. **Data → Preprocessing**: Load CSV (`data/data.csv`) → Apply per-series transformations → Standardize
-3. **Training**: Create forecaster → fit() → EM (DFM) or PyTorch Lightning (DDFM)
-4. **Evaluation**: Train/test split (80/20) → predict() → calculate_standardized_metrics()
-5. **Comparison**: Aggregate across models → generate_comparison_table() → Save JSON/CSV
-6. **Visualization**: Load JSON → Extract metrics → Generate plots → Save PNG
-7. **Report**: Update tables → Compile PDF (under 15 pages)
+## Result Structure
 
-## Key Design Patterns
+**Forecasting**:
+- Per-target: `outputs/comparisons/{target}_{timestamp}/comparison_results.json` (may exist, need to verify)
+- Aggregated: `outputs/experiments/aggregated_results.csv` (**MISSING**)
+- Models: `checkpoint/{target}_{model}/model.pkl` (**0 files - checkpoint/ empty**)
 
-- **Unified Interface**: All models use sktime forecaster interface (fit/predict)
-- **Config-Driven**: Hydra YAML configs for all experiments
-- **Modular Preprocessing**: Per-series transformations via sktime FunctionTransformer
-- **Standardized Metrics**: sMSE, sMAE, sRMSE (normalized by training std)
-- **Output Structure**: outputs/{models,comparisons,experiments}/ with timestamps
-- **Block Structure**: Only global block used (all series have `block: null`)
+**Nowcasting**:
+- Per-target-model: `outputs/backtest/{target}_{model}_backtest.json` (**0 files - outputs/backtest/ missing**)
+- Structure: `results_by_timepoint` with "4weeks" and "1weeks" keys
+- Each timepoint contains: monthly_results, overall_sMAE, overall_sMSE, n_months
+
+---
 
 ## Usage
 
-**Run all experiments**:
+**Training (save models to checkpoint/)** - **NOT DONE YET**:
 ```bash
-bash run_experiment.sh
+bash agent_execute.sh train
+# Or: bash run_train.sh
+# Trains all models for all targets, saves to checkpoint/{target}_{model}/model.pkl
+# Training data: 1985-01-01 to 2019-12-31 (no data leakage)
+# Status: checkpoint/ is empty - needs to be run
 ```
 
-**Run test verification**:
+**Forecasting (load from checkpoint/, generate forecasts)** - **MAY NEED TO RUN**:
 ```bash
-bash run_test_experiment.sh
+bash agent_execute.sh forecast
+# Or: bash run_forecast.sh
+# Loads models from checkpoint/, generates forecasts for all horizons (1-30)
+# Aggregates results to outputs/experiments/aggregated_results.csv
+# Status: aggregated_results.csv missing - may need to run
 ```
 
-**Run specific models** (for incremental testing):
+**Nowcasting Backtest (multiple time points)** - **NOT DONE YET**:
 ```bash
-MODELS="var dfm" bash run_experiment.sh
-```
-
-**Run single model/target**:
-```bash
-.venv/bin/python3 src/train.py compare --config-name experiment/koequipte_report --models var
+bash agent_execute.sh backtest
+# Or: bash run_backtest.sh
+# Runs backtest for all models and targets
+# For each target month (2024-01 ~ 2024-12), predicts at 4 weeks and 1 week before
+# Saves to outputs/backtest/{target}_{model}_backtest.json
+# Status: outputs/backtest/ missing - needs to be run
 ```
 
 **Generate aggregated results**:
 ```bash
 python3 -c "from src.eval import main_aggregator; main_aggregator()"
+# Status: May need to run if aggregated_results.csv is missing
 ```
 
 **Generate plots**:
 ```bash
 python3 nowcasting-report/code/plot.py
+# Status: Plot4 cannot be generated until nowcasting results exist
 ```
+
+---
 
 ## Report Update Workflow
 
-1. Run test verification → `./run_test_experiment.sh` (verify all targets/models)
-2. Run experiments → `./run_experiment.sh` (all 3 targets × 4 models × 3 horizons)
-3. Generate aggregated CSV → `python3 -c "from src.eval import main_aggregator; main_aggregator()"`
-4. Generate plots → `python3 nowcasting-report/code/plot.py`
-5. Update LaTeX tables → From aggregated_results.csv (populate with actual metrics)
-6. Update result sections → `contents/3_production_model.tex`, `contents/4_investment_model.tex`, `contents/5_consumption_model.tex` with specific numbers
-7. Update conclusion → `contents/6_conclusion.tex` to reflect actual results
-8. Finalize report → Compile PDF, verify under 15 pages, no placeholders
+**Forecasting Workflow**:
+1. Train models → `bash agent_execute.sh train` (saves to checkpoint/) - **NOT DONE**
+2. Run forecasts → `bash agent_execute.sh forecast` (loads from checkpoint/, generates forecasts for 1-30 horizons) - **MAY NEED TO RUN**
+3. Generate aggregated CSV → `python3 -c "from src.eval import main_aggregator; main_aggregator()"` - **MAY NEED TO RUN**
+4. Generate plots → `python3 nowcasting-report/code/plot.py` (Plot1, Plot2, Plot3) - **MAY BE DONE**
+5. Update LaTeX tables → Table 1 (dataset/params), Table 2 (forecasting results from aggregated_results.csv) - **MAY BE DONE**
 
-## Latest Updates (2025-12-07 - Iteration Summary)
+**Nowcasting Workflow**:
+1. Run backtests → `bash agent_execute.sh backtest` (all models, all targets, 4 weeks and 1 week before) - **NOT DONE**
+2. Generate table 3 → From outputs/backtest/*_backtest.json (8 rows × 7 columns) - **CANNOT BE DONE YET**
+3. Generate plot4 → From outputs/backtest/*_backtest.json (3 pairs, 6 plots total) - **CANNOT BE DONE YET**
+4. Update report → Nowcasting section in 3_results.tex with table 3 and plot4 - **CANNOT BE DONE YET**
 
-**Results Verification**:
-- ✅ **Data Consistency**: Verified consistency between `outputs/comparisons/{target}_{timestamp}/comparison_results.json` and `outputs/experiments/aggregated_results.csv` - All 36 rows match correctly
-- ✅ **ARIMA Results**: All 9 combinations verified - sRMSE ranges from 0.06 (KOIPALL.G, h1) to 1.67 (KOEQUIPTE, h28), all values reasonable
-- ✅ **VAR Results**: All 9 combinations verified - Horizon 1 excellent (sRMSE ~0.0001), horizons 7/28 show severe numerical instability (sRMSE ~10¹¹ to 10¹²⁰) as documented
-- ✅ **DFM Results**: 6/9 valid - h1/h7 for all 3 targets, h28 unavailable (n_valid=0). KOWRCCNSE/KOIPALL.G show numerical instability warnings but still produce results.
-- ✅ **DDFM Results**: 6/9 valid - h1/h7 for all 3 targets, h28 unavailable (n_valid=0)
-- ✅ **DFM/DDFM Package**: Verified working correctly (importable via path, no dependency errors)
+**Finalization**:
+1. Update result sections → `contents/3_results.tex` with forecasting and nowcasting results - **PARTIALLY DONE** (nowcasting results missing)
+2. Update discussion → `contents/4_discussion.tex` with nowcasting timepoint analysis - **STRUCTURE READY, RESULTS MISSING**
+3. Finalize report → Compile PDF, verify under 15 pages, check for placeholders - **CANNOT BE DONE YET** (nowcasting results missing)
 
-**Results Analysis**:
-- ✅ **Experiments Completed**: All 4 models completed (36/36 combinations, 30 valid + 6 NaN)
-- ✅ **Results Available**: `comparison_results.json` files exist for all 3 targets, `aggregated_results.csv` has 36 rows (30 valid + 6 NaN)
-- ✅ **ARIMA Performance**: Consistent across all targets and horizons (sRMSE: 0.06-1.67)
-- ⚠️ **VAR Performance**: Excellent for horizon 1 (sRMSE: ~0.0001), severe numerical instability for horizons 7/28 (errors > 10¹¹, up to 10¹²⁰ for horizon 28)
-- ⚠️ **DFM Performance**: Available for h1/h7 (sRMSE: 4.2-9.3 for h1, 6.1-7.1 for h7). KOWRCCNSE/KOIPALL.G show numerical instability warnings but still produce results.
-- ✅ **DDFM Performance**: Available for h1/h7 (sRMSE: 0.01-0.82 for h1, 1.36-1.91 for h7)
-- ⚠️ **Evaluation Design Limitation**: All results show n_valid=1 - This is a design limitation where evaluation code (`src/eval/evaluation.py` line 504) uses only 1 test point per horizon (`y_test.iloc[test_pos:test_pos+1]`). This is single-step evaluation rather than multi-point evaluation. Should be documented in report methodology.
+---
 
-**Completed**:
-- ✅ Configuration updated: 3 target configs created (KOEQUIPTE, KOWRCCNSE, KOIPALL.G), series configs updated (block: null)
-- ✅ Data path fixed: All configs use `data/data.csv`
-- ✅ Code refactoring: src/ directory cleaned up, legacy patterns removed, consistent imports
-- ✅ Report structure: 6 sections ready (condensed to under 15 pages)
-- ✅ Scripts finalized: `run_experiment.sh` and `run_test_experiment.sh` ready for 3 targets
-- ✅ Import error fixed: Missing pandas import added and verified
-- ✅ Experiments: All 4 models completed (36/36 combinations, 30 valid + 6 NaN)
-- ✅ Tables: All 3 tables generated and verified with actual results from all 4 models
-- ✅ Plots: All required plots generated with all 4 models
-- ✅ Report sections: All 6 sections updated with actual results
+## Latest Updates
 
-**For Next Iteration**: 
-- ⏳ **Report Verification**: Compile PDF, verify page count (<15), check for placeholders/hallucinations
+**Code Structure**:
+- Nowcasting experiment structure defined in WORKFLOW.md
+- Code implementation ready (src/infer.py supports weeks_before)
+- Scripts ready (run_train.sh, run_forecast.sh, run_backtest.sh, agent_execute.sh)
+- Report structure ready (methodology, results, discussion sections)
 
-**Status**: All 4 models experiments complete (36/36 combinations, 30 valid + 6 NaN). All tables, plots, and report sections complete with actual results. All numbers verified against data. All citations verified. Code consolidation complete (15 files). Report content ready. PDF compilation pending (LaTeX not installed).
+**What's Actually Missing**:
+- Models NOT trained (checkpoint/ empty)
+- Nowcasting experiments NOT run (outputs/backtest/ missing)
+- Table 3 NOT generated (needs nowcasting results)
+- Plot4 NOT generated (needs nowcasting results)
+- aggregated_results.csv missing (may need regeneration)
+
+**Next Steps**:
+- Step 1 will automatically check and run needed experiments
+- Training must complete before nowcasting
+- Nowcasting must complete before Table 3 and Plot4

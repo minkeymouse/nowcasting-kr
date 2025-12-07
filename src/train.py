@@ -1,7 +1,7 @@
 """Training module - supports both CLI and programmatic API.
 
 This module provides training functionality that can be used:
-- As CLI: python src/train.py train --config-name experiment/kogdp_report
+- As CLI: python src/train.py train --config-name experiment/koequipte_report
 - As API: from src.train import train_model, compare_models_by_config
 
 Functions exported for programmatic use:
@@ -35,20 +35,23 @@ def train_model(
     config_name: str,
     config_dir: Optional[str] = None,
     model_name: Optional[str] = None,
-    overrides: Optional[List[str]] = None
+    overrides: Optional[List[str]] = None,
+    checkpoint_dir: Optional[str] = None
 ) -> Dict[str, Any]:
     """Train a single model (programmatic API).
     
     Parameters
     ----------
     config_name : str
-        Experiment config name (e.g., 'experiment/kogdp_report')
+        Experiment config name (e.g., 'experiment/koequipte_report')
     config_dir : str, optional
         Config directory path. If None, uses default config/ directory.
     model_name : str, optional
         Model name. If None, uses first model from config or auto-generates.
     overrides : list of str, optional
         Hydra config overrides (e.g., ['model_overrides.dfm.max_iter=10'])
+    checkpoint_dir : str, optional
+        Directory to save checkpoint. If None, uses default outputs/models/.
         
     Returns
     -------
@@ -63,6 +66,7 @@ def train_model(
     
     params = extract_experiment_params(cfg)
     models = params['models']
+    target_series = params.get('target_series')
     
     # Use first model if model_name not specified
     if model_name is None:
@@ -73,12 +77,28 @@ def train_model(
     if not model_name:
         raise ValueError(f"Config {config_name} must specify at least one model in 'models' list")
     
+    # Build model name with target if checkpoint_dir is specified
+    if checkpoint_dir and target_series:
+        checkpoint_model_name = f"{target_series}_{model_name}"
+    else:
+        checkpoint_model_name = model_name
+    
+    # Add checkpoint_dir to overrides if specified
+    final_overrides = list(overrides) if overrides else []
+    if checkpoint_dir:
+        final_overrides.append(f"checkpoint_dir={checkpoint_dir}")
+        final_overrides.append(f"checkpoint_model_name={checkpoint_model_name}")
+    
     result = train(
         config_name=config_name,
         config_path=config_dir,
-        model_name=model_name,
-        config_overrides=overrides or []
+        model_name=checkpoint_model_name,
+        config_overrides=final_overrides
     )
+    
+    # Update model_dir in result to reflect checkpoint location
+    if checkpoint_dir and 'model_dir' in result:
+        result['model_dir'] = str(Path(checkpoint_dir) / checkpoint_model_name)
     
     return result
 
@@ -94,7 +114,7 @@ def compare_models_by_config(
     Parameters
     ----------
     config_name : str
-        Experiment config name (e.g., 'experiment/kogdp_report')
+        Experiment config name (e.g., 'experiment/koequipte_report')
     config_dir : str, optional
         Config directory path. If None, uses default config/ directory.
     overrides : list of str, optional
@@ -141,11 +161,13 @@ def main():
     subparsers = parser.add_subparsers(dest='command', required=True)
     
     train_parser = subparsers.add_parser('train', help='Train single model (requires experiment config)')
-    train_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/kogdp_report)")
+    train_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/koequipte_report)")
+    train_parser.add_argument("--model", help="Model name to train (e.g., arima, var, dfm, ddfm). If not specified, uses first model from config.")
+    train_parser.add_argument("--checkpoint-dir", help="Directory to save checkpoint (e.g., checkpoint). If not specified, uses outputs/models/")
     train_parser.add_argument("--override", action="append", help="Hydra config override (e.g., model_overrides.dfm.max_iter=10)")
     
     compare_parser = subparsers.add_parser('compare', help='Compare multiple models (requires experiment config)')
-    compare_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/kogdp_report)")
+    compare_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/koequipte_report)")
     compare_parser.add_argument("--override", action="append", help="Hydra config override")
     compare_parser.add_argument("--models", nargs="+", help="Filter models to run (e.g., --models arima var). If not specified, runs all models from config.")
     
@@ -157,6 +179,8 @@ def main():
         result = train_model(
             config_name=args.config_name,
             config_dir=config_path,
+            model_name=args.model,
+            checkpoint_dir=args.checkpoint_dir,
             overrides=args.override
         )
         print(f"\n✓ Model saved to: {result['model_dir']}")

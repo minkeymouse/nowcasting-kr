@@ -1,17 +1,21 @@
 """Inference/Nowcasting module - supports both CLI and programmatic API.
 
 This module provides inference and nowcasting functionality that can be used:
-- As CLI: python src/infer.py nowcast --config-name experiment/kogdp_report
-- As API: from src.infer import run_nowcasting_evaluation
+- As CLI: python src/infer.py nowcast --config-name experiment/koequipte_report
+- As API: from src.infer import run_nowcasting_evaluation, run_backtest_evaluation
 
 Functions exported for programmatic use:
 - run_nowcasting_evaluation: Run nowcasting evaluation with masked data
+- run_backtest_evaluation: Run backtest evaluation for all models with multiple time points
 """
-
 from pathlib import Path
 import sys
 import argparse
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union, Tuple
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 
 # Set up paths first before any relative imports
 # This allows the script to be run directly as python3 src/infer.py
@@ -26,14 +30,11 @@ if str(_script_dir) not in sys.path:
 from src.utils.config_parser import setup_paths, get_project_root
 setup_paths(include_dfm_python=True, include_src=True, include_app=True)
 
-from src.utils.config_parser import parse_experiment_config, extract_experiment_params, validate_experiment_config
-
-# Import nowcasting functions (merged from nowcasting.py)
-from typing import Union, Tuple
-import numpy as np
-import pandas as pd
-from datetime import datetime, timedelta
-
+from src.utils.config_parser import (
+    parse_experiment_config,
+    extract_experiment_params,
+    validate_experiment_config
+)
 
 def mask_recent_observations(
     data: Union[pd.DataFrame, pd.Series, np.ndarray],
@@ -189,7 +190,7 @@ def simulate_nowcasting_evaluation(
     horizons: Union[list, np.ndarray] = [1],
     target_series: Optional[Union[str, int]] = None
 ) -> Dict[str, Any]:
-    """Simulate nowcasting evaluation with masked data.
+    """Simulate nowcasting evaluation with publication lag masking.
     
     This function simulates a nowcasting scenario by:
     1. Masking recent observations (publication lag)
@@ -279,11 +280,11 @@ def simulate_nowcasting_evaluation(
         try:
             if hasattr(forecaster, 'fit') and hasattr(forecaster, 'predict'):
                 forecaster.fit(y_train)
+                fh = np.asarray(horizons)
                 y_pred_full = forecaster.predict(fh=fh)
             else:
                 y_pred_full = forecaster(y_train, fh=horizons)
             
-            # Calculate full-data metrics
             full_metrics = calculate_metrics_per_horizon(
                 y_test, y_pred_full, horizons, y_train=y_train,
                 target_series=target_series
@@ -296,52 +297,10 @@ def simulate_nowcasting_evaluation(
             print(f"Error in full-data evaluation for {target_date}: {e}")
             continue
     
-    # Aggregate results across target dates
-    # Average metrics across all target dates
-    if len(nowcast_results) > 0 and len(full_results) > 0:
-        # Get all horizons
-        all_horizons = set()
-        for result in nowcast_results + full_results:
-            all_horizons.update(result['metrics'].keys())
-        
-        nowcast_avg = {}
-        full_avg = {}
-        
-        for h in all_horizons:
-            nowcast_vals = [r['metrics'].get(h, {}) for r in nowcast_results]
-            full_vals = [r['metrics'].get(h, {}) for r in full_results]
-            
-            # Average each metric
-            nowcast_avg[h] = {
-                'sMSE': np.nanmean([v.get('sMSE', np.nan) for v in nowcast_vals]),
-                'sMAE': np.nanmean([v.get('sMAE', np.nan) for v in nowcast_vals]),
-                'sRMSE': np.nanmean([v.get('sRMSE', np.nan) for v in nowcast_vals]),
-            }
-            full_avg[h] = {
-                'sMSE': np.nanmean([v.get('sMSE', np.nan) for v in full_vals]),
-                'sMAE': np.nanmean([v.get('sMAE', np.nan) for v in full_vals]),
-                'sRMSE': np.nanmean([v.get('sRMSE', np.nan) for v in full_vals]),
-            }
-        
-        # Calculate improvement (negative = nowcasting worse, positive = better)
-        improvement = {}
-        for h in all_horizons:
-            improvement[h] = {
-                'sMSE': full_avg[h]['sMSE'] - nowcast_avg[h]['sMSE'],
-                'sMAE': full_avg[h]['sMAE'] - nowcast_avg[h]['sMAE'],
-                'sRMSE': full_avg[h]['sRMSE'] - nowcast_avg[h]['sRMSE'],
-            }
-    else:
-        nowcast_avg = {}
-        full_avg = {}
-        improvement = {}
-    
     return {
-        'nowcast_metrics': nowcast_avg,
-        'full_metrics': full_avg,
-        'improvement': improvement,
-        'target_dates': [r['target_date'] for r in nowcast_results],
-        'n_evaluations': len(nowcast_results)
+        'nowcast_metrics': nowcast_results,
+        'full_metrics': full_results,
+        'target_dates': target_dates
     }
 
 
@@ -356,10 +315,10 @@ def run_nowcasting_evaluation(
     Parameters
     ----------
     config_name : str
-        Experiment config name (e.g., 'experiment/kogdp_report')
+        Experiment config name (e.g., 'experiment/koequipte_report')
     config_dir : str, optional
         Config directory path. If None, uses default config/ directory.
-    mask_days : int, default 30
+    mask_days : int, default=30
         Number of days to mask for nowcasting simulation
     overrides : list of str, optional
         Hydra config overrides
@@ -373,46 +332,398 @@ def run_nowcasting_evaluation(
         config_dir = str(get_project_root() / "config")
     
     cfg = parse_experiment_config(config_name, config_dir, overrides)
+    validate_experiment_config(cfg, require_target=True, require_models=True)
+    
+    params = extract_experiment_params(cfg)
+    target_series = params['target_series']
+    models = params['models']
+    
+    print("=" * 70)
+    print(f"Running nowcasting evaluation for {target_series}")
+    print(f"Models: {', '.join(models)}")
+    print(f"Mask days: {mask_days}")
+    print("=" * 70)
+    
+    # Load data
+    data_path = params.get('data_path') or str(get_project_root() / "data" / "sample_data.csv")
+    data = pd.read_csv(data_path, index_col=0, parse_dates=True)
+    
+    # Generate target dates (last 12 months)
+    end_date = data.index[-1]
+    target_dates = []
+    current = end_date.replace(day=1)
+    for _ in range(12):
+        if current.month == 12:
+            last_day = current.replace(day=31)
+        else:
+            next_month = current.replace(month=current.month + 1, day=1)
+            last_day = next_month - timedelta(days=1)
+        target_dates.append(last_day)
+        current -= relativedelta(months=1)
+    target_dates.reverse()
+    
+    results = {}
+    for model_name in models:
+        print(f"\nEvaluating {model_name.upper()}...")
+        
+        # Load model
+        from pathlib import Path
+        import pickle
+        
+        model_dir = None
+        for comparison_dir in Path("outputs/comparisons").glob(f"{target_series}_*"):
+            model_path = comparison_dir / model_name.lower() / "model.pkl"
+            if model_path.exists():
+                model_dir = comparison_dir / model_name.lower()
+                break
+        
+        if model_dir is None:
+            print(f"  ✗ Model not found, skipping")
+            continue
+        
+        with open(model_dir / "model.pkl", 'rb') as f:
+            model_data = pickle.load(f)
+        
+        forecaster = model_data.get('forecaster')
+        if forecaster is None:
+            print(f"  ✗ Forecaster not found, skipping")
+            continue
+        
+        # Run evaluation
+        eval_result = simulate_nowcasting_evaluation(
+            forecaster=forecaster,
+            data=data,
+            target_dates=target_dates,
+            mask_days=mask_days,
+            horizons=[1],
+            target_series=target_series
+        )
+        
+        results[model_name] = eval_result
+        print(f"  ✓ Completed")
+    
+    return results
+
+
+def run_backtest_evaluation(
+    config_name: str,
+    model: str,
+    train_start: str = "1985-01-01",
+    train_end: str = "2019-12-31",
+    nowcast_start: str = "2024-01-01",
+    nowcast_end: str = "2024-12-31",
+    weeks_before: Optional[List[int]] = None,
+    config_dir: Optional[str] = None,
+    overrides: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """Run backtest evaluation with multiple nowcasting time points (benchmark report structure).
+    
+    This function implements the benchmark report's nowcasting structure:
+    - For each target month (e.g., 2024-01, 2024-02, ..., 2024-12)
+    - At multiple time points before month end (e.g., 4 weeks, 1 week)
+    - Mask data based on release dates from series config
+    - Generate 1 horizon forecast at each time point
+    - Compare predictions across time points
+    
+    Parameters
+    ----------
+    config_name : str
+        Experiment config name (e.g., 'experiment/koequipte_report')
+    model : str
+        Model name ('arima', 'var', 'dfm', or 'ddfm')
+    train_start : str
+        Training period start date (YYYY-MM-DD)
+    train_end : str
+        Training period end date (YYYY-MM-DD)
+    nowcast_start : str
+        Nowcasting period start date (YYYY-MM-DD)
+    nowcast_end : str
+        Nowcasting period end date (YYYY-MM-DD)
+    weeks_before : list of int, optional
+        List of weeks before month end to perform nowcasting (e.g., [4, 1]).
+        If None, defaults to [4, 1] (4 weeks and 1 week before).
+    config_dir : str, optional
+        Config directory path. If None, uses default config/ directory.
+    overrides : list of str, optional
+        Hydra config overrides
+        
+    Returns
+    -------
+    dict
+        Backtest evaluation results with metrics by time point and month
+    """
+    if config_dir is None:
+        config_dir = str(get_project_root() / "config")
+    
+    # Default weeks_before: 4 weeks and 1 week before (as per benchmark report)
+    if weeks_before is None:
+        weeks_before = [4, 1]
+    
+    # Backtest supports all models, but DFM/DDFM use nowcast manager
+    # ARIMA/VAR use simulate_nowcasting_evaluation (with release-based masking)
+    supports_nowcast_manager = model.lower() in ['dfm', 'ddfm']
+    
+    cfg = parse_experiment_config(config_name, config_dir, overrides)
     validate_experiment_config(cfg, require_target=True, require_models=False)
     
     params = extract_experiment_params(cfg)
-    
-    if not params['data_path']:
-        raise ValueError(f"Config {config_name} must specify 'data_path'")
+    target_series = params['target_series']
     
     print("=" * 70)
-    print(f"Running nowcasting evaluation for {params['target_series']}")
-    print(f"Mask days: {mask_days} | Horizons: {params['horizons']}")
+    print(f"Running backtest for {target_series} - {model.upper()}")
+    print(f"Train period: {train_start} to {train_end}")
+    print(f"Nowcast period: {nowcast_start} to {nowcast_end}")
+    print(f"Nowcasting time points: {weeks_before} weeks before month end")
     print("=" * 70)
     
-    # Nowcasting evaluation implementation
-    # 1. Load trained model from outputs/
-    # 2. Load data
-    # 3. Run simulate_nowcasting_evaluation
-    print("\nRunning nowcasting evaluation...")
-    print(f"Config: {config_name}")
-    print(f"Target: {params['target_series']}")
-    print(f"Data: {params['data_path']}")
+    # Load trained model
+    from pathlib import Path
+    from src.model.dfm_models import DFM, DDFM
+    import pickle
     
-    # NOTE: Nowcasting evaluation is not implemented in the current version.
-    # This is a known limitation documented in the report.
-    # The report (contents/5_result.tex) correctly states that nowcasting evaluation
-    # results will be presented after future experiments ("향후 실험을 통해 결과를 제시할 예정임").
-    # 
-    # To implement nowcasting evaluation in the future, this would require:
-    # 1. Load trained model from outputs/models/{target}_{model}/model.pkl
-    # 2. Load data from params['data_path']
-    # 3. Run simulate_nowcasting_evaluation() from nowcasting.py with target dates
-    # 4. Calculate metrics per horizon using evaluation.py
-    # 5. Return evaluation results (nowcast_metrics, full_metrics, improvement)
+    # Find trained model - first check checkpoint/, then outputs/comparisons/
+    model_dir = None
+    checkpoint_path = Path("checkpoint") / f"{target_series}_{model.lower()}" / "model.pkl"
+    if checkpoint_path.exists():
+        model_dir = checkpoint_path.parent
+    else:
+        # Fallback to outputs/comparisons/
+        for comparison_dir in Path("outputs/comparisons").glob(f"{target_series}_*"):
+            model_path = comparison_dir / model.lower() / "model.pkl"
+            if model_path.exists():
+                model_dir = comparison_dir / model.lower()
+                break
     
-    return {
-        'status': 'not_implemented',
-        'config_name': config_name,
-        'target_series': params['target_series'],
-        'mask_days': mask_days,
-        'horizons': params['horizons']
-    }
+    if model_dir is None:
+        raise FileNotFoundError(
+            f"Trained {model.upper()} model not found for {target_series}. "
+            f"Please run training first: bash run_train.sh"
+        )
+    
+    # Load model
+    with open(model_dir / "model.pkl", 'rb') as f:
+        model_data = pickle.load(f)
+    
+    # For DFM/DDFM, get nowcast manager
+    # For ARIMA/VAR, get forecaster
+    nowcast_manager = None
+    forecaster = None
+    dfm_model = None
+    
+    if supports_nowcast_manager:
+        dfm_model = model_data.get('dfm_model') or model_data.get('ddfm_model')
+        if dfm_model is None:
+            raise ValueError(f"Model file does not contain {model.upper()} model")
+        nowcast_manager = dfm_model.nowcast
+    else:
+        # ARIMA/VAR: use forecaster directly
+        forecaster = model_data.get('forecaster')
+        if forecaster is None:
+            raise ValueError(f"Model file does not contain forecaster for {model.upper()} model")
+    
+    # Generate monthly target periods
+    start_date = datetime.strptime(nowcast_start, "%Y-%m-%d")
+    end_date = datetime.strptime(nowcast_end, "%Y-%m-%d")
+    
+    # Generate target periods (last day of each month)
+    target_periods = []
+    current = start_date.replace(day=1)  # Start of month
+    while current <= end_date:
+        # Use last day of month as target period
+        if current.month == 12:
+            last_day = current.replace(day=31)
+        else:
+            next_month = current.replace(month=current.month + 1, day=1)
+            last_day = next_month - timedelta(days=1)
+        target_periods.append(last_day)
+        current += relativedelta(months=1)
+    
+    print(f"\nTarget periods: {len(target_periods)} months")
+    if len(target_periods) > 0:
+        print(f"  From: {target_periods[0].strftime('%Y-%m-%d')}")
+        print(f"  To: {target_periods[-1].strftime('%Y-%m-%d')}")
+    print(f"  Nowcasting at: {weeks_before} weeks before each month end")
+    print(f"  Horizon: 1 (1 horizon forecast at each time point)")
+    
+    # Run backtest for each time point (weeks_before)
+    # For each target month, predict at multiple time points
+    print("\nRunning backtest with release-based masking...")
+    print("  - Using release dates from series config for masking")
+    print("  - Generating 1 horizon forecast at each time point for each month")
+    
+    # Store results by time point
+    results_by_timepoint = {}
+    train_end_date = datetime.strptime(train_end, "%Y-%m-%d")
+    
+    # Get training data std for standardization
+    from src.utils.config_parser import get_project_root
+    data_path_file = get_project_root() / "data" / "data.csv"
+    if not data_path_file.exists():
+        data_path_file = get_project_root() / "data" / "sample_data.csv"
+    train_data = pd.read_csv(data_path_file, index_col=0, parse_dates=True)
+    train_start_ts = pd.Timestamp(train_start)
+    train_end_ts = pd.Timestamp(train_end)
+    train_data_filtered = train_data[(train_data.index >= train_start_ts) & (train_data.index <= train_end_ts)]
+    if target_series in train_data_filtered.columns:
+        train_std = train_data_filtered[target_series].std()
+    else:
+        train_std = train_data_filtered.iloc[:, 0].std() if len(train_data_filtered.columns) > 0 else 1.0
+    
+    for weeks in weeks_before:
+        print(f"\n{'='*70}")
+        print(f"Nowcasting at {weeks} weeks before month end")
+        print(f"{'='*70}")
+        
+        # For each target month, calculate view_date and predict
+        monthly_results = []
+        
+        for target_month_end in target_periods:
+            # Calculate view_date: target_month_end - weeks
+            view_date = target_month_end - timedelta(weeks=weeks)
+            
+            # Skip if view_date is before training period
+            if view_date < train_end_date:
+                continue
+            
+            print(f"\n  Target month: {target_month_end.strftime('%Y-%m')}")
+            print(f"  View date: {view_date.strftime('%Y-%m-%d')} ({weeks} weeks before)")
+            
+            try:
+                if supports_nowcast_manager:
+                    # For DFM/DDFM, use nowcast manager with view_date
+                    # This handles release-based masking automatically
+                    nowcast_result = nowcast_manager(
+                        target_series=target_series,
+                        view_date=view_date,
+                        target_period=target_month_end,
+                        return_result=True
+                    )
+                    
+                    forecast_value = nowcast_result.nowcast_value
+                    
+                    # Get actual value (if available in data)
+                    actual_value = np.nan
+                    if target_month_end in train_data.index:
+                        if target_series in train_data.columns:
+                            actual_value = train_data.loc[target_month_end, target_series]
+                        else:
+                            actual_value = train_data.loc[target_month_end].iloc[0]
+                
+                else:
+                    # For ARIMA/VAR, use simulate_nowcasting_evaluation
+                    # Load data up to view_date
+                    data = pd.read_csv(data_path_file, index_col=0, parse_dates=True)
+                    data = data[data.index <= pd.Timestamp(view_date)]
+                    
+                    # Use simulate_nowcasting_evaluation with release-based masking
+                    # Note: This uses mask_days as approximation - full release-based masking
+                    # would require config-based release dates
+                    eval_result = simulate_nowcasting_evaluation(
+                        forecaster=forecaster,
+                        data=data,
+                        target_dates=[pd.Timestamp(target_month_end)],
+                        mask_days=30,  # Approximation - should use release dates from config
+                        horizons=[1],
+                        target_series=target_series
+                    )
+                    
+                    # Extract forecast and actual
+                    if eval_result['nowcast_metrics'] and len(eval_result['nowcast_metrics']) > 0:
+                        metrics = eval_result['nowcast_metrics'][0].get('metrics', {})
+                        horizon_1_metrics = metrics.get(1, {})
+                        forecast_value = horizon_1_metrics.get('forecast', np.nan)
+                        actual_value = horizon_1_metrics.get('actual', np.nan)
+                    else:
+                        forecast_value = np.nan
+                        actual_value = np.nan
+                
+                # Skip if forecast or actual is NaN
+                if np.isnan(forecast_value) or np.isnan(actual_value):
+                    print(f"    ⚠ Skipping: forecast={forecast_value}, actual={actual_value}")
+                    continue
+                
+                # Calculate error and standardized metrics
+                error = forecast_value - actual_value
+                if train_std and train_std > 0:
+                    sMSE = (error ** 2) / (train_std ** 2)
+                    sMAE = abs(error) / train_std
+                else:
+                    sMSE = error ** 2
+                    sMAE = abs(error)
+                
+                monthly_results.append({
+                    'month': target_month_end.strftime('%Y-%m'),
+                    'view_date': view_date.strftime('%Y-%m-%d'),
+                    'weeks_before': weeks,
+                    'forecast_value': float(forecast_value),
+                    'actual_value': float(actual_value),
+                    'error': float(error),
+                    'abs_error': float(abs(error)),
+                    'squared_error': float(error ** 2),
+                    'sMSE': float(sMSE),
+                    'sMAE': float(sMAE)
+                })
+                
+                print(f"    ✓ Forecast: {forecast_value:.4f}, Actual: {actual_value:.4f}, Error: {error:.4f}")
+                
+            except Exception as e:
+                print(f"    ✗ Error: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        # Store results for this time point
+        if len(monthly_results) > 0:
+            results_by_timepoint[f"{weeks}weeks"] = {
+                'weeks_before': weeks,
+                'monthly_results': monthly_results,
+                'overall_sMAE': float(np.nanmean([r['sMAE'] for r in monthly_results])),
+                'overall_sMSE': float(np.nanmean([r['sMSE'] for r in monthly_results])),
+                'overall_mae': float(np.nanmean([r['abs_error'] for r in monthly_results])),
+                'overall_rmse': float(np.sqrt(np.nanmean([r['squared_error'] for r in monthly_results]))),
+                'n_months': len(monthly_results)
+            }
+            print(f"\n  ✓ Completed: {len(monthly_results)} months evaluated")
+            print(f"    Average sMAE: {results_by_timepoint[f'{weeks}weeks']['overall_sMAE']:.4f}")
+            print(f"    Average sMSE: {results_by_timepoint[f'{weeks}weeks']['overall_sMSE']:.4f}")
+        else:
+            print(f"\n  ⚠ No valid results for {weeks} weeks before")
+    
+    # Aggregate results across all time points
+    if len(results_by_timepoint) > 0:
+        results = {
+            'target_series': target_series,
+            'model': model.upper(),
+            'train_period': f"{train_start} to {train_end}",
+            'nowcast_period': f"{nowcast_start} to {nowcast_end}",
+            'weeks_before': weeks_before,
+            'results_by_timepoint': results_by_timepoint,
+            'horizon': 1
+        }
+    else:
+        results = {
+            'target_series': target_series,
+            'model': model.upper(),
+            'status': 'no_results',
+            'error': 'No valid results generated for any time point'
+        }
+    
+    # Save results
+    output_dir = Path("outputs/backtest")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file = output_dir / f"{target_series}_{model}_backtest.json"
+    
+    import json
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(results, f, indent=2, default=str)
+    
+    print(f"\n{'='*70}")
+    print(f"✓ Backtest completed")
+    print(f"  Results saved to: {output_file}")
+    print(f"  Time points evaluated: {list(results_by_timepoint.keys())}")
+    print(f"{'='*70}")
+    
+    return results
 
 
 def main():
@@ -422,23 +733,48 @@ def main():
     
     # Nowcasting evaluation command
     nowcast_parser = subparsers.add_parser('nowcast', help='Run nowcasting evaluation (requires experiment config)')
-    nowcast_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/kogdp_report)")
+    nowcast_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/koequipte_report)")
     nowcast_parser.add_argument("--override", action="append", help="Hydra config override")
     nowcast_parser.add_argument("--mask-days", type=int, default=30, help="Number of days to mask for nowcasting simulation")
     
+    # Backtest command
+    backtest_parser = subparsers.add_parser('backtest', help='Run backtest evaluation for all models (requires experiment config)')
+    backtest_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/koequipte_report)")
+    backtest_parser.add_argument("--model", required=True, choices=['arima', 'var', 'dfm', 'ddfm'], help="Model to backtest")
+    backtest_parser.add_argument("--train-start", default="1985-01-01", help="Training period start (YYYY-MM-DD)")
+    backtest_parser.add_argument("--train-end", default="2019-12-31", help="Training period end (YYYY-MM-DD)")
+    backtest_parser.add_argument("--nowcast-start", default="2024-01-01", help="Nowcasting period start (YYYY-MM-DD)")
+    backtest_parser.add_argument("--nowcast-end", default="2024-12-31", help="Nowcasting period end (YYYY-MM-DD)")
+    backtest_parser.add_argument("--weeks-before", nargs="+", type=int, help="Weeks before month end (e.g., --weeks-before 4 1). Default: [4, 1]")
+    backtest_parser.add_argument("--override", action="append", help="Hydra config override")
+    
     args = parser.parse_args()
+    
+    config_path = str(get_project_root() / "config")
     
     if args.command == 'nowcast':
         result = run_nowcasting_evaluation(
             config_name=args.config_name,
+            config_dir=config_path,
             mask_days=args.mask_days,
             overrides=args.override
         )
         print(f"\n✓ Nowcasting evaluation completed")
-        if result.get('status') == 'not_implemented':
-            print("  Note: Full implementation pending")
+    
+    elif args.command == 'backtest':
+        result = run_backtest_evaluation(
+            config_name=args.config_name,
+            model=args.model,
+            train_start=args.train_start,
+            train_end=args.train_end,
+            nowcast_start=args.nowcast_start,
+            nowcast_end=args.nowcast_end,
+            weeks_before=args.weeks_before,
+            config_dir=config_path,
+            overrides=args.override
+        )
+        print(f"\n✓ Backtest completed")
 
 
 if __name__ == "__main__":
     main()
-

@@ -275,6 +275,17 @@ def _train_forecaster(
     # Load data
     data = pd.read_csv(data_file, index_col=0, parse_dates=True)
     
+    # Filter data to training period (1985-2019) to prevent data leakage
+    # This ensures models are only trained on historical data
+    train_start = pd.Timestamp('1985-01-01')
+    train_end = pd.Timestamp('2019-12-31')
+    data = data[(data.index >= train_start) & (data.index <= train_end)]
+    
+    if len(data) == 0:
+        raise ValidationError(f"No data available in training period (1985-2019). Data range: {data.index.min()} to {data.index.max()}")
+    
+    print(f"Training data period: {data.index.min()} to {data.index.max()} (1985-2019 enforced)")
+    
     # Get target series
     source_cfg = cfg.experiment if 'experiment' in cfg else cfg
     target_col = None
@@ -671,7 +682,25 @@ def train(
     - Evaluation metrics are calculated using standardized metrics (sMSE, sMAE, sRMSE)
     """
     config_path = config_path or str(Path(__file__).parent.parent.parent / "config")
-    outputs_dir = Path(__file__).parent.parent / "outputs" / "models"
+    
+    # Check if checkpoint_dir is specified in config overrides
+    checkpoint_dir = None
+    checkpoint_model_name = None
+    if config_overrides:
+        for override in config_overrides:
+            if override.startswith('checkpoint_dir='):
+                checkpoint_dir = override.split('=', 1)[1]
+            elif override.startswith('checkpoint_model_name='):
+                checkpoint_model_name = override.split('=', 1)[1]
+    
+    # Use checkpoint_dir if specified, otherwise use outputs/models
+    if checkpoint_dir:
+        outputs_dir = Path(checkpoint_dir)
+        # Create subdirectory for model if checkpoint_model_name is provided
+        if checkpoint_model_name:
+            outputs_dir = outputs_dir / checkpoint_model_name
+    else:
+        outputs_dir = Path(__file__).parent.parent / "outputs" / "models"
     outputs_dir.mkdir(parents=True, exist_ok=True)
     
     with hydra.initialize_config_dir(config_dir=config_path, version_base="1.3"):
@@ -826,13 +855,12 @@ def train(
             model_cfg_dict = {**model_yaml, **model_cfg_dict}
         
         # Extract model config overrides from experiment config
-        # Support both old format (flat) and new format (model_overrides namespace)
         experiment_model_overrides = {}
         
         # Get config source (experiment key or top-level)
         source_cfg = cfg.experiment if 'experiment' in cfg else cfg
         
-        # Check for new format: model_overrides namespace (recommended)
+        # Use model_overrides namespace format
         if 'model_overrides' in source_cfg:
             model_overrides_dict = OmegaConf.to_container(source_cfg.model_overrides, resolve=True)
             if isinstance(model_overrides_dict, dict) and model_type in model_overrides_dict:
@@ -840,30 +868,6 @@ def train(
                 model_specific_overrides = model_overrides_dict[model_type]
                 if isinstance(model_specific_overrides, dict):
                     experiment_model_overrides = model_specific_overrides
-        else:
-            # Fallback to old format: flat structure (for backward compatibility)
-            # DFM/DDFM model config keys that can be overridden
-            dfm_config_keys = ['max_iter', 'threshold', 'ar_lag', 'regularization_scale', 
-                               'nan_method', 'nan_k', 'clip_ar_coefficients', 'augment_idio',
-                               'augment_idio_slow', 'idio_min_var', 'idio_rho0', 'use_regularization',
-                               'epochs', 'learning_rate', 'batch_size', 'tolerance',
-                               'encoder_layers', 'num_factors', 'factor_order', 'use_idiosyncratic']
-            # sktime forecaster config keys (ARIMA, VAR, VECM)
-            sktime_config_keys = [
-                # ARIMA
-                'order', 'auto_arima', 'max_iter', 'threshold', 'method',
-                # VAR
-                'lag_order', 'auto_lag', 'trend', 'enforce_stationarity',
-                # VECM
-                'coint_rank', 'coint_test', 'k_ar_diff', 'deterministic',
-                # Common
-                'method'
-            ]
-            # Combine all config keys
-            model_config_keys = dfm_config_keys + sktime_config_keys
-            for key in model_config_keys:
-                if key in source_cfg:
-                    experiment_model_overrides[key] = OmegaConf.to_container(source_cfg[key], resolve=True)
         
         # Apply experiment config overrides to model_cfg_dict
         if experiment_model_overrides:
@@ -1096,18 +1100,68 @@ def compare_models(
             config_overrides = []
         
         try:
-            # Use the provided config_name for all models
-            # Each model will use the same experiment config, but model-specific settings
-            # are handled via model_overrides namespace in the config
-            # Pass config_overrides to train() so CLI overrides are preserved
-            result = train(
-                config_name=config_name,
-                config_path=config_dir,
-                data_path=data_path,
-                model_name=f"{model_name}_{target_series}_{timestamp}",
-                config_overrides=config_overrides or [],
-                horizons=horizons
-            )
+            # Check if checkpoint exists - if so, load from checkpoint instead of training
+            checkpoint_dir = None
+            if config_overrides:
+                for override in config_overrides:
+                    if override.startswith('checkpoint_dir='):
+                        checkpoint_dir = override.split('=', 1)[1]
+                        break
+            
+            checkpoint_path = None
+            if checkpoint_dir:
+                checkpoint_path = Path(checkpoint_dir) / f"{target_series}_{model_name}" / "model.pkl"
+            
+            if checkpoint_path and checkpoint_path.exists():
+                # Load from checkpoint instead of training
+                print(f"  Loading model from checkpoint: {checkpoint_path}")
+                import pickle
+                with open(checkpoint_path, 'rb') as f:
+                    model_data = pickle.load(f)
+                
+                # Extract result from checkpoint
+                result = {
+                    'status': 'completed',
+                    'model_name': f"{target_series}_{model_name}",
+                    'model_dir': str(checkpoint_path.parent),
+                    'model_type': model_name,
+                    'target_series': target_series,
+                    'metrics': model_data.get('metrics', {}),
+                    'checkpoint_loaded': True
+                }
+                
+                # Re-evaluate on test data if needed (for forecast generation)
+                # This ensures we have metrics for the forecast horizons
+                forecaster = model_data.get('forecaster')
+                if forecaster and horizons:
+                    # Load data and create test split
+                    data = pd.read_csv(data_path, index_col=0, parse_dates=True)
+                    # Filter to training period (1985-2019) to prevent data leakage
+                    train_start = pd.Timestamp('1985-01-01')
+                    train_end = pd.Timestamp('2019-12-31')
+                    data = data[(data.index >= train_start) & (data.index <= train_end)]
+                    
+                    # Split for evaluation (80/20)
+                    split_idx = int(len(data) * 0.8)
+                    y_train_eval = data.iloc[:split_idx]
+                    y_test_eval = data.iloc[split_idx:]
+                    
+                    # Evaluate on test data
+                    from ..eval.evaluation import evaluate_forecaster
+                    forecast_metrics = evaluate_forecaster(
+                        forecaster, y_train_eval, y_test_eval, horizons, target_series=target_series
+                    )
+                    result['metrics'] = {'forecast_metrics': forecast_metrics}
+            else:
+                # Train new model
+                result = train(
+                    config_name=config_name,
+                    config_path=config_dir,
+                    data_path=data_path,
+                    model_name=f"{model_name}_{target_series}_{timestamp}",
+                    config_overrides=config_overrides or [],
+                    horizons=horizons
+                )
             
             if result is not None:
                 model_results[model_name] = result

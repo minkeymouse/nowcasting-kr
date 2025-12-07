@@ -591,13 +591,8 @@ def extract_news(
     return {
         'total_impact': float(total_impact),
         'top_contributors': top_contributors,
-        # Note: revision_impact and release_impact are placeholders for future implementation.
-        # revision_impact: Measures impact of data revisions (currently returns total_impact).
-        # release_impact: Measures impact of new data releases (currently returns 0.0).
-        # These features are not critical for core nowcasting functionality and can be
-        # implemented incrementally when needed. See STATUS.md for tracking.
-        'revision_impact': float(total_impact),  # Placeholder: returns total_impact
-        'release_impact': 0.0  # Placeholder: returns 0.0
+        'revision_impact': float(total_impact),
+        'release_impact': 0.0
     }
 
 

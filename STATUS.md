@@ -1,136 +1,172 @@
 # Project Status
 
-## Work Done This Iteration (Status Update - 2025-12-07)
+## Current State (ACTUAL - Not Wishful Thinking)
 
-**Iteration Type**: Status documentation update and context preparation for next iteration
+**REAL STATUS CHECK**:
+- **checkpoint/**: Has log files but **0 model.pkl files** - **0 models trained** (12 needed: 3 targets × 4 models)
+- **outputs/backtest/**: Has log files but **0 JSON files** - **0 nowcasting experiments completed** (12 needed: 3 targets × 4 models)
+- **outputs/experiments/aggregated_results.csv**: **EXISTS** - Forecasting results aggregated (36 rows: 3 targets × 4 models × 3 horizons, contains extreme VAR values)
 
-**Completed Work**:
-- ✅ **Status Documentation Update**: Updated STATUS.md and ISSUES.md to reflect current state and prepare for next iteration
-- ✅ **Issue Cleanup**: Condensed comprehensive improvement plan in ISSUES.md (kept under 1000 lines)
-- ✅ **Next Iteration Context**: Documented clear status and next steps for next iteration
-- ✅ **Inspection Status Summary**: All inspection findings documented and verified
+**What This Means**:
+- Models are NOT trained - Step 1 needs to run `bash agent_execute.sh train`
+- Nowcasting experiments are NOT done - Step 1 needs to run `bash agent_execute.sh backtest` (blocked by training)
+- Forecasting results exist and are aggregated - Table 2 can be generated (extreme values filtered when loading)
 
-**Previous Iteration Work (Critical Verification - 2025-12-07)**:
-- ✅ **Model Performance Anomalies Verification**: Re-verified training/evaluation code - confirmed correct 80/20 split, model fitted only on `y_train_eval`, no data leakage. VAR h1 near-perfect results are legitimate (not data leakage). VAR h7/h28 instability is documented model limitation.
-- ✅ **dfm-python Package Verification**: Confirmed package is importable via path manipulation (`sys.path.insert(0, 'dfm-python/src')`). All 3 comparison_results.json files show `"failed_models": []`. All 36/36 experiments completed successfully.
-- ✅ **Report Documentation Verification**: Verified all report values match `aggregated_results.csv` (36 rows: 30 valid + 6 NaN). All tables exist and contain correct data. PDF compiles successfully (11 pages, under 15 target).
-- ✅ **DFM/DDFM Installation Verification**: Confirmed package is importable and working correctly. No installation issues found.
-- ✅ **Tables and Plots Verification**: All required tables (3) and plots (3 types) exist and contain actual results.
-- ✅ **LaTeX Compilation Verification**: PDF compiles successfully (11 pages, under 15 target).
+---
 
-**Status**: All critical verifications complete. All components working correctly. Report ready for final submission. Status documentation updated for next iteration.
+## Work Done This Iteration
+
+**Code Fixes Applied**:
+1. **FIXED**: CSV loading extreme value filtering in src/eval/evaluation.py
+   - Problem: aggregated_results.csv contains extreme VAR values (> 1e10) because it was generated before validation code was added
+   - Fix: Added filtering in `generate_all_latex_tables()` (lines 1790-1805) to detect and mark extreme values as NaN when loading CSV
+   - Impact: Tables will now show "Unstable" or NaN for extreme values instead of displaying huge numbers
+   - Location: src/eval/evaluation.py, `generate_all_latex_tables()` function
+
+**Previous Fixes** (from earlier iterations):
+- Import error in src/infer.py (fixed)
+- Missing Plot4 function (fixed)
+- Model performance anomaly validation (fixed)
+- Aggregation validation (fixed)
+- DDFM gradient clipping default (fixed)
+- Table generation horizon handling (fixed)
+- Nowcasting table structure (fixed)
+
+**Code Structure Updates** (from previous iterations):
+- Updated WORKFLOW.md with nowcasting experiment structure
+- Updated nowcasting-report with nowcasting sections (methodology, results, discussion)
+- Updated src/infer.py to support weeks_before parameter
+- Updated run_backtest.sh to use --weeks-before 4 1
+- Updated cursor-headless.sh to automatically run experiments via agent_execute.sh
+
+**What's NOT Done**:
+- Models NOT trained (checkpoint/ has 0 model.pkl files, only log files)
+- Nowcasting experiments NOT completed (outputs/backtest/ has 0 JSON files, only log files)
+- Tables NOT generated (Table 1, Table 2, Table 3) - code ready, needs execution
+- Plots NOT generated (Plot1, Plot2, Plot3, Plot4) - code ready, needs execution
+- Report NOT updated with actual results - structure ready but content missing
 
 ---
 
 ## Summary for Next Iteration
 
-**What's Done**:
-- ✅ All experiments complete (36/36 combinations, 30 valid + 6 NaN)
-- ✅ All inspections complete (model performance anomalies, dfm-python package, report documentation)
-- ✅ Report complete (11 pages, all tables/plots/sections verified)
-- ✅ Improvement plan created (prioritized actions for numerical stability, code quality, theoretical enhancements)
-- ✅ Status documentation updated (STATUS.md and ISSUES.md)
+**REAL Pending Tasks** (in priority order):
 
-**What's Pending**:
-- ⏳ User review and feedback (user reviews report every 2 iterations)
-- ⏳ Optional enhancements (if requested by user - see ISSUES.md Priority 1-3 for detailed improvement plan)
+1. **CRITICAL: Train Models**
+   - checkpoint/ is empty - models need to be trained
+   - Step 1 will automatically run: `bash agent_execute.sh train`
+   - Expected: 12 model files (3 targets × 4 models) in checkpoint/
 
-**Commit & Push Status** (2025-12-07):
-- ✅ **Main Repository**: All changes committed and pushed to origin/main (commit ac01d41)
-- ✅ **Report Submodule**: PDF and bibliography committed (commit 1ff14aa)
-- ⚠️ **Submodule Build Artifacts**: LaTeX build files (.aux, .log, .blg) remain uncommitted (intentional - these are compilation artifacts)
+2. **CRITICAL: Run Nowcasting Experiments**
+   - outputs/backtest/ has log files but no JSON results
+   - Step 1 will automatically run: `bash agent_execute.sh backtest` (after training)
+   - Expected: 12 JSON files in outputs/backtest/ (3 targets × 4 models)
 
-**Inspection Status** (All Complete - 2025-12-07):
-- ✅ **Failed Models Check**: All 3 comparison_results.json files show `"failed_models": []` - No models failed during training
-- ✅ **Model Performance Anomalies**: All verified as legitimate or documented limitations (VAR h1 legitimate, VAR h7/h28 instability documented, DDFM h1 legitimate, DFM numerical issues documented)
-- ✅ **dfm-python Package**: Verified working (all 36/36 experiments completed successfully, no dependency errors)
-- ✅ **Report Documentation**: All values verified, all citations valid, no placeholders
-- ✅ **Training/Evaluation Code**: No data leakage verified (correct 80/20 train/test split, model fitted only on training data)
-- ✅ **Results Consistency**: All comparison_results.json match aggregated_results.csv (36 rows: 30 valid + 6 NaN for DFM/DDFM h28)
+3. **HIGH: Generate Tables**
+   - Table 1 (dataset/params): Code ready, can be generated from config files
+   - Table 2 (forecasting): Code ready, can be generated from aggregated_results.csv (extreme values filtered on load)
+   - Table 3 (nowcasting): Code ready, blocked until nowcasting experiments complete
+   - Execute: `python3 -c "from src.eval.evaluation import generate_all_latex_tables; generate_all_latex_tables()"`
+
+4. **HIGH: Generate Plots**
+   - Plot1, Plot2, Plot3 (forecasting): Code ready, can be generated from outputs/comparisons/
+   - Plot4 (nowcasting): Code ready, blocked until nowcasting experiments complete
+   - Execute: `python3 nowcasting-report/code/plot.py`
+
+5. **MEDIUM: Regenerate aggregated_results.csv (optional)**
+   - Current CSV has extreme values but filtering handles them when loading
+   - Can regenerate with: `python3 -c "from src.eval.evaluation import main_aggregator; main_aggregator()"`
+   - This will apply validation during aggregation and save clean CSV
+
+**What's Actually Complete**:
+- Code structure for nowcasting (src/infer.py, run_backtest.sh)
+- Report structure for nowcasting (methodology, results, discussion sections)
+- Script structure (run_train.sh, run_forecast.sh, run_backtest.sh, agent_execute.sh)
+- cursor-headless.sh workflow (Step 1 automatically runs needed experiments)
 
 ---
-
-## Current State (Status Update Iteration - 2025-12-07)
-
-**Current Summary**: All critical tasks complete. Report ready for final submission (11 pages, under 15 target). All 4 models (ARIMA, VAR, DFM, DDFM) experiments completed (36/36 combinations, 30 valid + 6 NaN for DFM/DDFM h28). All inspections verified. No failed models. No data leakage. All tables, plots, and report sections complete with verified results.
-
-**Previous Iteration Work (Critical Verification - 2025-12-07)**:
-- ✅ **Comparison Results Analysis**: Inspected all 3 comparison_results.json files (KOEQUIPTE, KOWRCCNSE, KOIPALL.G)
-- ✅ **Failed Models Check**: Verified all show `"failed_models": []` - No models failed during training
-- ✅ **Data Leakage Verification**: Code-level inspection confirms:
-  - Correct 80/20 train/test split (`y_train_eval` / `y_test_eval`)
-  - Model fitted only on `y_train_eval` (training.py line 458)
-  - Test data never used during training
-- ✅ **Performance Anomalies Analysis**: Verified all anomalies as legitimate or documented limitations:
-  - VAR h1 near-perfect (sRMSE ~10^-5): Legitimate VAR advantage for 1-step ahead
-  - VAR h7/h28 instability (sRMSE > 10^11): Model limitation, documented
-  - DDFM h1 very good (sRMSE: 0.01-0.82): Legitimate performance
-  - DFM numerical issues (R=10000, Q=1e6, V_0=1e38): EM convergence issue, results valid
-- ✅ **Results Consistency**: Verified all comparison_results.json match aggregated_results.csv (36 rows: 30 valid + 6 NaN)
-- ✅ **Status Documentation**: Updated ISSUES.md with latest inspection findings
-- ✅ **Commit & Push**: STATUS.md and ISSUES.md changes committed and pushed (commit 582e3b1). PDF updated in submodule (commit 70fb182).
-
-**Note**: Previous iterations completed all inspections and verifications. This iteration focused on status documentation update and preparing context for next iteration.
-
-**All Critical Tasks Complete**:
-- ✅ **Experiments**: 36/36 combinations complete (30 valid + 6 NaN for DFM/DDFM h28 - data limitation)
-- ✅ **Tables**: All 3 required tables generated and verified (dataset/params, 36 rows standardized metrics, monthly backtest)
-- ✅ **Plots**: All required plots generated (forecast vs actual per target, accuracy heatmap, horizon trend)
-- ✅ **Report Sections**: All 6 sections complete with actual results, all values verified, all citations valid
-- ✅ **PDF**: Compiled successfully (11 pages, under 15 target)
-- ✅ **Code**: 15 files (max 15), consolidation complete
-- ✅ **Package**: dfm-python verified working (all experiments completed, no failed models)
-- ✅ **Inspections**: All complete (model performance anomalies, dfm-python package, report documentation)
-
-**Inspection Findings (All Verified - 2025-12-07)**:
-- ✅ **No Failed Models**: All 3 comparison_results.json files show `"failed_models": []`, all models status "completed"
-- ✅ **No Data Leakage**: Code-level verification confirms correct train/test split (80/20), model fitted only on training data
-- ✅ **Performance Anomalies Verified**: VAR h1 near-perfect (legitimate), VAR h7/h28 instability (documented limitation), DDFM h1 very good (legitimate), DFM numerical issues (documented)
-- ✅ **Package Working**: dfm-python verified working (all 36/36 experiments completed, no dependency errors)
-- ✅ **Results Consistent**: All comparison_results.json match aggregated_results.csv (36 rows verified)
-
-**Known Limitations (All Documented in Report)**:
-- ⚠️ **VAR Stability**: Numerical instability for horizons 7/28 (model limitation, not fixable)
-- ⚠️ **DFM/DDFM h28**: All show NaN (n_valid=0) - Insufficient test data after 80/20 split (data limitation)
-- ⚠️ **DFM Numerical Instability**: KOWRCCNSE/KOIPALL.G show extreme values but still produce valid results (EM convergence issue, documented)
-
-**Status for Next Iteration**:
-- ✅ **All Critical Tasks Complete**: Report ready for final submission (11 pages, under 15 target)
-- ✅ **All Inspections Complete**: Model performance anomalies, dfm-python package, report documentation - all verified
-- ✅ **Status Documentation Updated**: STATUS.md and ISSUES.md updated with current state and next steps
-- ⏳ **User Review**: User will review report (submodules pushed every 2 iterations) and provide feedback in FEEDBACK.md
-- ⏳ **Optional Enhancements**: See ISSUES.md Priority 3-5 for optional improvements (not required for report completion)
-- ⏳ **Commit & Push**: STATUS.md and ISSUES.md changes need to be committed and pushed to origin/main (step 9 in workflow)
 
 ## Experiment Status
 
 **Configuration**:
 - **Targets**: 3 (KOEQUIPTE, KOWRCCNSE, KOIPALL.G)
 - **Models**: 4 (ARIMA, VAR, DFM, DDFM)
-- **Horizons**: 3 (1, 7, 28 days)
-- **Total**: 36 combinations (3 × 4 × 3)
+- **Forecasting Horizons**: 1-30 days (table shows 1, 7, 30)
+- **Nowcasting**: 12 months (2024-01 ~ 2024-12), 2 time points (4 weeks, 1 week before)
 
-**Results**:
-- ✅ **ARIMA**: 9/9 valid - Consistent performance (sRMSE: 0.06-1.67)
-- ✅ **VAR**: 9/9 valid - Excellent h1 (sRMSE ~0.0001), severe instability h7/28 (sRMSE > 10¹¹)
-- ⚠️ **DFM**: 6/9 valid - h1/h7 valid (sRMSE: 4.2-9.3 h1, 6.1-7.1 h7), h28 unavailable (n_valid=0). KOWRCCNSE/KOIPALL.G show numerical instability but still produce results.
-- ✅ **DDFM**: 6/9 valid - h1/h7 valid (sRMSE: 0.01-0.82 h1, 1.36-1.91 h7), h28 unavailable (n_valid=0)
+**ACTUAL Status**:
+- **Training**: 0/12 models trained (checkpoint/ has 0 model.pkl files, only log files)
+- **Forecasting**: aggregated_results.csv EXISTS with 36 rows (3 targets × 4 models × 3 horizons) - contains extreme VAR values but filtering handles them when loading
+- **Nowcasting**: 0/12 experiments completed (outputs/backtest/ has 0 JSON files, only log files)
 
-**Results Location**: `outputs/experiments/aggregated_results.csv` (37 lines: 1 header + 36 data rows)
+**Next Steps**:
+- Step 1 will automatically check and run needed experiments
+- Training must complete before nowcasting can run
+- Nowcasting must complete before Table 3 and Plot4 can be generated
+
+---
 
 ## Code Status
 
-- ✅ **src/**: 15 files (max 15 required) - Consolidation complete
-- ✅ **dfm-python**: Finalized with consistent naming, clean code patterns
-- ✅ **Config**: All 3 target configs created, series configs updated (block: null)
-- ✅ **Scripts**: `run_experiment.sh` and `run_test_experiment.sh` finalized
+- **src/**: Code structure ready for training, forecasting, and nowcasting
+- **Scripts**: run_train.sh, run_forecast.sh, run_backtest.sh, agent_execute.sh ready
+- **Config**: All 3 target configs exist
+- **Models**: NOT trained (checkpoint/ empty)
+
+---
 
 ## Report Status
 
-**Structure**: 6 sections (Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion)
+**Structure**: 4 sections (Introduction, Methodology, Results, Discussion)
 
 **Content**:
-- ✅ **Tables**: All 3 required tables generated and verified (dataset/params, 36 rows, monthly backtest)
-- ✅ **Plots**: All required plots generated (forecast vs actual per target, accuracy heatmap, horizon trend)
-- ✅ **Sections**: All 6 sections complete with actual results, all values verified, all citations valid
-- ✅ **PDF**: Compiled successfully (11 pages, under 15 target)
+- **Tables**: NOT generated (Table 1, Table 2, Table 3) - code ready, needs execution
+- **Plots**: NOT generated (Plot1, Plot2, Plot3, Plot4) - code ready, needs execution
+- **Sections**: Structure ready, but all results sections incomplete (no actual results yet)
+
+**What Needs to Happen**:
+1. Step 1 runs training → checkpoint/ populated
+2. Step 1 runs nowcasting → outputs/backtest/ populated
+3. Generate Table 3 from outputs/backtest/
+4. Generate Plot4 from outputs/backtest/
+5. Update report with actual nowcasting results
+
+---
+
+## Known Issues
+
+1. **CRITICAL: Models Not Trained**: checkpoint/ has 0 model.pkl files - blocking nowcasting experiments
+2. **CRITICAL: Nowcasting Not Completed**: outputs/backtest/ has 0 JSON files - blocked by training failure
+3. **Tables/Plots Not Generated**: Code ready but not executed - needs experiments to complete first
+
+**Code Status**:
+- Extreme value filtering added to CSV loading (this iteration)
+- Import error in src/infer.py fixed (previous iteration)
+- Plot4 function exists (previous iteration)
+- All code fixes applied - ready for execution once experiments complete
+
+**Action**: Step 1 will automatically detect and run needed experiments via agent_execute.sh
+
+---
+
+## Inspection Findings
+
+**Model Performance Anomalies Inspection**:
+- **STATUS**: Code validation added in previous iterations
+- VAR horizon 1 suspicious results: Validation detects and warns about suspiciously good results (< 1e-4)
+- VAR horizons 7/28 extreme values: Validation detects and marks extreme values (> 1e10) as NaN
+- DDFM horizon 1 results: Verified as reasonable (sRMSE 0.01-0.46 range)
+- **Action**: No further inspection needed - validation code handles anomalies
+
+**dfm-python Package Inspection**:
+- **STATUS**: NOT inspected this iteration
+- Package structure exists and is used by training/inference code
+- No specific issues reported
+- **Action**: Can be inspected in future iteration if needed
+
+**Report Documentation Status**:
+- **STATUS**: Structure ready, content missing
+- Report structure exists with 4 sections (Introduction, Methodology, Results, Discussion)
+- Tables NOT generated (Table 1, Table 2, Table 3) - code ready
+- Plots NOT generated (Plot1, Plot2, Plot3, Plot4) - code ready
+- **Action**: Generate tables/plots after experiments complete, then update report sections
