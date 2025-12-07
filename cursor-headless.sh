@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Cursor headless workflow runner for nowcasting-kr
 # Implements the steps described in WORKFLOW.md using cursor-agent
+#
+# FINALIZED WORKFLOW:
+# - Generic model performance anomaly detection (near-perfect, too good, or too poor results)
+# - dfm-python package inspection for code quality and theoretical correctness
+# - Report documentation emphasis (theoretically correct details per WORKFLOW.md)
+# - Optional LaTeX PDF compilation (LaTeX installed, compilation optional)
+# - Automatic commit and push to remote origin (submodules pushed every 2 iterations)
+# - Comprehensive error handling and logging
 
 # Don't exit on error - pipeline should persist until user cancels
 set +e
@@ -42,7 +50,7 @@ Steps in each iteration (match WORKFLOW.md):
   6   Execute improvement plan (code/report updates, incorporate FEEDBACK.md)
   7   Continue remaining plan items (check FEEDBACK.md)
   8   Summarize iteration; refresh CONTEXT/STATUS/ISSUES
-  9   Stage & commit (push submodules every 2nd iteration for user review)
+  9   Stage, commit & push to origin (push submodules every 2nd iteration for user review)
 
 Environment:
   COMMIT_MSG - Commit message for step 9 (default: "Iteration N")
@@ -237,9 +245,17 @@ workflow_context() {
 3. Performance trend: Performance by forecasting horizon (1, 7, 28 days)
 
 # WORKFLOW PRIORITY:
-1. FIRST: Fix DFM/DDFM package if needed, run missing experiments
-2. THEN: Generate tables and plots from experiment results
-3. FINALLY: Build/update report sections using generated tables and plots
+1. FIRST: Inspect and fix critical issues (model performance anomalies - near-perfect, too good, or too poor results, dfm-python package)
+2. THEN: Run missing experiments if needed
+3. THEN: Generate tables and plots from experiment results as specified in WORKFLOW.md
+4. FINALLY: Build/update report sections using generated tables and plots - ensure all theoretically correct details are documented
+5. OPTIONAL: Check LaTeX PDF compilation if needed (LaTeX is installed, but compilation is optional)
+6. COMMIT & PUSH: Ensure all changes are committed and pushed to remote origin
+
+# KNOWN ISSUES TO INSPECT:
+- Model performance anomalies: Results that are near-perfect, too good, or too poor may indicate issues (data leakage, numerical instability, implementation errors, etc.) - inspect training/evaluation code and model implementations
+- dfm-python inspection: Inspect @dfm-python/ package for code quality, numerical stability, theoretical correctness, and potential improvements
+- Report documentation: Ensure all theoretically correct details and tables are properly documented in the report as specified in WORKFLOW.md
 
 # RESOURCES
 - CONTEXT.md: Context offloading for persistence
@@ -263,15 +279,44 @@ EOF
 }
 
 # Prompt builders
-build_dfm_priority_prompt() {
+build_inspection_priority_prompt() {
   cat <<'EOF'
-CRITICAL PRIORITY: Check if dfm-python package is installed and working. If DFM/DDFM experiments are failing due to missing package dependencies, this MUST be the FIRST priority - install dfm-python dependencies (cd dfm-python && pip install -e .) before generating tables/plots. The report requires results from all 4 models (ARIMA, VAR, DFM, DDFM) - we currently only have ARIMA/VAR (18/36 combinations). Without DFM/DDFM results, the report cannot be complete.
+CRITICAL PRIORITY - INSPECT ISSUES:
+1. MODEL PERFORMANCE ANOMALIES: Inspect results for any models showing near-perfect, too good, or too poor results - these may indicate:
+   - Data leakage (test data exposure during training, improper train/test split, evaluation using future data)
+   - Numerical instability (extreme values, convergence issues, matrix conditioning problems)
+   - Implementation errors (theoretically incorrect code, bugs in training/evaluation)
+   - Inspect @src/core/training.py, @src/eval/evaluation.py, and model implementations
+   - Document findings in ISSUES.md
+
+2. dfm-python PACKAGE INSPECTION: Inspect @dfm-python/ package thoroughly:
+   - Code quality and consistency
+   - Numerical stability and theoretical correctness
+   - Potential improvements (regularization, convergence, error handling)
+   - Document findings in ISSUES.md
+
+3. REPORT DOCUMENTATION: Ensure all theoretically correct details and tables are properly documented in the report as specified in WORKFLOW.md:
+   - All required tables (dataset details/params, standardized MSE/MAE 36 rows, DFM/DDFM backtest monthly)
+   - All required plots (forecast vs actual per target, accuracy heatmap, performance trend)
+   - Theoretically correct methodology descriptions
+   - Proper citations from references.bib
+
+4. PACKAGE STATUS: Check if dfm-python package is installed and working. If DFM/DDFM experiments are failing due to missing package dependencies, install dfm-python dependencies (cd dfm-python && pip install -e .) before generating tables/plots.
 EOF
 }
 
 build_priority_order_prompt() {
   cat <<'EOF'
-PRIORITY ORDER: 1) Fix DFM/DDFM package installation if needed, 2) Run missing DFM/DDFM experiments (18/36 combinations), 3) Generate required tables (3 tables: dataset/params, standardized MSE/MAE 36 rows, DFM/DDFM backtest monthly) from outputs/experiments/aggregated_results.csv and outputs/comparisons/, 4) Generate required plots (3 types: forecast vs actual per target, accuracy heatmap, performance trend) using nowcasting-report/code/plot.py, 5) Update LaTeX tables in nowcasting-report/tables/ with actual results, 6) Build/update report sections using generated tables and plots.
+PRIORITY ORDER: 
+1) INSPECT CRITICAL ISSUES FIRST: Model performance anomalies (near-perfect, too good, or too poor results), dfm-python package inspection (see inspection priorities above)
+2) Fix DFM/DDFM package installation if needed
+3) Run missing experiments if needed (check outputs/ to see what's complete)
+4) Generate required tables as specified in WORKFLOW.md (3 tables: dataset/params, standardized MSE/MAE 36 rows, DFM/DDFM backtest monthly) from outputs/experiments/aggregated_results.csv and outputs/comparisons/
+5) Generate required plots as specified in WORKFLOW.md (3 types: forecast vs actual per target, accuracy heatmap, performance trend) using nowcasting-report/code/plot.py
+6) Update LaTeX tables in nowcasting-report/tables/ with actual results
+7) Build/update report sections using generated tables and plots - ensure all theoretically correct details are documented as specified in WORKFLOW.md
+8) OPTIONAL: Check LaTeX PDF compilation if needed (LaTeX is installed: cd nowcasting-report && pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex) - verify page count <15, check for errors
+9) COMMIT & PUSH: Ensure all changes are committed and pushed to remote origin
 EOF
 }
 
@@ -509,7 +554,7 @@ step2_inspect_code() {
   out_dir=$(latest_output_dir 2>/dev/null || echo "")
   
   local prompt="Inspect the @src/ @dfm-python/ and @nowcasting-report/ to understand the project structure, components, and data flow. Check @STATUS.md and @ISSUES.md for current state and pending tasks. Check @FEEDBACK.md for any user feedback that needs to be addressed. "
-  prompt+="$(build_dfm_priority_prompt) "
+  prompt+="$(build_inspection_priority_prompt) "
   
   if [[ -n "$out_dir" ]] && [[ -d "$out_dir" ]]; then
     prompt+="Study the experiment run output in ${out_dir} (latest run). Check comparison_results.json to see if DFM/DDFM failed and why. If DFM/DDFM failed due to missing package, this must be fixed FIRST before generating tables/plots. Plan how to fix DFM/DDFM package installation, run missing experiments, then generate tables/plots and update the @nowcasting-report with results. Check which experiments have already been completed by examining the outputs/ directory structure and log files. "
@@ -535,7 +580,7 @@ step3_plan_from_inspection() {
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   
   local prompt="Work on the plan from step 2. Based on the inspection results, create or update a concrete, actionable plan in ISSUES.md. "
-  prompt+="$(build_dfm_priority_prompt) "
+  prompt+="$(build_inspection_priority_prompt) "
   prompt+="$(build_priority_order_prompt) "
   prompt+="$(build_common_prompt_suffix)"
   
@@ -571,7 +616,7 @@ step4_analyze_results() {
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Analyze the results in ${out_dir}. CRITICAL: Check comparison_results.json to see if DFM/DDFM failed and identify the root cause. If DFM/DDFM failed due to missing package dependencies (e.g., 'dfm-python package not available', 'ModuleNotFoundError'), this MUST be marked as TOP PRIORITY in ISSUES.md - the report requires all 4 models but we only have ARIMA/VAR (18/${TOTAL_COMBINATIONS} combinations). If there are errors or issues, update them in STATUS.md and ISSUES.md and inspect what happened. If there's something wrong with the numbers, also update them in STATUS.md and think about what happened. Mark resolved issues clearly in ISSUES.md (use ✅ RESOLVED status). Check @FEEDBACK.md for any user feedback related to results. Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files."
+  local prompt="Analyze the results in ${out_dir}. CRITICAL INSPECTIONS: 1) Check comparison_results.json to see if any models failed and identify the root cause. 2) INSPECT MODEL PERFORMANCE ANOMALIES: Check for any models showing near-perfect, too good, or too poor results - these may indicate data leakage, numerical instability, or implementation errors. Inspect the training/evaluation code in @src/core/training.py and @src/eval/evaluation.py, and model implementations. Document findings in ISSUES.md. 3) If any models failed due to missing package dependencies or other issues, mark as priority in ISSUES.md. If there are errors or issues, update them in STATUS.md and ISSUES.md and inspect what happened. If there's something wrong with the numbers, also update them in STATUS.md and think about what happened. Mark resolved issues clearly in ISSUES.md (use ✅ RESOLVED status). Check @FEEDBACK.md for any user feedback related to results. Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files."
   
   if cursor_force "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
@@ -594,10 +639,10 @@ step5_plan_improvements() {
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   
   local prompt="Plan how to improve the dfm-python package and nowcasting-report paper. "
-  prompt+="$(build_dfm_priority_prompt) "
+  prompt+="$(build_inspection_priority_prompt) "
   prompt+="The report structure is 6 sections targeting under 15 pages. Focus on comparing 4 models (ARIMA, VAR, DFM, DDFM) across 3 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G). "
   prompt+="$(build_priority_order_prompt) "
-  prompt+="If there are improvement points in the codes (numerical stability, convergence issues, theoretically wrong implementation), include them in the plan. If there are improvement points in the report (hallucination, lack of detail, redundancy, unnatural flow), include them in the plan. If there are improvement points in code quality (redundancies, non-generic naming, inefficient logic, monkey patch, temporal fixes), include them in the plan. Note: Legacy code cleanup is completed. dfm-python is finalized with consistent naming and clean patterns. "
+  prompt+="CRITICAL: Address model performance anomalies first (near-perfect, too good, or too poor results) - inspect training/evaluation code and plan fixes. Address any numerical instability or implementation issues - inspect @dfm-python/ and plan improvements. Ensure all theoretically correct details and tables are documented in the report as specified in WORKFLOW.md. If there are improvement points in the codes (numerical stability, convergence issues, theoretically wrong implementation, data leakage), include them in the plan. If there are improvement points in the report (hallucination, lack of detail, redundancy, unnatural flow), include them in the plan. If there are improvement points in code quality (redundancies, non-generic naming, inefficient logic, monkey patch, temporal fixes), include them in the plan. Note: Legacy code cleanup is completed. dfm-python inspection is needed to identify remaining issues. "
   prompt+="$(build_common_prompt_suffix)"
   
   if cursor_force "$prompt"; then
@@ -620,9 +665,9 @@ step6_execute_plan() {
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Work on the plan. Execute the active plan items in ISSUES.md following the priority order. CRITICAL: Check if DFM/DDFM package is installed first. If DFM/DDFM experiments are failing, this is the TOP PRIORITY - install dfm-python dependencies (cd dfm-python && pip install -e .) and run missing DFM/DDFM experiments (18/${TOTAL_COMBINATIONS} combinations) BEFORE generating tables/plots. The report requires all 4 models - we currently only have ARIMA/VAR (18/${TOTAL_COMBINATIONS}). Without DFM/DDFM results, tables and plots will be incomplete. "
+  local prompt="Work on the plan. Execute the active plan items in ISSUES.md following the priority order. CRITICAL PRIORITIES: 1) INSPECT AND FIX MODEL PERFORMANCE ANOMALIES: Check for any models showing near-perfect, too good, or too poor results. Inspect @src/core/training.py and @src/eval/evaluation.py for data leakage issues, numerical instability, or implementation errors. Fix any issues found. 2) INSPECT dfm-python PACKAGE: Thoroughly inspect @dfm-python/ for code quality, numerical stability, theoretical correctness. Document and fix issues. 3) ENSURE REPORT DOCUMENTATION: Verify all theoretically correct details and tables are documented in the report as specified in WORKFLOW.md. 4) Check if DFM/DDFM package is installed. If DFM/DDFM experiments are failing, install dfm-python dependencies (cd dfm-python && pip install -e .) and run missing experiments if needed. "
   prompt+="$(build_priority_order_prompt) "
-  prompt+="Check @FEEDBACK.md for user feedback and incorporate feedback into updates. Apply code/report updates needed for dfm-python and nowcasting-report. IMPORTANT: If the plan includes new experiments needed for the report, update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to identify which experiments have already been run. Modify run_experiment.sh to exclude completed experiments and only run missing ones. Focus on incremental improvements and prioritize tasks. Do not create new files. Use existing files only and keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
+  prompt+="Check @FEEDBACK.md for user feedback and incorporate feedback into updates. Apply code/report updates needed for dfm-python and nowcasting-report. IMPORTANT: If the plan includes new experiments needed for the report, update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to identify which experiments have already been run. Modify run_experiment.sh to exclude completed experiments and only run missing ones. OPTIONAL: If LaTeX is available, check PDF compilation (cd nowcasting-report && pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex) to verify report compiles correctly. Focus on incremental improvements and prioritize tasks. Do not create new files. Use existing files only and keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
   
   if cursor_stream "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
@@ -646,9 +691,9 @@ step7_continue_plan() {
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Keep working on the plan with any unfinished tasks. Continue remaining items from ISSUES.md following the priority order. CRITICAL: If DFM/DDFM package is not installed or experiments are failing, this MUST be addressed FIRST. Install dfm-python dependencies (cd dfm-python && pip install -e .) and run missing DFM/DDFM experiments (18/${TOTAL_COMBINATIONS} combinations) before generating tables/plots. The report requires all 4 models - without DFM/DDFM, tables and plots will be incomplete. "
+  local prompt="Keep working on the plan with any unfinished tasks. Continue remaining items from ISSUES.md following the priority order. CRITICAL PRIORITIES: 1) Continue model performance anomalies inspection and fixes if not complete (near-perfect, too good, or too poor results). 2) Continue dfm-python package inspection if not complete. 3) Ensure all theoretically correct details and tables are documented in the report as specified in WORKFLOW.md. 4) If DFM/DDFM package is not installed or experiments are failing, address this. Install dfm-python dependencies (cd dfm-python && pip install -e .) and run missing experiments if needed. "
   prompt+="$(build_priority_order_prompt) "
-  prompt+="Check @FEEDBACK.md for any new user feedback and incorporate into ongoing work. IMPORTANT: If there are remaining experiments needed for the report, update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them. Focus on incremental improvements and complete as many tasks as possible. Do not create new files. Keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
+  prompt+="Check @FEEDBACK.md for any new user feedback and incorporate into ongoing work. IMPORTANT: If there are remaining experiments needed for the report, update run_experiment.sh to include only experiments that are not already complete. Check outputs/ directory to see which experiments have already been run and exclude them. OPTIONAL: If LaTeX is available and report sections are updated, check PDF compilation to verify changes compile correctly. Focus on incremental improvements and complete as many tasks as possible. Do not create new files. Keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
   
   if cursor_stream "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
@@ -672,7 +717,7 @@ step8_summarize_iteration() {
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Identify the work done in this iteration. Identify what's done, what's not done. Update STATUS.md and ISSUES.md for the next iteration. Mark resolved issues clearly in ISSUES.md. Remove old resolved issues to keep file under ${LINE_LIMIT} lines. Update experiment status in STATUS.md (completed/pending combinations). Note: Submodules are pushed every 2 iterations - user will review report and provide feedback in FEEDBACK.md. Next iteration will start fresh so you need to leave the proper context for next iteration. Keep each file under ${LINE_LIMIT} lines. Do not create new files."
+  local prompt="Identify the work done in this iteration. Identify what's done, what's not done. Update STATUS.md and ISSUES.md for the next iteration. Mark resolved issues clearly in ISSUES.md. Remove old resolved issues to keep file under ${LINE_LIMIT} lines. Update experiment status in STATUS.md (completed/pending combinations). Document inspection findings: model performance anomalies inspection status, dfm-python package inspection status, report documentation status (theoretically correct details and tables as specified in WORKFLOW.md). Note: Changes will be committed and pushed to remote origin in step 9. Submodules are pushed every 2 iterations - user will review report and provide feedback in FEEDBACK.md. LaTeX PDF compilation is optional (LaTeX is installed) - can be checked if needed, but focus on ensuring all changes are committed and pushed. Next iteration will start fresh so you need to leave the proper context for next iteration. Keep each file under ${LINE_LIMIT} lines. Do not create new files."
   
   if cursor_force "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
@@ -687,9 +732,30 @@ step8_summarize_iteration() {
   fi
 }
 
+safe_git_push() {
+  cd "$REPO_ROOT" || {
+    log_error "Failed to cd to $REPO_ROOT for push"
+    return 1
+  }
+  
+  # Get current branch name
+  local current_branch
+  current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+  
+  log_info "Pushing main repository to origin ${current_branch} (iteration ${ITERATION})"
+  
+  if git push origin "${current_branch}" 2>&1; then
+    log_info "✓ Main repository pushed successfully to origin ${current_branch}"
+    return 0
+  else
+    log_warn "⚠ Main repository push had errors (may need manual push or remote not configured)"
+    return 1
+  fi
+}
+
 step9_commit() {
   ensure_env
-  log_info "Starting step 9: Commit changes (iteration ${ITERATION})"
+  log_info "Starting step 9: Commit and push changes (iteration ${ITERATION})"
   validate_prerequisites 9 || log_warn "Prerequisites validation failed, but continuing"
   cd "$REPO_ROOT" || {
     log_error "Failed to cd to $REPO_ROOT"
@@ -706,6 +772,10 @@ step9_commit() {
   guard_line_limit "${REPO_ROOT}/CONTEXT.md"
   
   if safe_git_commit "$COMMIT_MSG"; then
+    # Push main repository to origin
+    log_info "Pushing main repository to origin..."
+    safe_git_push || log_warn "Main repository push had errors but continuing"
+    
     # Push submodules every 2 iterations (iterations 2, 4, 6, 8, ...)
     if [[ "${ITERATION:-0}" =~ ^[0-9]+$ ]] && (( ITERATION % 2 == 0 )); then
       log_info "Pushing submodules to origin main (iteration ${ITERATION} - user will review and provide feedback)"
@@ -723,7 +793,10 @@ step9_commit() {
     return 0
   else
     log_error "Step 9 git commit failed, but iteration completed"
-    # Still try to push submodules if it's an even iteration
+    # Still try to push main repository and submodules
+    log_info "Attempting to push main repository despite commit failure (iteration ${ITERATION})"
+    safe_git_push || log_warn "Main repository push had errors but continuing"
+    
     if [[ "${ITERATION:-0}" =~ ^[0-9]+$ ]] && (( ITERATION % 2 == 0 )); then
       log_info "Attempting submodule push despite commit failure (iteration ${ITERATION})"
       safe_git_submodule_push || log_warn "Submodule push had errors but continuing"

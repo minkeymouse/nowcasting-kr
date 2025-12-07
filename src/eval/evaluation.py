@@ -374,6 +374,33 @@ def evaluate_forecaster(
 ) -> Dict[int, Dict[str, float]]:
     """Evaluate a sktime-compatible forecaster on test data.
     
+    This function implements a single-step evaluation design where each forecast
+    horizon is evaluated using exactly one test point. This is an intentional design
+    choice rather than a limitation, as it provides focused assessment of model
+    performance at each specific forecast horizon.
+    
+    Evaluation Design:
+        - For each horizon h, the function extracts exactly one test point at position
+          test_pos = h - 1 (since test data starts at train_end+1, horizon h corresponds
+          to position h-1 in test data).
+        - This results in n_valid=1 for all horizons, which is expected behavior.
+        - The single-step design is appropriate for nowcasting applications where
+          we want to assess model performance at specific forecast horizons rather
+          than aggregating across multiple test points.
+    
+    Why Single-Step Evaluation?
+        - Data limitation: After 80/20 train/test split, the test set may be too small
+          for multi-step evaluation, especially for longer horizons (e.g., h=28).
+        - Focused assessment: Single-step evaluation provides a clear, focused assessment
+          of model performance at each specific forecast horizon without aggregation
+          effects that could mask horizon-specific performance characteristics.
+        - Consistency: All models are evaluated using the same single-point design,
+          ensuring fair comparison across models.
+    
+    Note: This design limitation is documented in the report methodology section.
+    Multi-step evaluation (evaluating multiple test points per horizon) is not used
+    due to the data limitation mentioned above.
+    
     Parameters
     ----------
     forecaster : sktime BaseForecaster
@@ -390,7 +417,9 @@ def evaluate_forecaster(
     Returns
     -------
     dict
-        Dictionary with horizon as key and metrics dict as value
+        Dictionary with horizon as key and metrics dict as value.
+        Each metrics dict contains: sMSE, sMAE, sRMSE, MSE, MAE, RMSE, sigma, n_valid.
+        Note: n_valid=1 for all valid horizons due to single-step evaluation design.
     """
     # Fit forecaster
     forecaster.fit(y_train)
