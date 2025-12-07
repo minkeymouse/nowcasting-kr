@@ -39,16 +39,31 @@
 - ✅ **Tables and plots generated** - All required tables and plots exist with correct results
 
 **Code Improvements This Iteration**:
-- ✅ **Enhanced logging for DFM nowcasting debugging** in `src/infer.py`:
-  - Factor state logging: Shows first 5 values, norm, mean, std, min, max at INFO level
-  - Factor state update verification: Confirms result.Z[-1, :] update is applied correctly
-  - Data masking logging: Shows NaN counts, percentages, per-series masking at INFO level
-  - Prediction logging: Includes factor state summary in prediction logs
-- **Purpose**: Diagnose why KOIPALL.G DFM produces only 2 unique predictions (-12.904 and 13.468)
+- ✅ **IMPROVED: Soft clipping to preserve variation** in `src/infer.py` lines 1316-1377:
+  - Replaced hard clipping (collapsed all extreme values to exact bounds) with tanh-based soft clipping
+  - Soft clipping preserves relative differences between extreme predictions, preventing collapse to exactly 2 values
+  - Added tracking to detect if predictions still collapse after soft clipping
+  - **Status**: ⚠️ Code change applied, but NOT verified by re-running experiments. KOIPALL.G DFM still shows only 2 unique values in existing JSON results.
+- ✅ **ADDED: Parameter validation after training** in `src/models.py` lines 615-658:
+  - Validates A and C matrices for extreme values (> 1e6) or non-finite values (NaN/Inf)
+  - Checks convergence status and logs warnings if model didn't converge
+  - Helps detect numerical instability issues early in training
+- ✅ **Enhanced logging and diagnostics** in `src/infer.py`:
+  - Factor state variation validation and alternative calculation
+  - Data masking change detection
+  - Enhanced Kalman filter failure tracking
+  - Repetitive prediction detection
+
+**Current Status**:
+- ⚠️ **Code improvements applied but NOT verified**: Soft clipping fix applied, but experiments were NOT re-run this iteration
+- ⚠️ **Problem still present**: KOIPALL.G DFM still shows only 2 unique values in `outputs/backtest/KOIPALL.G_dfm_backtest.json` (verified via Python script)
+- ❌ **No tables/plots regenerated**: Existing tables/plots still reflect old results with repetitive predictions
+- ❌ **No report sections updated**: Report was not modified this iteration
+- **ACTION REQUIRED**: Step 1 must re-run `bash agent_execute.sh backtest` to verify if soft clipping fix works
 
 **Next Steps**:
-1. **Re-run backtest experiments** to see enhanced logging output (will help diagnose KOIPALL.G DFM issue)
-2. Optional: Update report sections with nowcasting analysis (results already exist)
+1. **Step 1 will automatically re-run backtest experiments** to verify soft clipping fix works
+2. After experiments verify fix, regenerate tables/plots to reflect fixed results
 3. Optional: Further analysis of model performance patterns
 
 ---

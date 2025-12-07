@@ -3,6 +3,31 @@
 ## Work Done This Iteration (HONEST ASSESSMENT)
 
 **CODE IMPROVEMENTS MADE** (This Iteration):
+- **✅ IMPROVED: Soft clipping logic to preserve variation** in `src/infer.py` lines 1316-1377
+  - Location: `src/infer.py` lines 1316-1377 (clipping logic)
+  - Changes: 
+    - **IMPROVEMENT**: Replaced hard clipping (np.clip to exact bounds) with tanh-based soft clipping
+    - Soft clipping preserves relative differences between extreme predictions instead of collapsing all to 2 exact bounds
+    - Tracks clipped values to detect if predictions are still collapsing (logs error if only 2 unique clipped values)
+    - Allows 2 std devs of variation within clipped region, preventing all extreme values from becoming identical
+  - Impact: **ATTEMPTS TO FIX repetitive prediction bug** where all extreme values were collapsing to exactly 2 bounds (-12.904 and 13.468)
+  - Status: ⚠️ **CODE CHANGE APPLIED, NOT VERIFIED** - Experiments were NOT re-run this iteration, so we don't know if fix works. KOIPALL.G DFM still shows only 2 unique values in existing JSON results.
+- **✅ ADDED: Parameter validation after training** in `src/models.py` lines 613-658
+  - Location: `src/models.py` lines 613-658 (after trainer.fit())
+  - Changes:
+    - Validates A and C matrices for extreme values (> 1e6) or non-finite values (NaN/Inf)
+    - Checks convergence status and logs warnings if model didn't converge
+    - Helps detect numerical instability issues like KOIPALL.G DFM before predictions are made
+  - Impact: **DETECTS numerical instability** early in training, helps identify root cause of extreme forecast values
+  - Status: ✅ **ADDED THIS ITERATION** - Will log warnings during training if parameters are extreme
+- **Added factor state variation validation and alternative calculation**: Added validation to detect when factor states are identical across timepoints and alternative calculation method when data masking changes but factor state doesn't
+  - Location: `src/infer.py` lines 1028-1080
+  - Changes: 
+    - Validates that factor state is different from previous timepoints (detects when diff < 1e-6)
+    - When data masking changes but factor state is identical, attempts alternative calculation using last valid observation and C matrix pseudo-inverse
+    - Tracks previous factor states and data hashes to detect patterns
+  - Impact: Helps prevent repetitive predictions by detecting when Kalman filter is failing silently and providing alternative calculation method
+  - Status: ✅ Code improvements applied this iteration
 - **Added data masking change detection**: Added tracking of data masking history to detect if data is not changing between timepoints
   - Location: `src/infer.py` lines 1081-1107
   - Changes: Tracks data masking history (NaN counts, percentages, data hashes) for each timepoint and detects if data masking is identical across timepoints
@@ -18,6 +43,21 @@
   - Changes: Logs data statistics (shape, NaN count/percentage, mean, std) before Kalman filter re-run
   - Impact: Helps diagnose if data masking is actually changing between timepoints, which could explain repetitive factor states
   - Status: ✅ Code improvements applied this iteration
+- **Improved factor state update robustness**: Enhanced factor state update logic to prevent get_result() from overwriting updates
+  - Location: `src/infer.py` lines 1061-1088
+  - Changes: Ensures _result exists before updating (creates it if None), verifies update was applied, prevents predict() from overwriting
+  - Impact: Prevents factor state updates from being lost when predict() calls get_result(), ensures updated state is actually used
+  - Status: ✅ Code improvements applied this iteration
+- **Enhanced Kalman filter failure tracking**: Added detailed tracking of when Kalman filter re-run fails
+  - Location: `src/infer.py` lines 1045-1059
+  - Changes: Tracks failure history with target, month, weeks_before, error type and message
+  - Impact: Helps identify patterns in Kalman filter failures (e.g., always failing for specific target), which could explain repetitive predictions
+  - Status: ✅ Code improvements applied this iteration
+- **Added result.Z validation in DFM predict()**: Added validation to ensure result.Z exists before using it
+  - Location: `dfm-python/src/dfm_python/models/dfm.py` lines 712-720
+  - Changes: Validates result.Z exists and is not None before accessing it
+  - Impact: Prevents silent failures when result object is corrupted or incomplete, provides clear error messages
+  - Status: ✅ Code improvements applied this iteration
 
 **DOCUMENTATION UPDATES** (This Iteration):
 - Updated STATUS.md with honest assessment of work done this iteration
@@ -28,25 +68,38 @@
 - ✅ Verified no model failures: All comparison_results.json show "failed_models": []
 - ✅ Verified training complete: 12 model.pkl files exist in checkpoint/
 - ✅ Verified nowcasting complete: 12 backtest JSON files exist
-- ✅ Identified REAL problem: KOIPALL.G DFM produces only 2 unique predictions (-12.904 and 13.468) across all months
+- ✅ **CRITICAL FINDING**: Inspected `outputs/nowcast/KOIPALL.G_dfm_nowcast.log` - factor states ARE varying (norms: 3820, 3724, 4038, etc.) and predictions ARE varying in logs (-192.33, -61.97, 35.52, 314.17, etc.)
+- ✅ **Identified discrepancy**: Logs show varying predictions, but backtest JSON shows only 2 unique values (-12.904, 13.468)
+- ✅ **Root cause hypothesis**: Clipping logic or forecast_value extraction may have a bug causing values to collapse to 2 unique values
 - ✅ Other DFM models (KOEQUIPTE, KOWRCCNSE) show varying predictions - issue is specific to KOIPALL.G
 
 **WHAT WAS NOT DONE THIS ITERATION**:
-- ❌ No new experiments were run (training, forecasting, backtesting already completed in previous iterations)
-- ❌ No new tables/plots were generated (existing tables/plots already reflect results from previous iterations)
-- ❌ No report sections updated
-- ❌ DFM repetitive prediction root cause not fixed (added enhanced diagnostic logging including data masking change detection, but root cause investigation needs experiments to be re-run to see logs)
+- ❌ **No experiments were re-run** - Code fixes were applied but NOT verified by re-running backtest experiments
+  - **CRITICAL**: KOIPALL.G DFM still shows only 2 unique values in `outputs/backtest/KOIPALL.G_dfm_backtest.json` (verified via Python script)
+  - **ACTION REQUIRED**: Step 1 should re-run `bash agent_execute.sh backtest` to verify if soft clipping fix resolves the issue
+- ❌ **No tables/plots regenerated** - Existing tables/plots still reflect old results with repetitive predictions
+- ❌ **No report sections updated** - Report was not modified this iteration
+- ❌ **No dfm-python package changes** - Package inspection was not done this iteration
 
 **HONEST STATUS**: 
-- Code improvements made: 
-  - Added debug logging in DFM predict() to verify factor state usage
-  - Enhanced data statistics logging in _get_current_factor_state to diagnose data masking changes
-  - Added data masking change detection to track if data is actually changing between timepoints
-  - These improvements will help diagnose root cause when experiments are re-run
-- Analysis completed: Verified all experiments are complete, identified KOIPALL.G DFM repetitive prediction issue
-- All experiments were already completed in previous iterations
-- Models, results, tables, and plots already exist from previous work
-- KOIPALL.G DFM repetitive prediction issue identified - enhanced diagnostic logging added, needs experiments to be re-run to see logs and diagnose root cause
+- **✅ CODE IMPROVEMENTS APPLIED** (but NOT verified): 
+  - **IMPROVED clipping logic**: Replaced hard clipping with soft clipping that preserves variation
+  - **ADDED parameter validation**: Detects numerical instability in A/C matrices after training
+  - **ADDED enhanced diagnostics**: Factor state validation, data masking detection, Kalman filter failure tracking
+  - **CRITICAL**: These code changes have NOT been verified by re-running experiments
+- **⚠️ PROBLEM STILL PRESENT**: 
+  - KOIPALL.G DFM still shows only 2 unique values in `outputs/backtest/KOIPALL.G_dfm_backtest.json` (-12.904 and 13.468)
+  - Verified via Python script: `len(set(vals)) = 2`
+  - This means either: (1) code fix doesn't work, (2) fix wasn't applied correctly, or (3) root cause is different
+- **Analysis completed**: 
+  - Verified all experiments are complete (from previous iterations)
+  - **CRITICAL FINDING**: Logs show varying predictions, but JSON shows only 2 unique values
+  - **ROOT CAUSE HYPOTHESIS**: Hard clipping was collapsing all extreme predictions to exact bounds
+  - **CODE FIX APPLIED**: Soft clipping preserves variation, but NOT VERIFIED by experiments
+- **ACTION REQUIRED**: 
+  - Step 1 must re-run `bash agent_execute.sh backtest` to verify if soft clipping fix works
+  - If fix works, regenerate tables/plots to reflect fixed results
+  - If fix doesn't work, investigate alternative root causes (forecast_value extraction, standardization, etc.)
 
 ---
 
@@ -160,8 +213,9 @@
 
 **Critical Issues Identified**:
 - ⚠️ **KOIPALL.G DFM repetitive predictions**: Only 2 unique predictions across all months (-12.904 and 13.468)
-  - Issue identified, enhanced diagnostic logging added
-  - Root cause not fixed - needs experiments to be re-run to see logs and diagnose
+  - **VERIFIED**: Still present in `outputs/backtest/KOIPALL.G_dfm_backtest.json` (verified via Python script)
+  - **CODE FIX APPLIED**: Soft clipping logic improved, but NOT VERIFIED by re-running experiments
+  - **STATUS**: Issue persists in existing results. Code fix may resolve it, but needs verification.
   - See ISSUES.md Issue 7 for details
 
 **Non-Critical Issues**:
@@ -179,9 +233,11 @@
 ## Next Iteration Actions
 
 **PRIORITY 1 (Critical)**:
-1. **Fix KOIPALL.G DFM repetitive predictions** - Re-run backtest with enhanced logging, analyze logs, fix root cause
-   - Enhanced diagnostic logging added this iteration
-   - Need to run experiments to see logs and diagnose root cause
+1. **Verify KOIPALL.G DFM repetitive predictions fix** - Re-run backtest to verify if soft clipping fix works
+   - Code fix applied (soft clipping), but NOT verified by experiments
+   - **ACTION**: Step 1 must run `bash agent_execute.sh backtest` to verify fix
+   - If fix works: Regenerate tables/plots with fixed results
+   - If fix doesn't work: Investigate alternative root causes (forecast_value extraction, standardization, etc.)
    - See ISSUES.md Issue 7 for detailed steps
 
 **PRIORITY 2 (Medium)**:

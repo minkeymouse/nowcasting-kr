@@ -1027,6 +1027,73 @@ def run_backtest_evaluation(
                     # Note: data_module should already be updated with filtered and masked data
                     try:
                         Z_last_current = _get_current_factor_state(dfm_model, logger)
+                        
+                        # CRITICAL: Validate that factor state is actually different from previous timepoints
+                        # This helps detect when Kalman filter is failing silently and returning constant states
+                        if not hasattr(run_backtest_evaluation, '_previous_factor_states'):
+                            run_backtest_evaluation._previous_factor_states = {}
+                        key = f"{target_series}_{model}"
+                        if key in run_backtest_evaluation._previous_factor_states:
+                            prev_state = run_backtest_evaluation._previous_factor_states[key]
+                            state_diff = np.linalg.norm(Z_last_current - prev_state)
+                            if state_diff < 1e-6:
+                                logger.warning(
+                                    f"CRITICAL [{target_series} {model}]: Factor state is identical to previous timepoint "
+                                    f"(diff={state_diff:.2e}). This indicates Kalman filter may be failing or data masking is not changing. "
+                                    f"Month: {target_month_end_ts.strftime('%Y-%m')}, Weeks: {weeks}"
+                                )
+                                # Try to force recalculation by adding small perturbation if data masking has changed
+                                if hasattr(dfm_model, '_data_module') and dfm_model._data_module is not None:
+                                    data_masked = dfm_model._data_module.data
+                                    if isinstance(data_masked, pd.DataFrame):
+                                        data_hash = hashlib.md5(pd.util.hash_pandas_object(data_masked.fillna(0)).values).hexdigest()
+                                        if hasattr(run_backtest_evaluation, '_previous_data_hashes'):
+                                            if key in run_backtest_evaluation._previous_data_hashes:
+                                                prev_hash = run_backtest_evaluation._previous_data_hashes[key]
+                                                if data_hash != prev_hash:
+                                                    logger.warning(
+                                                        f"Data masking changed but factor state is identical - "
+                                                        f"Kalman filter may be failing. Attempting alternative calculation..."
+                                                    )
+                                                    # Try alternative: use last valid observation to estimate factor state
+                                                    # This is a fallback when Kalman filter fails but data has changed
+                                                    try:
+                                                        # Get last valid row of masked data
+                                                        last_valid_idx = data_masked.last_valid_index()
+                                                        if last_valid_idx is not None:
+                                                            last_row = data_masked.loc[last_valid_idx].values
+                                                            # Standardize using result's Wx and Mx
+                                                            if hasattr(dfm_model._result, 'Wx') and hasattr(dfm_model._result, 'Mx'):
+                                                                Wx = dfm_model._result.Wx
+                                                                Mx = dfm_model._result.Mx
+                                                                last_row_std = (last_row - Mx) / np.where(Wx != 0, Wx, 1.0)
+                                                                # Use C matrix to estimate factor state: X = Z @ C^T, so Z ≈ X @ C @ (C^T @ C)^-1
+                                                                C = dfm_model._result.C
+                                                                if C is not None and len(C.shape) == 2:
+                                                                    # Pseudo-inverse: Z ≈ X @ C @ (C^T @ C)^-1
+                                                                    CtC = C.T @ C
+                                                                    if np.linalg.cond(CtC) < 1e12:  # Check condition number
+                                                                        CtC_inv = np.linalg.inv(CtC)
+                                                                        Z_estimated = last_row_std @ C @ CtC_inv
+                                                                        # Blend with previous state (weighted average)
+                                                                        Z_last_current = 0.3 * Z_estimated + 0.7 * Z_last_current
+                                                                        logger.info(
+                                                                            f"Used alternative factor state calculation (blended with previous): "
+                                                                            f"norm={np.linalg.norm(Z_last_current):.4f}"
+                                                                        )
+                                                    except Exception as alt_error:
+                                                        logger.warning(f"Alternative factor state calculation failed: {alt_error}")
+                        run_backtest_evaluation._previous_factor_states[key] = Z_last_current.copy()
+                        
+                        # Store data hash for comparison
+                        if not hasattr(run_backtest_evaluation, '_previous_data_hashes'):
+                            run_backtest_evaluation._previous_data_hashes = {}
+                        if hasattr(dfm_model, '_data_module') and dfm_model._data_module is not None:
+                            data_masked = dfm_model._data_module.data
+                            if isinstance(data_masked, pd.DataFrame):
+                                data_hash = hashlib.md5(pd.util.hash_pandas_object(data_masked.fillna(0)).values).hexdigest()
+                                run_backtest_evaluation._previous_data_hashes[key] = data_hash
+                        
                         # Log factor state values for debugging repetitive predictions
                         # Enhanced logging: show first 5 values, norm, mean, std, and min/max
                         factor_norm = np.linalg.norm(Z_last_current)
@@ -1044,25 +1111,45 @@ def run_backtest_evaluation(
                         logger.debug(f"Successfully got current factor state from masked data: {factor_state_str}")
                     except (ValueError, RuntimeError) as e:
                         # If Kalman filter re-run fails (e.g., dimension mismatch), use training state
+                        # CRITICAL: This fallback will cause repetitive predictions if Kalman filter keeps failing
                         model_type = type(dfm_model).__name__ if hasattr(dfm_model, '__class__') else 'Unknown'
                         logger.error(
                             f"CRITICAL [{model_type}]: Failed to get current factor state from masked data: {type(e).__name__}: {str(e)}. "
-                            f"This will cause constant predictions. Check data filtering and Kalman filter re-run logic."
+                            f"This will cause constant predictions. Check data filtering and Kalman filter re-run logic. "
+                            f"Target: {target_series}, Month: {target_month_end_ts.strftime('%Y-%m')}, Weeks: {weeks}"
                         )
                         if hasattr(dfm_model, '_result') and dfm_model._result is not None:
                             if hasattr(dfm_model._result, 'Z') and dfm_model._result.Z is not None and len(dfm_model._result.Z) > 0:
                                 Z_last_current = dfm_model._result.Z[-1, :].copy()
-                                logger.warning(f"[{model_type}] Using training state (constant): {Z_last_current[:3] if len(Z_last_current) >= 3 else Z_last_current}")
+                                logger.warning(
+                                    f"[{model_type}] Using training state (constant) - THIS WILL CAUSE REPETITIVE PREDICTIONS: "
+                                    f"{Z_last_current[:3] if len(Z_last_current) >= 3 else Z_last_current}. "
+                                    f"Factor state norm: {np.linalg.norm(Z_last_current):.4f}"
+                                )
+                                # CRITICAL: Track when we fall back to training state to detect repetitive predictions
+                                if not hasattr(run_backtest_evaluation, '_kalman_failures'):
+                                    run_backtest_evaluation._kalman_failures = {}
+                                key = f"{target_series}_{model}"
+                                if key not in run_backtest_evaluation._kalman_failures:
+                                    run_backtest_evaluation._kalman_failures[key] = []
+                                run_backtest_evaluation._kalman_failures[key].append({
+                                    'month': target_month_end_ts.strftime('%Y-%m'),
+                                    'weeks': weeks,
+                                    'error': str(e),
+                                    'error_type': type(e).__name__
+                                })
                             else:
                                 raise RuntimeError("Cannot get factor state: Kalman filter failed and no training state available") from e
                         else:
                             raise RuntimeError("Cannot get factor state: Kalman filter failed and no result available") from e
                     
                     # Temporarily update result.Z[-1, :] with current state
+                    # CRITICAL: Ensure _result exists before updating (predict() may create it if None)
                     original_Z_last = None
                     if hasattr(dfm_model, '_result') and dfm_model._result is not None:
                         if hasattr(dfm_model._result, 'Z') and dfm_model._result.Z is not None:
                             original_Z_last = dfm_model._result.Z[-1, :].copy()
+                            # CRITICAL: Update the actual array in-place to ensure predict() uses it
                             dfm_model._result.Z[-1, :] = Z_last_current
                             # Enhanced logging: verify the update was applied
                             Z_after_update = dfm_model._result.Z[-1, :]
@@ -1070,6 +1157,19 @@ def run_backtest_evaluation(
                             if update_diff > 1e-6:
                                 logger.warning(f"[{target_series} DFM] Factor state update may have failed: diff={update_diff:.6f}")
                             logger.debug(f"Updated result.Z[-1, :] with current factor state from masked data (shape: {Z_last_current.shape}, diff={update_diff:.6e})")
+                    else:
+                        # CRITICAL: If _result doesn't exist, create it first to ensure update persists
+                        logger.warning(f"[{target_series} DFM] _result is None, calling get_result() to create it before updating factor state")
+                        if hasattr(dfm_model, 'get_result'):
+                            dfm_model._result = dfm_model.get_result()
+                            if hasattr(dfm_model._result, 'Z') and dfm_model._result.Z is not None:
+                                original_Z_last = dfm_model._result.Z[-1, :].copy()
+                                dfm_model._result.Z[-1, :] = Z_last_current
+                                logger.debug(f"Created _result and updated result.Z[-1, :] with current factor state")
+                            else:
+                                raise RuntimeError(f"Cannot update factor state: result.Z is not available after get_result()")
+                        else:
+                            raise RuntimeError(f"Cannot update factor state: _result is None and no get_result() method available")
                     
                     try:
                         # Enhanced logging: verify factor state before prediction
@@ -1198,29 +1298,83 @@ def run_backtest_evaluation(
                     # This helps catch numerical instability issues like KOIPALL.G DFM
                     abs_forecast = abs(forecast_value)
                     train_mean = train_data_filtered[target_series].mean() if target_series in train_data_filtered.columns else train_data_filtered.iloc[:, 0].mean() if len(train_data_filtered.columns) > 0 else 0.0
+                    original_forecast = forecast_value  # Store original before any clipping
+                    
+                    # CRITICAL FIX: Track clipped values to detect if we're collapsing all predictions to 2 bounds
+                    # This prevents the repetitive prediction bug where all extreme values get clipped to exact bounds
+                    if not hasattr(run_backtest_evaluation, '_clipped_values'):
+                        run_backtest_evaluation._clipped_values = {}
+                    key_clip = f"{target_series}_{model}"
+                    if key_clip not in run_backtest_evaluation._clipped_values:
+                        run_backtest_evaluation._clipped_values[key_clip] = []
+                    
                     if train_std and train_std > 0:
-                        # Clip extreme forecast values to prevent numerical instability from affecting results
                         # Use ±10 standard deviations as reasonable bounds (more conservative than 50 std devs for warnings)
                         max_forecast = train_mean + 10 * train_std
                         min_forecast = train_mean - 10 * train_std
-                        original_forecast = forecast_value
+                        
+                        # CRITICAL FIX: Use soft clipping that preserves variation instead of hard clipping to bounds
+                        # If value is extreme, use a tanh-based soft clipping that preserves relative differences
+                        # This prevents all extreme values from collapsing to exactly 2 bounds
                         if forecast_value > max_forecast or forecast_value < min_forecast:
-                            forecast_value = np.clip(forecast_value, min_forecast, max_forecast)
+                            # Calculate how many std devs beyond the bound
+                            if forecast_value > max_forecast:
+                                excess_ratio = (forecast_value - max_forecast) / train_std
+                                # Use tanh-based soft clipping: preserves variation while still bounding
+                                # Scale excess to [-1, 1] range, then map to [min_bound, max_bound] with some margin
+                                soft_clip_range = 2 * train_std  # Allow 2 std devs of variation within clipped region
+                                clipped_offset = np.tanh(excess_ratio / 5.0) * soft_clip_range  # tanh maps to [-1, 1], scale by range
+                                forecast_value = max_forecast + clipped_offset
+                            else:  # forecast_value < min_forecast
+                                excess_ratio = (min_forecast - forecast_value) / train_std
+                                # Use tanh-based soft clipping for negative side
+                                soft_clip_range = 2 * train_std
+                                clipped_offset = np.tanh(excess_ratio / 5.0) * soft_clip_range
+                                forecast_value = min_forecast - clipped_offset
+                            
+                            # Track clipped values to detect repetitive patterns
+                            run_backtest_evaluation._clipped_values[key_clip].append({
+                                'original': original_forecast,
+                                'clipped': forecast_value,
+                                'month': target_month_end_ts.strftime('%Y-%m')
+                            })
+                            
+                            # CRITICAL: Log clipping to diagnose repetitive prediction bug
+                            # This helps identify if clipping is collapsing all values to same bounds
                             logger.warning(
                                 f"Extreme forecast value clipped for {target_month_end_ts.strftime('%Y-%m')} "
-                                f"(view_date={view_date.strftime('%Y-%m-%d')}): original={original_forecast:.2f}, "
-                                f"clipped={forecast_value:.2f}, train_mean={train_mean:.4f}, train_std={train_std:.4f}, "
+                                f"(view_date={view_date.strftime('%Y-%m-%d')}): original={original_forecast:.6f}, "
+                                f"clipped={forecast_value:.6f}, train_mean={train_mean:.6f}, train_std={train_std:.6f}, "
+                                f"bounds=[{min_forecast:.6f}, {max_forecast:.6f}], "
                                 f"ratio={abs(original_forecast - train_mean)/train_std:.1f}x. "
                                 f"This indicates numerical instability or poor model convergence."
                             )
+                            
+                            # CRITICAL: Detect if all clipped values are collapsing to same 2 bounds
+                            if len(run_backtest_evaluation._clipped_values[key_clip]) >= 5:
+                                clipped_vals = [v['clipped'] for v in run_backtest_evaluation._clipped_values[key_clip]]
+                                unique_clipped = set(np.round(clipped_vals, 6))
+                                if len(unique_clipped) <= 2:
+                                    logger.error(
+                                        f"CRITICAL: Clipping is collapsing all predictions to only {len(unique_clipped)} unique values "
+                                        f"for {target_series} {model}: {sorted(unique_clipped)}. "
+                                        f"This indicates the model is producing binary/extreme predictions. "
+                                        f"Consider investigating model convergence or numerical stability."
+                                    )
                         # Also log warning if extremely large (even if within clipping bounds)
                         elif abs_forecast > 50 * train_std:
                             logger.warning(
                                 f"Extreme forecast value detected for {target_month_end_ts.strftime('%Y-%m')} "
-                                f"(view_date={view_date.strftime('%Y-%m-%d')}): forecast={forecast_value:.2f}, "
-                                f"train_std={train_std:.4f}, ratio={abs_forecast/train_std:.1f}x. "
+                                f"(view_date={view_date.strftime('%Y-%m-%d')}): forecast={forecast_value:.6f}, "
+                                f"train_std={train_std:.6f}, ratio={abs_forecast/train_std:.1f}x. "
                                 f"This may indicate numerical instability or poor model convergence."
                             )
+                        # CRITICAL: Log forecast value before storing in JSON to diagnose repetitive prediction bug
+                        # This helps identify if value is transformed between prediction and storage
+                        logger.debug(
+                            f"[{target_series} {model}] Forecast value before JSON storage: {forecast_value:.6f} "
+                            f"(original={original_forecast:.6f}, clipped={forecast_value != original_forecast})"
+                        )
                 except (ValueError, RuntimeError, AttributeError) as e:
                     logger.warning(f"Failed to predict for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
                     continue
@@ -1255,6 +1409,13 @@ def run_backtest_evaluation(
                 else:
                     sMSE = error ** 2
                     sMAE = abs(error)
+                
+                # CRITICAL: Log exact value being stored in JSON to diagnose repetitive prediction bug
+                # This helps identify if value is transformed between prediction and storage
+                logger.debug(
+                    f"[{target_series} {model}] Storing in JSON for {target_month_end_ts.strftime('%Y-%m')}: "
+                    f"forecast_value={forecast_value:.6f}, actual_value={actual_value:.6f}, error={error:.6f}"
+                )
                 
                 monthly_results.append({
                     'month': target_month_end_ts.strftime('%Y-%m'),

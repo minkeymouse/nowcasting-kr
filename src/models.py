@@ -611,6 +611,60 @@ def _train_factor_model(
     # Create trainer and fit (matching docs pattern)
     trainer = trainer_class(max_epochs=max_epochs, enable_progress_bar=False)
     trainer.fit(model, data_module)
+    
+    # CRITICAL: Validate model parameters after training to detect numerical instability
+    # This helps identify issues like KOIPALL.G DFM that show extreme forecast values
+    import numpy as np
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        result = model.get_result()
+        if result is not None:
+            # Check A matrix (factor transition matrix) for extreme values
+            if hasattr(result, 'A') and result.A is not None:
+                A = np.array(result.A)
+                if np.any(~np.isfinite(A)):
+                    nan_count = np.sum(~np.isfinite(A))
+                    logger.warning(
+                        f"DFM training: A matrix contains {nan_count} non-finite values (NaN/Inf). "
+                        f"This indicates numerical instability during training."
+                    )
+                else:
+                    A_max = np.max(np.abs(A))
+                    if A_max > 1e6:
+                        logger.warning(
+                            f"DFM training: A matrix contains extreme values (max abs: {A_max:.2e}). "
+                            f"This may indicate numerical instability. Consider checking convergence or regularization."
+                        )
+            
+            # Check C matrix (factor loadings) for extreme values
+            if hasattr(result, 'C') and result.C is not None:
+                C = np.array(result.C)
+                if np.any(~np.isfinite(C)):
+                    nan_count = np.sum(~np.isfinite(C))
+                    logger.warning(
+                        f"DFM training: C matrix contains {nan_count} non-finite values (NaN/Inf). "
+                        f"This indicates numerical instability during training."
+                    )
+                else:
+                    C_max = np.max(np.abs(C))
+                    if C_max > 1e6:
+                        logger.warning(
+                            f"DFM training: C matrix contains extreme values (max abs: {C_max:.2e}). "
+                            f"This may indicate numerical instability. Consider checking convergence or regularization."
+                        )
+            
+            # Check convergence status
+            if hasattr(result, 'converged'):
+                if not result.converged:
+                    logger.warning(
+                        f"DFM training: Model did not converge (max_epochs={max_epochs} reached). "
+                        f"This may lead to poor predictions or numerical instability."
+                    )
+    except Exception as e:
+        # Don't fail training if validation fails, just log warning
+        logger.debug(f"Could not validate model parameters after training: {type(e).__name__}: {str(e)}")
 
 class DFMForecaster:
     """Minimal sktime-compatible wrapper for DFM models (for evaluation only).
