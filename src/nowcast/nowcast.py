@@ -288,7 +288,88 @@ class Nowcast:
         # Find time index for target period
         t_fcst = find_time_index(Time_view, target_period)
         if t_fcst is None:
-            raise ValueError(f"Target period {target_period} not found in Time index")
+            # If exact match not found, try to find closest available date at or before target_period
+            # This handles cases where data is weekly/monthly but target_period is month-end
+            target_period_dt = target_period if isinstance(target_period, datetime) else parse_timestamp(str(target_period))
+            closest_idx = None
+            closest_date = None
+            min_diff = None
+            
+            for i, t in enumerate(Time_view):
+                if not isinstance(t, datetime):
+                    try:
+                        if isinstance(t, pd.Timestamp):
+                            t = t.to_pydatetime()
+                        elif hasattr(t, 'to_pydatetime'):
+                            t = t.to_pydatetime()
+                        elif hasattr(t, 'to_python'):
+                            t = t.to_python()
+                        else:
+                            t = parse_timestamp(t)
+                    except (ValueError, TypeError, AttributeError):
+                        continue
+                
+                if isinstance(t, datetime):
+                    # Find closest date at or before target_period
+                    if t <= target_period_dt:
+                        diff = (target_period_dt - t).total_seconds()
+                        if min_diff is None or diff < min_diff:
+                            min_diff = diff
+                            closest_idx = i
+                            closest_date = t
+            
+            if closest_idx is not None:
+                # Use closest available date instead of exact target_period
+                target_period = closest_date
+                t_fcst = closest_idx
+                _logger.warning(
+                    f"Target period {target_period_dt} not found in Time index. "
+                    f"Using closest available date: {closest_date}"
+                )
+            else:
+                # If no date at or before target_period found, target_period is in the future
+                # For nowcasting, we need to extend the time index to include the target_period
+                # Calculate t_fcst as an offset from the latest available date
+                if len(Time_view) > 0:
+                    # Use the last index in Time_view as the base (most recent available date)
+                    # This handles cases where get_latest_time might not match exactly
+                    latest_idx = len(Time_view) - 1
+                    latest_time = Time_view[latest_idx]
+                    
+                    # Convert latest_time to datetime if needed
+                    if not isinstance(latest_time, datetime):
+                        try:
+                            if isinstance(latest_time, pd.Timestamp):
+                                latest_time = latest_time.to_pydatetime()
+                            elif hasattr(latest_time, 'to_pydatetime'):
+                                latest_time = latest_time.to_pydatetime()
+                            elif hasattr(latest_time, 'to_python'):
+                                latest_time = latest_time.to_python()
+                            else:
+                                latest_time = parse_timestamp(str(latest_time))
+                        except (ValueError, TypeError, AttributeError):
+                            # Fallback: use last element directly
+                            pass
+                    
+                    # Calculate number of periods between latest_time and target_period
+                    # This will be used to extend the data in __call__
+                    # For now, use the latest index and let __call__ extend the data
+                    # Keep original target_period for the nowcast calculation
+                    t_fcst = latest_idx
+                    # Calculate how many periods ahead we need to forecast
+                    # This is a rough estimate - the actual extension happens in __call__
+                    _logger.warning(
+                        f"Target period {target_period_dt} is in the future relative to Time index. "
+                        f"Using latest available date {latest_time} (index {latest_idx}) as base. "
+                        f"Time_view range: {Time_view[0] if len(Time_view) > 0 else 'empty'} to "
+                        f"{Time_view[-1] if len(Time_view) > 0 else 'empty'}. "
+                        f"Data will be extended in __call__ to accommodate future target_period."
+                    )
+                else:
+                    raise ValueError(
+                        f"Target period {target_period} not found in Time index "
+                        f"and Time_view is empty."
+                    )
         
         return target_period, t_fcst
     
@@ -736,10 +817,34 @@ class Nowcast:
         clock = get_clock_frequency(self.model.config, 'm')
         forecast_horizon, _ = get_forecast_horizon(clock, horizon=None)
         
-        # Extend data with forecast horizon if needed
+        # Check if target_period is in the future relative to Time_view
+        # If so, we need to extend the data and calculate the correct t_nowcast
         T, N = X_view.shape
-        if t_nowcast >= T - forecast_horizon:
-            # Need to extend data
+        target_period_dt = target_period if isinstance(target_period, datetime) else parse_timestamp(str(target_period))
+        latest_time = get_latest_time(Time_view)
+        
+        if target_period_dt > latest_time:
+            # Target period is in the future - need to extend data and calculate correct index
+            # Calculate number of periods between latest_time and target_period
+            from dateutil.relativedelta import relativedelta
+            if clock == 'm':
+                # Monthly: calculate months difference
+                months_diff = (target_period_dt.year - latest_time.year) * 12 + (target_period_dt.month - latest_time.month)
+                periods_ahead = max(months_diff, forecast_horizon)
+            elif clock == 'q':
+                # Quarterly: calculate quarters difference
+                quarters_diff = (target_period_dt.year - latest_time.year) * 4 + ((target_period_dt.month - 1) // 3 - (latest_time.month - 1) // 3)
+                periods_ahead = max(quarters_diff, forecast_horizon)
+            else:
+                # Default: use forecast_horizon
+                periods_ahead = forecast_horizon
+            
+            # Extend data to accommodate future target_period
+            X_extended = np.vstack([X_view, np.full((periods_ahead, N), np.nan)])
+            # Calculate correct index for target_period in extended data
+            t_nowcast = T - 1 + periods_ahead
+        elif t_nowcast >= T - forecast_horizon:
+            # Need to extend data for forecast horizon
             X_extended = np.vstack([X_view, np.full((forecast_horizon, N), np.nan)])
         else:
             X_extended = X_view

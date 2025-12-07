@@ -675,14 +675,73 @@ def run_backtest_evaluation(
                 if supports_nowcast_manager:
                     # For DFM/DDFM, use nowcast manager with view_date
                     # This handles release-based masking automatically
-                    nowcast_result = nowcast_manager(
-                        target_series=target_series,
-                        view_date=view_date,
-                        target_period=target_month_end,
-                        return_result=True
-                    )
+                    # CRITICAL: Update data_module with full data up to view_date for nowcasting
+                    # The data_module was created with training data only (1985-2019), but nowcasting
+                    # needs data up to view_date (2024) to have Time_view that includes 2024 dates
+                    if hasattr(dfm_model, '_data_module') and dfm_model._data_module is not None:
+                        # Update data_module with full data up to view_date
+                        from src.model.sktime_forecaster import create_data_module_from_dataframe
+                        from dfm_python.lightning import DFMDataModule
+                        from src.preprocess.utils import create_transformer_from_config
+                        
+                        # Get data up to view_date (not just training period)
+                        data_up_to_view = full_data[full_data.index <= pd.Timestamp(view_date)]
+                        if len(data_up_to_view) > 0:
+                            try:
+                                updated_data_module = create_data_module_from_dataframe(
+                                    model=dfm_model,
+                                    data=data_up_to_view,
+                                    dfm_data_module=DFMDataModule,
+                                    create_transformer_func=create_transformer_from_config
+                                )
+                                dfm_model._data_module = updated_data_module
+                                # Update nowcast manager's data_module reference
+                                nowcast_manager.data_module = updated_data_module
+                            except (ImportError, ValueError, AttributeError, Exception) as e:
+                                print(f"    ⚠ Warning: Could not update data_module with data up to view_date: {e}")
+                                # Continue with existing data_module (may fail, but try anyway)
+                        else:
+                            print(f"    ⚠ Skipping: No data available up to view_date {view_date}")
+                            continue
                     
-                    forecast_value = nowcast_result.nowcast_value
+                    # Find closest available date at or before target_month_end for nowcast manager
+                    # (data is weekly, so exact month-end dates may not exist)
+                    target_period_for_nowcast = target_month_end
+                    if target_month_end <= full_data.index.max():
+                        available_dates = full_data.index[full_data.index <= target_month_end]
+                        if len(available_dates) > 0:
+                            # Use the closest date at or before target_month_end
+                            target_period_for_nowcast = available_dates.max().to_pydatetime()
+                        else:
+                            print(f"    ⚠ Skipping: No data available at or before target_month_end {target_month_end}")
+                            continue
+                    else:
+                        # target_month_end is after data range, use latest available
+                        target_period_for_nowcast = full_data.index.max().to_pydatetime()
+                    
+                    try:
+                        nowcast_result = nowcast_manager(
+                            target_series=target_series,
+                            view_date=view_date,
+                            target_period=target_period_for_nowcast,
+                            return_result=True
+                        )
+                        
+                        if nowcast_result is None:
+                            print(f"    ⚠ Skipping: Nowcast manager returned None")
+                            continue
+                        
+                        forecast_value = nowcast_result.nowcast_value
+                        
+                        # Check if forecast is NaN or invalid
+                        if np.isnan(forecast_value) or not np.isfinite(forecast_value):
+                            print(f"    ⚠ Skipping: Nowcast value is NaN or invalid: {forecast_value}")
+                            continue
+                    except Exception as e:
+                        print(f"    ✗ Error in nowcast manager: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        continue
                     
                     # Get actual value from full data (target months are in 2024, after training period)
                     # Use full_data loaded before loop (contains all dates including 2024)
@@ -729,10 +788,26 @@ def run_backtest_evaluation(
                         
                         # Prepare data for fitting - use only target series for univariate models
                         # Check if forecaster expects univariate or multivariate data
+                        # First check the forecaster's tags
+                        is_multivariate = False
                         if hasattr(forecaster_clone, 'get_tag'):
-                            is_multivariate = forecaster_clone.get_tag('scitype:y', 'univariate') == 'multivariate'
-                        else:
-                            # Default: assume multivariate if data has multiple columns
+                            try:
+                                scitype_y = forecaster_clone.get_tag('scitype:y', 'univariate')
+                                is_multivariate = (scitype_y == 'multivariate')
+                            except (AttributeError, KeyError, Exception):
+                                pass
+                        
+                        # Also check if forecaster was originally trained on multiple columns
+                        # by checking the _y attribute (training data)
+                        if not is_multivariate and hasattr(forecaster_clone, '_y'):
+                            try:
+                                if isinstance(forecaster_clone._y, pd.DataFrame):
+                                    is_multivariate = len(forecaster_clone._y.columns) > 1
+                            except (AttributeError, Exception):
+                                pass
+                        
+                        # Fallback: assume multivariate if data has multiple columns
+                        if not is_multivariate:
                             is_multivariate = len(train_data_filtered.columns) > 1
                         
                         if is_multivariate:
@@ -740,19 +815,27 @@ def run_backtest_evaluation(
                             # Drop rows that are all NaN
                             fit_data = fit_data.dropna(how='all')
                         else:
-                            # Univariate: use only target series
+                            # Univariate: use only target series, but maintain as DataFrame
+                            # Some forecasters expect DataFrame even for univariate
                             if target_series in train_data_filtered.columns:
                                 fit_data = train_data_filtered[[target_series]].copy()
                             else:
-                                fit_data = train_data_filtered.iloc[:, [0]].copy()  # Use first column
+                                # Use first column, but keep as DataFrame with proper column name
+                                first_col = train_data_filtered.columns[0]
+                                fit_data = train_data_filtered[[first_col]].copy()
                             
                             # For univariate, drop NaN values in target series
                             # Use forward-fill to handle missing values, then drop remaining NaNs
-                            if fit_data.iloc[:, 0].isna().any():
+                            target_col_name = fit_data.columns[0]
+                            if fit_data[target_col_name].isna().any():
                                 # Forward-fill missing values
                                 fit_data = fit_data.ffill()
                                 # Drop any remaining NaNs (leading NaNs that couldn't be forward-filled)
                                 fit_data = fit_data.dropna()
+                            
+                            # Ensure fit_data is a DataFrame (not Series) for consistency
+                            if isinstance(fit_data, pd.Series):
+                                fit_data = fit_data.to_frame()
                         
                         # Skip if insufficient data after cleaning
                         if len(fit_data) < 10:  # Minimum data points needed for ARIMA/VAR
@@ -772,9 +855,10 @@ def run_backtest_evaluation(
                             print(f"    ⚠ Skipping: Target series has no non-null values")
                             continue
                         
-                        # Check if there's recent data (within last 30 days of view_date)
+                        # Check if there's recent data (within last 90 days of view_date for monthly data)
+                        # For monthly series, data might only be available at month end, so use 90 days (3 months)
                         # This ensures we have enough recent information for nowcasting
-                        recent_cutoff = pd.Timestamp(view_date) - pd.Timedelta(days=30)
+                        recent_cutoff = pd.Timestamp(view_date) - pd.Timedelta(days=90)
                         recent_data = fit_data[fit_data.index >= recent_cutoff]
                         if is_multivariate:
                             if target_series in recent_data.columns:
@@ -785,38 +869,76 @@ def run_backtest_evaluation(
                             recent_target = recent_data.iloc[:, 0]
                         
                         if recent_target.notna().sum() == 0:
-                            print(f"    ⚠ Skipping: No recent data (last 30 days) available for prediction")
+                            print(f"    ⚠ Skipping: No recent data (last 90 days) available for prediction")
                             continue
                         
-                        # Check if last non-null value is too far from view_date (more than 60 days)
+                        # Check if last non-null value is too far from view_date (more than 120 days for monthly data)
+                        # For monthly series, allow up to 120 days (4 months) since last data point
                         last_valid_idx = target_col.last_valid_index()
                         if last_valid_idx is not None:
                             days_since_last = (pd.Timestamp(view_date) - pd.Timestamp(last_valid_idx)).days
-                            if days_since_last > 60:
-                                print(f"    ⚠ Skipping: Last valid data point is {days_since_last} days before view_date (too old)")
+                            if days_since_last > 120:
+                                print(f"    ⚠ Skipping: Last valid data point is {days_since_last} days before view_date (too old, >120 days)")
                                 continue
                         
                         # Fit on training data
-                        forecaster_clone.fit(fit_data)
+                        try:
+                            forecaster_clone.fit(fit_data)
+                        except Exception as e:
+                            print(f"    ✗ Error fitting forecaster: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            continue
                         
                         # Predict for target_month_end (horizon = horizon_days)
-                        fh = np.asarray([horizon_days])
-                        y_pred = forecaster_clone.predict(fh=fh)
+                        try:
+                            fh = np.asarray([horizon_days])
+                            y_pred = forecaster_clone.predict(fh=fh)
+                        except Exception as e:
+                            print(f"    ✗ Error in prediction: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            # Set forecast_value to NaN and continue to skip check below
+                            forecast_value = np.nan
+                            y_pred = None
                         
                         # Extract forecast value
-                        if isinstance(y_pred, pd.DataFrame):
-                            if target_series in y_pred.columns:
+                        if y_pred is None:
+                            forecast_value = np.nan
+                        elif isinstance(y_pred, pd.DataFrame):
+                            if len(y_pred) == 0:
+                                forecast_value = np.nan
+                            elif target_series in y_pred.columns:
                                 forecast_value = float(y_pred[target_series].iloc[0])
                             elif len(y_pred.columns) > 0:
-                                forecast_value = float(y_pred.iloc[0, 0])
+                                # Use first column if target_series not found
+                                # Handle both string and integer column indices
+                                try:
+                                    forecast_value = float(y_pred.iloc[0, 0])
+                                except (KeyError, IndexError, TypeError) as e:
+                                    # If iloc fails, try accessing by column name/index
+                                    first_col = y_pred.columns[0]
+                                    if isinstance(first_col, (int, np.integer)):
+                                        forecast_value = float(y_pred.iloc[0, first_col])
+                                    else:
+                                        forecast_value = float(y_pred[first_col].iloc[0])
                             else:
                                 forecast_value = np.nan
                         elif isinstance(y_pred, pd.Series):
-                            forecast_value = float(y_pred.iloc[0])
+                            if len(y_pred) > 0:
+                                forecast_value = float(y_pred.iloc[0])
+                            else:
+                                forecast_value = np.nan
                         elif hasattr(y_pred, '__len__') and len(y_pred) > 0:
-                            forecast_value = float(y_pred[0] if hasattr(y_pred, '__getitem__') else y_pred)
+                            try:
+                                forecast_value = float(y_pred[0] if hasattr(y_pred, '__getitem__') else y_pred)
+                            except (TypeError, IndexError, KeyError):
+                                forecast_value = np.nan
                         else:
-                            forecast_value = float(y_pred) if not np.isnan(y_pred) else np.nan
+                            try:
+                                forecast_value = float(y_pred) if not np.isnan(y_pred) else np.nan
+                            except (TypeError, ValueError):
+                                forecast_value = np.nan
                         
                         # Check if forecast is NaN
                         if np.isnan(forecast_value):
