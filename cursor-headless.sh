@@ -197,7 +197,7 @@ check_dfm_results() {
   if [[ -n "$latest_dir" ]] && [[ -d "$latest_dir" ]] && [[ -f "${latest_dir}/comparison_results.json" ]]; then
     if python3 -c "import json, sys; data = json.load(open('${latest_dir}/comparison_results.json')); dfm_status = data['results'].get('dfm', {}).get('status'); ddfm_status = data['results'].get('ddfm', {}).get('status'); sys.exit(0 if dfm_status == 'failed' or ddfm_status == 'failed' else 1)" 2>/dev/null; then
       log_warn "⚠ DFM/DDFM experiments failed - Check comparison_results.json for error details"
-      log_warn "⚠ Only ARIMA/VAR results available (18/${TOTAL_COMBINATIONS} combinations complete)"
+      log_warn "⚠ Only ARIMA/VAR results available (18/${TOTAL_COMBINATIONS} combinations appear complete)"
       return 1
     fi
   fi
@@ -227,7 +227,7 @@ check_what_experiments_needed() {
     needs_train=1
     log_info "→ Training needed: Some models missing in checkpoint/"
   else
-    log_info "✓ Training complete: All models exist in checkpoint/"
+    log_info "✓ Training appears complete: All models exist in checkpoint/ (may need verification)"
   fi
   
   # Check if forecasting is needed
@@ -242,7 +242,7 @@ check_what_experiments_needed() {
       needs_forecast=1
       log_info "→ Forecasting needed: aggregated_results.csv is empty"
     else
-      log_info "✓ Forecasting complete: aggregated_results.csv exists with data"
+      log_info "✓ Forecasting appears complete: aggregated_results.csv exists with data (may need verification)"
     fi
   fi
   
@@ -268,7 +268,7 @@ check_what_experiments_needed() {
     needs_backtest=1
     log_info "→ Backtesting needed: Some backtest results missing in outputs/backtest/"
   else
-    log_info "✓ Backtesting complete: All backtest results exist"
+    log_info "✓ Backtesting appears complete: All backtest results exist (may need verification)"
   fi
   
   echo "$needs_train $needs_forecast $needs_backtest"
@@ -285,12 +285,14 @@ workflow_context() {
 - src/ should contain maximum 15 files including __init__.py
 - CONTEXT.md, STATUS.md, ISSUES.md MUST BE UNDER 1000 lines
 - Try to improve incrementally. Prioritize tasks and work on them one by one
-- CRITICAL: DO NOT claim "complete", "verified", "resolved", "no issues", "production ready" unless you actually FIXED or IMPROVED something
+- CRITICAL: DO NOT claim "complete", "verified", "resolved", "no issues", "production ready", "done", or "everything works" unless you actually FIXED or IMPROVED something
 - CRITICAL: If you say something is "done", you must have actually MADE CHANGES to code or files
 - CRITICAL: Always identify REAL problems and FIX them, don't just document that "everything is fine"
+- CRITICAL: There's ALWAYS room for improvement - never claim things are "complete" or "finished"
 - CRITICAL: If checkpoint/ is empty, models are NOT trained - this is a REAL problem that needs fixing
 - CRITICAL: If outputs/backtest/ doesn't exist, nowcasting is NOT done - this is a REAL problem
 - CRITICAL: If you find issues, FIX them in code, don't just say "verified" or "documented"
+- CRITICAL: Always acknowledge limitations and areas for improvement, even after fixing issues
 
 # GOAL
 - Write complete report (under 15 pages) comparing 4 models (ARIMA, VAR, DFM, DDFM) on 3 targets
@@ -403,7 +405,7 @@ CRITICAL PRIORITY - FIND AND FIX REAL PROBLEMS:
    - Don't claim "complete" or "verified" when things are actually missing
    - FIX the problems by ensuring Step 1 runs the needed experiments
 
-CRITICAL: DO NOT use words like "complete", "verified", "resolved", "no issues", "production ready" unless you actually FIXED or IMPROVED something in code or files.
+CRITICAL: DO NOT use words like "complete", "verified", "resolved", "no issues", "production ready", "done", "everything works", or "all fixed" unless you actually FIXED or IMPROVED something in code or files. Always acknowledge there's room for improvement. Never claim things are "done" or "finished" - there's always more to improve.
 EOF
 }
 
@@ -424,7 +426,7 @@ EOF
 
 build_common_prompt_suffix() {
   cat <<'EOF'
-Check @FEEDBACK.md for user feedback and incorporate feedback items. When planning tasks, consider which experiments are needed and which are already complete (check outputs/ directory). If new experiments are needed, update run_experiment.sh to include only missing experiments. Focus on incremental tasks. Keep ISSUES.md under 1000 lines. Do not create new files.
+Check @FEEDBACK.md for user feedback and incorporate feedback items. When planning tasks, consider which experiments are needed and which appear complete (check outputs/ directory - verify actual state, don't assume). If new experiments are needed, update run_experiment.sh to include only missing experiments. Focus on incremental tasks and continuous improvement. Keep ISSUES.md under 1000 lines. Do not create new files. Remember: there's always room for improvement - never claim things are "done" or "complete".
 EOF
 }
 
@@ -666,7 +668,7 @@ step2_inspect_code() {
   prompt+="$(build_inspection_priority_prompt) "
   
   if [[ -n "$out_dir" ]] && [[ -d "$out_dir" ]]; then
-    prompt+="Study the experiment run output in ${out_dir} (latest run). Check comparison_results.json to see if DFM/DDFM failed and why. If DFM/DDFM failed due to missing package, FIX it by modifying code or installation scripts. If tables/plots are missing, GENERATE them. If report sections are incomplete, WRITE them. Don't just say 'should be done' - actually DO it. Check which experiments have already been completed by examining checkpoint/, outputs/comparisons/, outputs/backtest/ directory structure and log files. "
+    prompt+="Study the experiment run output in ${out_dir} (latest run). Check comparison_results.json to see if DFM/DDFM failed and why. If DFM/DDFM failed due to missing package, FIX it by modifying code or installation scripts. If tables/plots are missing, GENERATE them. If report sections are incomplete, WRITE them. Don't just say 'should be done' - actually DO it. Check which experiments appear to be completed by examining checkpoint/, outputs/comparisons/, outputs/backtest/ directory structure and log files - but verify actual state, don't assume. "
   fi
   
   prompt+="CRITICAL: Agent ONLY modifies code. Experiment execution is handled automatically by Step 1 via @agent_execute.sh. "
@@ -733,7 +735,7 @@ step4_analyze_results() {
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Analyze the results in ${out_dir}. CRITICAL INSPECTIONS: 1) Check comparison_results.json to see if any models failed and FIX the root cause in code. 2) INSPECT MODEL PERFORMANCE ANOMALIES: If you find near-perfect, too good, or too poor results indicating data leakage, numerical instability, or implementation errors, FIX them in @src/core/training.py, @src/eval/evaluation.py, or model implementations. Don't just document - actually FIX the code. 3) If any models failed due to missing package dependencies or other issues, FIX the installation or code. 4) Check checkpoint/, outputs/comparisons/, outputs/backtest/ to see which experiments are complete. If experiments are missing, note them in ISSUES.md - Step 1 will automatically run them in the next iteration. Agent ONLY modifies code - Agent MUST NOT execute any scripts. If there are errors or issues, FIX them in code, don't just document. If there's something wrong with the numbers, FIX the calculation code. Only mark issues as resolved AFTER you've actually fixed them in code. Check @FEEDBACK.md for any user feedback related to results. Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files. CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED something in code."
+  local prompt="Analyze the results in ${out_dir}. CRITICAL INSPECTIONS: 1) Check comparison_results.json to see if any models failed and FIX the root cause in code. 2) INSPECT MODEL PERFORMANCE ANOMALIES: If you find near-perfect, too good, or too poor results indicating data leakage, numerical instability, or implementation errors, FIX them in @src/core/training.py, @src/eval/evaluation.py, or model implementations. Don't just document - actually FIX the code. 3) If any models failed due to missing package dependencies or other issues, FIX the installation or code. 4) Check checkpoint/, outputs/comparisons/, outputs/backtest/ to see which experiments appear complete - but verify actual state, don't assume. If experiments are missing, note them in ISSUES.md - Step 1 will automatically run them in the next iteration. Agent ONLY modifies code - Agent MUST NOT execute any scripts. If there are errors or issues, FIX them in code, don't just document. If there's something wrong with the numbers, FIX the calculation code. Only mark issues as addressed AFTER you've actually attempted to fix them in code - but acknowledge there may still be improvements needed. Check @FEEDBACK.md for any user feedback related to results. Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files. CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', 'no issues', or 'done' unless you actually FIXED something in code. Always acknowledge there's room for improvement."
   
   if cursor_force "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
@@ -838,7 +840,7 @@ step8_summarize_iteration() {
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Identify the work done in this iteration. Be HONEST about what's actually done vs what's not done. Update STATUS.md and ISSUES.md for the next iteration. Only mark issues as resolved if you actually FIXED them in code. Remove old resolved issues to keep file under ${LINE_LIMIT} lines. Update experiment status in STATUS.md (completed/pending combinations) - be ACCURATE, don't claim things are complete when they're not. Document inspection findings: model performance anomalies inspection status, dfm-python package inspection status, report documentation status (theoretically correct details and tables as specified in WORKFLOW.md). CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED or IMPROVED something. If checkpoint/ is empty, say models are NOT trained. If outputs/backtest/ doesn't exist, say nowcasting is NOT done. Be HONEST about the actual state. Note: Changes will be committed and pushed to remote origin in step 9. Submodules are pushed every 2 iterations - user will review report and provide feedback in FEEDBACK.md. LaTeX PDF compilation is optional (LaTeX is installed) - can be checked if needed, but focus on ensuring all changes are committed and pushed. Next iteration will start fresh so you need to leave the proper context for next iteration. Keep each file under ${LINE_LIMIT} lines. Do not create new files."
+  local prompt="Identify the work done in this iteration. Be HONEST about what's actually done vs what's not done. Update STATUS.md and ISSUES.md for the next iteration. Only mark issues as addressed if you actually attempted to FIX them in code - but acknowledge there may still be improvements needed. Remove old addressed issues to keep file under ${LINE_LIMIT} lines. Update experiment status in STATUS.md (appears complete/pending combinations) - be ACCURATE, don't claim things are complete when they're not. Document inspection findings: model performance anomalies inspection status, dfm-python package inspection status, report documentation status (theoretically correct details and tables as specified in WORKFLOW.md). CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', 'no issues', 'done', or 'production ready' unless you actually FIXED or IMPROVED something. Always acknowledge there's room for improvement. If checkpoint/ is empty, say models are NOT trained. If outputs/backtest/ doesn't exist, say nowcasting is NOT done. Be HONEST about the actual state. Note: Changes will be committed and pushed to remote origin in step 9. Submodules are pushed every 2 iterations - user will review report and provide feedback in FEEDBACK.md. LaTeX PDF compilation is optional (LaTeX is installed) - can be checked if needed, but focus on ensuring all changes are committed and pushed. Next iteration will start fresh so you need to leave the proper context for next iteration. Keep each file under ${LINE_LIMIT} lines. Do not create new files."
   
   if cursor_force "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"

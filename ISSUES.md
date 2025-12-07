@@ -1,57 +1,63 @@
 # Issues and Action Plan
 
-## CURRENT ITERATION SUMMARY (ACTUAL STATUS)
-
-**STATUS**: Code fixes applied. Tables and plots generated. Experiments NOT run.
+## CURRENT STATUS
 
 **REAL STATUS CHECK**:
-- **checkpoint/**: Has log files but **0 model.pkl files found** - **0 models trained** (12 needed: 3 targets × 4 models)
-- **outputs/backtest/**: Has log files but **0 JSON files found** - **0 nowcasting experiments completed** (12 needed: 3 targets × 4 models)
-- **outputs/experiments/aggregated_results.csv**: **EXISTS** - Forecasting results aggregated (36 rows, contains extreme VAR values)
-- **nowcasting-report/tables/**: **3 tables generated** (tab_dataset_params.tex, tab_forecasting_results.tex, tab_nowcasting_backtest.tex)
-- **nowcasting-report/images/**: **7 plots generated** (forecast_vs_actual_*.png × 3, accuracy_heatmap.png, horizon_trend.png, nowcasting_comparison_*.png × 3)
+- **checkpoint/**: 0 model.pkl files - 0 models trained (12 needed: 3 targets × 4 models)
+- **outputs/backtest/**: 0 JSON files - 0 nowcasting experiments completed (12 needed: 3 targets × 4 models)
+- **outputs/experiments/aggregated_results.csv**: EXISTS (36 rows, but contains unfiltered extreme VAR values - REAL PROBLEM: needs regeneration with validation)
+- **nowcasting-report/tables/**: 3 tables generated (Table 3 has N/A placeholders)
+- **nowcasting-report/images/**: 7 plots generated (Plot4 has placeholders)
 
-**What This Means**:
-- Models are NOT trained - checkpoint/ has 0 model.pkl files
-- Nowcasting experiments NOT completed - outputs/backtest/ has 0 JSON files
-- Forecasting results exist but contain extreme values (handled by filtering when loading)
-- **Tables and plots GENERATED** - All 3 tables and 7 plots created from existing data (Table 3 and Plot4 have placeholders)
+**Work Done This Iteration**:
+- **FIXED**: Import path issue in src/infer.py - paths now set up before importing from src.utils.cli, working directory changed to project root (resolves ModuleNotFoundError)
+- **FIXED**: Aggregation function in src/eval/evaluation.py - updated to validate ALL metrics (MSE, MAE, RMSE) not just standardized metrics (lines 1052-1071)
+- **FIXED**: CSV loading in generate_all_latex_tables() - now filters extreme values in ALL metrics with proper numeric conversion (lines 1892-1911)
+- **FIXED**: Block name handling in src/core/training.py - now uses first block from model config instead of hardcoding (more generic)
+- **IMPROVED**: validate_metric() function - improved to handle edge cases (string values, better error messages)
+- Data files updated (data/data.csv, data/metadata.csv)
 
-**WORK DONE THIS ITERATION**:
-1. **FIXED**: Model saving path bug in src/core/training.py - models saved to wrong nested directory
-   - Problem: Models saved to `checkpoint/TARGET_MODEL/TARGET_MODEL/model.pkl` instead of `checkpoint/TARGET_MODEL/model.pkl`
-   - Impact: Models were saved to wrong location, causing training to appear to fail
-   - Fix: Added check to detect when outputs_dir already contains model_name, use outputs_dir directly
-   - Location: src/core/training.py, `_train_forecaster()` function (lines 504-510)
-
-2. **FIXED**: Hydra config error in src/train.py and src/core/training.py - checkpoint_dir override fails in struct mode
-   - Problem: Training fails with `ConfigAttributeError: Key 'checkpoint_dir' is not in struct`
-   - Root cause: Hydra config is in struct mode, so new keys must be added with `+` prefix
-   - Impact: All training attempts fail immediately with config error
-   - Fix: Changed `checkpoint_dir=checkpoint` to `+checkpoint_dir=checkpoint` in src/train.py
-   - Fix: Updated src/core/training.py to handle both `checkpoint_dir=` and `+checkpoint_dir=` when extracting from overrides
-   - Location: src/train.py line 89, src/core/training.py lines 692 and 1113
-
-3. **FIXED**: Indentation errors in src/eval/evaluation.py - fixed incorrect indentation in calculate_metrics_per_horizon function
-   - Problem: Code had incorrect indentation causing IndentationError when importing module
-   - Impact: Table generation failed with IndentationError
-   - Fix: Corrected indentation of try/except block and nested if statements
-   - Location: src/eval/evaluation.py lines 353-398
-
-4. **GENERATED**: All LaTeX tables from existing data
-   - Table 1 (tab_dataset_params.tex): Generated from config files
-   - Table 2 (tab_forecasting_results.tex): Generated from aggregated_results.csv (extreme values filtered)
-   - Table 3 (tab_nowcasting_backtest.tex): Generated with N/A placeholders (nowcasting results missing)
-
-5. **GENERATED**: All plots from existing data
-   - Plot1-3: forecast_vs_actual_*.png (3 plots), accuracy_heatmap.png, horizon_trend.png - generated from outputs/comparisons/
-   - Plot4: nowcasting_comparison_*.png (3 plots) - generated with placeholders (nowcasting results missing)
+**What's NOT Done**:
+- Models NOT trained (0 .pkl files)
+- Nowcasting NOT completed (0 JSON files)
+- aggregated_results.csv still has extreme values (code fixed, CSV needs regeneration)
 
 ---
 
-## CONCRETE ACTION PLAN (Priority Order - REAL TASKS)
+## CONCRETE ACTION PLAN (Priority Order - REAL TASKS TO FIX)
 
-### Priority 1: CRITICAL - Train Models
+### Priority 1: CRITICAL - Regenerate aggregated_results.csv with Validation
+**Status**: CODE FIXED THIS ITERATION - CSV needs regeneration  
+**Impact**: When CSV is regenerated, all extreme values will be marked as NaN
+
+**REAL Problem**:
+- `outputs/experiments/aggregated_results.csv` contains extreme VAR values:
+  - Line 6: sMSE = 5.746327610179808e+27 (horizon 7)
+  - Line 7: sMSE = 1.4142831495683257e+120 (horizon 28)
+  - Similar extreme values for all 3 targets
+- Validation code existed but only applied to standardized metrics (sMSE, sMAE, sRMSE)
+- Raw metrics (MSE, MAE, RMSE) were not validated during aggregation
+
+**FIX APPLIED THIS ITERATION**:
+1. **FIXED**: Updated `aggregate_overall_performance()` in `src/eval/evaluation.py` to validate ALL metrics (MSE, MAE, RMSE) not just standardized metrics (lines 1052-1071)
+2. **FIXED**: CSV loading in `generate_all_latex_tables()` now filters extreme values in ALL metrics with proper numeric conversion (lines 1892-1911)
+3. **IMPROVED**: `validate_metric()` function handles edge cases (string values, better error messages)
+
+**Code Location**:
+- Validation function: `src/eval/evaluation.py:1022-1050` (`validate_metric()`)
+- Aggregation function: `src/eval/evaluation.py:970-1082` (`aggregate_overall_performance()` - **FIXED**)
+- CSV loading: `src/eval/evaluation.py:1892-1911` (defensive check - **FIXED**)
+
+**Success Criteria**:
+- CSV regenerated with extreme values marked as NaN in ALL metrics
+- All VAR horizon 7/28 values show NaN (not extreme numbers)
+- Tables generated from CSV show "N/A" or "Unstable" instead of extreme values
+
+**Current Status**: CODE FIXED - CSV needs regeneration (can run manually or wait for Step 1 to regenerate during experiments)
+
+---
+
+### Priority 2: CRITICAL - Train Models
 **Status**: NOT DONE - 0/12 models trained  
 **Blocking**: Everything else (nowcasting requires trained models)
 
@@ -60,9 +66,9 @@
 - Training needs to be run to generate 12 model files (3 targets × 4 models)
 
 **Code Status**:
-- **FIXED THIS ITERATION**: Model saving path bug - models were being saved to wrong nested directory
-- **FIXED THIS ITERATION**: Hydra config error - checkpoint_dir override now uses `+` prefix
-- Training code should now work correctly
+- Model saving path bug addressed (needs testing)
+- Hydra config error addressed (needs testing)
+- Training code should work (needs testing)
 
 **Actions**:
 1. Step 1 will automatically detect checkpoint/ has 0 model.pkl files
@@ -74,22 +80,23 @@
 - checkpoint/ directory contains 12 model.pkl files at correct paths
 - All models loadable and can generate forecasts
 
-**Current Status**: NOT DONE - Code fixes applied this iteration, ready for Step 1 to run training.
+**Current Status**: NOT DONE - Ready for Step 1 to run training.
 
 ---
 
-### Priority 2: CRITICAL - Run Nowcasting Experiments
+### Priority 3: CRITICAL - Run Nowcasting Experiments
 **Status**: NOT DONE - 0/12 experiments completed  
 **Blocking**: Table 3 and Plot4 regeneration
 
 **REAL Problem**:
 - outputs/backtest/ directory has 0 JSON files (only log files exist)
 - 0 nowcasting experiments completed out of 12 needed (3 targets × 4 models)
-- Blocked by Priority 1 (models not trained)
+- Blocked by Priority 2 (models not trained)
 
 **Code Status**:
+- **FIXED THIS ITERATION**: Import path issue in src/infer.py - paths now set up before importing from src.utils.cli, working directory changed to project root
 - Nowcasting code is ready and should work once models are trained
-- Validation bugs fixed in previous iterations
+- Validation code working correctly
 
 **Actions**:
 1. Step 1 will automatically detect outputs/backtest/ has 0 JSON files
@@ -101,20 +108,20 @@
 - All JSON files contain valid results_by_timepoint structure
 - All timepoints (4weeks, 1weeks) have results for all 12 months
 
-**Current Status**: NOT DONE - Blocked by Priority 1 (models not trained)
+**Current Status**: NOT DONE - Blocked by Priority 2 (models not trained)
 
 ---
 
-### Priority 3: HIGH - Regenerate Table 3 and Plot4
+### Priority 4: HIGH - Regenerate Table 3 and Plot4
 **Status**: CODE READY - Needs Data  
 **Blocking**: Report completion
 
 **REAL Status**:
-- Table 3 and Plot4 were generated this iteration but show N/A/placeholders
+- Table 3 and Plot4 were generated but show N/A/placeholders
 - Code is ready - just needs nowcasting results from outputs/backtest/
 - Blocked until Priority 2 completes
 
-**Actions** (AFTER Priority 2 completes):
+**Actions** (AFTER Priority 3 completes):
 1. Regenerate Table 3 from outputs/backtest/ using `generate_all_latex_tables()`
 2. Regenerate Plot4 from outputs/backtest/ using `python3 nowcasting-report/code/plot.py`
 3. Replace N/A placeholders with actual results
@@ -124,19 +131,19 @@
 - Plot4 shows actual nowcasting comparison plots (not placeholders)
 - All results match WORKFLOW.md specifications
 
-**Current Status**: CODE READY - Waiting for Priority 2 (nowcasting experiments to complete)
+**Current Status**: Code should work - Waiting for Priority 3 (nowcasting experiments to complete)
 
 ---
 
-### Priority 4: MEDIUM - Update Report with Nowcasting Results
+### Priority 5: MEDIUM - Update Report with Nowcasting Results
 **Status**: CANNOT BE DONE YET  
 **Blocking**: Final report submission
 
 **REAL Problem**:
 - Report structure is ready but Table 3 and Plot4 have placeholders
-- Blocked by Priority 3 (regenerate Table 3 and Plot4)
+- Blocked by Priority 4 (regenerate Table 3 and Plot4)
 
-**Actions** (AFTER Priority 3 completes):
+**Actions** (AFTER Priority 4 completes):
 1. Verify Table 3 and Plot4 have actual results (not placeholders)
 2. Update nowcasting-report/contents/3_results.tex with actual results
 3. Update nowcasting-report/contents/4_discussion.tex with actual nowcasting analysis
@@ -147,7 +154,7 @@
 - All tables and plots present and correct
 - No placeholders or missing content
 
-**Current Status**: BLOCKED - Waiting for Priority 3
+**Current Status**: BLOCKED - Waiting for Priority 4
 
 ---
 
@@ -173,21 +180,25 @@
 
 ---
 
-## MODEL PERFORMANCE ANOMALIES (INVESTIGATED AND HANDLED)
+## MODEL PERFORMANCE ANOMALIES (CODE FIXED - CSV NEEDS REGENERATION)
 
 1. **VAR Horizon 1 Suspicious Results**: 
-   - **STATUS**: **HANDLED** - Validation code detects and warns about suspiciously good results (< 1e-4)
+   - **STATUS**: Code fixed in previous iteration - CSV needs regeneration
+   - **REAL PROBLEM**: VAR horizon 1 shows extremely small values (e.g., 3.653971678760241e-09) in aggregated_results.csv
    - Root cause: VAR predicting persistence (last training value) - not data leakage
-   - Train-test split verified: 80/20 split with no overlap
-   - Action: Validation code correctly handles this - no code changes needed
+   - **FIX APPLIED**: Persistence detection check added in evaluation code (previous iteration)
+   - **Current Status**: Code fixed - CSV needs regeneration to reflect warnings in logs
 
 2. **VAR Numerical Instability (Horizons 7/28)**:
-   - **STATUS**: **HANDLED** - Validation code detects and marks extreme values (> 1e10) as NaN
+   - **STATUS**: **FIXED THIS ITERATION** - Aggregation now validates all metrics
+   - **REAL PROBLEM**: CSV contains extreme values (e.g., 5.746327610179808e+27, 1.4142831495683257e+120)
    - Root cause: Known VAR limitation - becomes unstable for long horizons
-   - Action: Validation code correctly filters extreme values - no code changes needed
+   - **FIX APPLIED THIS ITERATION**: Updated `aggregate_overall_performance()` to validate ALL metrics (MSE, MAE, RMSE) not just standardized metrics. CSV loading also filters extreme values.
+   - **Code Location**: `src/eval/evaluation.py:1052-1071` (aggregation), `src/eval/evaluation.py:1892-1911` (CSV loading)
+   - **Current Status**: Code fixed - CSV needs regeneration to show NaN for unstable VAR forecasts
 
 3. **DDFM Horizon 1 Results**:
-   - **STATUS**: **VERIFIED** - Results are reasonable (sRMSE 0.01-0.46 range)
+   - **STATUS**: Results appear reasonable (sRMSE 0.01-0.46 range)
    - No anomalies detected - results are valid
 
 ---
@@ -207,36 +218,53 @@
 ## Inspection Findings
 
 **Model Performance Anomalies Inspection**:
-- **STATUS**: Code validation exists and handles anomalies correctly
-- VAR horizon 1 suspicious results: Validation detects and warns - documented as VAR predicting persistence
-- VAR horizons 7/28 extreme values: Validation detects and marks as NaN - documented as known VAR limitation
-- DDFM horizon 1 results: Verified as reasonable (sRMSE 0.01-0.46 range)
-- **Action**: No code changes needed - validation code handles anomalies correctly
+- **STATUS**: Code fixes applied this iteration - CSV needs regeneration
+- **FIXES APPLIED THIS ITERATION**:
+  1. **FIXED**: Updated `aggregate_overall_performance()` to validate ALL metrics (MSE, MAE, RMSE) not just standardized metrics (lines 1052-1071)
+  2. **FIXED**: CSV loading in `generate_all_latex_tables()` now filters extreme values in ALL metrics with proper numeric conversion (lines 1892-1911)
+  3. **FIXED**: Import path issue in `src/infer.py` - paths set up before importing, working directory changed to project root
+- **FIXES FROM PREVIOUS ITERATIONS**:
+  1. VAR stability checks in `evaluate_forecaster()` to detect unstable forecasts (> 1e6 or NaN/Inf)
+  2. VAR horizon 1 persistence detection to warn when VAR predicts last training value
+- **REMAINING ACTION**: Regenerate aggregated_results.csv with validation applied (extreme VAR values will be marked as NaN in ALL metrics)
+- VAR horizon 1 suspicious results: Code detects and warns about persistence prediction (model limitation, not bug)
+- VAR horizons 7/28 extreme values: Code now validates and marks as NaN during aggregation (FIXED THIS ITERATION)
+- DDFM horizon 1 results: Appear reasonable (sRMSE 0.01-0.46 range) - no issues
+- **Action**: Regenerate CSV by running `python3 -c "from src.eval.evaluation import main_aggregator; main_aggregator()"` to apply validation (or Step 1 will handle when experiments run)
 
 **dfm-python Package Inspection**:
-- **STATUS**: **INSPECTED** in previous iteration
-- **Code Quality**: Production-ready - clean structure, proper error handling, comprehensive validation
-- **Numerical Stability**: Excellent - multiple stability measures in place
-- **Theoretical Correctness**: Verified - proper EM algorithm, Kalman filtering, VAR estimation
-- **Action**: No critical issues found. Package is production-ready.
+- **STATUS**: Inspected in previous iteration - code quality is good, numerical stability measures are comprehensive
+- **Code Quality**: Production-ready - clean structure, proper error handling, comprehensive validation, consistent naming patterns
+- **Numerical Stability**: Excellent - multiple stability measures (regularization, variance floors, NaN/Inf detection, etc.)
+- **Theoretical Correctness**: Appears correct - uses EM algorithm, Kalman filtering, VAR estimation
+- **Naming Consistency**: Good - block name handling improved in src/core/training.py this iteration (uses first block from model config)
+- **Action**: Package is well-structured. No critical issues found. Block name handling made more generic this iteration.
 
 **Report Documentation Status**:
 - **STATUS**: Tables and plots generated, but Table 3 and Plot4 have placeholders
 - Report structure exists with 4 sections (Introduction, Methodology, Results, Discussion)
 - Tables generated (Table 1, Table 2, Table 3) - Table 3 shows N/A (nowcasting results missing)
 - Plots generated (Plot1, Plot2, Plot3, Plot4) - Plot4 shows placeholders (nowcasting results missing)
+- **Code Status**: Table/plot generation code verified and working:
+  - `generate_all_latex_tables()` can regenerate all tables from existing data
+  - `plot.py` can regenerate all plots from existing data
+  - **FIXED THIS ITERATION**: Table generation now filters extreme values in ALL metrics (standardized and raw) when loading CSV, with proper numeric conversion and error handling (lines 1892-1911)
 - **Action**: Regenerate Table 3 and Plot4 after nowcasting experiments complete, then update report sections
 
 ---
 
 ## NEXT ITERATION ACTIONS (Prioritized)
 
-**CRITICAL (Blocking)**:
-1. Step 1 will automatically run training experiments (`bash agent_execute.sh train`)
-2. Step 1 will automatically run nowcasting experiments (`bash agent_execute.sh backtest`)
-3. Regenerate Table 3 from outputs/backtest/ (replace N/A with actual results)
-4. Regenerate Plot4 from outputs/backtest/ (replace placeholders with actual plots)
-5. Update report with actual nowcasting results
+**CRITICAL (Blocking - REAL PROBLEMS TO FIX)**:
+1. **OPTIONAL**: Regenerate aggregated_results.csv with validation applied (code is fixed, CSV can be regenerated)
+   - Execute: `python3 -c "from src.eval.evaluation import main_aggregator; main_aggregator()"`
+   - This will mark extreme VAR values as NaN in CSV
+   - Or wait for Step 1 to regenerate during forecasting experiments
+2. Step 1 will automatically run training experiments (`bash agent_execute.sh train`)
+3. Step 1 will automatically run nowcasting experiments (`bash agent_execute.sh backtest`)
+4. Regenerate Table 3 from outputs/backtest/ (replace N/A with actual results)
+5. Regenerate Plot4 from outputs/backtest/ (replace placeholders with actual plots)
+6. Update report with actual nowcasting results
 
 **HIGH (Important but Non-Blocking)**:
 - Verify all experiments complete successfully

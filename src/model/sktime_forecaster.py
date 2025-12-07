@@ -29,11 +29,8 @@ from ..utils.config_parser import ValidationError
 
 def _check_sktime_available():
     """Check if sktime is available and raise ImportError if not (internal use)."""
-    if not HAS_SKTIME:
-        raise ImportError(
-            "sktime is required for sktime forecasters. "
-            "Install it with: pip install sktime[forecasting]"
-        )
+    from ..preprocess.utils import check_sktime_available
+    check_sktime_available()
 
 
 class DFMForecaster(BaseForecaster):

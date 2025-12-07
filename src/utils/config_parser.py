@@ -323,7 +323,7 @@ def parse_experiment_config(
     Parameters
     ----------
     config_name : str
-        Experiment config name (e.g., 'experiment/koequipte_report')
+        Experiment config name (e.g., 'experiment/investment_koequipte_report')
     config_dir : str, optional
         Config directory path. If None, uses default config/ directory.
     overrides : list of str, optional

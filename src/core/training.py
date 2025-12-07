@@ -288,11 +288,7 @@ def _train_forecaster(
     
     # Get target series
     source_cfg = cfg.experiment if 'experiment' in cfg else cfg
-    target_col = None
-    if 'experiment' in cfg and 'target_series' in cfg.experiment:
-        target_col = cfg.experiment.target_series
-    elif 'target_series' in cfg:
-        target_col = cfg.target_series
+    target_col = _extract_target_series(cfg)
     
     if not target_col or target_col not in data.columns:
         raise ValidationError(f"target_series '{target_col}' not found in data. Available columns: {list(data.columns)}")
@@ -370,11 +366,8 @@ def _train_forecaster(
         
     elif model_type == 'arima':
         # Prepare training data for ARIMA (univariate)
-        if 'experiment' in cfg and 'target_series' in cfg.experiment:
-            target_col = cfg.experiment.target_series
-        elif 'target_series' in cfg:
-            target_col = cfg.target_series
-        else:
+        target_col = _extract_target_series(cfg)
+        if not target_col:
             raise ValidationError(f"target_series required for ARIMA. Config: {config_name}")
         
         y_train = data[target_col].dropna()
@@ -454,11 +447,7 @@ def _train_forecaster(
         print(f"Max lags: {maxlags}, Trend: {trend}, Series: {y_train.shape[1]}")
     
     # Get target series for evaluation and naming
-    target_col = None
-    if 'experiment' in cfg and 'target_series' in cfg.experiment:
-        target_col = cfg.experiment.target_series
-    elif 'target_series' in cfg:
-        target_col = cfg.target_series
+    target_col = _extract_target_series(cfg)
     
     # Split data for evaluation (80/20 split) to avoid data leakage
     # Model is fitted on training split only, ensuring no test data exposure during training
@@ -493,21 +482,47 @@ def _train_forecaster(
     if len(y_test_eval) > 0:
         # Note: evaluate_forecaster will refit on y_train_eval, but that's fine
         # since we already fitted on y_train_eval above. The refit ensures consistency.
-        forecast_metrics = evaluate_forecaster(
+        forecast_metrics_raw = evaluate_forecaster(
             forecaster, y_train_eval, y_test_eval, horizons, target_series=target_col
         )
+        # Convert integer keys to strings for JSON serialization and aggregation
+        forecast_metrics = {str(k): v for k, v in forecast_metrics_raw.items()}
     
     # Refit on full data for production use (model saved will use full training data)
     # This is for production deployment, not for evaluation
     forecaster.fit(y_train)
     
     # Save model
-    # If outputs_dir already contains the model name (checkpoint case), use outputs_dir directly
+    # Determine if outputs_dir is already the final model directory (checkpoint case)
+    # or if we need to create a subdirectory
+    # When checkpoint_model_name is used, outputs_dir is already set to the final path
+    # (e.g., checkpoint/KOEQUIPTE_arima), so we should use it directly
     # Otherwise, create subdirectory with model name
-    if model_name and str(outputs_dir).endswith(model_name):
-        # outputs_dir already contains model name (e.g., checkpoint/KOEQUIPTE_arima)
+    
+    # Check if outputs_dir is already the final model directory
+    # This happens when checkpoint_model_name is provided in train() function
+    # When checkpoint is used:
+    #   - outputs_dir = checkpoint/KOEQUIPTE_arima (full path)
+    #   - model_name = KOEQUIPTE_arima (from train_model, which passes checkpoint_model_name)
+    # So we check if outputs_dir ends with model_name
+    is_checkpoint_dir = False
+    if model_name:
+        # Check if outputs_dir ends with model_name (handles both relative and absolute paths)
+        if str(outputs_dir).endswith(model_name) or str(outputs_dir.name) == model_name:
+            is_checkpoint_dir = True
+        # Also check if model_name contains target pattern (for backward compatibility)
+        elif target_col and f"{target_col}_" in model_name:
+            # model_name is likely the full checkpoint name (e.g., "KOEQUIPTE_arima")
+            # Check if outputs_dir name matches
+            if str(outputs_dir.name) == model_name:
+                is_checkpoint_dir = True
+    
+    if is_checkpoint_dir:
+        # outputs_dir already contains the full model name (e.g., checkpoint/KOEQUIPTE_arima)
         # Use it directly without creating another subdirectory
         model_dir = outputs_dir
+        # Use the directory name as final_model_name for return value
+        final_model_name = outputs_dir.name
     else:
         # Create subdirectory with model name or auto-generated name
         if target_col:
@@ -648,7 +663,7 @@ def train(
     Parameters
     ----------
     config_name : str
-        Hydra config name (e.g., 'experiment/koequipte_report'). Must be a valid
+        Hydra config name (e.g., 'experiment/investment_koequipte_report'). Must be a valid
         config file in config/ directory.
     config_path : str, optional
         Path to config directory. If None, uses default config/ directory.
@@ -807,8 +822,9 @@ def train(
                             elif 'block' in series_cfg and series_cfg['block'] is not None:
                                 dfm_series['_block_names'] = series_cfg['block']
                             else:
-                                # block is null/None or not specified - use default (will be handled by global config)
-                                dfm_series['_block_names'] = ['Block_Global']  # Default
+                                # block is null/None or not specified - use first block from model config
+                                # Will be determined later when we have block_names_order
+                                dfm_series['_block_names'] = None  # Will use first block from model config
                             series_list.append(dfm_series)
                         else:
                             # Fallback: create minimal series config
@@ -817,7 +833,7 @@ def train(
                                 'series_id': series_id,
                                 'frequency': 'm',  # Default to monthly
                                 'transformation': 'lin',
-                                '_block_names': ['Block_Global']  # Default
+                                '_block_names': None  # Will use first block from model config
                             }
                             # Apply series_overrides if specified for this series
                             if series_id in series_overrides:
@@ -912,21 +928,23 @@ def train(
                 series_freq = series_item.get('frequency', 'm').lower()
                 series_freq_level = freq_hierarchy.get(series_freq, 3)  # Default to monthly level
                 
-                if '_block_names' in series_item:
+                    if '_block_names' in series_item:
                     block_names = series_item.pop('_block_names')
-                    # Handle None/null block_names (should use global block config)
+                    # Handle None/null block_names (should use first block from model config)
                     if block_names is None:
-                        # block was null - use default block (first block in order)
+                        # block was null - use first block from model config
                         if block_names_order:
-                            default_block_clock = block_clocks.get(block_names_order[0] if block_names_order else 'Block_Global', 'm')
-                            default_block_clock_level = freq_hierarchy.get(default_block_clock.lower(), 3)
-                            if series_freq_level >= default_block_clock_level:
+                            first_block_name = block_names_order[0]
+                            first_block_clock = block_clocks.get(first_block_name, 'm')
+                            first_block_clock_level = freq_hierarchy.get(first_block_clock.lower(), 3)
+                            if series_freq_level >= first_block_clock_level:
+                                # Assign to first block only
                                 series_item['blocks'] = [1] + [0] * (len(block_names_order) - 1) if len(block_names_order) > 1 else [1]
                                 filtered_series_list.append(series_item)
                             else:
-                                print(f"Warning: Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with default block clock '{default_block_clock}'. Skipping.")
+                                print(f"Warning: Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with first block clock '{first_block_clock}'. Skipping.")
                         else:
-                            # No block structure - include series
+                            # No block structure - include series with default block assignment
                             filtered_series_list.append(series_item)
                         continue
                     # Check if series frequency is compatible with block clocks
@@ -964,15 +982,20 @@ def train(
                         # Series frequency incompatible with all blocks - skip it
                         print(f"Warning: Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with block clocks. Skipping.")
                 else:
-                    # No block info: default to first block (Block_Global)
-                    # Check compatibility with default block
-                    default_block_clock = block_clocks.get(block_names_order[0] if block_names_order else 'Block_Global', 'm')
-                    default_block_clock_level = freq_hierarchy.get(default_block_clock.lower(), 3)
-                    if series_freq_level >= default_block_clock_level:
-                        series_item['blocks'] = [1] + [0] * (len(block_names_order) - 1) if block_names_order else [1]
-                        filtered_series_list.append(series_item)
+                    # No block info: default to first block from model config
+                    # Check compatibility with first block
+                    if block_names_order:
+                        first_block_name = block_names_order[0]
+                        first_block_clock = block_clocks.get(first_block_name, 'm')
+                        first_block_clock_level = freq_hierarchy.get(first_block_clock.lower(), 3)
+                        if series_freq_level >= first_block_clock_level:
+                            series_item['blocks'] = [1] + [0] * (len(block_names_order) - 1) if len(block_names_order) > 1 else [1]
+                            filtered_series_list.append(series_item)
+                        else:
+                            print(f"Warning: Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with first block clock '{first_block_clock}'. Skipping.")
                     else:
-                        print(f"Warning: Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with default block clock '{default_block_clock}'. Skipping.")
+                        # No block structure - include series
+                        filtered_series_list.append(series_item)
         else:
             # No block structure - include all series
             filtered_series_list = series_list
@@ -1037,17 +1060,18 @@ def compare_models(
     models : list of str
         List of model names to compare (e.g., ['arima', 'var', 'dfm', 'ddfm']).
         Valid model types: 'arima', 'var', 'dfm', 'ddfm'.
-    horizons : list of int, default [1, 7, 28]
-        Forecast horizons to evaluate (in days).
+    horizons : list of int, default [1, 2, ..., 30]
+        Forecast horizons to evaluate (in days). Default evaluates all horizons from 1 to 30 days.
+        If None, horizons are extracted from config's forecast_horizons field.
     data_path : str, optional
         Path to data CSV file. If None, uses default data/data.csv.
     config_dir : str, optional
         Path to config directory. If None, uses default config/ directory.
     config_name : str, optional
         Hydra config name. If None, auto-derives from target_series:
-        - 'KOEQUIPTE' -> 'experiment/koequipte_report'
-        - 'KOWRCCNSE' -> 'experiment/kowrccnse_report'
-        - 'KOIPALL.G' -> 'experiment/koipallg_report'
+        - 'KOEQUIPTE' -> 'experiment/investment_koequipte_report'
+        - 'KOWRCCNSE' -> 'experiment/consumption_kowrccnse_report'
+        - 'KOIPALL.G' -> 'experiment/production_koipallg_report'
     config_overrides : list of str, optional
         List of Hydra config override strings.
         
@@ -1075,7 +1099,12 @@ def compare_models(
     - Failed models are included in results with status='failed'
     """
     config_dir = config_dir or str(Path(__file__).parent.parent.parent / "config")
-    data_path = data_path or str(Path(__file__).parent.parent.parent / "data" / "sample_data.csv")
+    # Use data/data.csv as default (not sample_data.csv)
+    if data_path is None:
+        data_path = str(Path(__file__).parent.parent.parent / "data" / "data.csv")
+        if not Path(data_path).exists():
+            # Fallback to sample_data.csv if data.csv doesn't exist
+            data_path = str(Path(__file__).parent.parent.parent / "data" / "sample_data.csv")
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = Path(__file__).parent.parent.parent / "outputs" / "comparisons" / f"{target_series}_{timestamp}"
@@ -1093,11 +1122,19 @@ def compare_models(
     if config_name is None:
         # Fallback: map target series to report config name
         report_map = {
-            "KOEQUIPTE": "experiment/koequipte_report",
-            "KOWRCCNSE": "experiment/kowrccnse_report",
-            "KOIPALL.G": "experiment/koipallg_report"
+            "KOEQUIPTE": "experiment/investment_koequipte_report",
+            "KOWRCCNSE": "experiment/consumption_kowrccnse_report",
+            "KOIPALL.G": "experiment/production_koipallg_report"
         }
         config_name = report_map.get(target_series, f"experiment/{target_series.lower().replace('...', '').replace('.', '')}_report")
+    
+    # If horizons not provided, extract from config
+    if horizons is None or len(horizons) == 0:
+        from ..utils.config_parser import parse_experiment_config, extract_experiment_params
+        cfg = parse_experiment_config(config_name, config_dir)
+        params = extract_experiment_params(cfg)
+        horizons = params.get('horizons', list(range(1, 31)))
+        print(f"Extracted horizons from config: {len(horizons)} horizons (1-30)")
     
     for i, model_name in enumerate(models, 1):
         print(f"\n[{i}/{len(models)}] {model_name.upper()}...")
@@ -1143,23 +1180,36 @@ def compare_models(
                 # This ensures we have metrics for the forecast horizons
                 forecaster = model_data.get('forecaster')
                 if forecaster and horizons:
+                    # Use the same data path as training
+                    # Try to get data path from config or use default
+                    actual_data_path = data_path
+                    if not actual_data_path or not Path(actual_data_path).exists():
+                        # Fallback to default data path
+                        actual_data_path = str(Path(__file__).parent.parent.parent / "data" / "data.csv")
+                        if not Path(actual_data_path).exists():
+                            actual_data_path = str(Path(__file__).parent.parent.parent / "data" / "sample_data.csv")
+                    
                     # Load data and create test split
-                    data = pd.read_csv(data_path, index_col=0, parse_dates=True)
+                    data = pd.read_csv(actual_data_path, index_col=0, parse_dates=True)
                     # Filter to training period (1985-2019) to prevent data leakage
                     train_start = pd.Timestamp('1985-01-01')
                     train_end = pd.Timestamp('2019-12-31')
                     data = data[(data.index >= train_start) & (data.index <= train_end)]
                     
                     # Split for evaluation (80/20)
+                    # Note: For multivariate models, we need to prepare data the same way as training
+                    # For now, use simple split - the forecaster will handle the data format
                     split_idx = int(len(data) * 0.8)
                     y_train_eval = data.iloc[:split_idx]
                     y_test_eval = data.iloc[split_idx:]
                     
                     # Evaluate on test data
                     from ..eval.evaluation import evaluate_forecaster
-                    forecast_metrics = evaluate_forecaster(
+                    forecast_metrics_raw = evaluate_forecaster(
                         forecaster, y_train_eval, y_test_eval, horizons, target_series=target_series
                     )
+                    # Convert integer keys to strings for JSON serialization and aggregation
+                    forecast_metrics = {str(k): v for k, v in forecast_metrics_raw.items()}
                     result['metrics'] = {'forecast_metrics': forecast_metrics}
             else:
                 # Train new model

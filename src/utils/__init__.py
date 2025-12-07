@@ -1,4 +1,6 @@
-"""Utility modules for path setup, config parsing, and imports."""
+"""Utility modules for path setup, config parsing, CLI setup, and imports."""
+
+from .cli import setup_cli_paths, setup_cli_environment
 
 from .config_parser import (
     # Path setup
@@ -22,6 +24,9 @@ from .config_parser import (
 )
 
 __all__ = [
+    # CLI setup
+    'setup_cli_paths',
+    'setup_cli_environment',
     # Path setup
     'get_project_root',
     'get_dfm_python_path',

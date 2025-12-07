@@ -1,7 +1,7 @@
 """Inference/Nowcasting module - supports both CLI and programmatic API.
 
 This module provides inference and nowcasting functionality that can be used:
-- As CLI: python src/infer.py nowcast --config-name experiment/koequipte_report
+- As CLI: python src/infer.py nowcast --config-name experiment/investment_koequipte_report
 - As API: from src.infer import run_nowcasting_evaluation, run_backtest_evaluation
 
 Functions exported for programmatic use:
@@ -17,18 +17,33 @@ import pandas as pd
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
-# Set up paths first before any relative imports
-# This allows the script to be run directly as python3 src/infer.py
-_script_dir = Path(__file__).parent.resolve()
-_project_root = _script_dir.parent.resolve()  # src/ -> project root
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-if str(_script_dir) not in sys.path:
-    sys.path.insert(0, str(_script_dir))
+# Set up paths BEFORE importing from src
+# Get script directory (e.g., src/)
+script_dir = Path(__file__).parent.resolve()
+# Get project root (parent of src/)
+project_root = script_dir.parent.resolve()
+
+# Add to sys.path if not already there (use insert(0) to prioritize)
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+if str(script_dir) not in sys.path:
+    sys.path.insert(0, str(script_dir))
+
+# Change to project root to ensure relative imports work
+import os
+original_cwd = os.getcwd()
+try:
+    os.chdir(str(project_root))
+    
+    # Now we can import from src
+    from src.utils.cli import setup_cli_environment
+    setup_cli_environment()
+finally:
+    # Restore original working directory
+    os.chdir(original_cwd)
 
 # Now use absolute imports
-from src.utils.config_parser import setup_paths, get_project_root
-setup_paths(include_dfm_python=True, include_src=True, include_app=True)
+from src.utils.config_parser import get_project_root
 
 from src.utils.config_parser import (
     parse_experiment_config,
@@ -315,7 +330,7 @@ def run_nowcasting_evaluation(
     Parameters
     ----------
     config_name : str
-        Experiment config name (e.g., 'experiment/koequipte_report')
+        Experiment config name (e.g., 'experiment/investment_koequipte_report')
     config_dir : str, optional
         Config directory path. If None, uses default config/ directory.
     mask_days : int, default=30
@@ -428,7 +443,7 @@ def run_backtest_evaluation(
     Parameters
     ----------
     config_name : str
-        Experiment config name (e.g., 'experiment/koequipte_report')
+        Experiment config name (e.g., 'experiment/investment_koequipte_report')
     model : str
         Model name ('arima', 'var', 'dfm', or 'ddfm')
     train_start : str
@@ -733,13 +748,13 @@ def main():
     
     # Nowcasting evaluation command
     nowcast_parser = subparsers.add_parser('nowcast', help='Run nowcasting evaluation (requires experiment config)')
-    nowcast_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/koequipte_report)")
+    nowcast_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/investment_koequipte_report)")
     nowcast_parser.add_argument("--override", action="append", help="Hydra config override")
     nowcast_parser.add_argument("--mask-days", type=int, default=30, help="Number of days to mask for nowcasting simulation")
     
     # Backtest command
     backtest_parser = subparsers.add_parser('backtest', help='Run backtest evaluation for all models (requires experiment config)')
-    backtest_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/koequipte_report)")
+    backtest_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/investment_koequipte_report)")
     backtest_parser.add_argument("--model", required=True, choices=['arima', 'var', 'dfm', 'ddfm'], help="Model to backtest")
     backtest_parser.add_argument("--train-start", default="1985-01-01", help="Training period start (YYYY-MM-DD)")
     backtest_parser.add_argument("--train-end", default="2019-12-31", help="Training period end (YYYY-MM-DD)")

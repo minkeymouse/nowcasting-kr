@@ -1,7 +1,7 @@
 """Training module - supports both CLI and programmatic API.
 
 This module provides training functionality that can be used:
-- As CLI: python src/train.py train --config-name experiment/koequipte_report
+- As CLI: python src/train.py train --config-name experiment/investment_koequipte_report
 - As API: from src.train import train_model, compare_models_by_config
 
 Functions exported for programmatic use:
@@ -14,18 +14,24 @@ import sys
 import argparse
 from typing import Dict, Any, Optional, List
 
-# Set up paths first before any relative imports
-# This allows the script to be run directly as python3 src/train.py
-_script_dir = Path(__file__).parent.resolve()
-_project_root = _script_dir.parent.resolve()  # src/ -> project root
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-if str(_script_dir) not in sys.path:
-    sys.path.insert(0, str(_script_dir))
+# Set up paths BEFORE importing from src
+# Get script directory (e.g., src/)
+script_dir = Path(__file__).parent.resolve()
+# Get project root (parent of src/)
+project_root = script_dir.parent.resolve()
+
+# Add to sys.path if not already there
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+if str(script_dir) not in sys.path:
+    sys.path.insert(0, str(script_dir))
+
+# Now we can import from src
+from src.utils.cli import setup_cli_environment
+setup_cli_environment()
 
 # Now use absolute imports
-from src.utils.config_parser import setup_paths, get_project_root
-setup_paths(include_dfm_python=True, include_src=True, include_app=True)
+from src.utils.config_parser import get_project_root
 
 from src.core.training import train, compare_models
 from src.utils.config_parser import parse_experiment_config, extract_experiment_params, validate_experiment_config
@@ -43,7 +49,7 @@ def train_model(
     Parameters
     ----------
     config_name : str
-        Experiment config name (e.g., 'experiment/koequipte_report')
+        Experiment config name (e.g., 'experiment/investment_koequipte_report')
     config_dir : str, optional
         Config directory path. If None, uses default config/ directory.
     model_name : str, optional
@@ -115,7 +121,7 @@ def compare_models_by_config(
     Parameters
     ----------
     config_name : str
-        Experiment config name (e.g., 'experiment/koequipte_report')
+        Experiment config name (e.g., 'experiment/investment_koequipte_report')
     config_dir : str, optional
         Config directory path. If None, uses default config/ directory.
     overrides : list of str, optional
@@ -162,13 +168,13 @@ def main():
     subparsers = parser.add_subparsers(dest='command', required=True)
     
     train_parser = subparsers.add_parser('train', help='Train single model (requires experiment config)')
-    train_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/koequipte_report)")
+    train_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/investment_koequipte_report)")
     train_parser.add_argument("--model", help="Model name to train (e.g., arima, var, dfm, ddfm). If not specified, uses first model from config.")
     train_parser.add_argument("--checkpoint-dir", help="Directory to save checkpoint (e.g., checkpoint). If not specified, uses outputs/models/")
     train_parser.add_argument("--override", action="append", help="Hydra config override (e.g., model_overrides.dfm.max_iter=10)")
     
     compare_parser = subparsers.add_parser('compare', help='Compare multiple models (requires experiment config)')
-    compare_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/koequipte_report)")
+    compare_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/investment_koequipte_report)")
     compare_parser.add_argument("--override", action="append", help="Hydra config override")
     compare_parser.add_argument("--models", nargs="+", help="Filter models to run (e.g., --models arima var). If not specified, runs all models from config.")
     

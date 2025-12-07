@@ -4,6 +4,7 @@ Model,SeriesID,SeriesName,Frequency,Block-Global,Block-Consumption,Block-Invstes
 1,KOCBNG3,"Corporate 3YR, AA-",w,1,0,0,0,0,0,1,chg,index,Finance,1,,1,1,1,금융,
 1,USSKORW,USD/KRW,w,1,0,0,0,0,0,1,chg,index,Finance,1,,1,1,1,금융,
 1,GSCITOT,GSCI Commodity Price,w,1,0,0,0,0,0,1,chg,index,Finance,1,,0,1,0,금융,
+1,A001,News Sentiment,w,1,0,0,0,0,0,1,chg,index,Survey,7,,1,1,1,기업경기,
 0,USEPUPO,US Economic Policy Uncertainty Index,w,1,0,0,0,0,0,0,chg,index,Survey,5,,1,1,1,,
 1,KORCNST,KOSPI Construction,w,1,0,0,0,0,0,1,chg,index,Finance,1,KOSPI Sector,0,1,0,금융,코스피 건설업
 1,KORMACH,KOSPI Machinery,w,1,0,0,0,0,0,1,chg,index,Finance,1,,0,1,0,금융,코스피 기계업

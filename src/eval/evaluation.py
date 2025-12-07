@@ -506,6 +506,55 @@ def evaluate_forecaster(
                     logger.error(f"Horizon {h}: Both predict(fh=[{h}]) and predict(fh={h}) failed. Last error: {type(e2).__name__}: {e2}")
                     raise
             
+            # VAR-specific stability check: detect unstable forecasts before calculating metrics
+            # VAR models can become numerically unstable for long horizons, producing extreme values
+            model_type = getattr(forecaster, '_fitted_forecaster', None)
+            if model_type is not None:
+                model_type_str = str(type(model_type)).lower()
+                is_var = 'var' in model_type_str
+            else:
+                # Try to detect VAR from forecaster type
+                forecaster_type_str = str(type(forecaster)).lower()
+                is_var = 'var' in forecaster_type_str
+            
+            if is_var and h > 1:
+                # Check if forecast values are extreme (indicating numerical instability)
+                # Extract numeric values from y_pred_h
+                pred_values = None
+                if isinstance(y_pred_h, pd.DataFrame):
+                    pred_values = y_pred_h.values.flatten()
+                elif isinstance(y_pred_h, pd.Series):
+                    pred_values = y_pred_h.values
+                elif hasattr(y_pred_h, '__array__'):
+                    pred_values = np.asarray(y_pred_h).flatten()
+                
+                if pred_values is not None and len(pred_values) > 0:
+                    max_abs_pred = np.max(np.abs(pred_values))
+                    # If any prediction value is extremely large (> 1e6), mark as unstable
+                    if max_abs_pred > 1e6:
+                        logger.warning(
+                            f"Horizon {h}: VAR forecast contains extreme values (max_abs={max_abs_pred:.2e}). "
+                            f"This indicates numerical instability. Marking metrics as NaN."
+                        )
+                        results[h] = {
+                            'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,
+                            'MSE': np.nan, 'MAE': np.nan, 'RMSE': np.nan,
+                            'sigma': np.nan, 'n_valid': 0
+                        }
+                        continue
+                    # Check for NaN or Inf in predictions
+                    if np.any(~np.isfinite(pred_values)):
+                        logger.warning(
+                            f"Horizon {h}: VAR forecast contains NaN or Inf values. "
+                            f"Marking metrics as NaN."
+                        )
+                        results[h] = {
+                            'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,
+                            'MSE': np.nan, 'MAE': np.nan, 'RMSE': np.nan,
+                            'sigma': np.nan, 'n_valid': 0
+                        }
+                        continue
+            
             # Extract corresponding test data point using position-based matching
             # This is more reliable than index matching since test data is created by splitting
             test_pos = h - 1
@@ -635,6 +684,46 @@ def evaluate_forecaster(
                             # target_series string doesn't match column name - set to None
                             target_series_for_metrics = None
                             logger.debug(f"Horizon {h}: y_true_h has 1 column but target_series '{target_series}' not in columns, setting target_series=None")
+                    
+                    # VAR-specific check for horizon 1: detect if VAR is just predicting persistence
+                    # (last training value), which would result in suspiciously good results
+                    if is_var and h == 1:
+                        # Extract last training value for comparison
+                        if isinstance(y_train, pd.DataFrame):
+                            if target_series and target_series in y_train.columns:
+                                last_train_val = y_train[target_series].iloc[-1]
+                            elif len(y_train.columns) == 1:
+                                last_train_val = y_train.iloc[-1, 0]
+                            else:
+                                last_train_val = None
+                        elif isinstance(y_train, pd.Series):
+                            last_train_val = y_train.iloc[-1]
+                        else:
+                            last_train_val = None
+                        
+                        # Extract prediction value
+                        if isinstance(y_pred_h, pd.DataFrame):
+                            if target_series and target_series in y_pred_h.columns:
+                                pred_val = y_pred_h[target_series].iloc[0]
+                            elif len(y_pred_h.columns) == 1:
+                                pred_val = y_pred_h.iloc[0, 0]
+                            else:
+                                pred_val = None
+                        elif isinstance(y_pred_h, pd.Series):
+                            pred_val = y_pred_h.iloc[0]
+                        else:
+                            pred_val = None
+                        
+                        # Check if prediction is very close to last training value (persistence)
+                        if last_train_val is not None and pred_val is not None:
+                            if np.isfinite(last_train_val) and np.isfinite(pred_val):
+                                rel_diff = abs(pred_val - last_train_val) / (abs(last_train_val) + 1e-10)
+                                if rel_diff < 1e-6:  # Prediction is essentially identical to last training value
+                                    logger.warning(
+                                        f"Horizon {h}: VAR prediction ({pred_val:.6f}) is essentially identical to last training value "
+                                        f"({last_train_val:.6f}), suggesting VAR is predicting persistence. "
+                                        f"This may indicate model limitation rather than data leakage."
+                                    )
                     
                     metrics = calculate_standardized_metrics(
                         y_true_h, y_pred_h, y_train=y_train, target_series=target_series_for_metrics
@@ -931,9 +1020,13 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
                 EXTREME_THRESHOLD = 1e10
                 
                 def validate_metric(val):
-                    """Validate metric value and return NaN if extreme."""
+                    """Validate metric value and return NaN if extreme.
+                    
+                    This function filters out extreme values that indicate numerical instability,
+                    such as VAR forecasts that become unstable for long horizons.
+                    """
                     if val is None:
-                        return None
+                        return np.nan
                     if isinstance(val, (int, float)):
                         if np.isnan(val) or np.isinf(val):
                             return np.nan
@@ -943,16 +1036,26 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
                             logger = logging.getLogger(__name__)
                             logger.warning(
                                 f"aggregate_overall_performance: Extreme value detected for "
-                                f"{model_name.upper()} {target_series} horizon {horizon}: {val}. "
+                                f"{model_name.upper()} {target_series} horizon {horizon}: {val:.2e}. "
                                 f"Marking as NaN due to numerical instability."
                             )
                             return np.nan
+                    # Handle string representations of numbers
+                    if isinstance(val, str):
+                        try:
+                            val_float = float(val)
+                            return validate_metric(val_float)
+                        except (ValueError, TypeError):
+                            return np.nan
                     return val
                 
-                # Validate standardized metrics
+                # Validate all metrics (standardized and raw) to filter extreme values
                 smse = validate_metric(horizon_metrics.get('sMSE'))
                 smae = validate_metric(horizon_metrics.get('sMAE'))
                 srmse = validate_metric(horizon_metrics.get('sRMSE'))
+                mse = validate_metric(horizon_metrics.get('MSE'))
+                mae = validate_metric(horizon_metrics.get('MAE'))
+                rmse = validate_metric(horizon_metrics.get('RMSE'))
                 
                 # Include all horizons, even if n_valid=0 (for complete 36-row dataset)
                 # This allows the report to show NaN/N/A for unavailable combinations
@@ -963,9 +1066,9 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
                     'sMSE': smse,
                     'sMAE': smae,
                     'sRMSE': srmse,
-                    'MSE': horizon_metrics.get('MSE'),
-                    'MAE': horizon_metrics.get('MAE'),
-                    'RMSE': horizon_metrics.get('RMSE'),
+                    'MSE': mse,
+                    'MAE': mae,
+                    'RMSE': rmse,
                     'sigma': horizon_metrics.get('sigma'),
                     'n_valid': n_valid
                 }
@@ -1680,9 +1783,9 @@ def generate_latex_table_dataset_params(
     series_counts = {}
     for target in targets:
         config_name_map = {
-            'KOEQUIPTE': 'koequipte_report',
-            'KOWRCCNSE': 'kowrccnse_report',
-            'KOIPALL.G': 'koipallg_report'
+            'KOEQUIPTE': 'investment_koequipte_report',
+            'KOWRCCNSE': 'consumption_kowrccnse_report',
+            'KOIPALL.G': 'production_koipallg_report'
         }
         config_file = config_dir / "experiment" / f"{config_name_map.get(target, '')}.yaml"
         if config_file.exists():
@@ -1792,9 +1895,12 @@ def generate_all_latex_tables(
         import logging
         logger = logging.getLogger(__name__)
         
-        # Filter extreme values in standardized metrics
-        for metric in ['sMSE', 'sMAE', 'sRMSE']:
+        # Filter extreme values in all metrics (standardized and raw) for consistency
+        all_metrics = ['sMSE', 'sMAE', 'sRMSE', 'MSE', 'MAE', 'RMSE']
+        for metric in all_metrics:
             if metric in aggregated_df.columns:
+                # Convert to numeric, coercing errors to NaN
+                aggregated_df[metric] = pd.to_numeric(aggregated_df[metric], errors='coerce')
                 mask_extreme = aggregated_df[metric].abs() > EXTREME_THRESHOLD
                 if mask_extreme.any():
                     n_extreme = mask_extreme.sum()

@@ -19,12 +19,14 @@
 **ACTUAL Current Status**:
 - **checkpoint/**: Has log files but **0 model.pkl files** - **0 models trained** (12 models needed: 3 targets × 4 models)
 - **outputs/backtest/**: Has log files but **0 JSON files** - **0 nowcasting experiments completed** (12 experiments needed: 3 targets × 4 models)
+  - **FIXED**: Import path issue in src/infer.py - backtest runs should now work once models are trained
 - **outputs/experiments/aggregated_results.csv**: **EXISTS** - Forecasting results aggregated (36 rows, contains extreme VAR values)
+  - **FIXED**: Aggregation function updated to validate ALL metrics (MSE, MAE, RMSE) not just standardized metrics - CSV needs regeneration to apply validation (extreme values will be marked as NaN in all metrics)
 - **nowcasting-report/tables/**: **3 tables generated** (tab_dataset_params.tex, tab_forecasting_results.tex, tab_nowcasting_backtest.tex)
 - **nowcasting-report/images/**: **7 plots generated** (forecast_vs_actual_*.png × 3, accuracy_heatmap.png, horizon_trend.png, nowcasting_comparison_*.png × 3)
 
 **What This Means**:
-- Training has NOT been run - models need to be trained and saved to checkpoint/ (code fixes applied this iteration)
+- Training has NOT been run - models need to be trained and saved to checkpoint/
 - Nowcasting experiments have NOT been run - outputs/backtest/ needs JSON files (blocked by training)
 - Forecasting results exist and are aggregated - Table 2 can be generated (extreme values filtered when loading)
 - Tables and plots generated - Table 3 and Plot4 have placeholders (nowcasting results missing)
@@ -42,7 +44,7 @@
 - **src/**: Experiment engine (15 files, max 15 required) - wrappers for sktime & dfm-python
   - Entry points: train.py (train, compare), infer.py (backtest)
   - Core modules: core/training.py, eval/evaluation.py, model/, preprocess/, utils/, nowcast/
-  - Status: Code ready, but models NOT trained
+  - Status: Code should work, but models NOT trained
 - **dfm-python/**: Core DFM/DDFM package (submodule)
   - Lightning-based training, EM algorithm (DFM), PyTorch encoder (DDFM)
   - Status: Package structure ready
@@ -73,7 +75,7 @@ run_train.sh (or agent_execute.sh train)
     → _train_forecaster() → Load data (1985-2019) → Preprocess → Create forecaster → fit()
     → Save to checkpoint/{target}_{model}/model.pkl
 ```
-**Status**: checkpoint/ has 0 model.pkl files - training NOT done (code fixes applied this iteration - ready to run)
+**Status**: checkpoint/ has 0 model.pkl files - training NOT done (ready to run)
 
 **Forecasting Flow** (DONE):
 ```
@@ -123,7 +125,7 @@ bash agent_execute.sh train
 # Or: bash run_train.sh
 # Trains all models for all targets, saves to checkpoint/{target}_{model}/model.pkl
 # Training data: 1985-01-01 to 2019-12-31 (no data leakage)
-# Status: checkpoint/ has 0 model.pkl files - needs to be run (code fixes applied this iteration)
+# Status: checkpoint/ has 0 model.pkl files - needs to be run
 ```
 
 **Forecasting (load from checkpoint/, generate forecasts)** - **DONE**:
@@ -148,13 +150,13 @@ bash agent_execute.sh backtest
 **Generate tables**:
 ```bash
 python3 -c "from src.eval.evaluation import generate_all_latex_tables; generate_all_latex_tables()"
-# Status: Tables generated this iteration - Table 3 shows N/A (nowcasting results missing)
+# Status: Tables generated - Table 3 shows N/A (nowcasting results missing)
 ```
 
 **Generate plots**:
 ```bash
 python3 nowcasting-report/code/plot.py
-# Status: Plots generated this iteration - Plot4 shows placeholders (nowcasting results missing)
+# Status: Plots generated - Plot4 shows placeholders (nowcasting results missing)
 ```
 
 ---
@@ -162,7 +164,7 @@ python3 nowcasting-report/code/plot.py
 ## Report Update Workflow
 
 **Forecasting Workflow**:
-1. Train models → `bash agent_execute.sh train` (saves to checkpoint/) - **NOT DONE** (code fixes applied this iteration)
+1. Train models → `bash agent_execute.sh train` (saves to checkpoint/) - **NOT DONE**
 2. Run forecasts → `bash agent_execute.sh forecast` (loads from checkpoint/, generates forecasts for 1-30 horizons) - **DONE**
 3. Generate aggregated CSV → `outputs/experiments/aggregated_results.csv` - **EXISTS** (36 rows)
 4. Generate plots → `python3 nowcasting-report/code/plot.py` (Plot1, Plot2, Plot3) - **DONE**
@@ -190,11 +192,10 @@ python3 nowcasting-report/code/plot.py
 - Report structure ready (methodology, results, discussion sections)
 
 **What's Actually Missing**:
-- Models NOT trained (checkpoint/ has 0 model.pkl files) - code fixes applied this iteration
+- Models NOT trained (checkpoint/ has 0 model.pkl files)
 - Nowcasting experiments NOT run (outputs/backtest/ has 0 JSON files) - blocked by training
 - Table 3 generated but shows N/A (needs regeneration after nowcasting results)
-- Plot4 generated but shows placeholders (needs regeneration after nowcasting results)
-- aggregated_results.csv EXISTS (36 rows) - extreme values filtered when loading
+- Plot4 generated but shows placeholders (needs regeneration after nowcast results)
 
 **Next Steps**:
 - Step 1 will automatically check and run needed experiments
