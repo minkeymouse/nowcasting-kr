@@ -485,6 +485,20 @@ def evaluate_forecaster(
     """
     logger = _module_logger
     
+    # Defense-in-depth: Validate train-test split to prevent data leakage
+    # This provides additional validation beyond the checks in train.py
+    if hasattr(y_train, 'index') and hasattr(y_test, 'index'):
+        train_max = y_train.index.max() if len(y_train) > 0 else None
+        test_min = y_test.index.min() if len(y_test) > 0 else None
+        if train_max is not None and test_min is not None:
+            if train_max >= test_min:
+                raise ValueError(
+                    f"Data leakage detected in evaluate_forecaster: "
+                    f"Training period ends at {train_max} but test period starts at {test_min}. "
+                    f"There must be a gap between training and test periods to prevent data leakage."
+                )
+            logger.debug(f"Train-test split validated: train ends at {train_max}, test starts at {test_min}")
+    
     # Check if forecaster is already fitted to avoid re-training
     is_fitted = False
     if hasattr(forecaster, 'is_fitted'):

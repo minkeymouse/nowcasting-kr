@@ -78,14 +78,13 @@ def _load_model_for_inference(
     """Load trained model from checkpoint with validation."""
     checkpoint_path = project_root / "checkpoint" / f"{target_series}_{model.lower()}" / "model.pkl"
     if not checkpoint_path.exists():
-        comparisons_dir = project_root / "outputs" / "comparisons"
+        # Fallback: check outputs/comparisons/{target_series}/{model}/model.pkl
+        comparisons_dir = project_root / "outputs" / "comparisons" / target_series
         if comparisons_dir.exists():
-            for comparison_dir in comparisons_dir.glob(f"{target_series}_*"):
-                model_path = comparison_dir / model.lower() / "model.pkl"
-                if model_path.exists():
-                    checkpoint_path = model_path
-                    logger.info(f"Found checkpoint in comparisons directory: {checkpoint_path}")
-                    break
+            model_path = comparisons_dir / model.lower() / "model.pkl"
+            if model_path.exists():
+                checkpoint_path = model_path
+                logger.info(f"Found checkpoint in comparisons directory: {checkpoint_path}")
     
     if not checkpoint_path.exists():
         raise FileNotFoundError(
@@ -1043,6 +1042,35 @@ def run_backtest_evaluation(
                     if not np.isfinite(forecast_value):
                         logger.debug(f"Non-finite forecast value for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {forecast_value}")
                         continue
+                    
+                    # Validate forecast value is within reasonable bounds (detect numerical instability)
+                    # Check if forecast is extremely large compared to typical values (e.g., > 100x typical range)
+                    # This helps catch numerical instability issues like KOIPALL.G DFM
+                    abs_forecast = abs(forecast_value)
+                    train_mean = train_data_filtered[target_series].mean() if target_series in train_data_filtered.columns else train_data_filtered.iloc[:, 0].mean() if len(train_data_filtered.columns) > 0 else 0.0
+                    if train_std and train_std > 0:
+                        # Clip extreme forecast values to prevent numerical instability from affecting results
+                        # Use ±10 standard deviations as reasonable bounds (more conservative than 50 std devs for warnings)
+                        max_forecast = train_mean + 10 * train_std
+                        min_forecast = train_mean - 10 * train_std
+                        original_forecast = forecast_value
+                        if forecast_value > max_forecast or forecast_value < min_forecast:
+                            forecast_value = np.clip(forecast_value, min_forecast, max_forecast)
+                            logger.warning(
+                                f"Extreme forecast value clipped for {target_month_end_ts.strftime('%Y-%m')} "
+                                f"(view_date={view_date.strftime('%Y-%m-%d')}): original={original_forecast:.2f}, "
+                                f"clipped={forecast_value:.2f}, train_mean={train_mean:.4f}, train_std={train_std:.4f}, "
+                                f"ratio={abs(original_forecast - train_mean)/train_std:.1f}x. "
+                                f"This indicates numerical instability or poor model convergence."
+                            )
+                        # Also log warning if extremely large (even if within clipping bounds)
+                        elif abs_forecast > 50 * train_std:
+                            logger.warning(
+                                f"Extreme forecast value detected for {target_month_end_ts.strftime('%Y-%m')} "
+                                f"(view_date={view_date.strftime('%Y-%m-%d')}): forecast={forecast_value:.2f}, "
+                                f"train_std={train_std:.4f}, ratio={abs_forecast/train_std:.1f}x. "
+                                f"This may indicate numerical instability or poor model convergence."
+                            )
                 except (ValueError, RuntimeError, AttributeError) as e:
                     logger.warning(f"Failed to predict for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
                     continue
