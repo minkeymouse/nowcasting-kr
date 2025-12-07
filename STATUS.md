@@ -16,16 +16,20 @@
 
 ## Work Done This Iteration
 
-**Code Fixes Applied**:
+**Code Fixes Applied This Iteration**:
+- **FIXED**: Indentation error in block handling code (src/core/training.py:931) - fixed incorrect indentation in `if '_block_names' in series_item:` block that could cause syntax errors during training. This ensures block assignment logic works correctly for DFM/DDFM models.
+- **FIXED**: VAR instability threshold inconsistency (src/eval/evaluation.py:536) - changed evaluate_forecaster() to use 1e10 instead of 1e6 for VAR prediction threshold, ensuring consistency with aggregation (1e10) and CSV loading (1e10) thresholds. This prevents values between 1e6 and 1e10 from being marked as unstable during evaluation but passing through aggregation.
+- **IMPROVED**: VAR-1 persistence detection in evaluation (src/eval/evaluation.py:688-751) - enhanced to use both relative difference and std-normalized difference checks. This catches persistence predictions more robustly, including cases where relative difference might be larger but absolute difference is very small compared to training std.
+- **IMPROVED**: VAR-1 persistence detection logic in CSV loading (src/eval/evaluation.py:2010-2020) - refactored to build persistence_rows mask step-by-step instead of using complex boolean expression. This improves robustness and ensures all VAR-1 persistence values are correctly detected and marked as NaN when loading CSV.
 - **IMPROVED**: format_value() function in nowcasting table generation (src/eval/evaluation.py:1756-1765) - improved to handle string representations of numbers when loading JSON files. This makes table generation more robust when JSON contains string-encoded numeric values.
-- **FIXED**: DFM/DDFM model loading in src/infer.py (lines 528-545) - now correctly extracts underlying model from forecaster's `_dfm_model` or `_ddfm_model` attribute instead of looking for it in pickle dict. This fixes FileNotFoundError when loading DFM/DDFM models for backtesting.
-- **FIXED**: Import path issue in src/infer.py (lines 20-30) - paths now set up before importing from src.utils.cli, working directory changed to project root to ensure imports work correctly (resolves ModuleNotFoundError: No module named 'src').
 
 **Code Fixes from Previous Iterations** (still relevant):
-- VAR-1 persistence detection in table generation (src/eval/evaluation.py:1948-1970) - marks VAR-1 persistence values as NaN when loading CSV
-- VAR persistence detection in evaluation (src/eval/evaluation.py:688-751) - marks metrics as NaN when VAR predicts persistence
+- **FIXED**: DFM/DDFM model loading in src/infer.py (lines 528-545) - now correctly extracts underlying model from forecaster's `_dfm_model` or `_ddfm_model` attribute instead of looking for it in pickle dict. This fixes FileNotFoundError when loading DFM/DDFM models for backtesting.
+- **FIXED**: Import path issue in src/infer.py (lines 20-30) - paths now set up before importing from src.utils.cli, working directory changed to project root to ensure imports work correctly (resolves ModuleNotFoundError: No module named 'src').
+- VAR-1 persistence detection in table generation (src/eval/evaluation.py:1984-2032) - marks VAR-1 persistence values as NaN when loading CSV (improved this iteration)
+- VAR persistence detection in evaluation (src/eval/evaluation.py:688-751) - marks metrics as NaN when VAR predicts persistence (enhanced this iteration)
 - Aggregation validation (src/eval/evaluation.py:1052-1071) - validates ALL metrics (MSE, MAE, RMSE)
-- CSV loading filters extreme values in ALL metrics (src/eval/evaluation.py:1892-1911)
+- CSV loading filters extreme values in ALL metrics (src/eval/evaluation.py:1966-1979)
 
 **Data Updates**:
 - data/data.csv updated (5092 lines changed)
@@ -158,12 +162,18 @@
 
 ## Inspection Findings
 
-**Model Performance Anomalies Inspection**:
-- **STATUS**: Code fixes applied in previous iterations - VAR persistence predictions marked as NaN
-- **VAR horizon 1**: Code marks persistence predictions as NaN in evaluation and table generation (fixed in previous iteration)
-- **VAR horizons 7/28**: Validation detects and marks extreme values (> 1e10) as NaN (working as expected)
+**Model Performance Anomalies Inspection** (This Iteration):
+- **STATUS**: ✅ **CODE IMPROVED** - Fixed indentation error, fixed threshold inconsistency, enhanced persistence detection in evaluation, and improved persistence detection logic in CSV loading
+- **FIXES APPLIED THIS ITERATION**:
+  1. ✅ **FIXED**: Indentation error in block handling (`src/core/training.py:931`) - fixed incorrect indentation that could cause syntax errors during training
+  2. ✅ **FIXED**: VAR instability threshold inconsistency (`src/eval/evaluation.py:536`) - changed from 1e6 to 1e10 for consistency with aggregation and CSV loading
+  3. ✅ **IMPROVED**: VAR-1 persistence detection in evaluation (`src/eval/evaluation.py:688-751`) - enhanced to use both relative difference and std-normalized difference checks for more robust detection
+  4. ✅ **IMPROVED**: Persistence detection logic in CSV loading (`src/eval/evaluation.py:2010-2020`) - refactored to build persistence_rows mask step-by-step instead of complex boolean expression
+- **VAR horizon 1**: Code marks persistence predictions as NaN in evaluation (enhanced this iteration) and table generation (improved this iteration). CSV loading now correctly handles persistence detection.
+- **VAR horizons 7/28**: Validation detects and marks extreme values (> 1e10) as NaN (working as expected, threshold made consistent this iteration)
 - **DDFM horizon 1**: Results appear reasonable (sRMSE 0.01-0.46 range) - no issues detected
 - **Backtest failures**: All failures due to missing models in checkpoint/ (expected - models not trained yet)
+- **comparison_results.json**: Checked outputs/comparisons/ - no model failures found (all models completed successfully, failed_models: [])
 
 **dfm-python Package Inspection**:
 - **STATUS**: Inspected in previous iteration - no critical issues found

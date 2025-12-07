@@ -22,6 +22,8 @@
   - **FIXED**: Import path issue in src/infer.py - backtest runs should now work once models are trained
 - **outputs/experiments/aggregated_results.csv**: **EXISTS** - Forecasting results aggregated (36 rows, contains extreme VAR values)
   - **FIXED**: Aggregation function updated to validate ALL metrics (MSE, MAE, RMSE) not just standardized metrics - CSV needs regeneration to apply validation (extreme values will be marked as NaN in all metrics)
+  - **IMPROVED**: Persistence detection logic in CSV loading improved for robustness (this iteration)
+- **outputs/comparisons/**: Contains 2 comparison_results.json files (KOIPALL.G, KOWRCCNSE) - all models completed successfully, no failures
 - **nowcasting-report/tables/**: **3 tables generated** (tab_dataset_params.tex, tab_forecasting_results.tex, tab_nowcasting_backtest.tex)
 - **nowcasting-report/images/**: **7 plots generated** (forecast_vs_actual_*.png × 3, accuracy_heatmap.png, horizon_trend.png, nowcasting_comparison_*.png × 3)
 

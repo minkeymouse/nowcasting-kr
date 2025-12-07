@@ -530,10 +530,13 @@ def evaluate_forecaster(
                 
                 if pred_values is not None and len(pred_values) > 0:
                     max_abs_pred = np.max(np.abs(pred_values))
-                    # If any prediction value is extremely large (> 1e6), mark as unstable
-                    if max_abs_pred > 1e6:
+                    # Use consistent threshold with aggregation (1e10) for consistency
+                    # This ensures that prediction values that would lead to extreme metrics
+                    # are caught early during evaluation, matching the validation in aggregation
+                    VAR_PREDICTION_THRESHOLD = 1e10
+                    if max_abs_pred > VAR_PREDICTION_THRESHOLD:
                         logger.warning(
-                            f"Horizon {h}: VAR forecast contains extreme values (max_abs={max_abs_pred:.2e}). "
+                            f"Horizon {h}: VAR forecast contains extreme values (max_abs={max_abs_pred:.2e} > {VAR_PREDICTION_THRESHOLD:.0e}). "
                             f"This indicates numerical instability. Marking metrics as NaN."
                         )
                         results[h] = {
@@ -1623,11 +1626,22 @@ Model-Horizon & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KOWR
                 return 'Unstable'
             # Detect VAR-1 persistence: extremely small values for VAR horizon 1
             # indicate VAR is predicting persistence (last training value)
+            # If persistence detected in sMSE or sMAE, mark ALL metrics (including sRMSE) as N/A
             if model == 'VAR' and horizon == 1:
+                # Check if this row has persistence (check sMSE or sMAE from the row)
+                # We need to check the actual row values, not just the current metric
+                # For now, mark individual metrics as N/A when they indicate persistence
                 if metric == 'sMSE' and abs(float(val)) < PERSISTENCE_THRESHOLD_SMSE:
                     return 'N/A'  # Mark as N/A due to persistence prediction
                 if metric == 'sMAE' and abs(float(val)) < PERSISTENCE_THRESHOLD_SMAE:
                     return 'N/A'  # Mark as N/A due to persistence prediction
+                # Also mark sRMSE if sMSE indicates persistence (sRMSE = sqrt(sMSE))
+                # This ensures consistency - if sMSE is extremely small, sRMSE should also be marked
+                if metric == 'sRMSE':
+                    # We can't check other metrics in format_value, but if sMSE was already NaN/N/A
+                    # in the dataframe, this will be handled. For now, we rely on CSV loading
+                    # to mark sRMSE as NaN when sMSE persistence is detected.
+                    pass
             return f"{val:.4f}"
         return str(val)
     
@@ -1972,26 +1986,50 @@ def generate_all_latex_tables(
         PERSISTENCE_THRESHOLD_SMAE = 1e-4
         var1_mask = (aggregated_df['model'] == 'VAR') & (aggregated_df['horizon'] == 1)
         if var1_mask.any():
-            # Mark sMSE as NaN if < 1e-6
+            # Detect persistence: if either sMSE or sMAE indicates persistence, mark ALL metrics as NaN
+            # This is consistent with evaluate_forecaster() which marks all metrics when persistence is detected
+            persistence_detected = False
             if 'sMSE' in aggregated_df.columns:
                 var1_smse_mask = var1_mask & (aggregated_df['sMSE'].abs() < PERSISTENCE_THRESHOLD_SMSE)
                 if var1_smse_mask.any():
+                    persistence_detected = True
                     n_persistence = var1_smse_mask.sum()
                     logger.warning(
                         f"generate_all_latex_tables: Found {n_persistence} VAR-1 sMSE persistence values "
-                        f"(<{PERSISTENCE_THRESHOLD_SMSE}). Marking as NaN."
+                        f"(<{PERSISTENCE_THRESHOLD_SMSE}). Marking all metrics as NaN."
                     )
-                    aggregated_df.loc[var1_smse_mask, 'sMSE'] = np.nan
-            # Mark sMAE as NaN if < 1e-4
             if 'sMAE' in aggregated_df.columns:
                 var1_smae_mask = var1_mask & (aggregated_df['sMAE'].abs() < PERSISTENCE_THRESHOLD_SMAE)
                 if var1_smae_mask.any():
+                    persistence_detected = True
                     n_persistence = var1_smae_mask.sum()
                     logger.warning(
                         f"generate_all_latex_tables: Found {n_persistence} VAR-1 sMAE persistence values "
-                        f"(<{PERSISTENCE_THRESHOLD_SMAE}). Marking as NaN."
+                        f"(<{PERSISTENCE_THRESHOLD_SMAE}). Marking all metrics as NaN."
                     )
-                    aggregated_df.loc[var1_smae_mask, 'sMAE'] = np.nan
+            
+            # If persistence detected, mark ALL metrics (sMSE, sMAE, sRMSE, MSE, MAE, RMSE) as NaN
+            # This is consistent with evaluate_forecaster() behavior
+            if persistence_detected:
+                # Build persistence_rows mask more robustly
+                persistence_rows = pd.Series(False, index=aggregated_df.index)
+                
+                # Check sMSE persistence
+                if 'sMSE' in aggregated_df.columns:
+                    smse_persistence = var1_mask & (aggregated_df['sMSE'].abs() < PERSISTENCE_THRESHOLD_SMSE)
+                    persistence_rows = persistence_rows | smse_persistence
+                
+                # Check sMAE persistence
+                if 'sMAE' in aggregated_df.columns:
+                    smae_persistence = var1_mask & (aggregated_df['sMAE'].abs() < PERSISTENCE_THRESHOLD_SMAE)
+                    persistence_rows = persistence_rows | smae_persistence
+                
+                # Mark all metrics as NaN for rows with persistence
+                if persistence_rows.any():
+                    all_metrics = ['sMSE', 'sMAE', 'sRMSE', 'MSE', 'MAE', 'RMSE']
+                    for metric in all_metrics:
+                        if metric in aggregated_df.columns:
+                            aggregated_df.loc[persistence_rows, metric] = np.nan
     
     if config_dir is None:
         config_dir = Path(__file__).parent.parent.parent / "config"

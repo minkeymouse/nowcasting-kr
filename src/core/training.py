@@ -928,7 +928,7 @@ def train(
                 series_freq = series_item.get('frequency', 'm').lower()
                 series_freq_level = freq_hierarchy.get(series_freq, 3)  # Default to monthly level
                 
-                    if '_block_names' in series_item:
+                if '_block_names' in series_item:
                     block_names = series_item.pop('_block_names')
                     # Handle None/null block_names (should use first block from model config)
                     if block_names is None:
