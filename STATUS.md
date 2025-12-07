@@ -1,13 +1,15 @@
 # Project Status
 
-## Current State (Status Update Iteration - All Critical Tasks Complete)
+## Current State (Inspection Iteration - 2025-12-07)
 
-**Current Summary**: Status update iteration completed. All 4 models (ARIMA, VAR, DFM, DDFM) experiments completed (36/36 combinations, 30 valid + 6 NaN). Complete results in aggregated_results.csv. All 3 required tables verified and match data. All required plots generated. Report sections verified with actual results. All citations verified. PDF compiled successfully (11 pages, under 15 page target). Code consolidation complete (15 files). dfm-python package verified working. All inspections complete. No failed models found. No data leakage detected.
+**Current Summary**: Fresh inspection iteration completed (2025-12-07). All 4 models (ARIMA, VAR, DFM, DDFM) experiments completed (36/36 combinations, 30 valid + 6 NaN). Complete results in aggregated_results.csv. All 3 required tables verified and match data. All required plots generated. Report sections verified with actual results. All citations verified. PDF compiled successfully (11 pages, under 15 page target). Code consolidation complete (15 files). dfm-python package verified working. All inspections complete. No failed models found. No data leakage detected.
 
-**This Iteration Work (Status Update & Documentation)**:
-- ✅ **Status Documentation Update**: Updated STATUS.md and ISSUES.md to document current state, inspection findings, and next iteration context
-- ✅ **Resolved Issues Consolidation**: Consolidated all resolved issues in ISSUES.md, removed old resolved issues to keep file under 1000 lines
-- ✅ **Next Iteration Context**: Documented clear status and next steps for next iteration
+**This Iteration Work (Inspection & Analysis - 2025-12-07)**:
+- ✅ **Comparison Results Analysis**: Analyzed all 3 comparison_results.json files for failed models and performance anomalies
+- ✅ **Model Performance Inspection**: Verified all performance anomalies (VAR h1 near-perfect, VAR h7/h28 instability, DDFM h1 very good, DFM numerical issues)
+- ✅ **Data Leakage Verification**: Code-level inspection confirmed no data leakage (train/test split correct, model fitted only on training data)
+- ✅ **Package Verification**: Verified dfm-python working correctly (all experiments completed, no failed models, no dependency errors)
+- ✅ **Documentation Update**: Updated ISSUES.md and STATUS.md with fresh inspection findings
 - ⏳ **Pending Commit**: Changes to STATUS.md and ISSUES.md need to be committed and pushed to origin/main
 
 **Previous Iteration Work (2025-12-07 - Status Update & Documentation)**:
@@ -32,7 +34,7 @@
 - ✅ **dfm-python Package Inspection**: VERIFIED WORKING - All experiments completed successfully (36/36 combinations), no failed_models in any comparison_results.json, importable via path manipulation, no package dependency errors.
 - ✅ **Report Documentation Inspection**: VERIFIED - All numerical values match aggregated_results.csv, all citations valid in references.bib, all table/figure references valid, no placeholders, theoretically correct details documented.
 
-**Critical Analysis (2025-12-07 - Final Comparison Results Inspection - VERIFIED)**:
+**Critical Analysis (2025-12-07 - Fresh Comparison Results Inspection - VERIFIED)**:
 - ✅ **NO Failed Models (FINAL VERIFICATION)**: All 3 comparison_results.json files (KOEQUIPTE_20251207_011008, KOWRCCNSE_20251207_011008, KOIPALL.G_20251207_011008) show `"failed_models": []` (empty list). All 4 models (ARIMA, VAR, DFM, DDFM) have `"status": "completed"` for all 3 targets. No ModuleNotFoundError or package dependency errors found. Log files checked - only warnings (transformation code "cha", PyTorch deprecations, SVD convergence warnings for DFM numerical instability), no errors.
 - ✅ **NO Data Leakage (CODE-LEVEL VERIFICATION COMPLETE)**: Train/test split verified correct (80/20 in `src/core/training.py` lines 454-456). Evaluation uses single test point per horizon (`src/eval/evaluation.py` line 464: `test_pos = h - 1`). Code inspection confirms: model fitted only on `y_train_eval` (line 458 in training.py), test data `y_test_eval` never used during training. Model is refitted in `evaluate_forecaster()` on same training split (`y_train_eval`, line 425 in evaluation.py), ensuring no data leakage. VAR uses sktime's `SktimeVAR` forecaster, fitted only on `y_train_eval`. **CONCLUSION**: No data leakage found in code. VAR h1 near-perfect results are likely legitimate VAR advantage for 1-step ahead forecasts.
 - ✅ **All Experiments Completed**: 36/36 combinations completed successfully (30 valid + 6 NaN for DFM/DDFM h28). Root cause of h28 NaN is insufficient test data (n_valid=0 after 80/20 split), NOT package issues. Aggregated results CSV matches comparison_results.json perfectly (all 36 rows verified).
