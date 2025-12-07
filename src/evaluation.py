@@ -7,8 +7,19 @@ forecasting model performance, including standardized MSE, MAE, and RMSE.
 from typing import Union, Dict, Optional, Tuple, Any, List
 from pathlib import Path
 import json
+import logging
 import numpy as np
 import pandas as pd
+
+# Configure logging if not already configured (only once at module level)
+if not hasattr(logging, '_src_evaluation_configured'):
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+    logging._src_evaluation_configured = True
 
 try:
     from sktime.performance_metrics.forecasting import (
@@ -65,8 +76,6 @@ def calculate_standardized_metrics(
     - Missing values (NaN) are automatically excluded from calculations
     - If all values are NaN, returns NaN for all metrics
     """
-    # Import logging for error messages
-    import logging
     logger = logging.getLogger(__name__)
     
     # Convert to numpy arrays and track original types
@@ -191,7 +200,6 @@ def calculate_standardized_metrics(
     mask = np.isfinite(y_true_arr) & np.isfinite(y_pred_arr)
     
     # Debug logging for mask calculation
-    import logging
     logger = logging.getLogger(__name__)
     logger.debug(f"calculate_standardized_metrics: y_true_arr shape={y_true_arr.shape}, y_pred_arr shape={y_pred_arr.shape}")
     logger.debug(f"calculate_standardized_metrics: mask sum={np.sum(mask)}, mask shape={mask.shape}, n_valid={int(np.sum(mask))}")
@@ -495,7 +503,6 @@ def evaluate_forecaster(
         try:
             # Predict for this specific horizon
             # Try both fh=[h] (list) and fh=h (int) for compatibility
-            import logging
             logger = logging.getLogger(__name__)
             
             try:
@@ -786,7 +793,6 @@ def evaluate_forecaster(
                 }
         except Exception as e:
             # If prediction fails for this horizon, return NaN metrics
-            import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Horizon {h}: Prediction failed with error: {e}")
             results[h] = {
@@ -1002,7 +1008,7 @@ def collect_all_comparison_results(outputs_dir: Optional[Path] = None) -> Dict[s
                     all_results[target_series] = []
                 all_results[target_series].append(data)
         except Exception as e:
-            print(f"Warning: Could not load {results_file}: {e}")
+            logger.warning(f"Could not load {results_file}: {e}")
             continue
     
     return all_results
@@ -1073,7 +1079,6 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
                             return np.nan
                         if abs(val) > EXTREME_THRESHOLD:
                             # Log warning for extreme values
-                            import logging
                             logger = logging.getLogger(__name__)
                             logger.warning(
                                 f"aggregate_overall_performance: Extreme value detected for "
@@ -1125,26 +1130,26 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
 
 def main_aggregator():
     """Main entry point for aggregator module."""
-    print("=" * 70)
-    print("Aggregating Experiment Results")
-    print("=" * 70)
+    logger.info("=" * 70)
+    logger.info("Aggregating Experiment Results")
+    logger.info("=" * 70)
     
     # Collect all results
     all_results = collect_all_comparison_results()
     
     if not all_results:
-        print("No comparison results found in outputs/comparisons/")
+        logger.warning("No comparison results found in outputs/comparisons/")
         return
     
-    print(f"\nFound results for {len(all_results)} target series:")
+    logger.info(f"Found results for {len(all_results)} target series:")
     for target, results in all_results.items():
-        print(f"  - {target}: {len(results)} comparison(s)")
+        logger.info(f"  - {target}: {len(results)} comparison(s)")
     
     # Aggregate performance
     aggregated = aggregate_overall_performance(all_results)
     
     if aggregated.empty:
-        print("\nNo metrics to aggregate.")
+        logger.warning("No metrics to aggregate.")
         return
     
     # Save aggregated results
@@ -1155,15 +1160,9 @@ def main_aggregator():
     output_file = experiments_dir / "aggregated_results.csv"
     aggregated.to_csv(output_file, index=False)
     
-    print(f"\n✓ Aggregated results saved to: {output_file}")
-    print(f"  Total rows: {len(aggregated)}")
-    print(f"  Columns: {', '.join(aggregated.columns)}")
-    
-    # Generate LaTeX tables
-    print("\n" + "=" * 70)
-    print("Generating LaTeX Tables")
-    print("=" * 70)
-    generate_all_latex_tables()
+    logger.info(f"Aggregated results saved to: {output_file}")
+    logger.info(f"  Total rows: {len(aggregated)}")
+    logger.info(f"  Columns: {', '.join(aggregated.columns)}")
 
 
 # ========================================================================
@@ -1194,8 +1193,8 @@ def generate_latex_table_forecasting_results(
     str
         LaTeX table code
     """
-    # Selected horizons for display (1, 11, 22 months)
-    # Note: 22 monthly horizons from 2024-01 to 2025-10
+    # Selected horizons for display in table (1, 11, 22 months)
+    # Note: CSV file contains all horizons (1-22), but table shows only selected horizons for readability
     display_horizons = [1, 11, 22]
     # Check if horizon 22 exists in data, if not use available max
     if not aggregated_df.empty:
@@ -1212,7 +1211,7 @@ def generate_latex_table_forecasting_results(
     # Generate LaTeX
     latex = """\\begin{table}[h]
 \\centering
-\\caption[Forecasting Results by Model-Horizon and Target-Metric]{Forecasting Results by Model-Horizon and Target-Metric\\footnote{Experiments evaluate all horizons from 1 to 22 months (2024-01 to 2025-10), but table shows only selected horizons (1, 11, 22 months) for readability.}}
+\\caption[Forecasting Results by Model-Horizon and Target-Metric]{Forecasting Results by Model-Horizon and Target-Metric\\footnote{Experiments evaluate all horizons from 1 to 22 months (2024--01 to 2025--10), but table shows only selected horizons (1, 11, 22 months) for readability. Full results for all horizons are available in aggregated\_results.csv.}}
 \\label{tab:forecasting_results}
 \\begin{tabular}{lcccccc}
 \\toprule
@@ -1363,7 +1362,6 @@ Model-Timepoint & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KO
                     status = data.get('status', '')
                     if status == 'no_results':
                         # Skip this file - no valid results available
-                        import logging
                         logger = logging.getLogger(__name__)
                         logger.debug(f"Skipping {result_file.name}: status='no_results'")
                         continue
@@ -1372,7 +1370,6 @@ Model-Timepoint & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KO
                     
                     # Only process if results_by_timepoint is not empty
                     if not results_by_timepoint:
-                        import logging
                         logger = logging.getLogger(__name__)
                         logger.debug(f"No results_by_timepoint in {result_file.name}")
                         continue
@@ -1390,7 +1387,6 @@ Model-Timepoint & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KO
                                 'sMSE': tp_data.get('overall_sMSE')
                             }
                 except Exception as e:
-                    import logging
                     logger = logging.getLogger(__name__)
                     logger.warning(f"Error loading {result_file}: {e}")
                     continue
@@ -1573,7 +1569,7 @@ def generate_all_latex_tables(
     outputs_dir : Path, optional
         Directory containing outputs/ (default: project root / outputs)
     tables_dir : Path, optional
-        Directory to save LaTeX tables (default: nowcasting-report/tables/)
+        Directory to save LaTeX tables (default: outputs/experiments/tables/)
         
     Returns
     -------
@@ -1584,19 +1580,25 @@ def generate_all_latex_tables(
         outputs_dir = Path(__file__).parent.parent.parent / "outputs"
     
     if tables_dir is None:
-        tables_dir = Path(__file__).parent.parent.parent / "nowcasting-report" / "tables"
+        # Save LaTeX tables to outputs/experiments/tables/ for consistency
+        tables_dir = outputs_dir / "experiments" / "tables"
+    
+    if config_dir is None:
+        config_dir = Path(__file__).parent.parent.parent / "config"
+    
+    # Ensure tables directory exists
+    tables_dir.mkdir(parents=True, exist_ok=True)
     
     # Load aggregated results
     aggregated_file = outputs_dir / "experiments" / "aggregated_results.csv"
     
     if not aggregated_file.exists():
-        print(f"Warning: {aggregated_file} not found. Generating placeholder tables.")
+        logger.warning(f"{aggregated_file} not found. Generating placeholder tables.")
         aggregated_df = pd.DataFrame()
     else:
         aggregated_df = pd.read_csv(aggregated_file)
         # Filter extreme values (numerical instability) - in case CSV was generated before validation
         EXTREME_THRESHOLD = 1e10
-        import logging
         logger = logging.getLogger(__name__)
         
         # Filter extreme values in all metrics (standardized and raw) for consistency
@@ -1673,29 +1675,29 @@ def generate_all_latex_tables(
     tables = {}
     
     # Generate each table
-    print("Generating LaTeX tables...")
+    logger.info("Generating LaTeX tables...")
     
     # Table 1: Dataset and parameters
-    print("  - tab_dataset_params.tex")
+    logger.info("  - tab_dataset_params.tex")
     tables['dataset_params'] = generate_latex_table_dataset_params(
         config_dir,
         tables_dir / "tab_dataset_params.tex"
     )
     
     # Table 2: Forecasting results (model-horizon rows, target-metric columns)
-    print("  - tab_forecasting_results.tex")
+    logger.info("  - tab_forecasting_results.tex")
     tables['forecasting_results'] = generate_latex_table_forecasting_results(
         aggregated_df,
         tables_dir / "tab_forecasting_results.tex"
     )
     
     # Table 3: Nowcasting backtest results
-    print("  - tab_nowcasting_backtest.tex")
+    logger.info("  - tab_nowcasting_backtest.tex")
     tables['nowcasting_backtest'] = generate_latex_table_nowcasting_backtest(
         outputs_dir,
         tables_dir / "tab_nowcasting_backtest.tex"
     )
     
-    print("✓ All LaTeX tables generated")
+    logger.info(f"All LaTeX tables generated and saved to: {tables_dir}")
     
     return tables
