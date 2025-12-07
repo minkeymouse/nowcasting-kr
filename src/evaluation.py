@@ -1214,9 +1214,9 @@ def generate_latex_table_forecasting_results(
     metrics = ['sMAE', 'sMSE']
     
     # Generate LaTeX
-    latex = """\\begin{table}[h]
-\\centering
-\\caption[Forecasting Results by Model-Horizon and Target-Metric]{Forecasting Results by Model-Horizon and Target-Metric\\footnote{Experiments evaluate all horizons from 1 to 22 months (2024--01 to 2025--10), but table shows only selected horizons (1, 11, 22 months) for readability. Full results for all horizons are available in aggregated\_results.csv.}}
+    latex = r"""\begin{table}[h]
+\centering
+\caption[Forecasting Results by Model-Horizon and Target-Metric]{Forecasting Results by Model-Horizon and Target-Metric\footnote{Experiments evaluate all horizons from 1 to 22 months (2024--01 to 2025--10), but table shows only selected horizons (1, 11, 22 months) for readability. Full results for all horizons are available in aggregated\_results.csv.}}
 \\label{tab:forecasting_results}
 \\begin{tabular}{lcccccc}
 \\toprule
