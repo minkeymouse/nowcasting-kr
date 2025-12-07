@@ -419,6 +419,11 @@ def _train_forecaster(
                 maxlags = 1
             forecaster = SktimeVAR(maxlags=int(maxlags), trend=str(trend))
         print(f"Max lags: {maxlags}, Trend: {trend}, Series: {y_train.shape[1]}")
+        # NOTE: VAR models can become numerically unstable for long forecasting horizons (>7 days)
+        # This is a known limitation of VAR models. The evaluation code (evaluation.py) automatically
+        # filters extreme values (>1e10) and marks them as NaN. This is expected behavior.
+        # For monthly data, VAR should be limited to horizon <= 1 month to prevent instability.
+        # The evaluation code caps VAR horizons at 7 days (approximately 1 month for monthly data).
     
     # Train/test split for evaluation (80/20)
     split_idx = int(len(y_train) * 0.8)

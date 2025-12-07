@@ -125,17 +125,21 @@ def run_backtest_evaluation(
     import pickle
     
     # Find trained model - first check checkpoint/, then outputs/comparisons/
+    # Use absolute paths to avoid issues when script is run from different directory
+    project_root = get_project_root()
     model_dir = None
-    checkpoint_path = Path("checkpoint") / f"{target_series}_{model.lower()}" / "model.pkl"
+    checkpoint_path = project_root / "checkpoint" / f"{target_series}_{model.lower()}" / "model.pkl"
     if checkpoint_path.exists():
         model_dir = checkpoint_path.parent
     else:
         # Fallback to outputs/comparisons/
-        for comparison_dir in Path("outputs/comparisons").glob(f"{target_series}_*"):
-            model_path = comparison_dir / model.lower() / "model.pkl"
-            if model_path.exists():
-                model_dir = comparison_dir / model.lower()
-                break
+        comparisons_dir = project_root / "outputs" / "comparisons"
+        if comparisons_dir.exists():
+            for comparison_dir in comparisons_dir.glob(f"{target_series}_*"):
+                model_path = comparison_dir / model.lower() / "model.pkl"
+                if model_path.exists():
+                    model_dir = comparison_dir / model.lower()
+                    break
     
     if model_dir is None:
         raise FileNotFoundError(
@@ -272,9 +276,25 @@ def run_backtest_evaluation(
     if not data_path_file.exists():
         data_path_file = get_project_root() / "data" / "sample_data.csv"
     full_data = pd.read_csv(data_path_file, index_col=0, parse_dates=True)
+    print(f"\nData loaded: {len(full_data)} rows")
+    print(f"  Date range: {full_data.index.min()} to {full_data.index.max()}")
+    print(f"  Columns: {list(full_data.columns)}")
+    
     # CRITICAL FIX: Aggregate to monthly for actual value lookup (targets are monthly)
     # Weekly data needs to be aggregated to monthly to match target_month_end dates
     full_data_monthly = resample_to_monthly(full_data)
+    print(f"Monthly data: {len(full_data_monthly)} rows")
+    print(f"  Date range: {full_data_monthly.index.min()} to {full_data_monthly.index.max()}")
+    
+    # Check if data extends to nowcasting period
+    nowcast_start_ts = pd.Timestamp(nowcast_start)
+    nowcast_end_ts = pd.Timestamp(nowcast_end)
+    if full_data_monthly.index.max() < nowcast_end_ts:
+        print(f"\n⚠ WARNING: Data only extends to {full_data_monthly.index.max()}, but nowcasting period is {nowcast_start} to {nowcast_end}")
+        print(f"  Some target months may not have actual values available")
+    else:
+        print(f"✓ Data extends to {full_data_monthly.index.max()}, covering nowcasting period {nowcast_start} to {nowcast_end}")
+    
     train_start_ts = pd.Timestamp(train_start)
     train_end_ts = pd.Timestamp(train_end)
     train_data_filtered = full_data[(full_data.index >= train_start_ts) & (full_data.index <= train_end_ts)]
@@ -292,16 +312,40 @@ def run_backtest_evaluation(
         monthly_results = []
         
         for target_month_end in target_periods:
+            # CRITICAL FIX: Convert target_month_end to pd.Timestamp at the start for consistent comparisons
+            target_month_end_ts = pd.Timestamp(target_month_end) if not isinstance(target_month_end, pd.Timestamp) else target_month_end
+            
             # Calculate view_date: target_month_end - weeks
-            view_date = target_month_end - timedelta(weeks=weeks)
+            view_date = target_month_end_ts - timedelta(weeks=weeks)
             
             # Skip if view_date is at or before training period end
             # For nowcasting, we need view_date > train_end_date to have new data beyond training
-            if view_date <= train_end_date:
+            # However, for early months in 2024 with 4 weeks before, view_date might be in late 2023
+            # which is still after train_end (2019-12-31), so this should be fine
+            # CRITICAL FIX: Use date comparison that handles timezone-aware dates correctly
+            view_date_ts = pd.Timestamp(view_date) if not isinstance(view_date, pd.Timestamp) else view_date
+            train_end_ts = pd.Timestamp(train_end_date) if not isinstance(train_end_date, pd.Timestamp) else train_end_date
+            if view_date_ts <= train_end_ts:
                 print(f"    ⚠ Skipping: view_date ({view_date.strftime('%Y-%m-%d')}) <= train_end_date ({train_end_date.strftime('%Y-%m-%d')})")
+                print(f"      This means we're trying to nowcast using data from training period, which is not valid for nowcasting")
                 continue
             
-            print(f"\n  Target month: {target_month_end.strftime('%Y-%m')}")
+            # Also check if target_month_end has actual value available
+            # For nowcasting, we need actual values to compare against
+            if len(full_data_monthly) > 0:
+                available_for_target = full_data_monthly.index[
+                    (full_data_monthly.index.year == target_month_end_ts.year) &
+                    (full_data_monthly.index.month == target_month_end_ts.month)
+                ]
+                if len(available_for_target) == 0:
+                    # Check if any data exists at or before target_month_end
+                    available_before = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
+                    if len(available_before) == 0:
+                        print(f"    ⚠ Skipping: No monthly data available for target month {target_month_end_ts.strftime('%Y-%m')} or before")
+                        print(f"      Data range: {full_data_monthly.index.min()} to {full_data_monthly.index.max()}")
+                        continue
+            
+            print(f"\n  Target month: {target_month_end_ts.strftime('%Y-%m')}")
             print(f"  View date: {view_date.strftime('%Y-%m-%d')} ({weeks} weeks before)")
             
             try:
@@ -322,14 +366,19 @@ def run_backtest_evaluation(
                         
                         # Get data up to target_month_end (not just view_date) so TimeIndex includes target_period
                         # The nowcast manager uses view_date for masking but needs target_period in TimeIndex
-                        data_up_to_target = full_data[full_data.index <= pd.Timestamp(target_month_end)]
-                        print(f"    Debug: Filtered data up to {target_month_end}: {len(data_up_to_target)} rows (from {data_up_to_target.index.min()} to {data_up_to_target.index.max()})")
-                        if len(data_up_to_target) > 0:
+                        # CRITICAL: Resample to monthly first so TimeIndex has monthly dates that match target periods
+                        from src.preprocessing import resample_to_monthly
+                        data_up_to_target = full_data[full_data.index <= target_month_end_ts]
+                        # Resample to monthly to ensure TimeIndex has monthly dates
+                        data_up_to_target_monthly = resample_to_monthly(data_up_to_target)
+                        print(f"    Debug: Filtered data up to {target_month_end_ts}: {len(data_up_to_target)} rows (weekly), {len(data_up_to_target_monthly)} rows (monthly)")
+                        print(f"    Debug: Monthly data range: {data_up_to_target_monthly.index.min()} to {data_up_to_target_monthly.index.max()}")
+                        if len(data_up_to_target_monthly) > 0:
                             try:
-                                print(f"    Debug: Updating data_module with data up to {target_month_end}...")
+                                print(f"    Debug: Updating data_module with monthly data up to {target_month_end_ts}...")
                                 updated_data_module = create_data_module_from_dataframe(
                                     model=dfm_model,
-                                    data=data_up_to_target,
+                                    data=data_up_to_target_monthly,
                                     dfm_data_module=DFMDataModule,
                                     create_transformer_func=create_transformer_from_config
                                 )
@@ -348,24 +397,24 @@ def run_backtest_evaluation(
                                         print(f"    ✓ Data module updated: {len(time_index.dates)} time points (from {first_date} to {last_date})")
                                         # Check if target_period is in the time_index
                                         target_in_index = any(
-                                            (isinstance(t, datetime) and t.year == target_month_end.year and t.month == target_month_end.month) or
-                                            (hasattr(t, 'year') and hasattr(t, 'month') and t.year == target_month_end.year and t.month == target_month_end.month)
+                                            (isinstance(t, datetime) and t.year == target_month_end_ts.year and t.month == target_month_end_ts.month) or
+                                            (hasattr(t, 'year') and hasattr(t, 'month') and t.year == target_month_end_ts.year and t.month == target_month_end_ts.month)
                                             for t in time_index.dates
                                         )
                                         if not target_in_index:
-                                            print(f"    ⚠ Warning: Target period {target_month_end} (year={target_month_end.year}, month={target_month_end.month}) not found in TimeIndex dates")
+                                            print(f"    ⚠ Warning: Target period {target_month_end_ts} (year={target_month_end_ts.year}, month={target_month_end_ts.month}) not found in TimeIndex dates")
                                     elif hasattr(time_index, '__len__') and len(time_index) > 0:
                                         print(f"    ✓ Data module updated: {len(time_index)} time points")
                                         # Try to check if target_period is in time_index
                                         try:
                                             time_list = list(time_index)
                                             target_in_index = any(
-                                                (isinstance(t, datetime) and t.year == target_month_end.year and t.month == target_month_end.month) or
-                                                (hasattr(t, 'year') and hasattr(t, 'month') and t.year == target_month_end.year and t.month == target_month_end.month)
+                                                (isinstance(t, datetime) and t.year == target_month_end_ts.year and t.month == target_month_end_ts.month) or
+                                                (hasattr(t, 'year') and hasattr(t, 'month') and t.year == target_month_end_ts.year and t.month == target_month_end_ts.month)
                                                 for t in time_list
                                             )
                                             if not target_in_index:
-                                                print(f"    ⚠ Warning: Target period {target_month_end} (year={target_month_end.year}, month={target_month_end.month}) not found in TimeIndex")
+                                                print(f"    ⚠ Warning: Target period {target_month_end_ts} (year={target_month_end_ts.year}, month={target_month_end_ts.month}) not found in TimeIndex")
                                         except Exception as e:
                                             print(f"    ⚠ Warning: Could not check if target_period is in TimeIndex: {e}")
                                     else:
@@ -379,19 +428,19 @@ def run_backtest_evaluation(
                                 print(f"    ⚠ Skipping: Data module update failed - cannot perform nowcast without updated data")
                                 continue  # Skip this month if data_module update fails
                         else:
-                            print(f"    ⚠ Skipping: No data available up to target_month_end {target_month_end}")
+                                print(f"    ⚠ Skipping: No data available up to target_month_end {target_month_end_ts}")
                             continue
                     
                     # Find closest available date at or before target_month_end for nowcast manager
                     # Use monthly aggregated data for monthly targets, but also check TimeIndex
-                    target_period_for_nowcast = target_month_end
-                    if target_month_end <= full_data_monthly.index.max():
-                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end]
+                    target_period_for_nowcast = target_month_end_ts
+                    if target_month_end_ts <= full_data_monthly.index.max():
+                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
                         if len(available_dates) > 0:
                             # Use the closest date at or before target_month_end (monthly data)
                             target_period_for_nowcast = available_dates.max().to_pydatetime()
                         else:
-                            print(f"    ⚠ Skipping: No monthly data available at or before target_month_end {target_month_end}")
+                            print(f"    ⚠ Skipping: No monthly data available at or before target_month_end {target_month_end_ts}")
                             continue
                     else:
                         # target_month_end is after data range, use latest available
@@ -443,7 +492,34 @@ def run_backtest_evaluation(
                                     print(f"    Debug: Using closest date in TimeIndex: {closest_date} (target was {target_period_for_nowcast})")
                                     target_period_for_nowcast = closest_date
                                 else:
-                                    print(f"    ⚠ Warning: No date found in TimeIndex for month {target_year}-{target_month:02d}")
+                                    # CRITICAL FIX: If no date found in same month, try to find closest date at or before target_period
+                                    # This handles cases where TimeIndex has different dates than expected
+                                    closest_before = None
+                                    min_diff_before = None
+                                    for t in time_dates:
+                                        if not isinstance(t, datetime):
+                                            try:
+                                                if isinstance(t, pd.Timestamp):
+                                                    t = t.to_pydatetime()
+                                                elif hasattr(t, 'to_pydatetime'):
+                                                    t = t.to_pydatetime()
+                                                else:
+                                                    continue
+                                            except (ValueError, TypeError):
+                                                continue
+                                        
+                                        if isinstance(t, datetime) and t <= target_period_for_nowcast:
+                                            diff = abs((target_period_for_nowcast - t).total_seconds())
+                                            if min_diff_before is None or diff < min_diff_before:
+                                                min_diff_before = diff
+                                                closest_before = t
+                                    
+                                    if closest_before is not None:
+                                        print(f"    Debug: Using closest date at or before target: {closest_before} (target was {target_period_for_nowcast})")
+                                        target_period_for_nowcast = closest_before
+                                    else:
+                                        print(f"    ⚠ Skipping: No date found in TimeIndex for month {target_year}-{target_month:02d} or before")
+                                        continue  # Skip this month if no valid date found
                     
                     try:
                         # CRITICAL FIX: Check if data_module has valid time_index before calling nowcast manager
@@ -515,9 +591,9 @@ def run_backtest_evaluation(
                     # Get actual value from full data (target months are in 2024, after training period)
                     # Use full_data loaded before loop (contains all dates including 2024)
                     actual_value = np.nan
-                    if target_month_end <= full_data_monthly.index.max():
+                    if target_month_end_ts <= full_data_monthly.index.max():
                         # Find closest date at or before target_month_end (use monthly data)
-                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end]
+                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
                         if len(available_dates) > 0:
                             closest_date = available_dates.max()
                             if target_series in full_data_monthly.columns:
@@ -743,32 +819,42 @@ def run_backtest_evaluation(
                         # This is nowcasting: predicting current period using incomplete data
                         # CRITICAL FIX: Convert horizon_days to periods based on data frequency
                         # Data is now monthly (resampled), so convert to months
-                        # For monthly data: find which month index corresponds to target_month_end
-                        # and which month index corresponds to the last month in train_data_filtered
-                        # Horizon = number of months ahead to predict
-                        last_train_month = train_data_filtered.index.max()
-                        # Find month index of target_month_end relative to last_train_month
+                        # For nowcasting, after refitting on data up to view_date, we predict from the last data point
+                        # to target_month_end. The horizon should be calculated from the last month in fit_data
+                        # (which is the data the model was just refit on) to target_month_end.
                         # Use relativedelta for accurate month difference calculation
                         from dateutil.relativedelta import relativedelta
+                        # Get the last month in the refitted data (fit_data is monthly)
+                        last_fit_month = fit_data.index.max()
                         # Convert to datetime if needed
-                        if isinstance(last_train_month, pd.Timestamp):
-                            last_train_dt = last_train_month.to_pydatetime()
+                        if isinstance(last_fit_month, pd.Timestamp):
+                            last_fit_dt = last_fit_month.to_pydatetime()
                         else:
-                            last_train_dt = last_train_month
-                        if isinstance(target_month_end, pd.Timestamp):
-                            target_dt = target_month_end.to_pydatetime()
-                        else:
-                            target_dt = target_month_end
-                        # Calculate months difference using relativedelta for accuracy
-                        delta = relativedelta(target_dt, last_train_dt)
+                            last_fit_dt = last_fit_month
+                        # target_month_end_ts is already pd.Timestamp
+                        target_dt = target_month_end_ts.to_pydatetime()
+                        # Calculate months difference from last data point to target month
+                        # For nowcasting, we're predicting the target month using data up to view_date
+                        delta = relativedelta(target_dt, last_fit_dt)
                         months_ahead = delta.years * 12 + delta.months
-                        # If target_month_end is in the same month or future month as last_train_month,
-                        # we need to predict at least 1 period ahead
-                        # If target_month_end is before last_train_month (shouldn't happen in nowcasting), use 1
-                        horizon_periods = max(1, months_ahead)
+                        # CRITICAL FIX: For nowcasting, we always predict the target_month_end month.
+                        # The horizon should be the number of months from the last data point in fit_data to target_month_end.
+                        # If months_ahead is 0 (same month), we need horizon=1 to predict that month (1 period ahead).
+                        # If months_ahead is negative (target is before last data point, shouldn't happen), use 1 as fallback.
+                        # If months_ahead is positive, use that value (predict months_ahead periods ahead).
+                        # For nowcasting, months_ahead should typically be 0 or 1 (predicting current or next month).
+                        if months_ahead < 0:
+                            print(f"    ⚠ Warning: months_ahead is negative ({months_ahead}), using horizon=1 as fallback")
+                            horizon_periods = 1
+                        elif months_ahead == 0:
+                            # Same month: predict 1 period ahead to get the target month
+                            horizon_periods = 1
+                        else:
+                            # Future month: use months_ahead
+                            horizon_periods = months_ahead
                         try:
                             fh = np.asarray([horizon_periods])
-                            print(f"    → Predicting with horizon={horizon_periods} periods ({horizon_periods} months, from {view_date} to {target_month_end})")
+                            print(f"    → Predicting with horizon={horizon_periods} periods ({horizon_periods} months, from last data point {last_fit_month} to {target_month_end})")
                             y_pred = forecaster_clone.predict(fh=fh)
                             print(f"    → Prediction result type: {type(y_pred)}, shape: {getattr(y_pred, 'shape', 'N/A')}")
                         except Exception as e:
@@ -860,30 +946,67 @@ def run_backtest_evaluation(
                         
                     # Get actual value from monthly aggregated data (targets are monthly)
                     # Handle cases where target_month_end might not be exactly in index
-                    if target_month_end <= full_data_monthly.index.max():
+                    # CRITICAL FIX: For nowcasting, we need actual values from the full dataset (including 2024)
+                    # Check if full_data_monthly has data up to target_month_end
+                    if len(full_data_monthly) > 0 and target_month_end_ts <= full_data_monthly.index.max():
                         # Find closest date at or before target_month_end (use monthly data)
-                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end]
+                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
                         if len(available_dates) > 0:
                             closest_date = available_dates.max()
-                            if target_series in full_data_monthly.columns:
-                                raw_value = full_data_monthly.loc[closest_date, target_series]
-                                # Check if value is NaN in data
+                            # For nowcasting, we want the actual value for the target month
+                            # If closest_date is in the same month as target_month_end, use it
+                            # Otherwise, try to find a date in the target month
+                            if closest_date.year == target_month_end_ts.year and closest_date.month == target_month_end_ts.month:
+                                # Perfect match - use this date
+                                if target_series in full_data_monthly.columns:
+                                    raw_value = full_data_monthly.loc[closest_date, target_series]
+                                else:
+                                    raw_value = full_data_monthly.loc[closest_date].iloc[0]
                                 if pd.isna(raw_value):
                                     print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in monthly data")
                                     actual_value = np.nan
                                 else:
                                     actual_value = float(raw_value)
+                                    print(f"    ✓ Found actual value at {closest_date}: {actual_value:.4f}")
                             else:
-                                raw_value = full_data_monthly.loc[closest_date].iloc[0]
-                                if pd.isna(raw_value):
-                                    print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in monthly data")
-                                    actual_value = np.nan
+                                # Closest date is in a different month - try to find exact month match
+                                target_month_dates = full_data_monthly.index[
+                                    (full_data_monthly.index.year == target_month_end_ts.year) &
+                                    (full_data_monthly.index.month == target_month_end_ts.month)
+                                ]
+                                if len(target_month_dates) > 0:
+                                    exact_date = target_month_dates.max()
+                                    if target_series in full_data_monthly.columns:
+                                        raw_value = full_data_monthly.loc[exact_date, target_series]
+                                    else:
+                                        raw_value = full_data_monthly.loc[exact_date].iloc[0]
+                                    if pd.isna(raw_value):
+                                        print(f"    ⚠ Warning: Actual value at {exact_date} is NaN in monthly data")
+                                        actual_value = np.nan
+                                    else:
+                                        actual_value = float(raw_value)
+                                        print(f"    ✓ Found actual value at {exact_date}: {actual_value:.4f}")
                                 else:
-                                    actual_value = float(raw_value)
+                                    # No exact month match, use closest date
+                                    if target_series in full_data_monthly.columns:
+                                        raw_value = full_data_monthly.loc[closest_date, target_series]
+                                    else:
+                                        raw_value = full_data_monthly.loc[closest_date].iloc[0]
+                                    if pd.isna(raw_value):
+                                        print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in monthly data")
+                                        actual_value = np.nan
+                                    else:
+                                        actual_value = float(raw_value)
+                                        print(f"    ✓ Using closest available date {closest_date}: {actual_value:.4f}")
                         else:
+                            print(f"    ⚠ Warning: No monthly data available at or before {target_month_end}")
                             actual_value = np.nan
                     else:
-                        # target_month_end is after data range
+                        # target_month_end is after data range or full_data_monthly is empty
+                        if len(full_data_monthly) == 0:
+                            print(f"    ⚠ Warning: full_data_monthly is empty - cannot get actual value")
+                        else:
+                            print(f"    ⚠ Warning: target_month_end {target_month_end} is after data range (max: {full_data_monthly.index.max()})")
                         actual_value = np.nan
                         
                     except Exception as e:
@@ -892,8 +1015,8 @@ def run_backtest_evaluation(
                         traceback.print_exc()
                         forecast_value = np.nan
                         # Try to get actual value even if prediction failed (use monthly data)
-                        if target_month_end <= full_data_monthly.index.max():
-                            available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end]
+                        if target_month_end_ts <= full_data_monthly.index.max():
+                            available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
                             if len(available_dates) > 0:
                                 closest_date = available_dates.max()
                                 if target_series in full_data_monthly.columns:
@@ -969,6 +1092,8 @@ def run_backtest_evaluation(
             print(f"    Average sMSE: {results_by_timepoint[f'{weeks}weeks']['overall_sMSE']:.4f}")
         else:
             print(f"\n  ⚠ No valid results for {weeks} weeks before")
+            print(f"    Total target months: {len(target_periods)}")
+            print(f"    This means all {len(target_periods)} months were skipped due to validation failures or NaN predictions/actuals")
     
     # Aggregate results across all time points
     if len(results_by_timepoint) > 0:

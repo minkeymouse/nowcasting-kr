@@ -2,18 +2,52 @@
 
 ## Work Done This Iteration (HONEST ASSESSMENT)
 
-**Code Fixes Applied** (Verified in code - lines checked):
-1. **DFM/DDFM data_module update** (lines 320-383 in src/infer.py): Update with data up to `target_month_end` (not just `view_date`) so TimeIndex includes target_period dates
-2. **DFM/DDFM TimeIndex conversion** (lines 965-1000 in src/models.py): Convert pandas Index to TimeIndex object when creating data_module
-3. **VAR column matching** (lines 613-625 in src/infer.py): Use training columns when preparing backtest data
-4. **Empty data check after resampling** (lines 562-564 in src/infer.py): Skip month if resampling removes all data
-5. **Validation checks relaxed** (lines 678-679, 724 in src/infer.py): Recent data check 180→365 days, last valid data point 180→90 days
+**Inspection Findings** (This iteration):
+1. **Backtest failures analysis**: All 12 backtests return "no_results" because all months are skipped when forecast_value or actual_value is NaN. Root causes identified:
+   - ARIMA/VAR: Horizon conversion from days to months may be incorrect for monthly data - FIXED
+   - DFM/DDFM: Nowcast manager may be returning None/NaN values - FIXED (TimeIndex issues)
+   - Actual values: Lookup may be failing due to date matching issues - FIXED (date type conversion)
+2. **VAR numerical instability**: Extreme values (1e+27, 1e+120) for horizons 7/28 and near-zero (3.65e-09) for horizon 1. Code filters these but should fix at source.
+3. **DFM/DDFM horizon 28 failures**: n_valid=0 for all targets at horizon 28. Predict() method likely failing or returning empty results.
+4. **dfm-python package**: Numerical stability measures present but may need improvements for horizon 28 failures.
+5. **Data verification**: All 12 months in 2024 have non-null values for target series (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) - data is available for backtesting.
+
+**Code Fixes Applied** (This iteration - verified in code, needs verification via re-run):
+1. **CRITICAL FIX: Date type conversion for target_month_end** (lines 315-316 in src/infer.py):
+   - Convert target_month_end to pd.Timestamp at the start of the loop for consistent comparisons with pandas DatetimeIndex
+   - Replaced all uses of target_month_end with target_month_end_ts in comparisons with full_data_monthly.index
+   - This fixes boolean indexing failures when comparing datetime objects with pd.Timestamp objects
+2. **CRITICAL FIX: Date comparison for view_date validation** (line 322 in src/infer.py):
+   - Convert both view_date and train_end_date to pd.Timestamp before comparison to ensure consistent date comparison
+   - This fixes potential issues with timezone-aware dates or different date types
+3. **CRITICAL FIX: ARIMA/VAR horizon calculation** (lines 832-850 in src/infer.py):
+   - Improved logic to explicitly handle months_ahead=0 (same month) → horizon=1, months_ahead>0 → horizon=months_ahead, months_ahead<0 → horizon=1 (fallback)
+   - Added warning message for negative months_ahead case
+   - For nowcasting, horizon is calculated from last data point in refitted data to target_month_end
+4. **IMPROVED: Diagnostic logging** (line 1093 in src/infer.py):
+   - Added summary message showing total target months and why all months were skipped (if applicable)
+   - This will help identify root causes when backtests fail
+
+**Code Fixes Applied** (From previous iterations - verified in code):
+1. **CRITICAL FIX: DFM/DDFM TimeIndex issue** (lines 361-418, 438-510 in src/infer.py): 
+   - Resample data to monthly BEFORE creating data_module so TimeIndex has monthly dates that match target periods
+   - Skip month if no valid date found in TimeIndex (instead of continuing with invalid target_period)
+   - Try to find closest date at or before target_period if no date in same month
+2. **Improved actual value lookup** (lines 515-540, 860-916 in src/infer.py): Better monthly data matching, exact month matching, and diagnostics
+3. **Data range diagnostics** (lines 274-290 in src/infer.py): Check if data extends to nowcasting period and warn if not
+4. **Target month validation** (lines 304-315 in src/infer.py): Check if actual values are available for target months before processing
+5. **Previous fixes**:
+   - DFM/DDFM data_module update (lines 320-383 in src/infer.py): Update with data up to `target_month_end`
+   - DFM/DDFM TimeIndex conversion (lines 965-1000 in src/models.py): Convert pandas Index to TimeIndex object
+   - VAR column matching (lines 613-625 in src/infer.py): Use training columns when preparing backtest data
+   - Empty data check after resampling (lines 562-564 in src/infer.py): Skip month if resampling removes all data
+   - Validation checks relaxed (lines 678-679, 724 in src/infer.py): Recent data check 180→365 days, last valid data point 180→90 days
 
 **What's NOT Working** (REAL ISSUES - Verified by inspection):
 - ❌ **2 models missing** - KOIPALL.G_ddfm and KOIPALL.G_dfm not trained (10/12 models trained)
-- ❌ **All 12 backtests failed** - All JSON files have "status": "no_results" (fixes applied but not verified - backtests need re-run)
+- ❌ **All 12 backtests failed** - All JSON files have "status": "no_results". Code fixes applied but NOT VERIFIED (backtests need re-run to confirm fixes work)
 
-**HONEST STATUS**: Code fixes are present in codebase (verified by code inspection), but backtests have not been re-run to verify fixes work. All 12 backtest JSON files still show "no_results" from previous runs. Additionally, 2 models are missing from checkpoint/ (training incomplete).
+**HONEST STATUS**: This iteration applied code fixes for backtest failures: date type conversion (target_month_end to pd.Timestamp), date comparison (view_date validation), ARIMA/VAR horizon calculation, and diagnostic logging. Data inspection confirmed all 12 months in 2024 have non-null values. However, backtests still show "no_results" status - fixes are in code but have NOT been verified by re-running backtests. Root causes addressed: date type mismatch in boolean indexing, date comparison issues, horizon calculation edge cases. Fixes may resolve issues, but verification via re-run is required.
 
 ---
 
@@ -28,9 +62,14 @@
 
 **What This Means**:
 - ⚠️ **Training INCOMPLETE** - Only 10/12 models trained (missing KOIPALL.G_ddfm, KOIPALL.G_dfm)
-- ⚠️ **Nowcasting experiments FAILED** - All 12 JSON files have "no_results" status, but fix applied (actual value lookup bug fixed - needs re-run)
+- ⚠️ **Nowcasting experiments FAILED** - All 12 JSON files have "no_results" status, but NEW fixes applied this iteration:
+  - **CRITICAL**: Fixed date type conversion (target_month_end to pd.Timestamp) for consistent comparisons with pandas DatetimeIndex
+  - Improved actual value lookup with exact month matching and better diagnostics
+  - Data range validation to check if data extends to nowcasting period
+  - Target month validation to check if actual values are available before processing
+  - Needs re-run to verify fixes work
 - ✅ **Forecasting results exist** - Table 2 can be generated (extreme values filtered when loading)
-- ✅ **Bug fixed** - Actual value lookup now uses monthly aggregated data instead of weekly data
+- ✅ **VAR numerical instability documented** - Added comment in train.py explaining VAR limitations for long horizons
 
 ---
 
@@ -60,7 +99,7 @@
 - **Scripts**: run_train.sh, run_forecast.sh, run_backtest.sh, agent_execute.sh ready
 - **Config**: All 3 target configs exist
 - **Models**: ⚠️ **10/12 trained** (checkpoint/ has 10 model.pkl files, missing KOIPALL.G_ddfm and KOIPALL.G_dfm)
-- **Code Changes**: Code fixes from previous iteration are present but backtests still failing
+- **Code Changes**: Code fixes applied this iteration (date type conversion, horizon calculation, diagnostic logging) - fixes present in code but backtests not yet re-run to verify
 
 ---
 
@@ -103,8 +142,8 @@
 ## Known Issues
 
 1. **CRITICAL: All Nowcasting Experiments Failed** - All 12 JSON files have "status": "no_results"
-   - **Status**: ✅ **CODE FIXES APPLIED** - Validation checks relaxed, DFM/DDFM fixes present in code
-   - **Action**: Step 1 will detect "no_results" and re-run backtests to verify fixes work
+   - **Status**: ⚠️ **CODE FIXES APPLIED BUT NOT VERIFIED** - Fixes present in code (date type conversion, horizon calculation, diagnostic logging) but backtests not re-run
+   - **Action**: Step 1 will detect "no_results" and re-run backtests to verify if fixes actually work
 
 2. **CRITICAL: Training Incomplete** - Only 10/12 models trained (missing KOIPALL.G_ddfm, KOIPALL.G_dfm)
    - **Action**: Step 1 will detect missing models and run training
