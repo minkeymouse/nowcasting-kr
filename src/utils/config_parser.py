@@ -394,7 +394,7 @@ def extract_experiment_params(cfg: DictConfig) -> Dict[str, Any]:
             models = [models_container]
     
     # Extract horizons
-    horizons = [1, 7, 28]  # Default
+    horizons = list(range(1, 31))  # Default: horizons 1-30
     horizons_raw = exp_cfg.get('forecast_horizons')
     if horizons_raw:
         horizons_container = OmegaConf.to_container(horizons_raw, resolve=True)

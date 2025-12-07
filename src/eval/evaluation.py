@@ -949,7 +949,7 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
             continue
         
         results = result_data.get('results', {})
-        horizons = result_data.get('horizons', [1, 7, 28])
+        horizons = result_data.get('horizons', list(range(1, 31)))  # Default: horizons 1-30
         
         # Extract metrics from each model
         for model_name, model_data in results.items():
@@ -1071,7 +1071,7 @@ def generate_latex_table_overall_metrics(
         # Return placeholder table
         latex = """\\begin{table}[h]
 \\centering
-\\caption[Overall Model Performance Comparison (Standardized Metrics, Overall Average)]{Overall Model Performance Comparison (Standardized Metrics, Overall Average)\\footnote{Results averaged across 3 target variables (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) and 3 forecast horizons (1, 7, 28 days). Some combinations may be unavailable due to data and model limitations.}}
+\\caption[Overall Model Performance Comparison (Standardized Metrics, Overall Average)]{Overall Model Performance Comparison (Standardized Metrics, Overall Average)\\footnote{Results averaged across 3 target variables (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) and 30 forecast horizons (1-30 days). Some combinations may be unavailable due to data and model limitations.}}
 \\label{tab:overall_metrics}
 \\begin{tabular}{lccc}
 \\toprule
@@ -1099,7 +1099,7 @@ DDFM & -- & -- & -- \\\\
     # Generate LaTeX
     latex = """\\begin{table}[h]
 \\centering
-\\caption[Overall Model Performance Comparison (Standardized Metrics, Overall Average)]{Overall Model Performance Comparison (Standardized Metrics, Overall Average)\\footnote{Results averaged across 3 target variables (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) and 3 forecast horizons (1, 7, 28 days). Some combinations may be unavailable due to data and model limitations.}}
+\\caption[Overall Model Performance Comparison (Standardized Metrics, Overall Average)]{Overall Model Performance Comparison (Standardized Metrics, Overall Average)\\footnote{Results averaged across 3 target variables (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) and 30 forecast horizons (1-30 days). Some combinations may be unavailable due to data and model limitations.}}
 \\label{tab:overall_metrics}
 \\begin{tabular}{lccc}
 \\toprule
@@ -1157,7 +1157,7 @@ def generate_latex_table_by_target(
         # Return placeholder table
         latex = """\\begin{table}[h]
 \\centering
-\\caption[Model Performance Comparison by Target Variable (Standardized RMSE)]{Model Performance Comparison by Target Variable (Standardized RMSE)\\footnote{Results averaged across forecast horizons. Some models may have no results for certain targets due to numerical instability.}}
+\\caption[Model Performance Comparison by Target Variable (Standardized RMSE)]{Model Performance Comparison by Target Variable (Standardized RMSE)\\footnote{Results averaged across 30 forecast horizons (1-30 days). Some models may have no results for certain targets due to numerical instability.}}
 \\label{tab:overall_metrics_by_target}
 \\begin{tabular}{lccc}
 \\toprule
@@ -1190,7 +1190,7 @@ DDFM & -- & -- & -- \\\\
     # Generate LaTeX
     latex = """\\begin{table}[h]
 \\centering
-\\caption[Model Performance Comparison by Target Variable (Standardized RMSE)]{Model Performance Comparison by Target Variable (Standardized RMSE)\\footnote{Results averaged across forecast horizons. Some models may have no results for certain targets due to numerical instability.}}
+\\caption[Model Performance Comparison by Target Variable (Standardized RMSE)]{Model Performance Comparison by Target Variable (Standardized RMSE)\\footnote{Results averaged across 30 forecast horizons (1-30 days). Some models may have no results for certain targets due to numerical instability.}}
 \\label{tab:overall_metrics_by_target}
 \\begin{tabular}{lccc}
 \\toprule

@@ -80,7 +80,7 @@
 
 ## Tables
 1. Table consisting of dataset details, arima, var, dfm and ddfm params(model and training)
-2. Table consisting of standardized MSE and standardized MAE for (target, model, horizon) pair. For instance, (dfm, 1), (dfm, 7), (dfm, 30). We have 3 targets, 3 horizons and 4 models so the table will be 36 rows.
+2. Table consisting of averaged standardized MSE and standardized MAE for (target, model, horizon) pair. For instance, (dfm, 1), (dfm, 2), ..., (dfm, 7),... , (dfm, 30). We have 3 targets, 30 horizons averaged, and 4 models so the table will be 4 rows and 4 columns(model, target1, target2, target3 fields).
 3. Table consisting of dfm and ddfm backtest results for year 2024~2025 each month. Train with data from 1985 to 2019, nowcast from Jan 2024 to Oct 2025(or any latest). By masking unavailable data, make sMSE, sMAE for each month by nowcasting.
 
 ## Images

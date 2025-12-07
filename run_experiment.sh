@@ -399,8 +399,8 @@ else
     MODELS=("arima" "var" "dfm" "ddfm")
 fi
 
-# Horizons (1, 7, 28 days)
-HORIZONS=(1 7 28)
+# Horizons (1 to 30 days) - all horizons will be evaluated and averaged
+HORIZONS=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30)
 
 # Maximum parallel processes
 MAX_PARALLEL=5
@@ -417,7 +417,7 @@ echo "Running Experiments"
 echo "=========================================="
 echo "Target Series: ${TARGETS[@]}"
 echo "Models: ${MODELS[@]}"
-echo "Horizons: ${HORIZONS[@]}"
+echo "Horizons: ${HORIZONS[@]} (1-30 days, will be averaged per model-target pair)"
 echo "Max Parallel: $MAX_PARALLEL"
 if [ -n "$MODELS" ]; then
     echo "Note: Models filtered via MODELS environment variable"
@@ -495,6 +495,9 @@ done
 echo ""
 
 # Check for completed experiments and skip them
+# An experiment is considered complete if all requested models have valid results
+# (status='completed' and at least one horizon has n_valid > 0)
+# Experiments with unavailable results will be re-run
 echo "=========================================="
 echo "Checking for completed experiments"
 echo "=========================================="

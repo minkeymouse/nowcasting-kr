@@ -473,7 +473,7 @@ def _train_forecaster(
             else:
                 horizons = [int(str(horizons_raw))]
         else:
-            horizons = [1, 7, 28]
+            horizons = list(range(1, 31))  # Default: horizons 1-30
     
     # Calculate forecast metrics
     from ..eval.evaluation import evaluate_forecaster
@@ -1005,7 +1005,7 @@ def train(
 def compare_models(
     target_series: str,
     models: List[str],
-    horizons: List[int] = [1, 7, 28],
+    horizons: List[int] = list(range(1, 31)),  # Default: horizons 1-30
     data_path: Optional[str] = None,
     config_dir: Optional[str] = None,
     config_name: Optional[str] = None,
