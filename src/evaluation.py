@@ -1129,6 +1129,32 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
                 mae = validate_metric(horizon_metrics.get('MAE'))
                 rmse = validate_metric(horizon_metrics.get('RMSE'))
                 
+                # Check for suspiciously good results (potential data leakage, numerical issues, or single-point luck)
+                # Threshold: sMSE < 1e-4 or sMAE < 1e-3 is suspiciously good for any model/horizon
+                # This is especially important when n_valid=1 (single test point)
+                SUSPICIOUSLY_GOOD_SMSE_THRESHOLD = 1e-4
+                SUSPICIOUSLY_GOOD_SMAE_THRESHOLD = 1e-3
+                if isinstance(smse, (int, float)) and not np.isnan(smse) and (0 < abs(smse) < SUSPICIOUSLY_GOOD_SMSE_THRESHOLD):
+                    _module_logger.warning(
+                        f"aggregate_overall_performance: Suspiciously good sMSE detected for "
+                        f"{model_name.upper()} {target_series} horizon {horizon}: {smse:.2e}. "
+                        f"This may indicate data leakage, numerical precision issues, or single-point luck (n_valid={n_valid}). "
+                        f"Marking as NaN for reliability."
+                    )
+                    smse = np.nan
+                    smae = np.nan
+                    srmse = np.nan
+                elif isinstance(smae, (int, float)) and not np.isnan(smae) and (0 < abs(smae) < SUSPICIOUSLY_GOOD_SMAE_THRESHOLD):
+                    _module_logger.warning(
+                        f"aggregate_overall_performance: Suspiciously good sMAE detected for "
+                        f"{model_name.upper()} {target_series} horizon {horizon}: {smae:.2e}. "
+                        f"This may indicate data leakage, numerical precision issues, or single-point luck (n_valid={n_valid}). "
+                        f"Marking as NaN for reliability."
+                    )
+                    smse = np.nan
+                    smae = np.nan
+                    srmse = np.nan
+                
                 # Include all horizons, even if n_valid=0 (for complete 36-row dataset)
                 # This allows the report to show NaN/N/A for unavailable combinations
                 row = {
