@@ -84,52 +84,33 @@ def _load_model_for_inference(
     if dfm_model is None:
         raise ValueError(f"{model.upper()} model is None")
     
-    # Restore result if needed
+    # Restore result from checkpoint (don't call get_result() as it may trigger training)
     if hasattr(dfm_model, '_model') and dfm_model._model is not None:
         underlying_model = dfm_model._model
         if hasattr(underlying_model, '_result') and underlying_model._result is None:
-            if hasattr(underlying_model, 'training_state') and underlying_model.training_state is not None:
-                try:
-                    underlying_model._result = underlying_model.get_result()
-                except Exception:
-                    pass
-            if underlying_model._result is None:
-                try:
-                    result = dfm_model.get_result()
-                    if result is not None:
-                        underlying_model._result = result
-                except Exception:
-                    pass
-            if underlying_model._result is None and 'result' in model_data:
+            # Try to restore from checkpoint first (safest, no training)
+            if 'result' in model_data:
                 try:
                     underlying_model._result = model_data['result']
                 except Exception:
                     pass
+            # Only restore from training_state if result is already computed (no EM)
+            if underlying_model._result is None and hasattr(underlying_model, 'training_state') and underlying_model.training_state is not None:
+                # Check if result is already computed in training_state
+                if hasattr(underlying_model.training_state, '_result'):
+                    try:
+                        underlying_model._result = underlying_model.training_state._result
+                    except Exception:
+                        pass
     
-    # Ensure data_module exists
+    # Don't recreate data_module - it should be loaded from checkpoint
+    # If data_module is missing, the model was not properly saved or is corrupted
     if not hasattr(dfm_model, '_data_module') or dfm_model._data_module is None:
-        from src.models import create_data_module_from_dataframe
-        from dfm_python.lightning import DFMDataModule
-        from src.preprocessing import create_transformer_from_config
-        
-        data_path_file = project_root / "data" / "data.csv"
-        if not data_path_file.exists():
-            data_path_file = project_root / "data" / "sample_data.csv"
-        
-        train_data = pd.read_csv(data_path_file, index_col=0, parse_dates=True)
-        train_start_ts = pd.Timestamp(train_start)
-        train_end_ts = pd.Timestamp(train_end)
-        train_data_filtered = train_data[(train_data.index >= train_start_ts) & (train_data.index <= train_end_ts)]
-        
-        data_module = create_data_module_from_dataframe(
-            model=dfm_model,
-            data=train_data_filtered,
-            dfm_data_module=DFMDataModule,
-            create_transformer_func=create_transformer_from_config
-        )
-        dfm_model._data_module = data_module
+        logger.warning(f"data_module not found in checkpoint for {target_series}_{model}. Model may not work correctly.")
     
-    nowcast_manager = dfm_model.nowcast
+    # nowcast_manager is no longer needed (we use predict directly)
+    # But keep it for backward compatibility with _update_data_module_for_nowcasting
+    nowcast_manager = dfm_model.nowcast if hasattr(dfm_model, 'nowcast') else None
     return nowcast_manager, forecaster, dfm_model
 
 
@@ -155,7 +136,9 @@ def _update_data_module_for_nowcasting(
     existing_data_module.data = data_monthly
     existing_data_module.time_index = time_index
     dfm_model._data_module = existing_data_module
-    nowcast_manager.data_module = existing_data_module
+    # Update nowcast_manager if provided (for backward compatibility)
+    if nowcast_manager is not None:
+        nowcast_manager.data_module = existing_data_module
 
 
 def run_backtest_evaluation(
@@ -264,39 +247,46 @@ def run_backtest_evaluation(
             
             try:
                 if supports_nowcast_manager:
-                    data_up_to_target = full_data[full_data.index <= target_month_end_ts]
+                    # Use predict method directly (simpler and faster)
+                    # Update data_module with data up to view_date for nowcasting
+                    data_up_to_view = full_data[full_data.index <= pd.Timestamp(view_date)].copy()
                     try:
-                        _update_data_module_for_nowcasting(dfm_model, nowcast_manager, data_up_to_target, target_month_end_ts)
+                        _update_data_module_for_nowcasting(dfm_model, nowcast_manager, data_up_to_view, pd.Timestamp(view_date))
                     except Exception:
                         continue
                     
-                    target_period_for_nowcast = target_month_end_ts
-                    if target_month_end_ts <= full_data_monthly.index.max():
-                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
-                        if len(available_dates) > 0:
-                            target_period_for_nowcast = available_dates.max().to_pydatetime()
-                        elif len(full_data_monthly) > 0:
-                            target_period_for_nowcast = full_data_monthly.index.max().to_pydatetime()
-                        else:
-                            continue
-                    else:
-                        target_period_for_nowcast = full_data_monthly.index.max().to_pydatetime()
-                    
-                    if hasattr(nowcast_manager, '_data_view_cache'):
-                        nowcast_manager._data_view_cache.clear()
+                    # Use predict method - can use any horizon (1 for nowcasting, 22 for forecasting)
+                    # Calculate horizon: number of months from view_date to target_month_end
+                    view_date_ts = pd.Timestamp(view_date)
+                    months_ahead = (target_month_end_ts.year - view_date_ts.year) * 12 + (target_month_end_ts.month - view_date_ts.month)
+                    # For nowcasting, we want to predict the target period, so horizon should be based on months difference
+                    # But if target is in the past relative to view_date, use horizon=1 (current period)
+                    horizon = max(1, min(months_ahead, 22)) if months_ahead >= 0 else 1
                     
                     try:
-                        nowcast_result = nowcast_manager(
-                            target_series=target_series,
-                            view_date=view_date,
-                            target_period=target_period_for_nowcast,
-                            return_result=True
-                        )
+                        X_pred, Z_pred = dfm_model._model.predict(horizon=horizon, return_series=True, return_factors=True)
                         
-                        if nowcast_result is None or not hasattr(nowcast_result, 'nowcast_value'):
-                            continue
+                        # Extract target series value
+                        # If horizon > 1, we need to select the appropriate time step
+                        # For nowcasting, we typically want the last step (horizon-1) if months_ahead matches
+                        pred_step = min(horizon - 1, max(0, months_ahead - 1)) if months_ahead > 0 else 0
                         
-                        forecast_value = nowcast_result.nowcast_value
+                        if hasattr(dfm_model._model, 'config'):
+                            from dfm_python.utils.helpers import find_series_index
+                            try:
+                                series_idx = find_series_index(dfm_model._model.config, target_series)
+                                if series_idx is not None and series_idx < X_pred.shape[1] and pred_step < X_pred.shape[0]:
+                                    forecast_value = float(X_pred[pred_step, series_idx])
+                                else:
+                                    # Fallback to first column
+                                    forecast_value = float(X_pred[pred_step, 0]) if pred_step < X_pred.shape[0] else float(X_pred[0, 0])
+                            except Exception:
+                                # Fallback to first column
+                                forecast_value = float(X_pred[pred_step, 0]) if pred_step < X_pred.shape[0] else float(X_pred[0, 0])
+                        else:
+                            # Fallback to first column
+                            forecast_value = float(X_pred[pred_step, 0]) if pred_step < X_pred.shape[0] else float(X_pred[0, 0])
+                        
                         if not np.isfinite(forecast_value):
                             continue
                     except Exception:

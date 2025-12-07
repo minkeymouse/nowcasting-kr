@@ -146,6 +146,32 @@ checkpoint_exists() {
     fi
 }
 
+# Function to check if forecast results exist
+forecast_results_exist() {
+    local target=$1
+    local json_file="outputs/comparisons/${target}/comparison_results.json"
+    local csv_file="outputs/comparisons/${target}/comparison_table.csv"
+    if [ -f "$json_file" ] && [ -s "$json_file" ] && [ -f "$csv_file" ] && [ -s "$csv_file" ]; then
+        return 0  # Exists
+    else
+        return 1  # Missing
+    fi
+}
+
+# Function to check if nowcast results exist
+nowcast_results_exist() {
+    local target=$1
+    local model=$2
+    local json_file="outputs/backtest/${target}_${model}_backtest.json"
+    if [ -f "$json_file" ] && [ -s "$json_file" ]; then
+        # Check if file has valid results (not just error status)
+        if grep -q '"results_by_timepoint"' "$json_file" 2>/dev/null; then
+            return 0  # Exists with valid results
+        fi
+    fi
+    return 1  # Missing or invalid
+}
+
 # ============================================================================
 # Test Mode Function
 # ============================================================================
@@ -390,30 +416,16 @@ validate_checkpoints() {
 
 validate_checkpoints
 
-# Clean up old output files (one result per experiment)
-cleanup_outputs() {
-    echo "=========================================="
-    echo "Cleaning Up Old Output Files"
-    echo "=========================================="
-    
-    # Remove entire outputs directory and recreate clean structure
-    if [ -d "outputs" ]; then
-        echo "  Removing all old outputs..."
-        rm -rf outputs
-    fi
-    
-    # Create clean output directory structure
+# Ensure output directories exist (don't delete existing results)
+ensure_output_dirs() {
     mkdir -p outputs/forecast
     mkdir -p outputs/nowcast
     mkdir -p outputs/backtest
     mkdir -p outputs/comparisons
     mkdir -p outputs/experiments
-    
-    echo "✓ Cleanup completed - fresh output structure created"
-    echo ""
 }
 
-cleanup_outputs
+ensure_output_dirs
 
 # ============================================================================
 # Part 1: 22 Horizon Forecast (2024-01 to 2025-10)
@@ -471,6 +483,13 @@ if [ "$SKIP_FORECAST" != "1" ]; then
             continue
         fi
         
+        # Skip if results already exist
+        if forecast_results_exist "$target"; then
+            echo "[$target_num/$TOTAL_TARGETS] [$target] ⊙ Forecast results already exist, skipping"
+            SUCCESSFUL_TARGETS+=("$target")
+            continue
+        fi
+        
         echo "Running forecast for models: ${available_models[@]}"
         echo ""
         
@@ -512,16 +531,14 @@ if [ "$SKIP_FORECAST" != "1" ]; then
     fi
     echo ""
     
-    # Aggregate forecast results
-    if [ ${#SUCCESSFUL_TARGETS[@]} -gt 0 ]; then
-        echo "Aggregating forecast results..."
-        if .venv/bin/python3 -c "from src.evaluation import main_aggregator; main_aggregator()" 2>&1; then
-            echo "✓ Aggregation completed"
-        else
-            echo "⚠ Aggregation had errors"
-        fi
-        echo ""
+    # Aggregate forecast results (always run to update aggregated CSV)
+    echo "Aggregating forecast results..."
+    if .venv/bin/python3 -c "from src.evaluation import main_aggregator; main_aggregator()" 2>&1; then
+        echo "✓ Aggregation completed"
+    else
+        echo "⚠ Aggregation had errors"
     fi
+    echo ""
 else
     echo "Skipping 22 horizon forecast (--skip-forecast flag set)"
     echo ""
@@ -557,6 +574,13 @@ if [ "$SKIP_NOWCAST" != "1" ]; then
             # Skip if checkpoint doesn't exist
             if ! checkpoint_exists "$target" "$model"; then
                 echo "[$current_combination/$TOTAL_COMBINATIONS] Skipping ${target}_${model} (checkpoint missing)"
+                continue
+            fi
+            
+            # Skip if results already exist
+            if nowcast_results_exist "$target" "$model"; then
+                echo "[$current_combination/$TOTAL_COMBINATIONS] ⊙ ${target}_${model}: Nowcast results already exist, skipping"
+                SUCCESSFUL_NOWCASTS+=("${target}_${model}")
                 continue
             fi
             

@@ -983,8 +983,10 @@ def generate_comparison_table(
 
 def collect_all_comparison_results(outputs_dir: Optional[Path] = None) -> Dict[str, Any]:
     """Collect all comparison results from outputs/comparisons/."""
+    logger = _module_logger
+    
     if outputs_dir is None:
-        outputs_dir = Path(__file__).parent.parent.parent / "outputs"
+        outputs_dir = Path(__file__).parent.parent / "outputs"
     
     comparisons_dir = outputs_dir / "comparisons"
     if not comparisons_dir.exists():
@@ -1155,7 +1157,7 @@ def main_aggregator():
         return
     
     # Save aggregated results
-    outputs_dir = Path(__file__).parent.parent.parent / "outputs"
+    outputs_dir = Path(__file__).parent.parent / "outputs"
     experiments_dir = outputs_dir / "experiments"
     experiments_dir.mkdir(parents=True, exist_ok=True)
     
@@ -1330,7 +1332,7 @@ def generate_latex_table_nowcasting_backtest(
         LaTeX table code
     """
     if outputs_dir is None:
-        outputs_dir = Path(__file__).parent.parent.parent / "outputs"
+        outputs_dir = Path(__file__).parent.parent / "outputs"
     
     backtest_dir = outputs_dir / "backtest"
     
@@ -1467,7 +1469,7 @@ def generate_latex_table_dataset_params(
     import yaml
     
     if config_dir is None:
-        config_dir = Path(__file__).parent.parent.parent / "config"
+        config_dir = Path(__file__).parent.parent / "config"
     
     # Load model configs
     model_configs = {}
@@ -1581,14 +1583,14 @@ def generate_all_latex_tables(
     logger = _module_logger
     
     if outputs_dir is None:
-        outputs_dir = Path(__file__).parent.parent.parent / "outputs"
+        outputs_dir = Path(__file__).parent.parent / "outputs"
     
     if tables_dir is None:
         # Save LaTeX tables to outputs/experiments/tables/ for consistency
         tables_dir = outputs_dir / "experiments" / "tables"
     
     if config_dir is None:
-        config_dir = Path(__file__).parent.parent.parent / "config"
+        config_dir = Path(__file__).parent.parent / "config"
     
     # Ensure tables directory exists
     tables_dir.mkdir(parents=True, exist_ok=True)
