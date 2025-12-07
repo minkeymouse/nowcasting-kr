@@ -312,33 +312,78 @@ def run_backtest_evaluation(
                     # The data_module was created with training data only (1985-2019), but nowcasting
                     # needs data up to view_date (2024) to have Time_view that includes 2024 dates
                     if hasattr(dfm_model, '_data_module') and dfm_model._data_module is not None:
-                        # Update data_module with full data up to view_date
+                        # Update data_module with full data up to target_month_end (not just view_date)
+                        # CRITICAL: The nowcast manager needs TimeIndex to include target_period (target_month_end),
+                        # not just view_date. We use view_date for masking (release dates), but TimeIndex must
+                        # include target_period for the nowcast manager to find the target period.
                         from src.models import create_data_module_from_dataframe
                         from dfm_python.lightning import DFMDataModule
                         from src.preprocessing import create_transformer_from_config
                         
-                        # Get data up to view_date (not just training period)
-                        data_up_to_view = full_data[full_data.index <= pd.Timestamp(view_date)]
-                        if len(data_up_to_view) > 0:
+                        # Get data up to target_month_end (not just view_date) so TimeIndex includes target_period
+                        # The nowcast manager uses view_date for masking but needs target_period in TimeIndex
+                        data_up_to_target = full_data[full_data.index <= pd.Timestamp(target_month_end)]
+                        print(f"    Debug: Filtered data up to {target_month_end}: {len(data_up_to_target)} rows (from {data_up_to_target.index.min()} to {data_up_to_target.index.max()})")
+                        if len(data_up_to_target) > 0:
                             try:
+                                print(f"    Debug: Updating data_module with data up to {target_month_end}...")
                                 updated_data_module = create_data_module_from_dataframe(
                                     model=dfm_model,
-                                    data=data_up_to_view,
+                                    data=data_up_to_target,
                                     dfm_data_module=DFMDataModule,
                                     create_transformer_func=create_transformer_from_config
                                 )
                                 dfm_model._data_module = updated_data_module
                                 # Update nowcast manager's data_module reference
                                 nowcast_manager.data_module = updated_data_module
+                                
+                                # CRITICAL FIX: Validate that data_module was updated successfully
+                                # Check if time_index has data after update (nowcast manager uses data_module.time_index)
+                                if hasattr(updated_data_module, 'time_index') and updated_data_module.time_index is not None:
+                                    time_index = updated_data_module.time_index
+                                    # TimeIndex has 'dates' attribute or can be iterated
+                                    if hasattr(time_index, 'dates') and len(time_index.dates) > 0:
+                                        first_date = time_index.dates[0]
+                                        last_date = time_index.dates[-1]
+                                        print(f"    ✓ Data module updated: {len(time_index.dates)} time points (from {first_date} to {last_date})")
+                                        # Check if target_period is in the time_index
+                                        target_in_index = any(
+                                            (isinstance(t, datetime) and t.year == target_month_end.year and t.month == target_month_end.month) or
+                                            (hasattr(t, 'year') and hasattr(t, 'month') and t.year == target_month_end.year and t.month == target_month_end.month)
+                                            for t in time_index.dates
+                                        )
+                                        if not target_in_index:
+                                            print(f"    ⚠ Warning: Target period {target_month_end} (year={target_month_end.year}, month={target_month_end.month}) not found in TimeIndex dates")
+                                    elif hasattr(time_index, '__len__') and len(time_index) > 0:
+                                        print(f"    ✓ Data module updated: {len(time_index)} time points")
+                                        # Try to check if target_period is in time_index
+                                        try:
+                                            time_list = list(time_index)
+                                            target_in_index = any(
+                                                (isinstance(t, datetime) and t.year == target_month_end.year and t.month == target_month_end.month) or
+                                                (hasattr(t, 'year') and hasattr(t, 'month') and t.year == target_month_end.year and t.month == target_month_end.month)
+                                                for t in time_list
+                                            )
+                                            if not target_in_index:
+                                                print(f"    ⚠ Warning: Target period {target_month_end} (year={target_month_end.year}, month={target_month_end.month}) not found in TimeIndex")
+                                        except Exception as e:
+                                            print(f"    ⚠ Warning: Could not check if target_period is in TimeIndex: {e}")
+                                    else:
+                                        print(f"    ⚠ Warning: Data module updated but time_index appears empty")
+                                else:
+                                    print(f"    ⚠ Warning: Data module updated but time_index attribute not available")
                             except (ImportError, ValueError, AttributeError, Exception) as e:
-                                print(f"    ⚠ Warning: Could not update data_module with data up to view_date: {e}")
-                                # Continue with existing data_module (may fail, but try anyway)
+                                print(f"    ✗ Error: Could not update data_module with data up to target_month_end: {e}")
+                                import traceback
+                                traceback.print_exc()
+                                print(f"    ⚠ Skipping: Data module update failed - cannot perform nowcast without updated data")
+                                continue  # Skip this month if data_module update fails
                         else:
-                            print(f"    ⚠ Skipping: No data available up to view_date {view_date}")
+                            print(f"    ⚠ Skipping: No data available up to target_month_end {target_month_end}")
                             continue
                     
                     # Find closest available date at or before target_month_end for nowcast manager
-                    # Use monthly aggregated data for monthly targets
+                    # Use monthly aggregated data for monthly targets, but also check TimeIndex
                     target_period_for_nowcast = target_month_end
                     if target_month_end <= full_data_monthly.index.max():
                         available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end]
@@ -352,7 +397,86 @@ def run_backtest_evaluation(
                         # target_month_end is after data range, use latest available
                         target_period_for_nowcast = full_data_monthly.index.max().to_pydatetime()
                     
+                    # CRITICAL: Also check if target_period_for_nowcast exists in data_module.time_index
+                    # If not, find the closest date in the same month
+                    if hasattr(nowcast_manager, 'data_module') and nowcast_manager.data_module is not None:
+                        data_module = nowcast_manager.data_module
+                        if hasattr(data_module, 'time_index') and data_module.time_index is not None:
+                            time_index = data_module.time_index
+                            # Try to find a date in the same month as target_period_for_nowcast
+                            from dfm_python.utils.time import find_time_index
+                            t_idx = find_time_index(time_index, target_period_for_nowcast)
+                            if t_idx is None:
+                                # Find closest date in the same month
+                                target_year = target_period_for_nowcast.year
+                                target_month = target_period_for_nowcast.month
+                                closest_date = None
+                                min_diff = None
+                                
+                                # Get dates from TimeIndex
+                                if hasattr(time_index, 'dates'):
+                                    time_dates = time_index.dates
+                                elif hasattr(time_index, '__iter__'):
+                                    time_dates = list(time_index)
+                                else:
+                                    time_dates = []
+                                
+                                for t in time_dates:
+                                    if not isinstance(t, datetime):
+                                        try:
+                                            if isinstance(t, pd.Timestamp):
+                                                t = t.to_pydatetime()
+                                            elif hasattr(t, 'to_pydatetime'):
+                                                t = t.to_pydatetime()
+                                            else:
+                                                continue
+                                        except (ValueError, TypeError):
+                                            continue
+                                    
+                                    if isinstance(t, datetime) and t.year == target_year and t.month == target_month:
+                                        diff = abs((target_period_for_nowcast - t).total_seconds())
+                                        if min_diff is None or diff < min_diff:
+                                            min_diff = diff
+                                            closest_date = t
+                                
+                                if closest_date is not None:
+                                    print(f"    Debug: Using closest date in TimeIndex: {closest_date} (target was {target_period_for_nowcast})")
+                                    target_period_for_nowcast = closest_date
+                                else:
+                                    print(f"    ⚠ Warning: No date found in TimeIndex for month {target_year}-{target_month:02d}")
+                    
                     try:
+                        # CRITICAL FIX: Check if data_module has valid time_index before calling nowcast manager
+                        # The nowcast manager uses data_module.time_index (lowercase), not data_module.Time
+                        if hasattr(nowcast_manager, 'data_module') and nowcast_manager.data_module is not None:
+                            data_module = nowcast_manager.data_module
+                            if hasattr(data_module, 'time_index') and data_module.time_index is not None:
+                                time_index = data_module.time_index
+                                # TimeIndex has 'dates' attribute or can be iterated
+                                if hasattr(time_index, 'dates'):
+                                    time_index_len = len(time_index.dates) if time_index.dates else 0
+                                    if time_index_len > 0:
+                                        print(f"    Debug: data_module.time_index has {time_index_len} dates (from {time_index.dates[0]} to {time_index.dates[-1]})")
+                                elif hasattr(time_index, '__len__'):
+                                    time_index_len = len(time_index)
+                                    if time_index_len > 0:
+                                        print(f"    Debug: data_module.time_index has {time_index_len} dates")
+                                else:
+                                    time_index_len = 0
+                                
+                                if time_index_len == 0:
+                                    print(f"    ⚠ Skipping: Data module time_index is empty - cannot perform nowcast")
+                                    continue
+                            else:
+                                print(f"    ⚠ Warning: data_module.time_index is None or not available")
+                        else:
+                            print(f"    ⚠ Warning: nowcast_manager.data_module is None or not available")
+                        
+                        # Clear the data view cache to force recalculation with updated data_module
+                        if hasattr(nowcast_manager, '_data_view_cache'):
+                            nowcast_manager._data_view_cache.clear()
+                            print(f"    Debug: Cleared data view cache to force recalculation")
+                        
                         nowcast_result = nowcast_manager(
                             target_series=target_series,
                             view_date=view_date,
@@ -372,6 +496,16 @@ def run_backtest_evaluation(
                             continue
                         else:
                             print(f"    ✓ DFM/DDFM nowcast value: {forecast_value:.4f}")
+                    except ValueError as e:
+                        # Handle ValueError from _prepare_target when Time_view is empty
+                        if "Time_view is empty" in str(e) or "not found in Time index" in str(e):
+                            print(f"    ⚠ Skipping: {e}")
+                            continue
+                        else:
+                            print(f"    ✗ Error in nowcast manager: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            continue
                     except Exception as e:
                         print(f"    ✗ Error in nowcast manager: {e}")
                         import traceback
@@ -422,7 +556,12 @@ def run_backtest_evaluation(
                     # CRITICAL FIX: Resample to monthly to match model training frequency
                     # Models are trained on monthly data (resample_to_monthly), so backtest must use monthly data too
                     from src.preprocessing import resample_to_monthly
+                    original_count = len(train_data_filtered)
                     train_data_filtered = resample_to_monthly(train_data_filtered)
+                    # Check if resampling removed all data
+                    if len(train_data_filtered) == 0:
+                        print(f"    ⚠ Skipping: Monthly resampling removed all data (original had {original_count} rows)")
+                        continue
                     print(f"    ✓ Resampled to monthly: {len(train_data_filtered)} rows (from {train_data_filtered.index.min()} to {train_data_filtered.index.max()})")
                     
                     # Calculate nowcast horizon: days from view_date to target_month_end
@@ -457,10 +596,12 @@ def run_backtest_evaluation(
                         
                         # Also check if forecaster was originally trained on multiple columns
                         # by checking the _y attribute (training data)
-                        if not is_multivariate and hasattr(forecaster_clone, '_y'):
+                        training_columns = None
+                        if hasattr(forecaster_clone, '_y'):
                             try:
                                 if isinstance(forecaster_clone._y, pd.DataFrame):
                                     is_multivariate = len(forecaster_clone._y.columns) > 1
+                                    training_columns = forecaster_clone._y.columns.tolist()
                             except (AttributeError, Exception):
                                 pass
                         
@@ -469,7 +610,19 @@ def run_backtest_evaluation(
                             is_multivariate = len(train_data_filtered.columns) > 1
                         
                         if is_multivariate:
-                            fit_data = train_data_filtered.copy()
+                            # CRITICAL FIX: For VAR, ensure we use the same columns as training data
+                            # VAR's transformation pipeline expects the same column structure
+                            if training_columns is not None:
+                                # Use only columns that exist in both training and backtest data
+                                available_columns = [col for col in training_columns if col in train_data_filtered.columns]
+                                if len(available_columns) < len(training_columns):
+                                    print(f"    ⚠ Warning: Some training columns missing in backtest data. Training: {training_columns}, Available: {available_columns}")
+                                if len(available_columns) < 2:
+                                    print(f"    ⚠ Skipping: VAR requires at least 2 columns, but only {len(available_columns)} available after column matching")
+                                    continue
+                                fit_data = train_data_filtered[available_columns].copy()
+                            else:
+                                fit_data = train_data_filtered.copy()
                             # Drop rows that are all NaN
                             fit_data = fit_data.dropna(how='all')
                         else:
