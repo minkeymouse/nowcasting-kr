@@ -488,9 +488,17 @@ def evaluate_forecaster(
     # Check if forecaster is already fitted to avoid re-training
     is_fitted = False
     if hasattr(forecaster, 'is_fitted'):
-        is_fitted = forecaster.is_fitted()
+        # Check if it's a method (callable) or property
+        if callable(forecaster.is_fitted):
+            try:
+                is_fitted = forecaster.is_fitted()
+            except Exception:
+                # If calling fails, try as property/attribute
+                is_fitted = bool(forecaster.is_fitted) if not callable(forecaster.is_fitted) else False
+        else:
+            is_fitted = bool(forecaster.is_fitted)
     elif hasattr(forecaster, '_is_fitted'):
-        is_fitted = forecaster._is_fitted
+        is_fitted = bool(forecaster._is_fitted)
     elif hasattr(forecaster, '_fitted_forecaster'):
         is_fitted = forecaster._fitted_forecaster is not None
     elif hasattr(forecaster, '_y'):
