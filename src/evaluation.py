@@ -1843,6 +1843,45 @@ def generate_all_latex_tables(
                     )
                     aggregated_df.loc[mask_extreme, metric] = np.nan
         
+        # Mark suspiciously good values as NaN (potential data leakage, numerical issues, or single-point luck)
+        # This applies to all models and horizons, not just VAR-1
+        SUSPICIOUSLY_GOOD_SMSE_THRESHOLD = 1e-4
+        SUSPICIOUSLY_GOOD_SMAE_THRESHOLD = 1e-3
+        
+        # Check for suspiciously good sMSE values
+        if 'sMSE' in aggregated_df.columns:
+            suspicious_smse_mask = (
+                pd.to_numeric(aggregated_df['sMSE'], errors='coerce').abs() < SUSPICIOUSLY_GOOD_SMSE_THRESHOLD
+            ) & (pd.to_numeric(aggregated_df['sMSE'], errors='coerce').abs() > 0)
+            if suspicious_smse_mask.any():
+                n_suspicious = suspicious_smse_mask.sum()
+                logger.warning(
+                    f"generate_all_latex_tables: Found {n_suspicious} suspiciously good sMSE values "
+                    f"(<{SUSPICIOUSLY_GOOD_SMSE_THRESHOLD}). These may indicate data leakage, numerical issues, "
+                    f"or single-point luck. Marking as NaN."
+                )
+                all_metrics = ['sMSE', 'sMAE', 'sRMSE', 'MSE', 'MAE', 'RMSE']
+                for metric in all_metrics:
+                    if metric in aggregated_df.columns:
+                        aggregated_df.loc[suspicious_smse_mask, metric] = np.nan
+        
+        # Check for suspiciously good sMAE values
+        if 'sMAE' in aggregated_df.columns:
+            suspicious_smae_mask = (
+                pd.to_numeric(aggregated_df['sMAE'], errors='coerce').abs() < SUSPICIOUSLY_GOOD_SMAE_THRESHOLD
+            ) & (pd.to_numeric(aggregated_df['sMAE'], errors='coerce').abs() > 0)
+            if suspicious_smae_mask.any():
+                n_suspicious = suspicious_smae_mask.sum()
+                logger.warning(
+                    f"generate_all_latex_tables: Found {n_suspicious} suspiciously good sMAE values "
+                    f"(<{SUSPICIOUSLY_GOOD_SMAE_THRESHOLD}). These may indicate data leakage, numerical issues, "
+                    f"or single-point luck. Marking as NaN."
+                )
+                all_metrics = ['sMSE', 'sMAE', 'sRMSE', 'MSE', 'MAE', 'RMSE']
+                for metric in all_metrics:
+                    if metric in aggregated_df.columns:
+                        aggregated_df.loc[suspicious_smae_mask, metric] = np.nan
+        
         # Mark VAR-1 persistence values as NaN (extremely small values indicate persistence prediction)
         PERSISTENCE_THRESHOLD_SMSE = 1e-6
         PERSISTENCE_THRESHOLD_SMAE = 1e-4
