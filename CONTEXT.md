@@ -17,15 +17,17 @@
   - Total: 3 targets × 4 models × 12 months × 2 timepoints = 288 nowcasting predictions
 
 **ACTUAL Current Status**:
-- **checkpoint/**: Empty or missing - **0 models trained** (12 models needed: 3 targets × 4 models)
-- **outputs/backtest/**: Missing - **0 nowcasting experiments run** (12 experiments needed: 3 targets × 4 models)
-- **outputs/experiments/aggregated_results.csv**: Missing - **Forecasting results not aggregated**
-- **outputs/comparisons/**: May contain comparison_results.json files, but need to verify
+- **checkpoint/**: Has log files but **0 model.pkl files** - **0 models trained** (12 models needed: 3 targets × 4 models)
+- **outputs/backtest/**: Has log files but **0 JSON files** - **0 nowcasting experiments completed** (12 experiments needed: 3 targets × 4 models)
+- **outputs/experiments/aggregated_results.csv**: **EXISTS** - Forecasting results aggregated (36 rows, contains extreme VAR values)
+- **nowcasting-report/tables/**: **3 tables generated** (tab_dataset_params.tex, tab_forecasting_results.tex, tab_nowcasting_backtest.tex)
+- **nowcasting-report/images/**: **7 plots generated** (forecast_vs_actual_*.png × 3, accuracy_heatmap.png, horizon_trend.png, nowcasting_comparison_*.png × 3)
 
 **What This Means**:
-- Training has NOT been run - models need to be trained and saved to checkpoint/
-- Nowcasting experiments have NOT been run - outputs/backtest/ needs to be created
-- Forecasting results may exist but are NOT aggregated - aggregated_results.csv needs to be generated
+- Training has NOT been run - models need to be trained and saved to checkpoint/ (code fixes applied this iteration)
+- Nowcasting experiments have NOT been run - outputs/backtest/ needs JSON files (blocked by training)
+- Forecasting results exist and are aggregated - Table 2 can be generated (extreme values filtered when loading)
+- Tables and plots generated - Table 3 and Plot4 have placeholders (nowcasting results missing)
 
 **Next Steps** (Step 1 will automatically handle):
 1. Check checkpoint/ - if empty, run `bash agent_execute.sh train`
@@ -54,11 +56,11 @@
   - experiment/: 3 target configs (koequipte_report, kowrccnse_report, koipallg_report)
   - model/: Model-specific parameters (arima, var, dfm, ddfm)
   - series/: Series configs (frequency, transformation, block: null - only global block)
-- **checkpoint/**: **EMPTY** - Trained models should be saved here (12 models needed)
+- **checkpoint/**: Has log files but **0 model.pkl files** - Trained models should be saved here (12 models needed)
 - **outputs/**: Experiment results
-  - comparisons/: Per-target forecasting results (may exist, need to verify)
-  - experiments/: Aggregated forecasting results (aggregated_results.csv - **MISSING**)
-  - backtest/: **MISSING** - Nowcasting backtest results (12 JSON files needed)
+  - comparisons/: Per-target forecasting results (exists - used to generate Plot1-3)
+  - experiments/: Aggregated forecasting results (aggregated_results.csv - **EXISTS**, 36 rows)
+  - backtest/: Has log files but **0 JSON files** - Nowcasting backtest results (12 JSON files needed)
 
 ---
 
@@ -71,9 +73,9 @@ run_train.sh (or agent_execute.sh train)
     → _train_forecaster() → Load data (1985-2019) → Preprocess → Create forecaster → fit()
     → Save to checkpoint/{target}_{model}/model.pkl
 ```
-**Status**: checkpoint/ is empty - training NOT done
+**Status**: checkpoint/ has 0 model.pkl files - training NOT done (code fixes applied this iteration - ready to run)
 
-**Forecasting Flow** (MAY BE PARTIALLY DONE):
+**Forecasting Flow** (DONE):
 ```
 run_forecast.sh (or agent_execute.sh forecast)
   → src/train.py compare --config-name experiment/{target}_report
@@ -81,7 +83,7 @@ run_forecast.sh (or agent_execute.sh forecast)
     → evaluate_forecaster() → Save to outputs/comparisons/
     → Aggregate results → Save to outputs/experiments/aggregated_results.csv
 ```
-**Status**: aggregated_results.csv missing - may need to run or regenerate
+**Status**: aggregated_results.csv EXISTS with 36 rows (contains extreme VAR values, but filtering handles them when loading)
 
 **Nowcasting Flow** (NOT RUN YET):
 ```
@@ -95,19 +97,19 @@ run_backtest.sh (or agent_execute.sh backtest)
         → Calculate sMSE, sMAE
     → Save to outputs/backtest/{target}_{model}_backtest.json
 ```
-**Status**: outputs/backtest/ missing - nowcasting NOT done
+**Status**: outputs/backtest/ has 0 JSON files - nowcasting NOT done (blocked by training)
 
 ---
 
 ## Result Structure
 
 **Forecasting**:
-- Per-target: `outputs/comparisons/{target}_{timestamp}/comparison_results.json` (may exist, need to verify)
-- Aggregated: `outputs/experiments/aggregated_results.csv` (**MISSING**)
-- Models: `checkpoint/{target}_{model}/model.pkl` (**0 files - checkpoint/ empty**)
+- Per-target: `outputs/comparisons/{target}_{timestamp}/comparison_results.json` (exists - used to generate Plot1-3)
+- Aggregated: `outputs/experiments/aggregated_results.csv` (**EXISTS**, 36 rows)
+- Models: `checkpoint/{target}_{model}/model.pkl` (**0 files - checkpoint/ has 0 model.pkl files**)
 
 **Nowcasting**:
-- Per-target-model: `outputs/backtest/{target}_{model}_backtest.json` (**0 files - outputs/backtest/ missing**)
+- Per-target-model: `outputs/backtest/{target}_{model}_backtest.json` (**0 files - outputs/backtest/ has 0 JSON files**)
 - Structure: `results_by_timepoint` with "4weeks" and "1weeks" keys
 - Each timepoint contains: monthly_results, overall_sMAE, overall_sMSE, n_months
 
@@ -121,16 +123,16 @@ bash agent_execute.sh train
 # Or: bash run_train.sh
 # Trains all models for all targets, saves to checkpoint/{target}_{model}/model.pkl
 # Training data: 1985-01-01 to 2019-12-31 (no data leakage)
-# Status: checkpoint/ is empty - needs to be run
+# Status: checkpoint/ has 0 model.pkl files - needs to be run (code fixes applied this iteration)
 ```
 
-**Forecasting (load from checkpoint/, generate forecasts)** - **MAY NEED TO RUN**:
+**Forecasting (load from checkpoint/, generate forecasts)** - **DONE**:
 ```bash
 bash agent_execute.sh forecast
 # Or: bash run_forecast.sh
 # Loads models from checkpoint/, generates forecasts for all horizons (1-30)
 # Aggregates results to outputs/experiments/aggregated_results.csv
-# Status: aggregated_results.csv missing - may need to run
+# Status: aggregated_results.csv EXISTS with 36 rows
 ```
 
 **Nowcasting Backtest (multiple time points)** - **NOT DONE YET**:
@@ -140,19 +142,19 @@ bash agent_execute.sh backtest
 # Runs backtest for all models and targets
 # For each target month (2024-01 ~ 2024-12), predicts at 4 weeks and 1 week before
 # Saves to outputs/backtest/{target}_{model}_backtest.json
-# Status: outputs/backtest/ missing - needs to be run
+# Status: outputs/backtest/ has 0 JSON files - needs to be run (blocked by training)
 ```
 
-**Generate aggregated results**:
+**Generate tables**:
 ```bash
-python3 -c "from src.eval import main_aggregator; main_aggregator()"
-# Status: May need to run if aggregated_results.csv is missing
+python3 -c "from src.eval.evaluation import generate_all_latex_tables; generate_all_latex_tables()"
+# Status: Tables generated this iteration - Table 3 shows N/A (nowcasting results missing)
 ```
 
 **Generate plots**:
 ```bash
 python3 nowcasting-report/code/plot.py
-# Status: Plot4 cannot be generated until nowcasting results exist
+# Status: Plots generated this iteration - Plot4 shows placeholders (nowcasting results missing)
 ```
 
 ---
@@ -160,17 +162,17 @@ python3 nowcasting-report/code/plot.py
 ## Report Update Workflow
 
 **Forecasting Workflow**:
-1. Train models → `bash agent_execute.sh train` (saves to checkpoint/) - **NOT DONE**
-2. Run forecasts → `bash agent_execute.sh forecast` (loads from checkpoint/, generates forecasts for 1-30 horizons) - **MAY NEED TO RUN**
-3. Generate aggregated CSV → `python3 -c "from src.eval import main_aggregator; main_aggregator()"` - **MAY NEED TO RUN**
-4. Generate plots → `python3 nowcasting-report/code/plot.py` (Plot1, Plot2, Plot3) - **MAY BE DONE**
-5. Update LaTeX tables → Table 1 (dataset/params), Table 2 (forecasting results from aggregated_results.csv) - **MAY BE DONE**
+1. Train models → `bash agent_execute.sh train` (saves to checkpoint/) - **NOT DONE** (code fixes applied this iteration)
+2. Run forecasts → `bash agent_execute.sh forecast` (loads from checkpoint/, generates forecasts for 1-30 horizons) - **DONE**
+3. Generate aggregated CSV → `outputs/experiments/aggregated_results.csv` - **EXISTS** (36 rows)
+4. Generate plots → `python3 nowcasting-report/code/plot.py` (Plot1, Plot2, Plot3) - **DONE**
+5. Update LaTeX tables → Table 1 (dataset/params), Table 2 (forecasting results) - **DONE**
 
 **Nowcasting Workflow**:
-1. Run backtests → `bash agent_execute.sh backtest` (all models, all targets, 4 weeks and 1 week before) - **NOT DONE**
-2. Generate table 3 → From outputs/backtest/*_backtest.json (8 rows × 7 columns) - **CANNOT BE DONE YET**
-3. Generate plot4 → From outputs/backtest/*_backtest.json (3 pairs, 6 plots total) - **CANNOT BE DONE YET**
-4. Update report → Nowcasting section in 3_results.tex with table 3 and plot4 - **CANNOT BE DONE YET**
+1. Run backtests → `bash agent_execute.sh backtest` (all models, all targets, 4 weeks and 1 week before) - **NOT DONE** (blocked by training)
+2. Generate table 3 → From outputs/backtest/*_backtest.json (8 rows × 7 columns) - **GENERATED WITH N/A** (needs regeneration after backtests)
+3. Generate plot4 → From outputs/backtest/*_backtest.json (3 pairs, 6 plots total) - **GENERATED WITH PLACEHOLDERS** (needs regeneration after backtests)
+4. Update report → Nowcasting section in 3_results.tex with table 3 and plot4 - **CANNOT BE DONE YET** (needs actual results)
 
 **Finalization**:
 1. Update result sections → `contents/3_results.tex` with forecasting and nowcasting results - **PARTIALLY DONE** (nowcasting results missing)
@@ -188,11 +190,11 @@ python3 nowcasting-report/code/plot.py
 - Report structure ready (methodology, results, discussion sections)
 
 **What's Actually Missing**:
-- Models NOT trained (checkpoint/ empty)
-- Nowcasting experiments NOT run (outputs/backtest/ missing)
-- Table 3 NOT generated (needs nowcasting results)
-- Plot4 NOT generated (needs nowcasting results)
-- aggregated_results.csv missing (may need regeneration)
+- Models NOT trained (checkpoint/ has 0 model.pkl files) - code fixes applied this iteration
+- Nowcasting experiments NOT run (outputs/backtest/ has 0 JSON files) - blocked by training
+- Table 3 generated but shows N/A (needs regeneration after nowcasting results)
+- Plot4 generated but shows placeholders (needs regeneration after nowcasting results)
+- aggregated_results.csv EXISTS (36 rows) - extreme values filtered when loading
 
 **Next Steps**:
 - Step 1 will automatically check and run needed experiments

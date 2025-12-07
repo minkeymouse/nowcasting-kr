@@ -350,51 +350,51 @@ def calculate_metrics_per_horizon(
         has_true = len(y_true_h) > 0 if hasattr(y_true_h, '__len__') else (y_true_h.size > 0 if hasattr(y_true_h, 'size') else False)
         
         # Calculate metrics for this horizon
-            if has_pred and has_true:
-                try:
-                    # Fix: If y_true_h is Series (not DataFrame), target_series must be None or int, not string
-                    target_series_for_metrics = target_series
-                    if isinstance(y_true_h, pd.Series) and isinstance(target_series, str):
-                        # y_true_h is Series but target_series is string - set to None
+        if has_pred and has_true:
+            try:
+                # Fix: If y_true_h is Series (not DataFrame), target_series must be None or int, not string
+                target_series_for_metrics = target_series
+                if isinstance(y_true_h, pd.Series) and isinstance(target_series, str):
+                    # y_true_h is Series but target_series is string - set to None
+                    target_series_for_metrics = None
+                elif isinstance(y_true_h, pd.DataFrame) and len(y_true_h.columns) == 1:
+                    # Single column DataFrame - can use None or column name
+                    if isinstance(target_series, str) and target_series not in y_true_h.columns:
+                        # target_series string doesn't match column name - set to None
                         target_series_for_metrics = None
-                    elif isinstance(y_true_h, pd.DataFrame) and len(y_true_h.columns) == 1:
-                        # Single column DataFrame - can use None or column name
-                        if isinstance(target_series, str) and target_series not in y_true_h.columns:
-                            # target_series string doesn't match column name - set to None
-                            target_series_for_metrics = None
-                    
-                    # Additional validation: Check if prediction is suspiciously close to last training value
-                    # This can help detect if VAR is just predicting the last value (persistence)
-                    if h == 1 and y_train is not None:
-                        try:
-                            if isinstance(y_train, (pd.DataFrame, pd.Series)):
-                                last_train_val = y_train.iloc[-1]
-                                if isinstance(y_pred_h, (pd.DataFrame, pd.Series)):
-                                    pred_val = y_pred_h.iloc[0] if len(y_pred_h) > 0 else None
-                                    if pred_val is not None and isinstance(last_train_val, (pd.Series, pd.DataFrame)):
-                                        # Compare values
-                                        if isinstance(pred_val, pd.Series) and isinstance(last_train_val, pd.Series):
-                                            diff = (pred_val - last_train_val).abs()
-                                            if target_series_for_metrics is not None:
-                                                if isinstance(target_series_for_metrics, str) and target_series_for_metrics in diff.index:
-                                                    diff_val = diff[target_series_for_metrics]
-                                                elif isinstance(target_series_for_metrics, int) and target_series_for_metrics < len(diff):
-                                                    diff_val = diff.iloc[target_series_for_metrics]
-                                                else:
-                                                    diff_val = diff.iloc[0] if len(diff) > 0 else None
+                
+                # Additional validation: Check if prediction is suspiciously close to last training value
+                # This can help detect if VAR is just predicting the last value (persistence)
+                if h == 1 and y_train is not None:
+                    try:
+                        if isinstance(y_train, (pd.DataFrame, pd.Series)):
+                            last_train_val = y_train.iloc[-1]
+                            if isinstance(y_pred_h, (pd.DataFrame, pd.Series)):
+                                pred_val = y_pred_h.iloc[0] if len(y_pred_h) > 0 else None
+                                if pred_val is not None and isinstance(last_train_val, (pd.Series, pd.DataFrame)):
+                                    # Compare values
+                                    if isinstance(pred_val, pd.Series) and isinstance(last_train_val, pd.Series):
+                                        diff = (pred_val - last_train_val).abs()
+                                        if target_series_for_metrics is not None:
+                                            if isinstance(target_series_for_metrics, str) and target_series_for_metrics in diff.index:
+                                                diff_val = diff[target_series_for_metrics]
+                                            elif isinstance(target_series_for_metrics, int) and target_series_for_metrics < len(diff):
+                                                diff_val = diff.iloc[target_series_for_metrics]
                                             else:
                                                 diff_val = diff.iloc[0] if len(diff) > 0 else None
-                                            
-                                            # If prediction is extremely close to last training value, log warning
-                                            if diff_val is not None and diff_val < 1e-6:
-                                                logger.warning(f"Horizon {h}: Prediction is extremely close to last training value (diff={diff_val}). This may indicate VAR is essentially predicting persistence (last value), which could explain suspiciously good results.")
-                        except Exception as e:
-                            logger.debug(f"Horizon {h}: Could not check prediction vs last training value: {e}")
-                    
-                    metrics = calculate_standardized_metrics(
-                        y_true_h, y_pred_h, y_train=y_train, target_series=target_series_for_metrics
-                    )
-                    results[h] = metrics
+                                        else:
+                                            diff_val = diff.iloc[0] if len(diff) > 0 else None
+                                        
+                                        # If prediction is extremely close to last training value, log warning
+                                        if diff_val is not None and diff_val < 1e-6:
+                                            logger.warning(f"Horizon {h}: Prediction is extremely close to last training value (diff={diff_val}). This may indicate VAR is essentially predicting persistence (last value), which could explain suspiciously good results.")
+                    except Exception as e:
+                        logger.debug(f"Horizon {h}: Could not check prediction vs last training value: {e}")
+                
+                metrics = calculate_standardized_metrics(
+                    y_true_h, y_pred_h, y_train=y_train, target_series=target_series_for_metrics
+                )
+                results[h] = metrics
             except Exception as e:
                 # If calculation fails, return NaN metrics
                 results[h] = {

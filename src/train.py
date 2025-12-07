@@ -84,10 +84,11 @@ def train_model(
         checkpoint_model_name = model_name
     
     # Add checkpoint_dir to overrides if specified
+    # Use + prefix to add new keys (Hydra struct mode requires this for keys not in config)
     final_overrides = list(overrides) if overrides else []
     if checkpoint_dir:
-        final_overrides.append(f"checkpoint_dir={checkpoint_dir}")
-        final_overrides.append(f"checkpoint_model_name={checkpoint_model_name}")
+        final_overrides.append(f"+checkpoint_dir={checkpoint_dir}")
+        final_overrides.append(f"+checkpoint_model_name={checkpoint_model_name}")
     
     result = train(
         config_name=config_name,

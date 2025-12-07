@@ -502,11 +502,19 @@ def _train_forecaster(
     forecaster.fit(y_train)
     
     # Save model
-    if target_col:
-        final_model_name = model_name or f"{model_type}_{target_col}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    # If outputs_dir already contains the model name (checkpoint case), use outputs_dir directly
+    # Otherwise, create subdirectory with model name
+    if model_name and str(outputs_dir).endswith(model_name):
+        # outputs_dir already contains model name (e.g., checkpoint/KOEQUIPTE_arima)
+        # Use it directly without creating another subdirectory
+        model_dir = outputs_dir
     else:
-        final_model_name = model_name or f"{model_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    model_dir = outputs_dir / final_model_name
+        # Create subdirectory with model name or auto-generated name
+        if target_col:
+            final_model_name = model_name or f"{model_type}_{target_col}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        else:
+            final_model_name = model_name or f"{model_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        model_dir = outputs_dir / final_model_name
     model_dir.mkdir(parents=True, exist_ok=True)
     
     import pickle
@@ -684,13 +692,14 @@ def train(
     config_path = config_path or str(Path(__file__).parent.parent.parent / "config")
     
     # Check if checkpoint_dir is specified in config overrides
+    # Handle both 'checkpoint_dir=' and '+checkpoint_dir=' (Hydra add syntax)
     checkpoint_dir = None
     checkpoint_model_name = None
     if config_overrides:
         for override in config_overrides:
-            if override.startswith('checkpoint_dir='):
+            if override.startswith('checkpoint_dir=') or override.startswith('+checkpoint_dir='):
                 checkpoint_dir = override.split('=', 1)[1]
-            elif override.startswith('checkpoint_model_name='):
+            elif override.startswith('checkpoint_model_name=') or override.startswith('+checkpoint_model_name='):
                 checkpoint_model_name = override.split('=', 1)[1]
     
     # Use checkpoint_dir if specified, otherwise use outputs/models
@@ -1104,7 +1113,7 @@ def compare_models(
             checkpoint_dir = None
             if config_overrides:
                 for override in config_overrides:
-                    if override.startswith('checkpoint_dir='):
+                    if override.startswith('checkpoint_dir=') or override.startswith('+checkpoint_dir='):
                         checkpoint_dir = override.split('=', 1)[1]
                         break
             
