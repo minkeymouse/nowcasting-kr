@@ -1132,9 +1132,10 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
                 # Check for suspiciously good results (potential data leakage, numerical issues, or single-point luck)
                 # Threshold: sMSE < 1e-4 or sMAE < 1e-3 is suspiciously good for any model/horizon
                 # This is especially important when n_valid=1 (single test point)
+                # Note: Zero values (perfect predictions) are also considered suspicious
                 SUSPICIOUSLY_GOOD_SMSE_THRESHOLD = 1e-4
                 SUSPICIOUSLY_GOOD_SMAE_THRESHOLD = 1e-3
-                if isinstance(smse, (int, float)) and not np.isnan(smse) and (0 < abs(smse) < SUSPICIOUSLY_GOOD_SMSE_THRESHOLD):
+                if isinstance(smse, (int, float)) and not np.isnan(smse) and (0 <= abs(smse) < SUSPICIOUSLY_GOOD_SMSE_THRESHOLD):
                     _module_logger.warning(
                         f"aggregate_overall_performance: Suspiciously good sMSE detected for "
                         f"{model_name.upper()} {target_series} horizon {horizon}: {smse:.2e}. "
@@ -1144,7 +1145,7 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
                     smse = np.nan
                     smae = np.nan
                     srmse = np.nan
-                elif isinstance(smae, (int, float)) and not np.isnan(smae) and (0 < abs(smae) < SUSPICIOUSLY_GOOD_SMAE_THRESHOLD):
+                elif isinstance(smae, (int, float)) and not np.isnan(smae) and (0 <= abs(smae) < SUSPICIOUSLY_GOOD_SMAE_THRESHOLD):
                     _module_logger.warning(
                         f"aggregate_overall_performance: Suspiciously good sMAE detected for "
                         f"{model_name.upper()} {target_series} horizon {horizon}: {smae:.2e}. "
@@ -1850,9 +1851,10 @@ def generate_all_latex_tables(
         
         # Check for suspiciously good sMSE values
         if 'sMSE' in aggregated_df.columns:
+            smse_numeric = pd.to_numeric(aggregated_df['sMSE'], errors='coerce')
             suspicious_smse_mask = (
-                pd.to_numeric(aggregated_df['sMSE'], errors='coerce').abs() < SUSPICIOUSLY_GOOD_SMSE_THRESHOLD
-            ) & (pd.to_numeric(aggregated_df['sMSE'], errors='coerce').abs() > 0)
+                smse_numeric.abs() < SUSPICIOUSLY_GOOD_SMSE_THRESHOLD
+            ) & (smse_numeric.abs() >= 0) & (~smse_numeric.isna())
             if suspicious_smse_mask.any():
                 n_suspicious = suspicious_smse_mask.sum()
                 logger.warning(
@@ -1867,9 +1869,10 @@ def generate_all_latex_tables(
         
         # Check for suspiciously good sMAE values
         if 'sMAE' in aggregated_df.columns:
+            smae_numeric = pd.to_numeric(aggregated_df['sMAE'], errors='coerce')
             suspicious_smae_mask = (
-                pd.to_numeric(aggregated_df['sMAE'], errors='coerce').abs() < SUSPICIOUSLY_GOOD_SMAE_THRESHOLD
-            ) & (pd.to_numeric(aggregated_df['sMAE'], errors='coerce').abs() > 0)
+                smae_numeric.abs() < SUSPICIOUSLY_GOOD_SMAE_THRESHOLD
+            ) & (smae_numeric.abs() >= 0) & (~smae_numeric.isna())
             if suspicious_smae_mask.any():
                 n_suspicious = suspicious_smae_mask.sum()
                 logger.warning(
