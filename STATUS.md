@@ -9,7 +9,8 @@
 - ✅ Status documentation updated (STATUS.md and ISSUES.md)
 
 **What's Pending**:
-- ⏳ Commit & push STATUS.md and ISSUES.md changes (will be done in step 9)
+- ✅ Commit & push STATUS.md and ISSUES.md changes (completed in commit 582e3b1)
+- ✅ PDF compilation verified (11 pages, under 15 target, committed to submodule)
 - ⏳ User review and feedback (user reviews report every 2 iterations)
 - ⏳ Optional enhancements (if requested by user)
 
@@ -38,7 +39,7 @@
   - DFM numerical issues (R=10000, Q=1e6, V_0=1e38): EM convergence issue, results valid
 - ✅ **Results Consistency**: Verified all comparison_results.json match aggregated_results.csv (36 rows: 30 valid + 6 NaN)
 - ✅ **Status Documentation**: Updated ISSUES.md with latest inspection findings
-- ⏳ **Commit & Push**: Changes ready to be committed and pushed (will be done in step 9)
+- ✅ **Commit & Push**: STATUS.md and ISSUES.md changes committed and pushed (commit 582e3b1). PDF updated in submodule (commit 70fb182).
 
 **All Critical Tasks Complete**:
 - ✅ **Experiments**: 36/36 combinations complete (30 valid + 6 NaN for DFM/DDFM h28 - data limitation)
