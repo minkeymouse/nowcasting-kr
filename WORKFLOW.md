@@ -92,7 +92,14 @@ table2. Table consisting of standardized MSE and standardized MAE for forecastin
 table3. Table consisting of all models (ARIMA, VAR, DFM, DDFM) backtest results for year 2024~2025 each month. Train with data from 1985 to 2019, nowcast from Jan 2024 to Oct 2025 (22 months). For each target month, perform nowcasting at multiple time points (4 weeks before, 1 week before month end). By masking unavailable data based on release dates from series config, generate 1 horizon forecast at each time point. Calculate sMSE, sMAE for each month and time point. Table structure: Rows = model-timepoint combinations (4 models × 2 timepoints = 8 rows: ARIMA-4weeks, ARIMA-1week, VAR-4weeks, VAR-1week, DFM-4weeks, DFM-1week, DDFM-4weeks, DDFM-1week), Columns = target-metric combinations (3 targets × 2 metrics = 6 columns: KOIPALL.G_sMAE, KOIPALL.G_sMSE, KOEQUIPTE_sMAE, KOEQUIPTE_sMSE, KOWRCCNSE_sMAE, KOWRCCNSE_sMSE). Total: 8 rows × 7 columns (including model-timepoint column).
 
 ## Images
-Plot1. Plot for 22 months forecasting and actual value for each target (2024-01 to 2025-10). This means 3 plots (one per target: KOIPALL.G, KOEQUIPTE, KOWRCCNSE), each plot consist of original series line, arima, var, dfm, ddfm lines. This means 5 lines for each plot. Make sure x axis is monthly time stamp and y axis is target series. Make sure x axis shows 22 months of forecasts (2024-01 to 2025-10) with actual values and 4 model predictions.
+Plot1. Plot for forecasting and actual value comparison for each target. This means 3 plots (one per target: KOIPALL.G, KOEQUIPTE, KOWRCCNSE). Each plot shows:
+- Historical period (2023-01 to 2023-12): Single line showing actual historical time series values only
+- Forecast period (2024-01 to 2025-10): Actual values (solid black line) and 4 model predictions (ARIMA, VAR, DFM, DDFM as dashed lines with different colors)
+- Total: 5 lines per plot (1 historical actual + 1 forecast actual + 4 model forecasts)
+- X-axis: Monthly time stamps covering 2023-01 to 2025-10 (34 months total: 12 months historical + 22 months forecast)
+- Y-axis: Target series values in original scale (not standardized)
+- Vertical line at 2024-01-01 to separate historical and forecast periods
+- All values must be in original data scale (not standardized). If models output standardized values, they must be inverse-transformed to original scale before plotting.
 
 Plot2. Plot for accuracy heatmap of 4 models and 3 targets. Shows standardized RMSE values as a heatmap with models on one axis and targets on the other axis.
 
