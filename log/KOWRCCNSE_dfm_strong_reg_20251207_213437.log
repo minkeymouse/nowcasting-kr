@@ -1,0 +1,1108 @@
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+/data/nowcasting-kr/.venv/lib/python3.12/site-packages/pytorch_lightning/trainer/configuration_validator.py:68: You passed in a `val_dataloader` but have no `validation_step`. Skipping val loop.
+You are using a CUDA device ('NVIDIA GeForce RTX 5090') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+/data/nowcasting-kr/.venv/lib/python3.12/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:434: The 'train_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=15` in the `DataLoader` to improve performance.
+/data/nowcasting-kr/.venv/lib/python3.12/site-packages/pytorch_lightning/loops/fit_loop.py:317: The number of training batches (1) is smaller than the logging interval Trainer(log_every_n_steps=50). Set a lower value for log_every_n_steps if you want to see logs for the training epoch.
+Warning: Series A001 with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KOBDY10 with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KOCBNG3 with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KORCOMP with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KORFBEV with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KORWHLS with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series USEPUPO with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series USSKORW with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Training data period: 1985-01-04 00:00:00 to 2019-12-31 00:00:00 (1985-2019 enforced)
+Original data frequency: Weekly (2184 points)
+All models will use monthly frequency (window-averaged from weekly data)
+
+======================================================================
+Training DFM model
+======================================================================
+Config: experiment/consumption_kowrccnse_report
+Data: data/data.csv
+Max iterations: 5000, Threshold: 1e-05, Series: 39 (filtered from config, target_series included)
+2025-12-07 21:34:43 - dfm_python.ssm.em - INFO - Processing 1 blocks. r tensor: tensor([3.], device='cuda:0'), shape: torch.Size([1])
+2025-12-07 21:34:43 - dfm_python.ssm.em - INFO - Block 0: r_i=3, ppC=5, expected size=15
+2025-12-07 21:34:43 - dfm_python.ssm.em - INFO - Block 0: Creating matrices of size 15x15. A_i shape=torch.Size([15, 15]), Q_i shape=torch.Size([15, 15]), initV_i shape=torch.Size([15, 15])
+2025-12-07 21:34:43 - dfm_python.ssm.em - INFO - Block 0: Final matrices - A=torch.Size([15, 15]), Q=torch.Size([15, 15]), V_0=torch.Size([15, 15])
+2025-12-07 21:34:43 - dfm_python.ssm.em - INFO - Building block-diagonal matrices from 1 blocks
+2025-12-07 21:34:43 - dfm_python.ssm.em - INFO -   Block 0: A=torch.Size([15, 15]), Q=torch.Size([15, 15]), V_0=torch.Size([15, 15])
+2025-12-07 21:34:43 - dfm_python.ssm.em - INFO - Successfully created block-diagonal matrices: A_factors=torch.Size([15, 15]), Q_factors=torch.Size([15, 15]), V_0_factors=torch.Size([15, 15])
+/data/nowcasting-kr/dfm-python/src/dfm_python/ssm/utils.py:191: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+  min_eig = float(torch.min(eigenvals))
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+/data/nowcasting-kr/dfm-python/src/dfm_python/ssm/kalman.py:473: UserWarning: The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /pytorch/aten/src/ATen/native/TensorShape.cpp:4416.)
+  innov_term = innov.T @ iF @ innov
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:47 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:48 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:49 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+[EM    1/5000] Log-likelihood: -2471.938273 | Change: 0.000000e+00 
+2025-12-07 21:34:50 - dfm_python.models.dfm - INFO - EM iteration 1/5000: loglik=-2471.9383, change=0.00e+00
+2025-12-07 21:34:50 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:50 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:50 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:50 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:50 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:50 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:50 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:50 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:51 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:52 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:53 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=136 contains 47 NaN values and 7 Inf values
+2025-12-07 21:34:53 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=136, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=135 contains 41 NaN values and 2 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=135, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=134 contains 40 NaN values and 1 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=134, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=133 contains 37 NaN values and 4 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=133, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=132 contains 31 NaN values and 6 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=132, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=131 contains 7 NaN values and 8 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=131, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=131 contains 1251 NaN values and 520 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=131, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=131 contains 8 NaN values and 687 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=131, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=129 contains 45 NaN values and 9 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=129, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=127 contains 42 NaN values and 9 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=127, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=125 contains 33 NaN values and 7 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=125, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=125 contains 1141 NaN values and 571 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=125, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=125 contains 2 NaN values and 562 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=125, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=123 contains 4 NaN values and 18 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=123, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=120 contains 52 NaN values and 2 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=120, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=119 contains 1286 NaN values and 509 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=119, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=119 contains 24 NaN values and 803 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=119, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=117 contains 43 NaN values and 11 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=117, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=114 contains 39 NaN values and 5 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=114, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=113 contains 1242 NaN values and 512 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=113, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=113 contains 14 NaN values and 694 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=113, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=111 contains 5 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=111, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=107 contains 43 NaN values and 9 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=107, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=107 contains 1309 NaN values and 554 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=107, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=107 contains 26 NaN values and 744 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=107, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=103 contains 30 NaN values and 10 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=103, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=101 contains 1406 NaN values and 487 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=101, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=101 contains 42 NaN values and 781 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=101, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=98 contains 53 NaN values and 1 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=98, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=95 contains 1297 NaN values and 496 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=95, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=95 contains 12 NaN values and 691 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=95, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=93 contains 30 NaN values and 11 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=93, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=89 contains 1307 NaN values and 505 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=89, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=89 contains 30 NaN values and 777 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=89, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=87 contains 54 NaN values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=87, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=83 contains 1317 NaN values and 491 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=83, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=83 contains 22 NaN values and 745 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=83, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=81 contains 38 NaN values and 8 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=81, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=77 contains 1386 NaN values and 514 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=77, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=77 contains 18 NaN values and 781 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=77, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=74 contains 50 NaN values and 4 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=74, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=71 contains 1194 NaN values and 548 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=71, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=71 contains 8 NaN values and 648 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=71, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=66 contains 54 NaN values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=66, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=65 contains 1305 NaN values and 510 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=65, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=65 contains 24 NaN values and 733 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=65, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=59 contains 1297 NaN values and 542 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=59, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=59 contains 18 NaN values and 728 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=59, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=58 contains 7 NaN values and 27 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=58, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=53 contains 1316 NaN values and 499 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=53, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=53 contains 26 NaN values and 784 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=53, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=49 contains 42 NaN values and 7 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=49, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=47 contains 1238 NaN values and 566 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=47, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=47 contains 16 NaN values and 720 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=47, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=41 contains 1260 NaN values and 533 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=41, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=41 contains 20 NaN values and 699 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=41, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=39 contains 40 NaN values and 5 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=39, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=35 contains 1238 NaN values and 521 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=35, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=35 contains 10 NaN values and 713 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=35, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=29 contains 1358 NaN values and 510 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=29, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=29 contains 24 NaN values and 743 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=29, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=28 contains 49 NaN values and 4 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=28, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=23 contains 1314 NaN values and 501 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=23, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=23 contains 36 NaN values and 773 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=23, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=17 contains 1263 NaN values and 523 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=17, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=17 contains 24 NaN values and 739 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=17, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=16 contains 34 NaN values and 10 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=16, using ZmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=11 contains 1245 NaN values and 493 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=11, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=11 contains 22 NaN values and 707 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=11, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=5 contains 1208 NaN values and 553 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=5, using VmU as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=5 contains 438 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=5, using zero matrix as fallback
+2025-12-07 21:34:54 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=0 contains 2 Inf values
+2025-12-07 21:34:54 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=0, using ZmU as fallback
+2025-12-07 21:34:55 - dfm_python.ssm.em - WARNING - EM algorithm: Failed to compute condition number for sum_EZZ (linalg.eigh: The algorithm failed to converge because the input matrix is ill-conditioned or has too many repeated eigenvalues (error code: 55).), using strong regularization: 1.00e-03 (min=1e-3, base=1.00e-06)
+2025-12-07 21:34:55 - dfm_python.ssm.em - WARNING - EM algorithm: C matrix contains 1404/2106 NaN values (66.7%) after solve operation. This indicates numerical instability. Possible causes: singular matrix, extreme values, or insufficient regularization.
+2025-12-07 21:34:55 - dfm_python.ssm.em - WARNING - Set 54 NaN columns in C matrix to zero.
+2025-12-07 21:34:55 - dfm_python.ssm.em - WARNING - eigvalsh failed for Q matrix: linalg.eigh: The algorithm failed to converge because the input matrix is ill-conditioned or has too many repeated eigenvalues (error code: 55).. Applying stronger regularization.
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:55 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:56 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=122 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=122, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=123 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=123, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=124 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=124, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=125 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=125, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=126 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=126, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=127 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=127, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=128 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=128, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=129 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=129, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=130 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=130, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=131 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=131, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=132 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=132, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=133 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=133, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=134 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=134, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=135 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=135, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - Z at t=136 contains 15 Inf values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=136, using previous Zu
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=136 contains 54 NaN values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=136, using ZmU as fallback
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=135 contains 54 NaN values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=135, using ZmU as fallback
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=134 contains 54 NaN values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=134, using ZmU as fallback
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=133 contains 54 NaN values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=133, using ZmU as fallback
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=132 contains 54 NaN values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=132, using ZmU as fallback
+2025-12-07 21:34:57 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=131 contains 54 NaN values
+2025-12-07 21:34:57 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=131, using ZmU as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=130 contains 54 NaN values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=130, using ZmU as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=129 contains 54 NaN values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=129, using ZmU as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=128 contains 54 NaN values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=128, using ZmU as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=127 contains 54 NaN values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=127, using ZmU as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=126 contains 54 NaN values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=126, using ZmU as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=125 contains 54 NaN values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=125, using ZmU as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=124 contains 54 NaN values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=124, using ZmU as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=123 contains 54 NaN values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=123, using ZmU as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=122 contains 54 NaN values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=122, using ZmU as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=86 contains 8 NaN values and 68 Inf values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=86, using zero matrix as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=73 contains 401 NaN values and 549 Inf values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=73, using VmU as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=35 contains 8 NaN values and 68 Inf values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=35, using zero matrix as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=11 contains 453 NaN values and 384 Inf values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=11, using VmU as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=1 contains 230 NaN values and 704 Inf values
+2025-12-07 21:34:58 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=1, using zero matrix as fallback
+2025-12-07 21:34:58 - dfm_python.ssm.em - WARNING - EM algorithm: Failed to compute condition number for sum_EZZ (linalg.eigh: The algorithm failed to converge because the input matrix is ill-conditioned or has too many repeated eigenvalues (error code: 55).), using strong regularization: 1.00e-03 (min=1e-3, base=1.00e-06)
+2025-12-07 21:34:58 - dfm_python.ssm.em - WARNING - EM algorithm: torch.linalg.solve failed for C matrix update (torch.linalg.solve: The solver failed because the input matrix is singular.), using pseudo-inverse fallback (original MATLAB: pinv() in smoother)
+/data/nowcasting-kr/dfm-python/src/dfm_python/ssm/em.py:309: UserWarning: torch.linalg.svd: During SVD computation with the selected cusolver driver, batches 0 failed to converge. A more accurate method will be used to compute the SVD as a fallback. Check doc at https://pytorch.org/docs/stable/generated/torch.linalg.svd.html (Triggered internally at /pytorch/aten/src/ATen/native/cuda/linalg/BatchLinearAlgebraLib.cpp:702.)
+  C_new = (torch.linalg.pinv(sum_EZZ_reg.T) @ sum_yEZ.T).T
+2025-12-07 21:34:59 - dfm_python.ssm.em - WARNING - EM algorithm: Error updating C matrix: linalg.svd: The algorithm failed to converge because the input matrix is ill-conditioned or has too many repeated singular values (error code: 54).. Keeping previous C matrix.
+2025-12-07 21:34:59 - dfm_python.ssm.em - WARNING - eigvalsh failed for Q matrix: linalg.eigh: The algorithm failed to converge because the input matrix is ill-conditioned or has too many repeated eigenvalues (error code: 55).. Applying stronger regularization.
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:34:59 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:00 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=122 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=122, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=123 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=123, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=124 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=124, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=125 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=125, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=126 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=126, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=127 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=127, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=128 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=128, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=129 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=129, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=130 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=130, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=131 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=131, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=132 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=132, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=133 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=133, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=134 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=134, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=135 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=135, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - Z at t=136 contains 15 Inf values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=136, using previous Zu
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=136 contains 54 NaN values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=136, using ZmU as fallback
+2025-12-07 21:35:01 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=135 contains 54 NaN values
+2025-12-07 21:35:01 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=135, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=134 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=134, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=133 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=133, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=132 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=132, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=131 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=131, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=130 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=130, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=129 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=129, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=128 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=128, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=127 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=127, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=126 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=126, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=125 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=125, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=124 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=124, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=123 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=123, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=122 contains 54 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=122, using ZmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=86 contains 20 Inf values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=86, using zero matrix as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=74 contains 10 Inf values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=74, using VmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=35 contains 20 Inf values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=35, using zero matrix as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=13 contains 254 NaN values and 365 Inf values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=13, using VmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=1 contains 2916 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=1, using zero matrix as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=0 contains 2916 NaN values
+2025-12-07 21:35:02 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=0, using VmU as fallback
+2025-12-07 21:35:02 - dfm_python.ssm.em - WARNING - EM algorithm: Failed to compute condition number for sum_EZZ (linalg.eigh: The algorithm failed to converge because the input matrix is ill-conditioned or has too many repeated eigenvalues (error code: 55).), using strong regularization: 1.00e-03 (min=1e-3, base=1.00e-06)
+2025-12-07 21:35:02 - dfm_python.ssm.em - WARNING - EM algorithm: torch.linalg.solve failed for C matrix update (torch.linalg.solve: The solver failed because the input matrix is singular.), using pseudo-inverse fallback (original MATLAB: pinv() in smoother)
+2025-12-07 21:35:03 - dfm_python.ssm.em - WARNING - EM algorithm: Error updating C matrix: linalg.svd: The algorithm failed to converge because the input matrix is ill-conditioned or has too many repeated singular values (error code: 54).. Keeping previous C matrix.
+2025-12-07 21:35:03 - dfm_python.ssm.em - WARNING - eigvalsh failed for Q matrix: linalg.eigh: The algorithm failed to converge because the input matrix is ill-conditioned or has too many repeated eigenvalues (error code: 55).. Applying stronger regularization.
+
+✓ EM algorithm converged after 4 iterations (loglik: -2671.571032)
+2025-12-07 21:35:03 - dfm_python.models.dfm - INFO - EM training completed: converged=True, iterations=4, final_loglik=-2671.571032
+2025-12-07 21:35:03 - dfm_python.models.dfm - INFO - EM algorithm converged at iteration 4
+Metric loglik improved. New best score: -2671.571
+Monitored metric loglik did not improve in the last 10 records. Best score: -2671.571. Signaling Trainer to stop.
+======================================================================
+
+Saved model checkpoint: checkpoint/KOWRCCNSE_dfm/model.pkl
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:03 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:04 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=122 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=122, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=123 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=123, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=124 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=124, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=125 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=125, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=126 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=126, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=127 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=127, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=128 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=128, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=129 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=129, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=130 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=130, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=131 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=131, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=132 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=132, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=133 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=133, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=134 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=134, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=135 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=135, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - Z at t=136 contains 15 Inf values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - kalman_filter_forward: Z contains NaN/Inf at t=136, using previous Zu
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - INFO - kalman_filter_forward: n_obs=39 >= 30, applying n_obs_factor=2.00, adaptive_reg=2.00e-06
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=136 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=136, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=135 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=135, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=134 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=134, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=133 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=133, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=132 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=132, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=131 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=131, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=130 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=130, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=129 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=129, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=128 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=128, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=127 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=127, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=126 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=126, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=125 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=125, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=124 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=124, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=123 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=123, using ZmU as fallback
+2025-12-07 21:35:05 - dfm_python.ssm.utils - WARNING - ZmT[:, t] at t=122 contains 54 NaN values
+2025-12-07 21:35:05 - dfm_python.ssm.kalman - WARNING - smoother_backward: ZmT[:, t] recursion produced NaN/Inf at t=122, using ZmU as fallback
+2025-12-07 21:35:06 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=86 contains 20 Inf values
+2025-12-07 21:35:06 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=86, using zero matrix as fallback
+2025-12-07 21:35:06 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=74 contains 10 Inf values
+2025-12-07 21:35:06 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=74, using VmU as fallback
+2025-12-07 21:35:06 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=35 contains 20 Inf values
+2025-12-07 21:35:06 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=35, using zero matrix as fallback
+2025-12-07 21:35:06 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=13 contains 254 NaN values and 365 Inf values
+2025-12-07 21:35:06 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=13, using VmU as fallback
+2025-12-07 21:35:06 - dfm_python.ssm.utils - WARNING - VmT_1[:, :, t - 1] at t=1 contains 2916 NaN values
+2025-12-07 21:35:06 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT_1[:, :, t - 1] recursion produced NaN/Inf at t=1, using zero matrix as fallback
+2025-12-07 21:35:06 - dfm_python.ssm.utils - WARNING - VmT[:, :, t] at t=0 contains 2916 NaN values
+2025-12-07 21:35:06 - dfm_python.ssm.kalman - WARNING - smoother_backward: VmT[:, :, t] recursion produced NaN/Inf at t=0, using VmU as fallback
+
+✓ Model saved to: checkpoint/KOWRCCNSE_dfm

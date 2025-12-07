@@ -57,8 +57,7 @@ try:
 except ImportError as e:
     raise ImportError(f"Required dependencies not available: {e}")
 
-# Import model wrappers (for type hints, not used directly)
-from src.models import DFM, DDFM
+from src.models import DFM, DDFM  # For type hints
 
 
 # ============================================================================
@@ -74,7 +73,7 @@ def _extract_target_series(cfg: DictConfig) -> Optional[str]:
 def _extract_horizons(cfg: DictConfig, default_horizons: Optional[List[int]] = None) -> List[int]:
     """Extract forecast horizons from config."""
     if default_horizons is None:
-        default_horizons = list(range(1, 31))
+        default_horizons = list(range(1, 23))  # 22 monthly horizons: 2024-01 to 2025-10
     
     source_cfg = cfg.experiment if 'experiment' in cfg else cfg
     horizons_raw = None
@@ -203,7 +202,7 @@ from src.preprocessing import (
 
 def _detect_model_type_from_name(model_name: str) -> str:
     """Detect model type from model name (e.g., 'KOEQUIPTE_arima' -> 'arima')."""
-    valid_types = ['arima', 'var', 'dfm', 'ddfm', 'vecm', 'xgboost', 'lightgbm', 'deepar', 'tft']
+    valid_types = ['arima', 'var', 'dfm', 'ddfm']
     parts = model_name.lower().split('_')
     
     # Check last part first (most common: TARGET_MODEL)
@@ -419,34 +418,21 @@ def _train_forecaster(
                 maxlags = 1
             forecaster = SktimeVAR(maxlags=int(maxlags), trend=str(trend))
         print(f"Max lags: {maxlags}, Trend: {trend}, Series: {y_train.shape[1]}")
-        # NOTE: VAR models can become numerically unstable for long forecasting horizons (>7 days)
+        # NOTE: VAR models can become numerically unstable for long forecasting horizons (>7 months)
         # This is a known limitation of VAR models. The evaluation code (evaluation.py) automatically
         # filters extreme values (>1e10) and marks them as NaN. This is expected behavior.
-        # For monthly data, VAR should be limited to horizon <= 1 month to prevent instability.
-        # The evaluation code caps VAR horizons at 7 days (approximately 1 month for monthly data).
-    
-    # Train/test split for evaluation (80/20)
-    split_idx = int(len(y_train) * 0.8)
-    y_train_eval = y_train.iloc[:split_idx]
-    y_test_eval = y_train.iloc[split_idx:]
-    
-    forecaster.fit(y_train_eval)
-    print(f"{'='*70}\n")
+        # For monthly data, VAR should be limited to horizon <= 7 months to prevent instability.
     
     # Extract horizons from config if not provided
     if horizons is None:
         horizons = _extract_horizons(cfg)
     
-    from src.evaluation import evaluate_forecaster
-    forecast_metrics = {}
-    
-    if len(y_test_eval) > 0:
-        forecast_metrics_raw = evaluate_forecaster(
-            forecaster, y_train_eval, y_test_eval, horizons, target_series=target_series
-        )
-        forecast_metrics = {str(k): v for k, v in forecast_metrics_raw.items()}
-    
+    # Train once on full training data (no evaluation split to avoid double training)
     forecaster.fit(y_train)
+    print(f"{'='*70}\n")
+    
+    # No evaluation metrics (trained on full data, no held-out test set)
+    forecast_metrics = {}
     
     # Determine model directory and name
     if model_name and (str(outputs_dir).endswith(model_name) or str(outputs_dir.name) == model_name):
@@ -764,7 +750,7 @@ def train(
 def compare_models(
     target_series: str,
     models: List[str],
-    horizons: List[int] = list(range(1, 31)),
+    horizons: List[int] = list(range(1, 23)),  # 22 monthly horizons: 2024-01 to 2025-10
     data_path: Optional[str] = None,
     config_dir: Optional[str] = None,
     config_name: Optional[str] = None,
@@ -779,8 +765,8 @@ def compare_models(
         if not Path(data_path).exists():
             data_path = str(project_root / "data" / "sample_data.csv")
     
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = project_root / "outputs" / "comparisons" / f"{target_series}_{timestamp}"
+    # Use fixed directory name (overwrite mode) - one result per experiment
+    output_dir = project_root / "outputs" / "comparisons" / target_series
     output_dir.mkdir(parents=True, exist_ok=True)
     
     print("=" * 70)
@@ -802,8 +788,8 @@ def compare_models(
     if horizons is None or len(horizons) == 0:
         cfg = parse_experiment_config(config_name, config_dir)
         params = extract_experiment_params(cfg)
-        horizons = params.get('horizons', list(range(1, 31)))
-        print(f"Extracted horizons from config: {len(horizons)} horizons (1-30)")
+        horizons = params.get('horizons', list(range(1, 23)))
+        print(f"Extracted horizons from config: {len(horizons)} horizons (1-22)")
     
     for i, model_name in enumerate(models, 1):
         print(f"\n[{i}/{len(models)}] {model_name.upper()}...")
@@ -866,18 +852,31 @@ def compare_models(
                     forecast_metrics = {str(k): v for k, v in forecast_metrics_raw.items()}
                     result['metrics'] = {'forecast_metrics': forecast_metrics}
             else:
-                result = train(
-                    config_name=config_name,
-                    config_path=config_dir,
-                    data_path=data_path,
-                    model_name=f"{model_name}_{target_series}_{timestamp}",
-                    config_overrides=config_overrides or [],
-                    horizons=horizons
-                )
+                # Checkpoint not found - skip this model
+                checkpoint_msg = f"checkpoint/{target_series}_{model_name}/model.pkl" if checkpoint_dir else "checkpoint"
+                print(f"  ⚠ Skipping: Checkpoint not found ({checkpoint_msg})")
+                print(f"     Run 'bash run_train.sh' to train this model first")
+                result = {
+                    'status': 'skipped',
+                    'model_name': f"{target_series}_{model_name}",
+                    'model_type': model_name,
+                    'target_series': target_series,
+                    'error': f'Checkpoint not found: {checkpoint_path}',
+                    'metrics': None
+                }
+                failed_models.append(model_name)
+                model_results[model_name] = result
+                continue
             
             if result is not None:
                 model_results[model_name] = result
-            print(f"  ✓ Completed")
+                if result.get('status') == 'completed':
+                    print(f"  ✓ Completed")
+                elif result.get('status') == 'skipped':
+                    # Already printed skip message above
+                    pass
+                else:
+                    print(f"  ⚠ Status: {result.get('status', 'unknown')}")
         except Exception as e:
             import traceback
             print(f"  ✗ Failed: {str(e)}")
@@ -906,7 +905,6 @@ def compare_models(
         'horizons': horizons,
         'results': model_results,
         'comparison': comparison,
-        'timestamp': datetime.now().isoformat(),
         'output_dir': str(output_dir),
         'failed_models': failed_models
     }
@@ -916,8 +914,15 @@ def compare_models(
         json.dump(comparison_data, f, indent=2, ensure_ascii=False, default=str)
     
     print(f"\nResults: {results_file}")
-    if failed_models:
-        print(f"Failed: {', '.join(failed_models)}")
+    
+    # Count skipped models separately
+    skipped_models = [name for name, result in model_results.items() if result.get('status') == 'skipped']
+    actual_failed = [name for name in failed_models if name not in skipped_models]
+    
+    if skipped_models:
+        print(f"Skipped (no checkpoint): {', '.join(skipped_models)}")
+    if actual_failed:
+        print(f"Failed: {', '.join(actual_failed)}")
     print("=" * 70)
     
     return comparison_data

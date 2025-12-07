@@ -1,0 +1,169 @@
+Warning: Series A001 with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KOBDY10 with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KOCBNG3 with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KORCOMP with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KORFBEV with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KORWHLS with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series USEPUPO with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series USSKORW with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Training data period: 1985-01-04 00:00:00 to 2019-12-31 00:00:00 (1985-2019 enforced)
+Original data frequency: Weekly (2184 points)
+All models will use monthly frequency (window-averaged from weekly data)
+
+======================================================================
+Training DDFM model
+======================================================================
+Config: experiment/consumption_kowrccnse_report
+Data: data/data.csv
+Epochs: 100, Encoder layers: [64, 32], Factors: 3, Series: 39 (filtered from config, target_series included)
+2025-12-07 20:34:18 - dfm_python.trainer - WARNING - Trainer logger setup failed: TensorBoard not available, using CSVLogger. Please install tensorboard if you need TensorBoard logging.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+/data/nowcasting-kr/.venv/lib/python3.12/site-packages/pytorch_lightning/trainer/configuration_validator.py:68: You passed in a `val_dataloader` but have no `validation_step`. Skipping val loop.
+You are using a CUDA device ('NVIDIA GeForce RTX 5090') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+┏━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━┓
+┃   ┃ Name    ┃ Type    ┃ Params ┃ Mode  ┃ FLOPs ┃
+┡━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━╇━━━━━━━┩
+│ 0 │ encoder │ Encoder │  4.9 K │ train │     0 │
+│ 1 │ decoder │ Decoder │    156 │ train │     0 │
+└───┴─────────┴─────────┴────────┴───────┴───────┘
+Trainable params: 5.1 K                                                         
+Non-trainable params: 0                                                         
+Total params: 5.1 K                                                             
+Total estimated model params size (MB): 0                                       
+Modules in train mode: 11                                                       
+Modules in eval mode: 0                                                         
+Total FLOPs: 0                                                                  
+/data/nowcasting-kr/.venv/lib/python3.12/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:434: The 'train_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=15` in the `DataLoader` to improve performance.
+/data/nowcasting-kr/.venv/lib/python3.12/site-packages/pytorch_lightning/loops/fit_loop.py:317: The number of training batches (1) is smaller than the logging interval Trainer(log_every_n_steps=50). Set a lower value for log_every_n_steps if you want to see logs for the training epoch.
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: 5343 non-missing observations (>= 50), using non-missing data only for pre-training
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Starting pre-training for 100 epochs
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Epoch 1/100, loss=1.132878
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Epoch 10/100, loss=0.958723
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Epoch 20/100, loss=0.899442
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Epoch 30/100, loss=0.836862
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Epoch 40/100, loss=0.779421
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Epoch 50/100, loss=0.748468
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Epoch 60/100, loss=0.677542
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Epoch 70/100, loss=0.717355
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Epoch 80/100, loss=0.660733
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Epoch 90/100, loss=0.623820
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Epoch 100/100, loss=0.664281
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - DDFM pre_train: Pre-training completed
+2025-12-07 20:34:19 - dfm_python.models.ddfm - INFO - Starting MCMC training: max_iter=200, tolerance=0.0005, epochs_per_iter=100
+2025-12-07 20:34:21 - dfm_python.models.ddfm - INFO - Iteration 10/200: loss=0.001102, delta=0.001102
+2025-12-07 20:34:23 - dfm_python.models.ddfm - INFO - Iteration 20/200: loss=0.001043, delta=0.001043
+2025-12-07 20:34:25 - dfm_python.models.ddfm - INFO - Iteration 30/200: loss=0.000914, delta=0.000914
+2025-12-07 20:34:28 - dfm_python.models.ddfm - INFO - Iteration 40/200: loss=0.001101, delta=0.001101
+2025-12-07 20:34:30 - dfm_python.models.ddfm - INFO - Iteration 50/200: loss=0.001084, delta=0.001084
+2025-12-07 20:34:32 - dfm_python.models.ddfm - INFO - Iteration 60/200: loss=0.001144, delta=0.001144
+2025-12-07 20:34:34 - dfm_python.models.ddfm - INFO - Iteration 70/200: loss=0.001062, delta=0.001062
+2025-12-07 20:34:36 - dfm_python.models.ddfm - INFO - Iteration 80/200: loss=0.001094, delta=0.001094
+2025-12-07 20:34:38 - dfm_python.models.ddfm - INFO - Iteration 90/200: loss=0.001128, delta=0.001128
+2025-12-07 20:34:41 - dfm_python.models.ddfm - INFO - Iteration 100/200: loss=0.001148, delta=0.001148
+2025-12-07 20:34:43 - dfm_python.models.ddfm - INFO - Iteration 110/200: loss=0.000882, delta=0.000882
+2025-12-07 20:34:45 - dfm_python.models.ddfm - INFO - Iteration 120/200: loss=0.000878, delta=0.000878
+2025-12-07 20:34:47 - dfm_python.models.ddfm - INFO - Iteration 130/200: loss=0.001028, delta=0.001028
+2025-12-07 20:34:49 - dfm_python.models.ddfm - INFO - Iteration 140/200: loss=0.000853, delta=0.000853
+2025-12-07 20:34:51 - dfm_python.models.ddfm - INFO - Iteration 150/200: loss=0.001033, delta=0.001033
+2025-12-07 20:34:53 - dfm_python.models.ddfm - INFO - Iteration 160/200: loss=0.000968, delta=0.000968
+2025-12-07 20:34:56 - dfm_python.models.ddfm - INFO - Iteration 170/200: loss=0.001240, delta=0.001240
+2025-12-07 20:34:58 - dfm_python.models.ddfm - INFO - Iteration 180/200: loss=0.001089, delta=0.001089
+2025-12-07 20:35:00 - dfm_python.models.ddfm - INFO - Iteration 190/200: loss=0.000893, delta=0.000893
+2025-12-07 20:35:02 - dfm_python.models.ddfm - INFO - Iteration 200/200: loss=0.001048, delta=0.001048
+2025-12-07 20:35:02 - dfm_python.models.ddfm - WARNING - DDFM MCMC training: convergence not achieved within 200 iterations. Final delta: 0.001048
+Metric train_loss improved. New best score: 0.614
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.613
+Metric train_loss improved by 0.001 >= min_delta = 1e-06. New best score: 0.613
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.612
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.612
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.612
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.612
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.612
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.612
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.612
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+Metric train_loss improved by 0.000 >= min_delta = 1e-06. New best score: 0.611
+`Trainer.fit` stopped: `max_epochs=100` reached.
+2025-12-07 20:35:02 - dfm_python.models.ddfm - INFO - DDFM get_result: C matrix statistics - mean=-0.098530, std=0.320833, min=-0.705380, max=0.596138, nonzero=117/117 (100.0%), zero_ratio=0.0%
+======================================================================
+
+Saved model checkpoint: checkpoint/KOWRCCNSE_ddfm/model.pkl
+2025-12-07 20:35:02 - dfm_python.models.ddfm - INFO - DDFM get_result: C matrix statistics - mean=-0.098530, std=0.320833, min=-0.705380, max=0.596138, nonzero=117/117 (100.0%), zero_ratio=0.0%
+
+✓ Model saved to: checkpoint/KOWRCCNSE_ddfm

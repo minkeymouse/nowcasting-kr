@@ -2,12 +2,12 @@
 
 ## Project Overview
 
-**Goal**: Complete under 15 page LaTeX report comparing 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean macroeconomic targets (Production: KOIPALL.G; Investment: KOEQUIPTE; Consumption: KOWRCCNSE) across forecasting horizons (1-30 days) and nowcasting evaluation with multiple time points. Finalize dfm-python package.
+**Goal**: Complete under 15 page LaTeX report comparing 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean macroeconomic targets (Production: KOIPALL.G; Investment: KOEQUIPTE; Consumption: KOWRCCNSE) across forecasting horizons (1-22 months) and nowcasting evaluation with multiple time points. Finalize dfm-python package.
 
 **Experiment Configuration**:
 - **3 Targets**: KOEQUIPTE (Equipment Investment Index), KOWRCCNSE (Wholesale and Retail Trade Sales), KOIPALL.G (Industrial Production Index, All Industries)
 - **4 Models**: ARIMA (sktime), VAR (sktime), DFM (EM algorithm), DDFM (PyTorch Lightning)
-- **Forecasting Horizons**: 1-30 days (table shows 1, 7, 30)
+- **Forecasting Horizons**: 1-22 months (table shows 1, 7, 28 months)
 - **Nowcasting Configuration**: 
   - All models (ARIMA, VAR, DFM, DDFM) and all targets (3)
   - 12 target months (2024-01 ~ 2024-12)
@@ -19,8 +19,9 @@
 **ACTUAL Current Status**:
 - **checkpoint/**: **10 model.pkl files** - **10/12 models trained** ⚠️ (Missing: KOIPALL.G_ddfm, KOIPALL.G_dfm)
 - **outputs/backtest/**: **12 JSON files with "status": "no_results"** - **0/12 nowcasting experiments completed** ⚠️
-  - Code fixes present in codebase (validation check numbering, Kalman filter NaN handling, backtest validation improvements)
-  - Code fixes NOT verified by re-running backtests
+  - Root cause identified: ValueError raised when target period not found in Time index
+  - Code fixes applied this iteration: _prepare_target and __call__ methods now handle empty Time_view gracefully
+  - Code fixes NOT verified by re-running backtests (Step 1 will handle automatically)
 - **outputs/experiments/aggregated_results.csv**: **EXISTS** - Forecasting results aggregated (36 rows, extreme VAR values filtered on load)
 - **outputs/comparisons/**: Contains comparison_results.json files - forecasting completed successfully
 - **nowcasting-report/tables/**: **3 tables generated** (tab_dataset_params.tex, tab_forecasting_results.tex, tab_nowcasting_backtest.tex)
@@ -28,7 +29,7 @@
 
 **What This Means**:
 - ⚠️ **Training INCOMPLETE** - Only 10/12 models trained (missing KOIPALL.G_ddfm, KOIPALL.G_dfm)
-- ⚠️ **Nowcasting experiments FAILED** - All 12 JSON files have "no_results" status. Code fixes present but NOT verified.
+- ⚠️ **Nowcasting experiments FAILED** - All 12 JSON files have "no_results" status. Root cause fixed (ValueError handling), but fixes NOT verified by re-running backtests.
 - ✅ **Forecasting results exist** - Table 2 can be generated (extreme values filtered when loading)
 - ⚠️ **Tables and plots generated** - Table 3 and Plot4 have placeholders (nowcasting results missing)
 

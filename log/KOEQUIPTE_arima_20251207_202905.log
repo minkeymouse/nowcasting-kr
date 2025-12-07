@@ -1,0 +1,16 @@
+Training data period: 1985-01-04 00:00:00 to 2019-12-31 00:00:00 (1985-2019 enforced)
+Original data frequency: Weekly (2184 points)
+All models will use monthly frequency (window-averaged from weekly data)
+
+======================================================================
+Training ARIMA model
+======================================================================
+Config: experiment/investment_koequipte_report
+Data: data/data.csv
+Target series: KOEQUIPTE (resampled to monthly)
+Order: [1, 1, 1]
+======================================================================
+
+Saved model checkpoint: checkpoint/KOEQUIPTE_arima/model.pkl
+
+✓ Model saved to: checkpoint/KOEQUIPTE_arima

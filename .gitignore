@@ -38,3 +38,9 @@ outputs/
 
 .cursor-logs/
 lightning_logs/
+
+*.yaml
+*.pkl
+
+config/
+config/series/

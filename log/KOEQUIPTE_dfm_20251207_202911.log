@@ -1,0 +1,97 @@
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+/data/nowcasting-kr/.venv/lib/python3.12/site-packages/pytorch_lightning/trainer/configuration_validator.py:68: You passed in a `val_dataloader` but have no `validation_step`. Skipping val loop.
+You are using a CUDA device ('NVIDIA GeForce RTX 5090') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+/data/nowcasting-kr/.venv/lib/python3.12/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:434: The 'train_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=15` in the `DataLoader` to improve performance.
+/data/nowcasting-kr/.venv/lib/python3.12/site-packages/pytorch_lightning/loops/fit_loop.py:317: The number of training batches (1) is smaller than the logging interval Trainer(log_every_n_steps=50). Set a lower value for log_every_n_steps if you want to see logs for the training epoch.
+Warning: Series A001 with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series GSCITOT with frequency 'w' is incompatible with block clocks. Skipping.
+Warning: Series KOBDY10 with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KOCBNG3 with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KORCNST with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KORCOMP with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series KORMACH with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series USEPUPO with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Warning: Series USSKORW with frequency 'w' is incompatible with first block clock 'm'. Skipping.
+Training data period: 1985-01-04 00:00:00 to 2019-12-31 00:00:00 (1985-2019 enforced)
+Original data frequency: Weekly (2184 points)
+All models will use monthly frequency (window-averaged from weekly data)
+
+======================================================================
+Training DFM model
+======================================================================
+Config: experiment/investment_koequipte_report
+Data: data/data.csv
+Max iterations: 5000, Threshold: 1e-05, Series: 32 (filtered from config, target_series included)
+2025-12-07 20:29:15 - dfm_python.ssm.em - INFO - Processing 1 blocks. r tensor: tensor([3.], device='cuda:0'), shape: torch.Size([1])
+2025-12-07 20:29:15 - dfm_python.ssm.em - INFO - Block 0: r_i=3, ppC=5, expected size=15
+2025-12-07 20:29:15 - dfm_python.ssm.em - INFO - Block 0: Creating matrices of size 15x15. A_i shape=torch.Size([15, 15]), Q_i shape=torch.Size([15, 15]), initV_i shape=torch.Size([15, 15])
+2025-12-07 20:29:15 - dfm_python.ssm.em - INFO - Block 0: Final matrices - A=torch.Size([15, 15]), Q=torch.Size([15, 15]), V_0=torch.Size([15, 15])
+2025-12-07 20:29:15 - dfm_python.ssm.em - INFO - Building block-diagonal matrices from 1 blocks
+2025-12-07 20:29:15 - dfm_python.ssm.em - INFO -   Block 0: A=torch.Size([15, 15]), Q=torch.Size([15, 15]), V_0=torch.Size([15, 15])
+2025-12-07 20:29:15 - dfm_python.ssm.em - INFO - Successfully created block-diagonal matrices: A_factors=torch.Size([15, 15]), Q_factors=torch.Size([15, 15]), V_0_factors=torch.Size([15, 15])
+/data/nowcasting-kr/dfm-python/src/dfm_python/ssm/utils.py:146: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+  min_eig = float(torch.min(eigenvals))
+/data/nowcasting-kr/dfm-python/src/dfm_python/ssm/kalman.py:457: UserWarning: The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /pytorch/aten/src/ATen/native/TensorShape.cpp:4416.)
+  innov_term = innov.T @ iF @ innov
+[EM    1/5000] Log-likelihood: -3030.916253 | Change: 0.000000e+00 
+2025-12-07 20:29:17 - dfm_python.models.dfm - INFO - EM iteration 1/5000: loglik=-3030.9163, change=0.00e+00
+[EM    5/5000] Log-likelihood:  -451.154486 | Change: 1.461330e-01 
+2025-12-07 20:29:22 - dfm_python.models.dfm - INFO - EM iteration 5/5000: loglik=-451.1545, change=1.46e-01
+[EM   10/5000] Log-likelihood:    88.946983 | Change: 8.667462e-01 
+2025-12-07 20:29:27 - dfm_python.models.dfm - INFO - EM iteration 10/5000: loglik=88.9470, change=8.67e-01
+[EM   15/5000] Log-likelihood:   -85.998812 | Change: 4.499183e-01 
+2025-12-07 20:29:33 - dfm_python.models.dfm - INFO - EM iteration 15/5000: loglik=-85.9988, change=4.50e-01
+[EM   20/5000] Log-likelihood:  -225.737402 | Change: 7.437082e-03 
+2025-12-07 20:29:39 - dfm_python.models.dfm - INFO - EM iteration 20/5000: loglik=-225.7374, change=7.44e-03
+[EM   25/5000] Log-likelihood:   -60.185886 | Change: 2.679596e-01 
+2025-12-07 20:29:45 - dfm_python.models.dfm - INFO - EM iteration 25/5000: loglik=-60.1859, change=2.68e-01
+[EM   30/5000] Log-likelihood:  -103.789643 | Change: 3.054941e-01 
+2025-12-07 20:29:52 - dfm_python.models.dfm - INFO - EM iteration 30/5000: loglik=-103.7896, change=3.05e-01
+[EM   35/5000] Log-likelihood:  -170.440265 | Change: 2.149623e-02 
+2025-12-07 20:29:58 - dfm_python.models.dfm - INFO - EM iteration 35/5000: loglik=-170.4403, change=2.15e-02
+[EM   40/5000] Log-likelihood:  -218.390101 | Change: 9.135766e-03 
+2025-12-07 20:30:04 - dfm_python.models.dfm - INFO - EM iteration 40/5000: loglik=-218.3901, change=9.14e-03
+[EM   45/5000] Log-likelihood:  -246.058473 | Change: 1.565182e-02 
+2025-12-07 20:30:10 - dfm_python.models.dfm - INFO - EM iteration 45/5000: loglik=-246.0585, change=1.57e-02
+[EM   50/5000] Log-likelihood:  -268.594781 | Change: 1.567589e-02 
+2025-12-07 20:30:16 - dfm_python.models.dfm - INFO - EM iteration 50/5000: loglik=-268.5948, change=1.57e-02
+[EM   55/5000] Log-likelihood:  -345.525952 | Change: 7.742505e-02 
+2025-12-07 20:30:22 - dfm_python.models.dfm - INFO - EM iteration 55/5000: loglik=-345.5260, change=7.74e-02
+[EM   60/5000] Log-likelihood:  -483.115849 | Change: 2.980175e-02 
+2025-12-07 20:30:28 - dfm_python.models.dfm - INFO - EM iteration 60/5000: loglik=-483.1158, change=2.98e-02
+[EM   65/5000] Log-likelihood:  -466.098416 | Change: 2.949386e-02 
+2025-12-07 20:30:34 - dfm_python.models.dfm - INFO - EM iteration 65/5000: loglik=-466.0984, change=2.95e-02
+[EM   70/5000] Log-likelihood:  -481.601508 | Change: 2.623912e-02 
+2025-12-07 20:30:40 - dfm_python.models.dfm - INFO - EM iteration 70/5000: loglik=-481.6015, change=2.62e-02
+[EM   75/5000] Log-likelihood:  -548.544589 | Change: 6.730738e-03 
+2025-12-07 20:30:47 - dfm_python.models.dfm - INFO - EM iteration 75/5000: loglik=-548.5446, change=6.73e-03
+[EM   80/5000] Log-likelihood:  -538.666336 | Change: 1.497704e-02 
+2025-12-07 20:30:53 - dfm_python.models.dfm - INFO - EM iteration 80/5000: loglik=-538.6663, change=1.50e-02
+[EM   85/5000] Log-likelihood:  -510.417887 | Change: 2.294197e-02 
+2025-12-07 20:30:59 - dfm_python.models.dfm - INFO - EM iteration 85/5000: loglik=-510.4179, change=2.29e-02
+[EM   90/5000] Log-likelihood:  -500.357116 | Change: 1.526101e-02 
+2025-12-07 20:31:05 - dfm_python.models.dfm - INFO - EM iteration 90/5000: loglik=-500.3571, change=1.53e-02
+[EM   95/5000] Log-likelihood:  -638.349246 | Change: 5.806208e-02 
+2025-12-07 20:31:11 - dfm_python.models.dfm - INFO - EM iteration 95/5000: loglik=-638.3492, change=5.81e-02
+[EM  100/5000] Log-likelihood:  -726.697506 | Change: 1.262558e-02 
+2025-12-07 20:31:18 - dfm_python.models.dfm - INFO - EM iteration 100/5000: loglik=-726.6975, change=1.26e-02
+[EM  105/5000] Log-likelihood:  -805.339897 | Change: 2.112688e-02 
+2025-12-07 20:31:24 - dfm_python.models.dfm - INFO - EM iteration 105/5000: loglik=-805.3399, change=2.11e-02
+[EM  110/5000] Log-likelihood:  -876.733582 | Change: 1.556544e-02 
+2025-12-07 20:31:30 - dfm_python.models.dfm - INFO - EM iteration 110/5000: loglik=-876.7336, change=1.56e-02
+2025-12-07 20:31:34 - dfm_python.models.dfm - WARNING - EM algorithm: Log-likelihood deteriorated significantly from best value. Best: 88.9470, Current: -925.2623, Deterioration: 1014.2092. Stopping early at iteration 113 to prevent further divergence. Reverting to best parameters from iteration 112.
+
+⚠ EM algorithm stopped after 112 iterations (loglik: 88.946983, change: 1.73e-02)
+2025-12-07 20:31:34 - dfm_python.models.dfm - INFO - EM training completed: converged=False, iterations=112, final_loglik=88.946983
+2025-12-07 20:31:34 - dfm_python.models.dfm - INFO - EM algorithm converged at iteration 112
+Metric loglik improved. New best score: 88.947
+Monitored metric loglik did not improve in the last 10 records. Best score: 88.947. Signaling Trainer to stop.
+======================================================================
+
+Saved model checkpoint: checkpoint/KOEQUIPTE_dfm/model.pkl
+
+✓ Model saved to: checkpoint/KOEQUIPTE_dfm

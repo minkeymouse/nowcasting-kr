@@ -44,9 +44,10 @@ from src.utils import (
     extract_experiment_params,
     validate_experiment_config
 )
-
-# Removed unused functions: mask_recent_observations, create_nowcasting_splits, simulate_nowcasting_evaluation, run_nowcasting_evaluation
-# These were only used by the 'nowcast' CLI command which is not used in the actual pipeline (run_backtest.sh uses 'backtest' command)
+try:
+    from omegaconf import OmegaConf
+except ImportError:
+    OmegaConf = None
 
 def run_backtest_evaluation(
     config_name: str,
@@ -54,7 +55,7 @@ def run_backtest_evaluation(
     train_start: str = "1985-01-01",
     train_end: str = "2019-12-31",
     nowcast_start: str = "2024-01-01",
-    nowcast_end: str = "2024-12-31",
+    nowcast_end: str = "2025-10-31",  # Extended to 2025-10 for 22 months
     weeks_before: Optional[List[int]] = None,
     config_dir: Optional[str] = None,
     overrides: Optional[List[str]] = None
@@ -62,7 +63,7 @@ def run_backtest_evaluation(
     """Run backtest evaluation with multiple nowcasting time points (benchmark report structure).
     
     This function implements the benchmark report's nowcasting structure:
-    - For each target month (e.g., 2024-01, 2024-02, ..., 2024-12)
+    - For each target month (e.g., 2024-01, 2024-02, ..., 2025-10)
     - At multiple time points before month end (e.g., 4 weeks, 1 week)
     - Mask data based on release dates from series config
     - Generate 1 horizon forecast at each time point
@@ -111,12 +112,49 @@ def run_backtest_evaluation(
     
     params = extract_experiment_params(cfg)
     target_series = params['target_series']
+    exp_cfg = params.get('exp_cfg', cfg)
+    
+    # Load series list and release dates from config
+    series_list = []
+    series_release_dates = {}
+    if hasattr(exp_cfg, 'get'):
+        series_ids_raw = exp_cfg.get('series', [])
+    else:
+        series_ids_raw = getattr(exp_cfg, 'series', [])
+    
+    if series_ids_raw:
+        import yaml
+        from calendar import monthrange
+        from datetime import datetime
+        project_root = get_project_root()
+        series_config_dir = project_root / "dfm-python" / "config" / "series"
+        
+        series_ids = OmegaConf.to_container(series_ids_raw, resolve=True) if hasattr(OmegaConf, 'to_container') else list(series_ids_raw)
+        if not isinstance(series_ids, list):
+            series_ids = []
+        
+        for series_id in series_ids:
+            series_config_path = series_config_dir / f"{series_id}.yaml"
+            release_date = None
+            
+            if series_config_path.exists():
+                try:
+                    with open(series_config_path, 'r', encoding='utf-8') as f:
+                        series_cfg = yaml.safe_load(f) or {}
+                    release_date = series_cfg.get('release') or series_cfg.get('release_date')
+                except Exception as e:
+                    print(f"Warning: Failed to load release date for {series_id}: {e}")
+            
+            if release_date is not None:
+                series_release_dates[series_id] = release_date
+            series_list.append(series_id)
     
     print("=" * 70)
     print(f"Running backtest for {target_series} - {model.upper()}")
     print(f"Train period: {train_start} to {train_end}")
     print(f"Nowcast period: {nowcast_start} to {nowcast_end}")
     print(f"Nowcasting time points: {weeks_before} weeks before month end")
+    print(f"Series with release dates: {len(series_release_dates)}/{len(series_list)}")
     print("=" * 70)
     
     # Load trained model
@@ -714,11 +752,20 @@ def run_backtest_evaluation(
                             print(f"    ⚠ [CHECK 5] Skipping: Nowcast manager returned None")
                             continue
                         
+                        # Safety check: ensure nowcast_result is a NowcastResult object
+                        if not hasattr(nowcast_result, 'nowcast_value'):
+                            print(f"    ⚠ [CHECK 5] Skipping: Nowcast manager returned invalid result type: {type(nowcast_result)}")
+                            continue
+                        
                         forecast_value = nowcast_result.nowcast_value
                         
                         # Check if forecast is NaN or invalid
                         if np.isnan(forecast_value) or not np.isfinite(forecast_value):
-                            print(f"    ⚠ [CHECK 6] Skipping: Nowcast value is NaN or invalid: {forecast_value}")
+                            # Enhanced logging: Check if it's Inf or NaN
+                            if np.isinf(forecast_value):
+                                print(f"    ⚠ [CHECK 6] Skipping: Nowcast value is Inf: {forecast_value} (numerical instability in Kalman filter)")
+                            else:
+                                print(f"    ⚠ [CHECK 6] Skipping: Nowcast value is NaN: {forecast_value} (prediction failed - likely due to empty data view or numerical instability)")
                             continue
                         else:
                             print(f"    ✓ DFM/DDFM nowcast value: {forecast_value:.4f}")
@@ -769,7 +816,7 @@ def run_backtest_evaluation(
                     # For ARIMA/VAR, use direct prediction approach
                     # Use full_data loaded before loop (reuse for efficiency)
                     # Filter data up to view_date for training (nowcasting scenario)
-                    train_data_filtered = full_data[full_data.index <= pd.Timestamp(view_date)]
+                    train_data_filtered = full_data[full_data.index <= pd.Timestamp(view_date)].copy()
                     
                     # [VALIDATION CHECK 8] Skip if no training data
                     if len(train_data_filtered) == 0:
@@ -789,6 +836,33 @@ def run_backtest_evaluation(
                         print(f"    ⚠ [CHECK 9] Skipping: Monthly resampling removed all data (original had {original_count} rows)")
                         continue
                     print(f"    ✓ Resampled to monthly: {len(train_data_filtered)} rows (from {train_data_filtered.index.min()} to {train_data_filtered.index.max()})")
+                    
+                    # CRITICAL: Apply release date-based masking for nowcasting
+                    # Mask data that is not yet available at view_date based on release dates
+                    if series_release_dates:
+                        from src.nowcasting import calculate_release_date
+                        from calendar import monthrange
+                        view_date_dt = view_date if isinstance(view_date, datetime) else pd.Timestamp(view_date).to_pydatetime()
+                        masked_count = 0
+                        
+                        for series_id, release_offset in series_release_dates.items():
+                            if series_id not in train_data_filtered.columns:
+                                continue
+                            
+                            # For each time period in the data, check if release date has passed
+                            for period_idx in train_data_filtered.index:
+                                period_dt = period_idx.to_pydatetime() if isinstance(period_idx, pd.Timestamp) else period_idx
+                                release_date_dt = calculate_release_date(release_offset, period_dt)
+                                
+                                # If release date is after view_date, mask this observation
+                                if release_date_dt > view_date_dt:
+                                    train_data_filtered.loc[period_idx, series_id] = np.nan
+                                    masked_count += 1
+                        
+                        if masked_count > 0:
+                            print(f"    ✓ Applied release date masking: {masked_count} observations masked (not available at {view_date.strftime('%Y-%m-%d')})")
+                    else:
+                        print(f"    ⚠ Warning: No release dates found in config - skipping release-based masking")
                     
                     # Calculate nowcast horizon: days from view_date to target_month_end
                     # For nowcasting, we predict the current period (target_month_end) using data available at view_date
@@ -1197,50 +1271,20 @@ def run_backtest_evaluation(
                         else:
                             print(f"    ✓ Nowcast value extracted: {forecast_value:.4f} (horizon={horizon_days} days)")
                         
-                    # Get actual value from monthly aggregated data (targets are monthly)
-                    # Handle cases where target_month_end might not be exactly in index
-                    # CRITICAL FIX: For nowcasting, we need actual values from the full dataset (including 2024)
-                    # Check if full_data_monthly has data up to target_month_end
-                    if len(full_data_monthly) > 0 and target_month_end_ts <= full_data_monthly.index.max():
-                        # Find closest date at or before target_month_end (use monthly data)
-                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
-                        if len(available_dates) > 0:
-                            closest_date = available_dates.max()
-                            # For nowcasting, we want the actual value for the target month
-                            # If closest_date is in the same month as target_month_end, use it
-                            # Otherwise, try to find a date in the target month
-                            if closest_date.year == target_month_end_ts.year and closest_date.month == target_month_end_ts.month:
-                                # Perfect match - use this date
-                                if target_series in full_data_monthly.columns:
-                                    raw_value = full_data_monthly.loc[closest_date, target_series]
-                                else:
-                                    raw_value = full_data_monthly.loc[closest_date].iloc[0]
-                                if pd.isna(raw_value):
-                                    print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in monthly data")
-                                    actual_value = np.nan
-                                else:
-                                    actual_value = float(raw_value)
-                                    print(f"    ✓ Found actual value at {closest_date}: {actual_value:.4f}")
-                            else:
-                                # Closest date is in a different month - try to find exact month match
-                                target_month_dates = full_data_monthly.index[
-                                    (full_data_monthly.index.year == target_month_end_ts.year) &
-                                    (full_data_monthly.index.month == target_month_end_ts.month)
-                                ]
-                                if len(target_month_dates) > 0:
-                                    exact_date = target_month_dates.max()
-                                    if target_series in full_data_monthly.columns:
-                                        raw_value = full_data_monthly.loc[exact_date, target_series]
-                                    else:
-                                        raw_value = full_data_monthly.loc[exact_date].iloc[0]
-                                    if pd.isna(raw_value):
-                                        print(f"    ⚠ Warning: Actual value at {exact_date} is NaN in monthly data")
-                                        actual_value = np.nan
-                                    else:
-                                        actual_value = float(raw_value)
-                                        print(f"    ✓ Found actual value at {exact_date}: {actual_value:.4f}")
-                                else:
-                                    # No exact month match, use closest date
+                        # Get actual value from monthly aggregated data (targets are monthly)
+                        # Handle cases where target_month_end might not be exactly in index
+                        # CRITICAL FIX: For nowcasting, we need actual values from the full dataset (including 2024)
+                        # Check if full_data_monthly has data up to target_month_end
+                        if len(full_data_monthly) > 0 and target_month_end_ts <= full_data_monthly.index.max():
+                            # Find closest date at or before target_month_end (use monthly data)
+                            available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
+                            if len(available_dates) > 0:
+                                closest_date = available_dates.max()
+                                # For nowcasting, we want the actual value for the target month
+                                # If closest_date is in the same month as target_month_end, use it
+                                # Otherwise, try to find a date in the target month
+                                if closest_date.year == target_month_end_ts.year and closest_date.month == target_month_end_ts.month:
+                                    # Perfect match - use this date
                                     if target_series in full_data_monthly.columns:
                                         raw_value = full_data_monthly.loc[closest_date, target_series]
                                     else:
@@ -1250,17 +1294,47 @@ def run_backtest_evaluation(
                                         actual_value = np.nan
                                     else:
                                         actual_value = float(raw_value)
-                                        print(f"    ✓ Using closest available date {closest_date}: {actual_value:.4f}")
+                                        print(f"    ✓ Found actual value at {closest_date}: {actual_value:.4f}")
+                                else:
+                                    # Closest date is in a different month - try to find exact month match
+                                    target_month_dates = full_data_monthly.index[
+                                        (full_data_monthly.index.year == target_month_end_ts.year) &
+                                        (full_data_monthly.index.month == target_month_end_ts.month)
+                                    ]
+                                    if len(target_month_dates) > 0:
+                                        exact_date = target_month_dates.max()
+                                        if target_series in full_data_monthly.columns:
+                                            raw_value = full_data_monthly.loc[exact_date, target_series]
+                                        else:
+                                            raw_value = full_data_monthly.loc[exact_date].iloc[0]
+                                        if pd.isna(raw_value):
+                                            print(f"    ⚠ Warning: Actual value at {exact_date} is NaN in monthly data")
+                                            actual_value = np.nan
+                                        else:
+                                            actual_value = float(raw_value)
+                                            print(f"    ✓ Found actual value at {exact_date}: {actual_value:.4f}")
+                                    else:
+                                        # No exact month match, use closest date
+                                        if target_series in full_data_monthly.columns:
+                                            raw_value = full_data_monthly.loc[closest_date, target_series]
+                                        else:
+                                            raw_value = full_data_monthly.loc[closest_date].iloc[0]
+                                        if pd.isna(raw_value):
+                                            print(f"    ⚠ Warning: Actual value at {closest_date} is NaN in monthly data")
+                                            actual_value = np.nan
+                                        else:
+                                            actual_value = float(raw_value)
+                                            print(f"    ✓ Using closest available date {closest_date}: {actual_value:.4f}")
+                            else:
+                                print(f"    ⚠ Warning: No monthly data available at or before {target_month_end_ts}")
+                                actual_value = np.nan
                         else:
-                            print(f"    ⚠ Warning: No monthly data available at or before {target_month_end_ts}")
+                            # target_month_end is after data range or full_data_monthly is empty
+                            if len(full_data_monthly) == 0:
+                                print(f"    ⚠ Warning: full_data_monthly is empty - cannot get actual value")
+                            else:
+                                print(f"    ⚠ Warning: target_month_end {target_month_end_ts} is after data range (max: {full_data_monthly.index.max()})")
                             actual_value = np.nan
-                    else:
-                        # target_month_end is after data range or full_data_monthly is empty
-                        if len(full_data_monthly) == 0:
-                            print(f"    ⚠ Warning: full_data_monthly is empty - cannot get actual value")
-                        else:
-                            print(f"    ⚠ Warning: target_month_end {target_month_end_ts} is after data range (max: {full_data_monthly.index.max()})")
-                        actual_value = np.nan
                         
                     except Exception as e:
                         print(f"    ✗ Error in prediction: {e}")
@@ -1292,11 +1366,15 @@ def run_backtest_evaluation(
                             actual_value = np.nan
                 
                 # [VALIDATION CHECK 16] Skip if nowcast or actual is NaN
+                # Enhanced: Only skip if BOTH are NaN, or if actual is NaN (can't compute error)
+                # If only forecast is NaN, we could use fallback, but for now we skip to maintain data quality
                 if np.isnan(forecast_value) or np.isnan(actual_value):
-                    if np.isnan(forecast_value):
-                        print(f"    ⚠ [CHECK 16] Skipping: forecast_value is NaN (prediction failed or returned NaN)")
-                    if np.isnan(actual_value):
-                        print(f"    ⚠ [CHECK 16] Skipping: actual_value is NaN (value not found or is NaN in data)")
+                    if np.isnan(forecast_value) and not np.isnan(actual_value):
+                        print(f"    ⚠ [CHECK 16] Skipping: forecast_value is NaN (prediction failed - likely numerical instability or empty data view)")
+                    elif np.isnan(actual_value):
+                        print(f"    ⚠ [CHECK 16] Skipping: actual_value is NaN (value not found in data or is NaN in source data)")
+                    else:
+                        print(f"    ⚠ [CHECK 16] Skipping: Both forecast_value and actual_value are NaN")
                     continue
                 
                 # Calculate error and standardized metrics
@@ -1390,14 +1468,13 @@ def main():
     parser = argparse.ArgumentParser(description="Run inference and nowcasting using Hydra config")
     subparsers = parser.add_subparsers(dest='command', required=True)
     
-    # Nowcasting backtest command (NOT forecasting - this is for nowcasting backtesting)
-    backtest_parser = subparsers.add_parser('backtest', help='Run nowcasting backtest evaluation for all models (requires experiment config)')
+    backtest_parser = subparsers.add_parser('backtest', help='Run nowcasting backtest evaluation (requires experiment config)')
     backtest_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/investment_koequipte_report)")
     backtest_parser.add_argument("--model", required=True, choices=['arima', 'var', 'dfm', 'ddfm'], help="Model to backtest")
     backtest_parser.add_argument("--train-start", default="1985-01-01", help="Training period start (YYYY-MM-DD)")
     backtest_parser.add_argument("--train-end", default="2019-12-31", help="Training period end (YYYY-MM-DD)")
     backtest_parser.add_argument("--nowcast-start", default="2024-01-01", help="Nowcasting period start (YYYY-MM-DD)")
-    backtest_parser.add_argument("--nowcast-end", default="2024-12-31", help="Nowcasting period end (YYYY-MM-DD)")
+    backtest_parser.add_argument("--nowcast-end", default="2025-10-31", help="Nowcasting period end (YYYY-MM-DD)")
     backtest_parser.add_argument("--weeks-before", nargs="+", type=int, help="Weeks before month end (e.g., --weeks-before 4 1). Default: [4, 1]")
     backtest_parser.add_argument("--override", action="append", help="Hydra config override")
     
@@ -1417,7 +1494,7 @@ def main():
             config_dir=config_path,
             overrides=args.override
         )
-        print(f"\n✓ Nowcasting backtest completed (this is nowcasting, not forecasting)")
+        print(f"\n✓ Nowcasting backtest completed")
 
 
 if __name__ == "__main__":
