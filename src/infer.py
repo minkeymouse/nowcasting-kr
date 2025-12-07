@@ -180,17 +180,48 @@ def run_backtest_evaluation(
         if hasattr(dfm_model, '_model') and dfm_model._model is not None:
             underlying_model = dfm_model._model
             if hasattr(underlying_model, '_result') and underlying_model._result is None:
-                # Try to recompute result if training_state exists
+                # Try multiple methods to restore result
+                result_restored = False
+                
+                # Method 1: Try to recompute result from training_state
                 if hasattr(underlying_model, 'training_state') and underlying_model.training_state is not None:
                     try:
                         # Recompute result from training state
                         underlying_model._result = underlying_model.get_result()
+                        if underlying_model._result is not None:
+                            result_restored = True
+                            print(f"    ✓ Restored model result from training_state")
                     except (RuntimeError, AttributeError, Exception) as e:
-                        # If recomputation fails, raise informative error
-                        raise RuntimeError(
-                            f"Cannot access nowcast manager: model result is None and cannot be recomputed. "
-                            f"Error: {e}. Model may need to be retrained."
-                        )
+                        print(f"    ⚠ Failed to restore result from training_state: {e}")
+                
+                # Method 2: Try using wrapper's get_result() method
+                if not result_restored:
+                    try:
+                        result = dfm_model.get_result()
+                        if result is not None:
+                            underlying_model._result = result
+                            result_restored = True
+                            print(f"    ✓ Restored model result from wrapper get_result()")
+                    except (RuntimeError, AttributeError, Exception) as e:
+                        print(f"    ⚠ Failed to restore result from wrapper: {e}")
+                
+                # Method 3: Check if result is stored in model_data
+                if not result_restored and 'result' in model_data:
+                    try:
+                        stored_result = model_data['result']
+                        if stored_result is not None:
+                            underlying_model._result = stored_result
+                            result_restored = True
+                            print(f"    ✓ Restored model result from saved model_data")
+                    except (RuntimeError, AttributeError, Exception) as e:
+                        print(f"    ⚠ Failed to restore result from model_data: {e}")
+                
+                # Final check: if result is still None, raise error
+                if not result_restored and (not hasattr(underlying_model, '_result') or underlying_model._result is None):
+                    raise RuntimeError(
+                        f"Cannot access nowcast manager: model result is None and all restoration attempts failed. "
+                        f"Model may need to be retrained. Check if model was properly saved with result data."
+                    )
         
         # Ensure data_module is available for nowcast manager
         # Data module may not be preserved after pickling, so recreate if needed
@@ -226,8 +257,26 @@ def run_backtest_evaluation(
                     f"Model may need to be retrained with data_module stored."
                 )
         
+        # Final verification: check if result is available before accessing nowcast
+        if hasattr(dfm_model, '_model') and dfm_model._model is not None:
+            underlying_model = dfm_model._model
+            if hasattr(underlying_model, '_result') and underlying_model._result is None:
+                raise RuntimeError(
+                    f"Cannot access nowcast manager: model result is None. "
+                    f"This indicates the model was not properly trained or the result was not saved. "
+                    f"Please retrain the model."
+                )
+        
         # Get nowcast manager from underlying model
-        nowcast_manager = dfm_model.nowcast
+        try:
+            nowcast_manager = dfm_model.nowcast
+        except RuntimeError as e:
+            if "Model must be trained" in str(e):
+                raise RuntimeError(
+                    f"Cannot access nowcast manager: {e}. "
+                    f"Model result restoration failed. Please retrain the model."
+                ) from e
+            raise
     else:
         # ARIMA/VAR: use forecaster directly
         forecaster = model_data.get('forecaster')
@@ -555,6 +604,65 @@ def run_backtest_evaluation(
                         else:
                             print(f"    ⚠ Warning: nowcast_manager.data_module is None or not available")
                         
+                        # Final verification: Check if target_period_for_nowcast exists in time_index
+                        # Use the same logic that nowcast manager uses to avoid "not found in Time index" errors
+                        target_found = False
+                        if hasattr(nowcast_manager, 'data_module') and nowcast_manager.data_module is not None:
+                            data_module = nowcast_manager.data_module
+                            if hasattr(data_module, 'time_index') and data_module.time_index is not None:
+                                time_index = data_module.time_index
+                                # Try to find target_period in time_index using find_time_index (same as nowcast manager)
+                                try:
+                                    from dfm_python.utils.time import find_time_index
+                                    t_idx = find_time_index(time_index, target_period_for_nowcast)
+                                    if t_idx is not None:
+                                        target_found = True
+                                        print(f"    ✓ Verified: target_period {target_period_for_nowcast} found in time_index at index {t_idx}")
+                                    else:
+                                        # Try to find any date in the same month
+                                        target_year = target_period_for_nowcast.year
+                                        target_month = target_period_for_nowcast.month
+                                        if hasattr(time_index, 'dates'):
+                                            time_dates = time_index.dates
+                                        elif hasattr(time_index, '__iter__'):
+                                            time_dates = list(time_index)
+                                        else:
+                                            time_dates = []
+                                        
+                                        for t in time_dates:
+                                            if not isinstance(t, datetime):
+                                                try:
+                                                    if isinstance(t, pd.Timestamp):
+                                                        t = t.to_pydatetime()
+                                                    elif hasattr(t, 'to_pydatetime'):
+                                                        t = t.to_pydatetime()
+                                                except (ValueError, TypeError):
+                                                    continue
+                                            
+                                            if isinstance(t, datetime) and t.year == target_year and t.month == target_month:
+                                                target_found = True
+                                                print(f"    ✓ Verified: Found date {t} in same month as target {target_period_for_nowcast}")
+                                                target_period_for_nowcast = t  # Update to use the found date
+                                                break
+                                        
+                                        if not target_found:
+                                            print(f"    ⚠ Skipping: target_period {target_period_for_nowcast} not found in time_index and no date in same month")
+                                            continue
+                                except (ImportError, AttributeError, Exception) as e:
+                                    print(f"    ⚠ Warning: Could not verify target_period in time_index: {e}")
+                                    # Don't continue - this is a critical check, skip if verification fails
+                                    print(f"    ⚠ Skipping: Target period verification failed")
+                                    continue
+                        else:
+                            # If data_module or time_index is not available, cannot verify target_period
+                            print(f"    ⚠ Skipping: Cannot verify target_period - data_module or time_index not available")
+                            continue
+                        
+                        # CRITICAL: Only proceed if target_found is True
+                        if not target_found:
+                            print(f"    ⚠ Skipping: Target period verification failed - target_period not found in time_index")
+                            continue
+                        
                         # Clear the data view cache to force recalculation with updated data_module
                         if hasattr(nowcast_manager, '_data_view_cache'):
                             nowcast_manager._data_view_cache.clear()
@@ -802,8 +910,9 @@ def run_backtest_evaluation(
                         # Check if there's recent data (within last 6 months for monthly data)
                         # For monthly data, use 6 months to ensure we have enough recent information for nowcasting
                         # However, for nowcasting scenarios where view_date is early in a month, we need to be more lenient
-                        # Use 365 days (12 months) to account for monthly data gaps and early-month view dates
-                        recent_cutoff = pd.Timestamp(view_date) - pd.Timedelta(days=365)
+                        # Use 730 days (24 months) to account for monthly data gaps and early-month view dates
+                        # This is more lenient to avoid skipping valid months due to data gaps
+                        recent_cutoff = pd.Timestamp(view_date) - pd.Timedelta(days=730)
                         # Use train_data_filtered (now monthly) for recent data check
                         recent_data = train_data_filtered[train_data_filtered.index >= recent_cutoff]
                         if is_multivariate:
@@ -818,14 +927,14 @@ def run_backtest_evaluation(
                                 recent_target = recent_data.iloc[:, 0]
                         
                         recent_count = recent_target.notna().sum()
-                        # For monthly data, require at least 1 recent data point (within last 12 months)
-                        # This is more lenient than requiring data within 180 days, which might be too strict
-                        # for monthly data when view_date is early in a month
+                        # For monthly data, require at least 1 recent data point (within last 24 months)
+                        # This is more lenient than requiring data within 365 days, which might be too strict
+                        # for monthly data when view_date is early in a month or when there are data gaps
                         if recent_count == 0:
-                            print(f"    ⚠ Skipping: No recent data (last 365 days) available for prediction (checked {len(recent_data)} rows)")
+                            print(f"    ⚠ Skipping: No recent data (last 730 days) available for prediction (checked {len(recent_data)} rows)")
                             continue
                         else:
-                            print(f"    ✓ Found {recent_count} recent data points (last 365 days)")
+                            print(f"    ✓ Found {recent_count} recent data points (last 730 days)")
                         
                         # Check if last non-null value is too far from view_date
                         # For monthly data, the last valid index should be within reasonable range
@@ -842,16 +951,17 @@ def run_backtest_evaluation(
                         last_valid_idx = target_col_for_check.last_valid_index()
                         if last_valid_idx is not None:
                             days_since_last = (pd.Timestamp(view_date) - pd.Timestamp(last_valid_idx)).days
-                            # For monthly data, allow up to 90 days (3 months) since last data point
+                            # For monthly data, allow up to 180 days (6 months) since last data point
                             # This accounts for the fact that monthly data naturally has gaps
                             # and for nowcasting in early January, December data is still recent
                             # CRITICAL FIX: For monthly data, if view_date is early in a month (e.g., Jan 3),
                             # the last monthly data point might be from the previous month (Dec 31), which is only
-                            # a few days ago. This is acceptable for nowcasting. However, if the gap is > 90 days,
+                            # a few days ago. This is acceptable for nowcasting. However, if the gap is > 180 days,
                             # it means we're missing recent data, which is a problem.
                             # Also, for monthly data resampled from weekly, the last valid index should be
                             # at or very close to view_date (within the same month or previous month).
-                            max_days_allowed = 90
+                            # Increased from 90 to 180 days to be more lenient and avoid skipping valid months
+                            max_days_allowed = 180
                             if days_since_last > max_days_allowed:
                                 print(f"    ⚠ Skipping: Last valid data point ({last_valid_idx}) is {days_since_last} days before view_date ({view_date}) (too old, >{max_days_allowed} days)")
                                 continue
@@ -861,28 +971,58 @@ def run_backtest_evaluation(
                             print(f"    ⚠ Warning: No valid data point found in fit_data after cleaning")
                             # Don't skip here - let the fitting attempt proceed, it will fail if there's truly no data
                         
+                        # CRITICAL FIX: For VAR models, store original column names for mapping back after prediction
+                        # VAR's internal transformation pipeline may use integer column indices
+                        original_columns = None
+                        if model == 'var' and isinstance(fit_data, pd.DataFrame):
+                            original_columns = fit_data.columns.tolist()
+                        
                         # Fit on training data
                         try:
                             # CRITICAL FIX: For VAR models, the internal transformation pipeline may have been fitted
                             # with integer column indices, but we're passing data with string column names.
-                            # Try to reset the pipeline if it exists, or ensure data structure matches.
-                            # If the forecaster has a ForecastingPipeline, we may need to reset its transformers
-                            if hasattr(forecaster_clone, 'forecaster_') and hasattr(forecaster_clone.forecaster_, 'steps'):
-                                # This is a ForecastingPipeline - try to reset transformers
-                                try:
-                                    for step_name, step_transformer in forecaster_clone.forecaster_.steps:
-                                        if hasattr(step_transformer, 'reset'):
-                                            try:
-                                                step_transformer.reset()
-                                            except (AttributeError, Exception):
-                                                pass
-                                        # Reset fitted state of transformers
-                                        if hasattr(step_transformer, '_is_fitted'):
-                                            step_transformer._is_fitted = False
-                                except (AttributeError, Exception):
-                                    pass
+                            # The ColumnEnsembleTransformer in VAR's pipeline uses integer indices internally.
+                            # Solution: Convert DataFrame columns to integer indices before fitting, then map back after prediction.
+                            fit_data_for_fit = fit_data.copy()
                             
-                            forecaster_clone.fit(fit_data)
+                            if model == 'var' and isinstance(fit_data, pd.DataFrame):
+                                
+                                # Check if forecaster has a pipeline with ColumnEnsembleTransformer
+                                # If so, convert DataFrame columns to integer indices to match pipeline expectations
+                                has_column_ensemble = False
+                                if hasattr(forecaster_clone, 'forecaster_'):
+                                    forecaster_internal = forecaster_clone.forecaster_
+                                    # Check if it's a ForecastingPipeline
+                                    if hasattr(forecaster_internal, 'steps'):
+                                        for step_name, step_transformer in forecaster_internal.steps:
+                                            # Check if transformer is ColumnEnsembleTransformer
+                                            if hasattr(step_transformer, '__class__'):
+                                                class_name = step_transformer.__class__.__name__
+                                                if 'ColumnEnsemble' in class_name or 'ColumnTransformer' in class_name:
+                                                    has_column_ensemble = True
+                                                    # Convert DataFrame columns to integer indices
+                                                    fit_data_for_fit.columns = range(len(fit_data_for_fit.columns))
+                                                    print(f"    → VAR: Converted DataFrame columns to integer indices (0-{len(original_columns)-1}) for pipeline compatibility")
+                                                    break
+                                
+                                # If no ColumnEnsembleTransformer found, try to reset pipeline transformers
+                                if not has_column_ensemble:
+                                    if hasattr(forecaster_clone, 'forecaster_') and hasattr(forecaster_clone.forecaster_, 'steps'):
+                                        # This is a ForecastingPipeline - try to reset transformers
+                                        try:
+                                            for step_name, step_transformer in forecaster_clone.forecaster_.steps:
+                                                if hasattr(step_transformer, 'reset'):
+                                                    try:
+                                                        step_transformer.reset()
+                                                    except (AttributeError, Exception):
+                                                        pass
+                                                # Reset fitted state of transformers
+                                                if hasattr(step_transformer, '_is_fitted'):
+                                                    step_transformer._is_fitted = False
+                                        except (AttributeError, Exception):
+                                            pass
+                            
+                            forecaster_clone.fit(fit_data_for_fit)
                         except Exception as e:
                             print(f"    ✗ Error fitting forecaster: {e}")
                             import traceback
@@ -930,6 +1070,15 @@ def run_backtest_evaluation(
                             fh = np.asarray([horizon_periods])
                             print(f"    → Predicting with horizon={horizon_periods} periods ({horizon_periods} months, from last data point {last_fit_month} to {target_month_end_ts})")
                             y_pred = forecaster_clone.predict(fh=fh)
+                            
+                            # CRITICAL FIX: If VAR was fitted with integer column indices, map prediction columns back to original names
+                            if model == 'var' and original_columns is not None and isinstance(y_pred, pd.DataFrame):
+                                # Prediction will have integer column indices (0, 1, 2, ...)
+                                # Map them back to original column names
+                                if len(y_pred.columns) == len(original_columns):
+                                    y_pred.columns = original_columns
+                                    print(f"    → VAR: Mapped prediction columns back to original names: {original_columns}")
+                            
                             print(f"    → Prediction result type: {type(y_pred)}, shape: {getattr(y_pred, 'shape', 'N/A')}")
                         except Exception as e:
                             print(f"    ✗ Error in prediction: {e}")
@@ -1074,7 +1223,7 @@ def run_backtest_evaluation(
                                         print(f"    ✓ Using closest available date {closest_date}: {actual_value:.4f}")
                         else:
                             print(f"    ⚠ Warning: No monthly data available at or before {target_month_end_ts}")
-                        actual_value = np.nan
+                            actual_value = np.nan
                     else:
                         # target_month_end is after data range or full_data_monthly is empty
                         if len(full_data_monthly) == 0:

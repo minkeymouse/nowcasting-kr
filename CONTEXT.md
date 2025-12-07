@@ -17,9 +17,11 @@
   - Total: 3 targets × 4 models × 12 months × 2 timepoints = 288 nowcasting predictions
 
 **ACTUAL Current Status**:
-- **checkpoint/**: Has log files but **0 model.pkl files** - **0 models trained** (12 models needed: 3 targets × 4 models)
-- **outputs/backtest/**: Has log files but **0 JSON files** - **0 nowcasting experiments completed** (12 experiments needed: 3 targets × 4 models)
-  - **FIXED**: Import path issue in src/infer.py - backtest runs should now work once models are trained
+- **checkpoint/**: **10 model.pkl files** - **10/12 models trained** ⚠️ (Missing: KOIPALL.G_ddfm, KOIPALL.G_dfm)
+- **outputs/backtest/**: **12 JSON files with "status": "no_results"** - **0/12 nowcasting experiments completed** ⚠️
+  - **FIXED THIS ITERATION**: Model result restoration (fixes "Model must be trained" RuntimeError)
+  - **FIXED THIS ITERATION**: Target period verification (fixes "Target period not found in Time index" ValueError)
+  - Code fixes applied but backtests NOT re-run to verify
 - **outputs/experiments/aggregated_results.csv**: **EXISTS** - Forecasting results aggregated (36 rows, contains extreme VAR values)
   - **FIXED**: Aggregation function updated to validate ALL metrics (MSE, MAE, RMSE) not just standardized metrics - CSV needs regeneration to apply validation (extreme values will be marked as NaN in all metrics)
   - **IMPROVED**: Persistence detection logic in CSV loading improved for robustness (this iteration)

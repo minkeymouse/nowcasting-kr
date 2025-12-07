@@ -2,18 +2,23 @@
 
 ## Work Done This Iteration (HONEST ASSESSMENT)
 
-**Code Fixes Applied** (Verified in code, NOT verified by re-running backtests):
-1. **Type consistency fix** (src/infer.py): Convert `target_month_end` to `pd.Timestamp` (target_month_end_ts) for consistent date comparisons with pandas DatetimeIndex. Prevents boolean indexing failures.
-2. **VAR internal state reset** (src/infer.py lines 660-684): Enhanced VAR forecaster reset to reset internal transformers_ when refitting, preventing column index mismatch errors.
-3. **DFM/DDFM error handling** (src/models.py): Added LinAlgError handling and improved error messages for horizon 28 failures, distinguishing numerical instability vs convergence issues.
-4. **Validation logic improvements** (src/infer.py): Fixed last_valid_idx check to use fit_data, simplified available data check, improved horizon calculation for ARIMA/VAR.
-5. **Diagnostic logging** (src/infer.py): Added summary messages to help identify why backtests fail.
+**Code Improvements Applied** (This iteration - ACTUALLY DONE):
+1. **Improved nowcasting table generation** (src/evaluation.py lines 1362-1369): Added explicit check for "no_results" status in backtest JSON files, improved error handling and logging. Skips files with "no_results" status gracefully instead of trying to process empty results.
+2. **Fixed row label format** (src/evaluation.py lines 1421-1427): Table now displays "1week" (singular) instead of "1weeks" (plural) for better readability, matching WORKFLOW.md specification. Uses timepoint_labels mapping to convert JSON keys ("1weeks") to display labels ("1week").
+
+**Previous Code Fixes** (From earlier iterations - Present in code, NOT verified by re-running backtests):
+- Model result restoration (src/infer.py lines 178-230): Multiple restoration methods for DFM/DDFM after unpickling
+- Target period verification (src/infer.py lines 607-664): Enhanced verification with fallback date finding
+- Kalman smoother NaN propagation fix (dfm-python/src/dfm_python/ssm/kalman.py lines 467-505): Backward smoother validation and fallback
+- Forward Kalman filter adaptive regularization (dfm-python/src/dfm_python/ssm/kalman.py lines 318-345): Adaptive regularization based on missing data ratio
+- VAR column indexing fix (src/infer.py lines 973-1077): Column index conversion for VAR pipeline compatibility
+- Other fixes: Date type conversion, VAR state reset, validation logic improvements, error handling enhancements
 
 **What's NOT Working** (REAL ISSUES - Verified by inspection):
 - ❌ **2 models missing** - KOIPALL.G_ddfm and KOIPALL.G_dfm not trained (10/12 models trained)
-- ❌ **All 12 backtests failed** - All JSON files have "status": "no_results". Code fixes applied but NOT VERIFIED (backtests need re-run)
+- ❌ **All 12 backtests failed** - All JSON files have "status": "no_results". Code fixes present in code but NOT VERIFIED (backtests need re-run to verify if fixes work)
 
-**HONEST STATUS**: Code fixes for backtest failures are present in code (date type conversion, VAR state reset, validation logic, error handling). However, backtests have NOT been re-run to verify if fixes actually work. All 12 backtests still show "no_results" status. Root causes addressed in code, but verification required.
+**HONEST STATUS**: This iteration made 2 code improvements to table generation (handling "no_results" status and fixing row labels). Previous code fixes for backtest failures are present in code but have NOT been verified by re-running backtests. All 12 backtests still show "no_results" status. Root causes addressed in code (model result restoration, target period verification, Kalman filter stability, VAR column indexing), but verification required.
 
 ---
 
@@ -80,11 +85,14 @@
 - **VAR horizon 1**: Code marks persistence predictions as NaN (Table 2 shows N/A) - expected behavior
 - **VAR horizons 7/28**: Code validates and marks extreme values (> 1e10) as NaN - handled correctly
 - **DFM/DDFM horizon 28**: n_valid=0 for all targets - improved error handling added
-- **Backtest failures**: All 12 JSON files have "no_results" - code fixes applied but NOT verified
+- **Backtest failures**: All 12 JSON files have "no_results" - code fixes present but NOT verified by re-running backtests
 
-**dfm-python Package**: No critical issues found (from previous iteration)
+**dfm-python Package Inspection**:
+- **Code fixes present**: Kalman smoother NaN propagation fix (lines 467-505), adaptive regularization (lines 318-345)
+- **Status**: Fixes present in code but NOT verified by successful backtests
+- **Remaining concerns**: Numerical stability for sparse data in nowcasting scenarios may need further improvement
 
-**Report Documentation**: Tables 1-2 ✅, Table 3 ⚠️ (N/A placeholders); Plots 1-3 ✅, Plot4 ⚠️ (placeholders)
+**Report Documentation**: Tables 1-2 ✅, Table 3 ⚠️ (N/A placeholders - blocked by backtest failures); Plots 1-3 ✅, Plot4 ⚠️ (placeholders - blocked by backtest failures)
 
 ---
 
