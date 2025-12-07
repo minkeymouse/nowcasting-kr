@@ -19,6 +19,7 @@ from pathlib import Path
 import sys
 import os
 import argparse
+import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import json
@@ -59,6 +60,15 @@ except ImportError as e:
 
 from src.models import DFM, DDFM  # For type hints
 
+# Set up logger
+logger = logging.getLogger(__name__)
+# Configure logging if not already configured
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
 # ============================================================================
 # Helper Functions
@@ -773,10 +783,10 @@ def compare_models(
     output_dir = project_root / "outputs" / "comparisons" / target_series
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    print("=" * 70)
-    print(f"Comparing models for {target_series}")
-    print(f"Models: {', '.join(models)} | Horizons: {horizons}")
-    print("=" * 70)
+    logger.info("=" * 70)
+    logger.info(f"Comparing models for {target_series}")
+    logger.info(f"Models: {', '.join(models)} | Horizons: {horizons}")
+    logger.info("=" * 70)
     
     model_results = {}
     failed_models = []
@@ -793,10 +803,10 @@ def compare_models(
         cfg = parse_experiment_config(config_name, config_dir)
         params = extract_experiment_params(cfg)
         horizons = params.get('horizons', list(range(1, 23)))
-        print(f"Extracted horizons from config: {len(horizons)} horizons (1-22)")
+        logger.info(f"Extracted horizons from config: {len(horizons)} horizons (1-22)")
     
     for i, model_name in enumerate(models, 1):
-        print(f"\n[{i}/{len(models)}] {model_name.upper()}...")
+        logger.info(f"[{i}/{len(models)}] {model_name.upper()}...")
         
         if config_overrides is None:
             config_overrides = []
@@ -814,7 +824,7 @@ def compare_models(
                 checkpoint_path = Path(checkpoint_dir) / f"{target_series}_{model_name}" / "model.pkl"
             
             if checkpoint_path and checkpoint_path.exists():
-                print(f"  Loading model from checkpoint: {checkpoint_path}")
+                logger.info(f"Loading model from checkpoint: {checkpoint_path}")
                 import pickle
                 with open(checkpoint_path, 'rb') as f:
                     model_data = pickle.load(f)
@@ -845,6 +855,17 @@ def compare_models(
                     data = data[(data.index >= train_start) & (data.index <= train_end)]
                     data = resample_to_monthly(data)
                     
+                    # VAR cannot handle missing data - must impute before evaluation
+                    if model_name.lower() == 'var':
+                        from src.preprocessing import impute_missing_values
+                        data = impute_missing_values(data, model_type='var')
+                        if data.isnull().any().any():
+                            nan_count = data.isnull().sum().sum()
+                            logger.warning(f"VAR: {nan_count} NaN values remain after imputation. Dropping rows with NaN...")
+                            data = data.dropna()
+                            if len(data) == 0:
+                                raise ValidationError(f"VAR: All data was dropped after imputation. Cannot evaluate.")
+                    
                     split_idx = int(len(data) * 0.8)
                     y_train_eval = data.iloc[:split_idx]
                     y_test_eval = data.iloc[split_idx:]
@@ -858,8 +879,8 @@ def compare_models(
             else:
                 # Checkpoint not found - skip this model
                 checkpoint_msg = f"checkpoint/{target_series}_{model_name}/model.pkl" if checkpoint_dir else "checkpoint"
-                print(f"  ⚠ Skipping: Checkpoint not found ({checkpoint_msg})")
-                print(f"     Run 'bash run_train.sh' to train this model first")
+                logger.warning(f"Skipping: Checkpoint not found ({checkpoint_msg})")
+                logger.warning(f"  Run 'bash run_train.sh' to train this model first")
                 result = {
                     'status': 'skipped',
                     'model_name': f"{target_series}_{model_name}",
@@ -875,24 +896,23 @@ def compare_models(
             if result is not None:
                 model_results[model_name] = result
                 if result.get('status') == 'completed':
-                    print(f"  ✓ Completed")
+                    logger.info("Completed")
                 elif result.get('status') == 'skipped':
-                    # Already printed skip message above
+                    # Already logged skip message above
                     pass
                 else:
-                    print(f"  ⚠ Status: {result.get('status', 'unknown')}")
+                    logger.warning(f"Status: {result.get('status', 'unknown')}")
         except Exception as e:
             import traceback
-            print(f"  ✗ Failed: {str(e)}")
-            print("Full traceback:")
-            traceback.print_exc()
+            logger.error(f"Failed: {str(e)}")
+            logger.debug("Full traceback:", exc_info=True)
             failed_models.append(model_name)
             model_results[model_name] = {'status': 'failed', 'error': str(e), 'metrics': None}
     
     comparison = None
     successful_count = len(model_results) - len(failed_models)
     if successful_count > 0:
-        print(f"\nComparing {successful_count} successful models...")
+        logger.info(f"Comparing {successful_count} successful models...")
         comparison = _compare_results(model_results, horizons, target_series)
         
         if comparison and comparison.get('metrics_table') is not None:
@@ -901,7 +921,7 @@ def compare_models(
             if generate_comparison_table:
                 table_path = output_dir / "comparison_table.csv"
                 generate_comparison_table(comparison, output_path=str(table_path))
-                print(f"  Table: {table_path}")
+                logger.info(f"Table: {table_path}")
     
     comparison_data = {
         'target_series': target_series,
@@ -917,17 +937,17 @@ def compare_models(
     with open(results_file, 'w', encoding='utf-8') as f:
         json.dump(comparison_data, f, indent=2, ensure_ascii=False, default=str)
     
-    print(f"\nResults: {results_file}")
+    logger.info(f"Results: {results_file}")
     
     # Count skipped models separately
     skipped_models = [name for name, result in model_results.items() if result.get('status') == 'skipped']
     actual_failed = [name for name in failed_models if name not in skipped_models]
     
     if skipped_models:
-        print(f"Skipped (no checkpoint): {', '.join(skipped_models)}")
+        logger.warning(f"Skipped (no checkpoint): {', '.join(skipped_models)}")
     if actual_failed:
-        print(f"Failed: {', '.join(actual_failed)}")
-    print("=" * 70)
+        logger.error(f"Failed: {', '.join(actual_failed)}")
+    logger.info("=" * 70)
     
     return comparison_data
 

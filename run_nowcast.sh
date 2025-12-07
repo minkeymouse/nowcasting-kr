@@ -1,10 +1,24 @@
 #!/bin/bash
-# Nowcasting script - runs 22 horizon forecasts and nowcasting (4 weeks ago, 1 week ago, trend)
+# Nowcasting script - runs 22 horizon forecasts and nowcasting (4 weeks ago, 1 week ago)
 # Loads models from checkpoint/ directory and generates forecasts and nowcasts
 # Period: 2024-01 to 2025-10 (22 months)
 
 # Don't exit on error - continue even if some models fail
 set +e
+
+# Graceful shutdown handler
+cleanup_on_exit() {
+    echo ""
+    echo "=========================================="
+    echo "Received interrupt signal. Cleaning up..."
+    echo "=========================================="
+    # Kill any background processes
+    jobs -p | xargs -r kill 2>/dev/null || true
+    exit 130
+}
+
+# Set up signal handlers for graceful shutdown
+trap cleanup_on_exit SIGINT SIGTERM
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,13 +70,12 @@ while [[ $# -gt 0 ]]; do
             echo "This script runs:"
             echo "  1. 22 horizon forecast (2024-01 to 2025-10, monthly)"
             echo "  2. Nowcast with 4 weeks ago and 1 week ago"
-            echo "  3. Generate all LaTeX tables (Table 1-3)"
-            echo "  4. Generate all plots (Plot1-5)"
             echo ""
             echo "Results are saved to:"
-            echo "  - outputs/experiments/aggregated_results.csv"
-            echo "  - nowcasting-report/tables/*.tex"
-            echo "  - nowcasting-report/images/*.png"
+            echo "  - outputs/comparisons/{target}/comparison_results.json (forecasting)"
+            echo "  - outputs/comparisons/{target}/comparison_table.csv (forecasting)"
+            echo "  - outputs/backtest/{target}_{model}_backtest.json (nowcasting)"
+            echo "  - outputs/experiments/aggregated_results.csv (aggregated)"
             exit 0
             ;;
         *)
@@ -235,7 +248,7 @@ run_test_mode() {
     
     # Test 5: Output directories
     echo "[TEST 5] Checking output directories..."
-    local dirs=("outputs/forecast" "outputs/nowcast" "outputs/trend")
+    local dirs=("outputs/forecast" "outputs/nowcast")
     for dir in "${dirs[@]}"; do
         if [ ! -d "$dir" ]; then
             if mkdir -p "$dir" 2>/dev/null; then
@@ -383,63 +396,24 @@ cleanup_outputs() {
     echo "Cleaning Up Old Output Files"
     echo "=========================================="
     
-    # Clean comparisons directory (keep only latest per target)
-    if [ -d "outputs/comparisons" ]; then
-        for target in "${TARGETS[@]}"; do
-            target_dir="outputs/comparisons/${target}"
-            if [ -d "$target_dir" ]; then
-                echo "  Removing old comparison results: $target_dir"
-                rm -rf "$target_dir"
-            fi
-        done
+    # Remove entire outputs directory and recreate clean structure
+    if [ -d "outputs" ]; then
+        echo "  Removing all old outputs..."
+        rm -rf outputs
     fi
     
-    # Clean backtest files (will be overwritten)
-    if [ -d "outputs/backtest" ]; then
-        for target in "${TARGETS[@]}"; do
-            for model in "${MODELS[@]}"; do
-                backtest_file="outputs/backtest/${target}_${model}_backtest.json"
-                if [ -f "$backtest_file" ]; then
-                    echo "  Removing old backtest file: $backtest_file"
-                    rm -f "$backtest_file"
-                fi
-            done
-        done
-    fi
+    # Create clean output directory structure
+    mkdir -p outputs/forecast
+    mkdir -p outputs/nowcast
+    mkdir -p outputs/backtest
+    mkdir -p outputs/comparisons
+    mkdir -p outputs/experiments
     
-    # Clean log files (always clean - will be overwritten with fixed names)
-    for dir in "outputs/forecast" "outputs/nowcast"; do
-        if [ -d "$dir" ]; then
-            echo "  Cleaning log files in: $dir"
-            find "$dir" -name "*.log" -type f -delete 2>/dev/null || true
-        fi
-    done
-    
-    # Clean aggregated results (always clean - will be regenerated)
-    if [ -f "outputs/experiments/aggregated_results.csv" ]; then
-        echo "  Removing old aggregated results"
-        rm -f "outputs/experiments/aggregated_results.csv"
-    fi
-    
-    # Clean any timestamped comparison directories (legacy cleanup)
-    if [ -d "outputs/comparisons" ]; then
-        echo "  Cleaning legacy timestamped comparison directories"
-        find "outputs/comparisons" -type d -name "*_*_*" -exec rm -rf {} + 2>/dev/null || true
-    fi
-    
-    echo "✓ Cleanup completed"
+    echo "✓ Cleanup completed - fresh output structure created"
     echo ""
 }
 
 cleanup_outputs
-
-# Create output directories
-mkdir -p outputs/forecast
-mkdir -p outputs/nowcast
-mkdir -p outputs/trend
-mkdir -p outputs/backtest
-mkdir -p outputs/comparisons
-mkdir -p outputs/experiments
 
 # ============================================================================
 # Part 1: 22 Horizon Forecast (2024-01 to 2025-10)
@@ -509,8 +483,11 @@ if [ "$SKIP_FORECAST" != "1" ]; then
         
         # Use fixed log file name (overwrite mode)
         log_file="outputs/forecast/${target}_forecast.log"
-        timeout 86400 .venv/bin/python3 "${CMD_ARGS[@]}" > "$log_file" 2>&1
-        
+        # Run with tee to show output in terminal and save to log file
+        # Use timeout with signal handling for graceful shutdown
+        timeout 86400 .venv/bin/python3 "${CMD_ARGS[@]}" 2>&1 | tee "$log_file" &
+        PYTHON_PID=$!
+        wait $PYTHON_PID
         EXIT_CODE=$?
         
         if [ $EXIT_CODE -eq 0 ]; then
@@ -594,6 +571,7 @@ if [ "$SKIP_NOWCAST" != "1" ]; then
             # Use fixed log file name (overwrite mode)
             log_file="outputs/nowcast/${target}_${model}_nowcast.log"
             
+            # Run with tee to show output in terminal and save to log file
             timeout 86400 .venv/bin/python3 src/infer.py backtest \
                 --config-name "$config_name" \
                 --model "$model" \
@@ -602,8 +580,9 @@ if [ "$SKIP_NOWCAST" != "1" ]; then
                 --nowcast-start "2024-01-01" \
                 --nowcast-end "2025-10-31" \
                 --weeks-before 4 1 \
-                > "$log_file" 2>&1
-            
+                2>&1 | tee "$log_file" &
+            PYTHON_PID=$!
+            wait $PYTHON_PID
             EXIT_CODE=$?
             
             if [ $EXIT_CODE -eq 0 ]; then
@@ -641,38 +620,8 @@ else
 fi
 
 # ============================================================================
-# Part 3: Nowcast Trend Analysis
+# Part 3: Summary (Plots are generated separately)
 # ============================================================================
-
-# ============================================================================
-# Part 3: Generate Plots (Plot1-4)
-# ============================================================================
-
-echo "=========================================="
-echo "Part 3: Generating Plots"
-echo "=========================================="
-echo "Generating all plots (Plot1-5) from results..."
-echo ""
-
-if [ -f "outputs/experiments/aggregated_results.csv" ] || [ -d "outputs/comparisons" ]; then
-    echo "Generating plots from forecast and nowcast results..."
-    if .venv/bin/python3 nowcasting-report/code/plot.py 2>&1; then
-        echo "✓ Plot generation completed"
-        
-        # Count generated plots
-        plot_count=$(find nowcasting-report/images -name "*.png" -type f 2>/dev/null | wc -l)
-        if [ "$plot_count" -gt 0 ]; then
-            echo "  Generated $plot_count plot(s) in nowcasting-report/images/"
-        fi
-    else
-        echo "⚠ Plot generation had errors (some plots may still be available)"
-    fi
-else
-    echo "⚠ No results found for plot generation"
-    echo "  Required: outputs/experiments/aggregated_results.csv or outputs/comparisons/"
-fi
-
-echo ""
 
 # ============================================================================
 # Final Summary
@@ -684,21 +633,11 @@ echo "=========================================="
 echo "Completion time: $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 echo "Results saved to:"
-echo "  - Forecast results: outputs/forecast/"
-echo "  - Nowcast results: outputs/nowcast/"
-echo "  - Backtest results: outputs/backtest/"
-echo "  - Aggregated results: outputs/experiments/"
-echo "  - LaTeX tables: nowcasting-report/tables/"
-echo "  - Plots: nowcasting-report/images/"
+echo "  - Forecast results: outputs/comparisons/{target}/comparison_results.json"
+echo "  - Forecast table: outputs/comparisons/{target}/comparison_table.csv"
+echo "  - Nowcast results: outputs/backtest/{target}_{model}_backtest.json"
+echo "  - Aggregated results: outputs/experiments/aggregated_results.csv"
 echo ""
-echo "Generated outputs:"
-echo "  - Table 1: Dataset and parameters (tab_dataset_params.tex)"
-echo "  - Table 2: Forecasting results (tab_forecasting_results.tex)"
-echo "  - Table 3: Nowcasting backtest (tab_nowcasting_backtest.tex)"
-echo "  - Plot1: Forecast vs actual (3 plots, one per target)"
-echo "  - Plot2: Accuracy heatmap"
-echo "  - Plot3: Horizon performance trend (1-22 months)"
-echo "  - Plot4: Nowcasting comparison (3 pairs, one per target)"
-echo "  - Plot5: Nowcasting trend and error comparison (3 plots, one per target)"
+echo "Note: All results are in JSON/CSV format. Tables and plots are generated separately."
 echo ""
 

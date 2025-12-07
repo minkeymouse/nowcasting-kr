@@ -201,6 +201,5 @@ Plot4. Plot for nowcasting comparison at different time points. For each target 
     - (subsubsection) ARIMA/VAR 모형의 Release date 마스킹 구현
     - (subsubsection) 시점별 데이터 가용성 차이
 
-### 향후 연구 방향 (subsection)
-    - 모형 개선, 실험 설계 개선, Release date 마스킹 개선, 추가 모형 비교, 실시간 시스템 구축 등
-
+## Appendix
+### 전체 실험 결과 테이블(1~22 horizon, 모델별로 테이블 1개)

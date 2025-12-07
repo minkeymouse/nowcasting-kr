@@ -32,6 +32,9 @@ except ImportError:
     MeanSquaredError = None
     MeanAbsoluteError = None
 
+# Module-level logger (use this consistently across all functions)
+_module_logger = logging.getLogger(__name__)
+
 
 def calculate_standardized_metrics(
     y_true: Union[pd.DataFrame, pd.Series, np.ndarray],
@@ -76,7 +79,7 @@ def calculate_standardized_metrics(
     - Missing values (NaN) are automatically excluded from calculations
     - If all values are NaN, returns NaN for all metrics
     """
-    logger = logging.getLogger(__name__)
+    logger = _module_logger
     
     # Convert to numpy arrays and track original types
     is_y_true_series = isinstance(y_true, pd.Series)
@@ -199,8 +202,7 @@ def calculate_standardized_metrics(
     # Create mask for valid (non-NaN) values
     mask = np.isfinite(y_true_arr) & np.isfinite(y_pred_arr)
     
-    # Debug logging for mask calculation
-    logger = logging.getLogger(__name__)
+    # Debug logging for mask calculation (logger already defined at function start)
     logger.debug(f"calculate_standardized_metrics: y_true_arr shape={y_true_arr.shape}, y_pred_arr shape={y_pred_arr.shape}")
     logger.debug(f"calculate_standardized_metrics: mask sum={np.sum(mask)}, mask shape={mask.shape}, n_valid={int(np.sum(mask))}")
     if np.sum(mask) == 0:
@@ -292,7 +294,7 @@ def calculate_metrics_per_horizon(
         Predictions from sktime predict(fh=[1,2,...,max_horizon]) are indexed by time,
         where index 0 corresponds to horizon 1 (1 step ahead from training end).
     horizons : list or np.ndarray
-        List of forecast horizons (e.g., [1, 7, 28] for 1, 7, 28 months ahead)
+        List of forecast horizons (e.g., [1, 11, 22] for 1, 11, 22 months ahead)
     y_train : pd.DataFrame, pd.Series, or np.ndarray, optional
         Training data for standardization
     target_series : str or int, optional
@@ -450,7 +452,7 @@ def evaluate_forecaster(
     
     Why Single-Step Evaluation?
         - Data limitation: After 80/20 train/test split, the test set may be too small
-          for multi-step evaluation, especially for longer horizons (e.g., h=28).
+          for multi-step evaluation, especially for longer horizons (e.g., h=22).
         - Focused assessment: Single-step evaluation provides a clear, focused assessment
           of model performance at each specific forecast horizon without aggregation
           effects that could mask horizon-specific performance characteristics.
@@ -481,6 +483,8 @@ def evaluate_forecaster(
         Each metrics dict contains: sMSE, sMAE, sRMSE, MSE, MAE, RMSE, sigma, n_valid.
         Note: n_valid=1 for all valid horizons due to single-step evaluation design.
     """
+    logger = _module_logger
+    
     # Fit forecaster
     forecaster.fit(y_train)
     
@@ -503,7 +507,6 @@ def evaluate_forecaster(
         try:
             # Predict for this specific horizon
             # Try both fh=[h] (list) and fh=h (int) for compatibility
-            logger = logging.getLogger(__name__)
             
             try:
                 y_pred_h = forecaster.predict(fh=[h])
@@ -793,7 +796,6 @@ def evaluate_forecaster(
                 }
         except Exception as e:
             # If prediction fails for this horizon, return NaN metrics
-            logger = logging.getLogger(__name__)
             logger.warning(f"Horizon {h}: Prediction failed with error: {e}")
             results[h] = {
                 'sMSE': np.nan, 'sMAE': np.nan, 'sRMSE': np.nan,
@@ -828,7 +830,7 @@ def compare_multiple_models(
         - 'result': Model result object (optional, for extracting forecasts)
         - 'metadata': Model metadata (optional)
     horizons : List[int]
-        List of forecast horizons to compare (e.g., [1, 7, 28])
+        List of forecast horizons to compare (e.g., [1, 11, 22])
     target_series : str, optional
         Target series name (for context and filtering)
         
@@ -1079,8 +1081,7 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
                             return np.nan
                         if abs(val) > EXTREME_THRESHOLD:
                             # Log warning for extreme values
-                            logger = logging.getLogger(__name__)
-                            logger.warning(
+                            _module_logger.warning(
                                 f"aggregate_overall_performance: Extreme value detected for "
                                 f"{model_name.upper()} {target_series} horizon {horizon}: {val:.2e}. "
                                 f"Marking as NaN due to numerical instability."
@@ -1130,6 +1131,7 @@ def aggregate_overall_performance(all_results: Dict[str, Any]) -> pd.DataFrame:
 
 def main_aggregator():
     """Main entry point for aggregator module."""
+    logger = _module_logger
     logger.info("=" * 70)
     logger.info("Aggregating Experiment Results")
     logger.info("=" * 70)
@@ -1175,11 +1177,14 @@ def generate_latex_table_forecasting_results(
 ) -> str:
     """Generate LaTeX table for forecasting results (Table 2).
     
-    Table structure: Rows = model-horizon combinations (12 rows: ARIMA-1, ARIMA-7, ARIMA-30, 
-    VAR-1, VAR-7, VAR-30, DFM-1, DFM-7, DFM-30, DDFM-1, DDFM-7, DDFM-30).
+    Table structure: Rows = model-horizon combinations (12 rows: ARIMA-1, ARIMA-11, ARIMA-22, 
+    VAR-1, VAR-11, VAR-22, DFM-1, DFM-11, DFM-22, DDFM-1, DDFM-11, DDFM-22).
     Columns = target-metric combinations (6 columns: KOIPALL.G_sMAE, KOIPALL.G_sMSE, 
     KOEQUIPTE_sMAE, KOEQUIPTE_sMSE, KOWRCCNSE_sMAE, KOWRCCNSE_sMSE).
     Total: 12 rows × 7 columns (including model-horizon column).
+    
+    Note: Experiments evaluate all horizons from 1 to 22 months (2024-01 to 2025-10),
+    but table shows only selected horizons (1, 11, 22 months) for readability.
     
     Parameters
     ----------
@@ -1362,16 +1367,14 @@ Model-Timepoint & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KO
                     status = data.get('status', '')
                     if status == 'no_results':
                         # Skip this file - no valid results available
-                        logger = logging.getLogger(__name__)
-                        logger.debug(f"Skipping {result_file.name}: status='no_results'")
+                        _module_logger.debug(f"Skipping {result_file.name}: status='no_results'")
                         continue
                     
                     results_by_timepoint = data.get('results_by_timepoint', {})
                     
                     # Only process if results_by_timepoint is not empty
                     if not results_by_timepoint:
-                        logger = logging.getLogger(__name__)
-                        logger.debug(f"No results_by_timepoint in {result_file.name}")
+                        _module_logger.debug(f"No results_by_timepoint in {result_file.name}")
                         continue
                     
                     for timepoint in timepoints:
@@ -1387,8 +1390,7 @@ Model-Timepoint & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KO
                                 'sMSE': tp_data.get('overall_sMSE')
                             }
                 except Exception as e:
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"Error loading {result_file}: {e}")
+                    _module_logger.warning(f"Error loading {result_file}: {e}")
                     continue
     
     # Generate table rows
@@ -1576,6 +1578,8 @@ def generate_all_latex_tables(
     Dict[str, str]
         Dictionary mapping table names to LaTeX code
     """
+    logger = _module_logger
+    
     if outputs_dir is None:
         outputs_dir = Path(__file__).parent.parent.parent / "outputs"
     
@@ -1599,7 +1603,6 @@ def generate_all_latex_tables(
         aggregated_df = pd.read_csv(aggregated_file)
         # Filter extreme values (numerical instability) - in case CSV was generated before validation
         EXTREME_THRESHOLD = 1e10
-        logger = logging.getLogger(__name__)
         
         # Filter extreme values in all metrics (standardized and raw) for consistency
         all_metrics = ['sMSE', 'sMAE', 'sRMSE', 'MSE', 'MAE', 'RMSE']
