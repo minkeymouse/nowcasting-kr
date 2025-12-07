@@ -507,6 +507,22 @@ def run_backtest_evaluation(
                                 if release_date_dt > view_date_dt:
                                     train_data_filtered.loc[period_idx, series_id] = np.nan
                     
+                    # Impute missing values after masking (ARIMA/VAR cannot handle NaN)
+                    from src.preprocessing import impute_missing_values
+                    try:
+                        train_data_filtered = impute_missing_values(train_data_filtered, model_type=model.lower())
+                        if train_data_filtered.isnull().any().any():
+                            # If imputation failed, drop rows with remaining NaN
+                            nan_count = train_data_filtered.isnull().sum().sum()
+                            logger.warning(f"{model.upper()}: {nan_count} NaN values remain after imputation for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}). Dropping rows with NaN...")
+                            train_data_filtered = train_data_filtered.dropna()
+                            if len(train_data_filtered) == 0:
+                                logger.warning(f"{model.upper()}: All data was dropped after imputation for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}). Skipping this timepoint.")
+                                continue
+                    except Exception as e:
+                        logger.warning(f"{model.upper()}: Imputation failed for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}. Skipping this timepoint.")
+                        continue
+                    
                     # Prepare data
                     is_multivariate = False
                     training_columns = None
@@ -554,6 +570,16 @@ def run_backtest_evaluation(
                             fit_data = fit_data.to_frame()
                     
                     if len(fit_data) < 10:
+                        continue
+                    
+                    # Re-fit model on masked and imputed data for nowcasting
+                    # This is necessary because the checkpoint model was trained on full data,
+                    # but nowcasting requires predictions based on masked data
+                    try:
+                        forecaster.fit(fit_data)
+                        logger.debug(f"{model.upper()}: Re-fitted on masked data for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')})")
+                    except Exception as e:
+                        logger.warning(f"{model.upper()}: Failed to re-fit for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
                         continue
                     
                     # Predict
