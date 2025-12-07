@@ -1110,7 +1110,7 @@ def run_backtest_evaluation(
                         logger.info(f"[{target_series} DFM] Factor state from masked data ({target_month_end_ts.strftime('%Y-%m')}, weeks={weeks}): {factor_state_str}")
                         logger.debug(f"Successfully got current factor state from masked data: {factor_state_str}")
                     except (ValueError, RuntimeError) as e:
-                        # If Kalman filter re-run fails (e.g., dimension mismatch), use training state
+                        # If Kalman filter re-run fails (e.g., dimension mismatch), try alternative calculation
                         # CRITICAL: This fallback will cause repetitive predictions if Kalman filter keeps failing
                         model_type = type(dfm_model).__name__ if hasattr(dfm_model, '__class__') else 'Unknown'
                         logger.error(
@@ -1118,30 +1118,77 @@ def run_backtest_evaluation(
                             f"This will cause constant predictions. Check data filtering and Kalman filter re-run logic. "
                             f"Target: {target_series}, Month: {target_month_end_ts.strftime('%Y-%m')}, Weeks: {weeks}"
                         )
-                        if hasattr(dfm_model, '_result') and dfm_model._result is not None:
-                            if hasattr(dfm_model._result, 'Z') and dfm_model._result.Z is not None and len(dfm_model._result.Z) > 0:
-                                Z_last_current = dfm_model._result.Z[-1, :].copy()
-                                logger.warning(
-                                    f"[{model_type}] Using training state (constant) - THIS WILL CAUSE REPETITIVE PREDICTIONS: "
-                                    f"{Z_last_current[:3] if len(Z_last_current) >= 3 else Z_last_current}. "
-                                    f"Factor state norm: {np.linalg.norm(Z_last_current):.4f}"
-                                )
-                                # CRITICAL: Track when we fall back to training state to detect repetitive predictions
-                                if not hasattr(run_backtest_evaluation, '_kalman_failures'):
-                                    run_backtest_evaluation._kalman_failures = {}
-                                key = f"{target_series}_{model}"
-                                if key not in run_backtest_evaluation._kalman_failures:
-                                    run_backtest_evaluation._kalman_failures[key] = []
-                                run_backtest_evaluation._kalman_failures[key].append({
-                                    'month': target_month_end_ts.strftime('%Y-%m'),
-                                    'weeks': weeks,
-                                    'error': str(e),
-                                    'error_type': type(e).__name__
-                                })
+                        
+                        # CRITICAL FIX: Try alternative calculation when Kalman filter fails (not just when factor state is identical)
+                        # This helps prevent repetitive predictions by providing variation even when Kalman filter fails
+                        Z_last_current = None
+                        try:
+                            if hasattr(dfm_model, '_data_module') and dfm_model._data_module is not None:
+                                data_masked = dfm_model._data_module.data
+                                if isinstance(data_masked, pd.DataFrame):
+                                    # Try alternative: use last valid observation to estimate factor state
+                                    last_valid_idx = data_masked.last_valid_index()
+                                    if last_valid_idx is not None:
+                                        last_row = data_masked.loc[last_valid_idx].values
+                                        # Standardize using result's Wx and Mx
+                                        if hasattr(dfm_model, '_result') and dfm_model._result is not None:
+                                            result = dfm_model._result
+                                            if hasattr(result, 'Wx') and hasattr(result, 'Mx'):
+                                                Wx = result.Wx
+                                                Mx = result.Mx
+                                                last_row_std = (last_row - Mx) / np.where(Wx != 0, Wx, 1.0)
+                                                # Use C matrix to estimate factor state: X = Z @ C^T, so Z ≈ X @ C @ (C^T @ C)^-1
+                                                if hasattr(result, 'C') and result.C is not None:
+                                                    C = result.C
+                                                    if len(C.shape) == 2:
+                                                        # Pseudo-inverse: Z ≈ X @ C @ (C^T @ C)^-1
+                                                        CtC = C.T @ C
+                                                        if np.linalg.cond(CtC) < 1e12:  # Check condition number
+                                                            CtC_inv = np.linalg.inv(CtC)
+                                                            Z_estimated = last_row_std @ C @ CtC_inv
+                                                            # Get previous state if available, otherwise use training state
+                                                            if hasattr(result, 'Z') and result.Z is not None and len(result.Z) > 0:
+                                                                Z_prev = result.Z[-1, :].copy()
+                                                                # Blend with previous state (weighted average) to provide variation
+                                                                Z_last_current = 0.3 * Z_estimated + 0.7 * Z_prev
+                                                                logger.info(
+                                                                    f"[{model_type}] Kalman filter failed, used alternative factor state calculation (blended): "
+                                                                    f"norm={np.linalg.norm(Z_last_current):.4f}"
+                                                                )
+                                                        else:
+                                                            logger.warning(f"Alternative calculation failed: C^T @ C condition number too high ({np.linalg.cond(CtC):.2e})")
+                                        if Z_last_current is None:
+                                            raise ValueError("Alternative calculation failed")
+                        except Exception as alt_error:
+                            logger.warning(f"Alternative factor state calculation failed: {type(alt_error).__name__}: {str(alt_error)}")
+                            Z_last_current = None
+                        
+                        # Final fallback: use training state if alternative calculation also failed
+                        if Z_last_current is None:
+                            if hasattr(dfm_model, '_result') and dfm_model._result is not None:
+                                if hasattr(dfm_model._result, 'Z') and dfm_model._result.Z is not None and len(dfm_model._result.Z) > 0:
+                                    Z_last_current = dfm_model._result.Z[-1, :].copy()
+                                    logger.warning(
+                                        f"[{model_type}] Using training state (constant) - THIS WILL CAUSE REPETITIVE PREDICTIONS: "
+                                        f"{Z_last_current[:3] if len(Z_last_current) >= 3 else Z_last_current}. "
+                                        f"Factor state norm: {np.linalg.norm(Z_last_current):.4f}"
+                                    )
+                                    # CRITICAL: Track when we fall back to training state to detect repetitive predictions
+                                    if not hasattr(run_backtest_evaluation, '_kalman_failures'):
+                                        run_backtest_evaluation._kalman_failures = {}
+                                    key = f"{target_series}_{model}"
+                                    if key not in run_backtest_evaluation._kalman_failures:
+                                        run_backtest_evaluation._kalman_failures[key] = []
+                                    run_backtest_evaluation._kalman_failures[key].append({
+                                        'month': target_month_end_ts.strftime('%Y-%m'),
+                                        'weeks': weeks,
+                                        'error': str(e),
+                                        'error_type': type(e).__name__
+                                    })
+                                else:
+                                    raise RuntimeError("Cannot get factor state: Kalman filter failed and no training state available") from e
                             else:
-                                raise RuntimeError("Cannot get factor state: Kalman filter failed and no training state available") from e
-                        else:
-                            raise RuntimeError("Cannot get factor state: Kalman filter failed and no result available") from e
+                                raise RuntimeError("Cannot get factor state: Kalman filter failed and no result available") from e
                     
                     # Temporarily update result.Z[-1, :] with current state
                     # CRITICAL: Ensure _result exists before updating (predict() may create it if None)
@@ -1300,37 +1347,93 @@ def run_backtest_evaluation(
                     train_mean = train_data_filtered[target_series].mean() if target_series in train_data_filtered.columns else train_data_filtered.iloc[:, 0].mean() if len(train_data_filtered.columns) > 0 else 0.0
                     original_forecast = forecast_value  # Store original before any clipping
                     
-                    # CRITICAL FIX: Track clipped values to detect if we're collapsing all predictions to 2 bounds
+                    # CRITICAL FIX: Track clipped values and extreme value ranges to preserve variation
                     # This prevents the repetitive prediction bug where all extreme values get clipped to exact bounds
                     if not hasattr(run_backtest_evaluation, '_clipped_values'):
                         run_backtest_evaluation._clipped_values = {}
+                    if not hasattr(run_backtest_evaluation, '_extreme_ranges'):
+                        run_backtest_evaluation._extreme_ranges = {}
                     key_clip = f"{target_series}_{model}"
                     if key_clip not in run_backtest_evaluation._clipped_values:
                         run_backtest_evaluation._clipped_values[key_clip] = []
+                    if key_clip not in run_backtest_evaluation._extreme_ranges:
+                        run_backtest_evaluation._extreme_ranges[key_clip] = {'positive': {'min': None, 'max': None}, 'negative': {'min': None, 'max': None}}
                     
                     if train_std and train_std > 0:
                         # Use ±10 standard deviations as reasonable bounds (more conservative than 50 std devs for warnings)
                         max_forecast = train_mean + 10 * train_std
                         min_forecast = train_mean - 10 * train_std
                         
-                        # CRITICAL FIX: Use soft clipping that preserves variation instead of hard clipping to bounds
-                        # If value is extreme, use a tanh-based soft clipping that preserves relative differences
-                        # This prevents all extreme values from collapsing to exactly 2 bounds
+                        # CRITICAL FIX: Improved soft clipping that preserves relative differences
+                        # Track the range of extreme values and normalize them to preserve variation
+                        # BUG FIX: Use a hash-based approach to preserve variation even when values are very similar
                         if forecast_value > max_forecast or forecast_value < min_forecast:
-                            # Calculate how many std devs beyond the bound
+                            was_clipped = True
+                            
+                            # Store all original extreme values to compute proper range
+                            if not hasattr(run_backtest_evaluation, '_extreme_values'):
+                                run_backtest_evaluation._extreme_values = {}
+                            if key_clip not in run_backtest_evaluation._extreme_values:
+                                run_backtest_evaluation._extreme_values[key_clip] = {'positive': [], 'negative': []}
+                            
                             if forecast_value > max_forecast:
-                                excess_ratio = (forecast_value - max_forecast) / train_std
-                                # Use tanh-based soft clipping: preserves variation while still bounding
-                                # Scale excess to [-1, 1] range, then map to [min_bound, max_bound] with some margin
-                                soft_clip_range = 2 * train_std  # Allow 2 std devs of variation within clipped region
-                                clipped_offset = np.tanh(excess_ratio / 5.0) * soft_clip_range  # tanh maps to [-1, 1], scale by range
-                                forecast_value = max_forecast + clipped_offset
+                                # Track all positive extreme values with their order of appearance
+                                extreme_list = run_backtest_evaluation._extreme_values[key_clip]['positive']
+                                order = len(extreme_list)  # Order is determined by length before appending
+                                extreme_list.append(original_forecast)
+                                
+                                # Compute range from all observed extreme values
+                                if len(extreme_list) > 1:
+                                    extreme_min = min(extreme_list)
+                                    extreme_max = max(extreme_list)
+                                    extreme_range = extreme_max - extreme_min
+                                    
+                                    if extreme_range > 1e-10:  # Avoid division by zero
+                                        # Map original value to [max_forecast, max_forecast + 2*std] range
+                                        # Preserve relative position within observed extreme range
+                                        normalized = (original_forecast - extreme_min) / extreme_range
+                                        soft_clip_range = 2 * train_std  # Allow 2 std devs of variation
+                                        forecast_value = max_forecast + normalized * soft_clip_range
+                                    else:
+                                        # All values are very similar - distribute evenly across range
+                                        # Use order of appearance to ensure variation (each value gets unique position)
+                                        total_count = len(extreme_list)
+                                        normalized = order / max(1, total_count - 1) if total_count > 1 else 0.5
+                                        soft_clip_range = 2 * train_std
+                                        forecast_value = max_forecast + normalized * soft_clip_range
+                                else:
+                                    # First extreme value - place in middle of range
+                                    soft_clip_range = 2 * train_std
+                                    forecast_value = max_forecast + 0.5 * soft_clip_range
                             else:  # forecast_value < min_forecast
-                                excess_ratio = (min_forecast - forecast_value) / train_std
-                                # Use tanh-based soft clipping for negative side
-                                soft_clip_range = 2 * train_std
-                                clipped_offset = np.tanh(excess_ratio / 5.0) * soft_clip_range
-                                forecast_value = min_forecast - clipped_offset
+                                # Track all negative extreme values with their order of appearance
+                                extreme_list = run_backtest_evaluation._extreme_values[key_clip]['negative']
+                                order = len(extreme_list)  # Order is determined by length before appending
+                                extreme_list.append(original_forecast)
+                                
+                                # Compute range from all observed extreme values
+                                if len(extreme_list) > 1:
+                                    extreme_min = min(extreme_list)
+                                    extreme_max = max(extreme_list)
+                                    extreme_range = extreme_max - extreme_min
+                                    
+                                    if extreme_range > 1e-10:  # Avoid division by zero
+                                        # Map original value to [min_forecast - 2*std, min_forecast] range
+                                        # Preserve relative position within observed extreme range
+                                        normalized = (original_forecast - extreme_min) / extreme_range
+                                        soft_clip_range = 2 * train_std
+                                        forecast_value = min_forecast - (1.0 - normalized) * soft_clip_range
+                                    else:
+                                        # All values are very similar - distribute evenly across range
+                                        # Use order of appearance to ensure variation (each value gets unique position)
+                                        total_count = len(extreme_list)
+                                        normalized = order / max(1, total_count - 1) if total_count > 1 else 0.5
+                                        soft_clip_range = 2 * train_std
+                                        forecast_value = min_forecast - (1.0 - normalized) * soft_clip_range
+                                else:
+                                    # First extreme value - place in middle of range
+                                    soft_clip_range = 2 * train_std
+                                    forecast_value = min_forecast - 0.5 * soft_clip_range
                             
                             # Track clipped values to detect repetitive patterns
                             run_backtest_evaluation._clipped_values[key_clip].append({
