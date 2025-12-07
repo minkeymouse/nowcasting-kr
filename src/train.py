@@ -323,10 +323,10 @@ def _train_forecaster(
         
     elif model_type == 'ddfm':
         epochs = model_params.get('epochs', 100)
-        encoder_layers = model_params.get('encoder_layers', [64, 32])
+        encoder_layers = model_params.get('encoder_layers', [16, 4])  # Updated to match original DDFM default
         num_factors = model_params.get('num_factors', 1)
-        learning_rate = model_params.get('learning_rate', 0.0001)
-        batch_size = model_params.get('batch_size', 32)
+        learning_rate = model_params.get('learning_rate', 0.005)  # Updated to match original DDFM default
+        batch_size = model_params.get('batch_size', 100)  # Updated to match original DDFM default
         
         config_dict = model_cfg_dict if model_cfg_dict else {}
         if not config_dict or 'series' not in config_dict:
@@ -786,6 +786,7 @@ def compare_models(
     logger.info("=" * 70)
     logger.info(f"Comparing models for {target_series}")
     logger.info(f"Models: {', '.join(models)} | Horizons: {horizons}")
+    logger.info(f"Output directory: {output_dir}")
     logger.info("=" * 70)
     
     model_results = {}
@@ -840,7 +841,30 @@ def compare_models(
                 }
                 
                 forecaster = model_data.get('forecaster')
+                if forecaster is None:
+                    logger.warning(f"Forecaster is None in checkpoint for {target_series}_{model_name}")
+                    result['status'] = 'failed'
+                    result['error'] = 'Forecaster is None in checkpoint'
+                    failed_models.append(model_name)
+                    model_results[model_name] = result
+                    continue
+                
+                # Check if forecaster is already fitted (should be from checkpoint)
+                is_fitted = False
+                if hasattr(forecaster, 'is_fitted'):
+                    is_fitted = forecaster.is_fitted()
+                elif hasattr(forecaster, '_is_fitted'):
+                    is_fitted = forecaster._is_fitted
+                elif hasattr(forecaster, '_fitted_forecaster'):
+                    is_fitted = forecaster._fitted_forecaster is not None
+                elif hasattr(forecaster, '_y'):
+                    is_fitted = forecaster._y is not None
+                
+                if not is_fitted:
+                    logger.warning(f"Forecaster from checkpoint for {target_series}_{model_name} appears not to be fitted. This may cause issues during evaluation.")
+                
                 if forecaster and horizons:
+                    logger.info(f"Evaluating {model_name.upper()} model on {len(horizons)} horizons")
                     actual_data_path = data_path
                     if not actual_data_path or not Path(actual_data_path).exists():
                         from src.utils import get_project_root
@@ -870,12 +894,25 @@ def compare_models(
                     y_train_eval = data.iloc[:split_idx]
                     y_test_eval = data.iloc[split_idx:]
                     
+                    logger.info(f"Evaluation data: train={len(y_train_eval)} points, test={len(y_test_eval)} points")
+                    
                     from src.evaluation import evaluate_forecaster
-                    forecast_metrics_raw = evaluate_forecaster(
-                        forecaster, y_train_eval, y_test_eval, horizons, target_series=target_series
-                    )
-                    forecast_metrics = {str(k): v for k, v in forecast_metrics_raw.items()}
-                    result['metrics'] = {'forecast_metrics': forecast_metrics}
+                    try:
+                        # evaluate_forecaster will call fit() internally, but since forecaster is already fitted,
+                        # it should use the existing fitted state. However, to be safe, we check if it's fitted first.
+                        forecast_metrics_raw = evaluate_forecaster(
+                            forecaster, y_train_eval, y_test_eval, horizons, target_series=target_series
+                        )
+                        forecast_metrics = {str(k): v for k, v in forecast_metrics_raw.items()}
+                        result['metrics'] = {'forecast_metrics': forecast_metrics}
+                        logger.info(f"Successfully evaluated {model_name.upper()} on {len([k for k in forecast_metrics.keys() if forecast_metrics[k].get('n_valid', 0) > 0])} horizons")
+                    except Exception as e:
+                        logger.error(f"Failed to evaluate {model_name.upper()}: {type(e).__name__}: {str(e)}")
+                        result['status'] = 'failed'
+                        result['error'] = f"Evaluation failed: {str(e)}"
+                        failed_models.append(model_name)
+                        model_results[model_name] = result
+                        continue
             else:
                 # Checkpoint not found - skip this model
                 checkpoint_msg = f"checkpoint/{target_series}_{model_name}/model.pkl" if checkpoint_dir else "checkpoint"
@@ -934,10 +971,25 @@ def compare_models(
     }
     
     results_file = output_dir / "comparison_results.json"
-    with open(results_file, 'w', encoding='utf-8') as f:
-        json.dump(comparison_data, f, indent=2, ensure_ascii=False, default=str)
-    
-    logger.info(f"Results: {results_file}")
+    try:
+        with open(results_file, 'w', encoding='utf-8') as f:
+            json.dump(comparison_data, f, indent=2, ensure_ascii=False, default=str)
+        
+        # Validate file was created and is non-empty
+        if not results_file.exists():
+            raise IOError(f"Results file was not created: {results_file}")
+        
+        file_size = results_file.stat().st_size
+        if file_size == 0:
+            raise IOError(f"Results file is empty: {results_file}")
+        
+        logger.info(f"Results saved successfully to: {results_file} (size: {file_size} bytes)")
+    except (IOError, OSError) as e:
+        logger.error(f"Failed to save results to {results_file}: {type(e).__name__}: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error saving results to {results_file}: {type(e).__name__}: {str(e)}")
+        raise
     
     # Count skipped models separately
     skipped_models = [name for name, result in model_results.items() if result.get('status') == 'skipped']

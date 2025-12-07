@@ -713,8 +713,8 @@ class DDFMForecaster:
         encoder_layers: Optional[list] = None,
         num_factors: Optional[int] = None,
         epochs: int = 100,
-        learning_rate: float = 0.0001,
-        batch_size: int = 32,
+        learning_rate: float = 0.005,  # Updated to match original DDFM default
+        batch_size: int = 100,  # Updated to match original DDFM default
         **kwargs
     ):
         self.config_dict = config_dict
