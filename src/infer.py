@@ -332,18 +332,25 @@ def run_backtest_evaluation(
             
             # Also check if target_month_end has actual value available
             # For nowcasting, we need actual values to compare against
+            # CRITICAL FIX: This check should not skip if data exists before target_month_end
+            # The actual value lookup code (lines 947-1010) handles finding the closest available date
+            # So we only skip if there's NO data at all before target_month_end
             if len(full_data_monthly) > 0:
+                available_before = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
+                if len(available_before) == 0:
+                    print(f"    ⚠ Skipping: No monthly data available at or before target month {target_month_end_ts.strftime('%Y-%m')}")
+                    print(f"      Data range: {full_data_monthly.index.min()} to {full_data_monthly.index.max()}")
+                    continue
+                # Check if exact month match exists (for diagnostic purposes only)
                 available_for_target = full_data_monthly.index[
                     (full_data_monthly.index.year == target_month_end_ts.year) &
                     (full_data_monthly.index.month == target_month_end_ts.month)
                 ]
                 if len(available_for_target) == 0:
-                    # Check if any data exists at or before target_month_end
-                    available_before = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
-                    if len(available_before) == 0:
-                        print(f"    ⚠ Skipping: No monthly data available for target month {target_month_end_ts.strftime('%Y-%m')} or before")
-                        print(f"      Data range: {full_data_monthly.index.min()} to {full_data_monthly.index.max()}")
-                        continue
+                    print(f"    ℹ Note: No exact month match for {target_month_end_ts.strftime('%Y-%m')}, will use closest available date")
+            else:
+                print(f"    ⚠ Skipping: full_data_monthly is empty - cannot get actual values")
+                continue
             
             print(f"\n  Target month: {target_month_end_ts.strftime('%Y-%m')}")
             print(f"  View date: {view_date.strftime('%Y-%m-%d')} ({weeks} weeks before)")
@@ -642,12 +649,13 @@ def run_backtest_evaluation(
                     
                     # Calculate nowcast horizon: days from view_date to target_month_end
                     # For nowcasting, we predict the current period (target_month_end) using data available at view_date
-                    horizon_days = (target_month_end - view_date).days
+                    # CRITICAL FIX: Use target_month_end_ts for type consistency (pd.Timestamp)
+                    horizon_days = (target_month_end_ts - view_date).days
                     if horizon_days <= 0:
-                        print(f"    ⚠ Skipping: view_date ({view_date}) is not before target_month_end ({target_month_end}), horizon={horizon_days} days")
+                        print(f"    ⚠ Skipping: view_date ({view_date}) is not before target_month_end ({target_month_end_ts}), horizon={horizon_days} days")
                         continue
                     else:
-                        print(f"    ✓ Horizon: {horizon_days} days (from {view_date} to {target_month_end})")
+                        print(f"    ✓ Horizon: {horizon_days} days (from {view_date} to {target_month_end_ts})")
                     
                     # Fit forecaster on data up to view_date (nowcasting: incomplete data scenario)
                     try:
@@ -655,6 +663,36 @@ def run_backtest_evaluation(
                         from sklearn.base import clone
                         try:
                             forecaster_clone = clone(forecaster)
+                            # CRITICAL FIX: For VAR models, reset internal state to allow refitting with new data structure
+                            # VAR's internal transformation pipeline may have been fitted with different column structure
+                            # Reset the forecaster's internal state to allow refitting
+                            if hasattr(forecaster_clone, 'reset'):
+                                try:
+                                    forecaster_clone.reset()
+                                except (AttributeError, Exception):
+                                    pass
+                            # Also reset internal _y and _X attributes if they exist
+                            if hasattr(forecaster_clone, '_y'):
+                                forecaster_clone._y = None
+                            if hasattr(forecaster_clone, '_X'):
+                                forecaster_clone._X = None
+                            # Reset internal fitted state
+                            if hasattr(forecaster_clone, '_is_fitted'):
+                                forecaster_clone._is_fitted = False
+                            # CRITICAL FIX: For VAR models, also reset any internal transformers or pipeline state
+                            # VAR models may have internal transformers that need to be reset for column structure changes
+                            if hasattr(forecaster_clone, 'forecaster_'):
+                                # Check if forecaster_ has transformers that need resetting
+                                forecaster_internal = forecaster_clone.forecaster_
+                                if hasattr(forecaster_internal, 'transformers_'):
+                                    # Reset transformers if they exist
+                                    try:
+                                        forecaster_internal.transformers_ = None
+                                    except (AttributeError, Exception):
+                                        pass
+                                # Reset fitted state of internal forecaster
+                                if hasattr(forecaster_internal, '_is_fitted'):
+                                    forecaster_internal._is_fitted = False
                         except (TypeError, AttributeError, Exception):
                             # If clone fails, use original (some forecasters don't support cloning)
                             forecaster_clone = forecaster
@@ -688,6 +726,8 @@ def run_backtest_evaluation(
                         if is_multivariate:
                             # CRITICAL FIX: For VAR, ensure we use the same columns as training data
                             # VAR's transformation pipeline expects the same column structure
+                            # The pipeline may have been fitted with integer column indices, so we need to
+                            # ensure the DataFrame columns match exactly (same order and same names)
                             if training_columns is not None:
                                 # Use only columns that exist in both training and backtest data
                                 available_columns = [col for col in training_columns if col in train_data_filtered.columns]
@@ -696,7 +736,18 @@ def run_backtest_evaluation(
                                 if len(available_columns) < 2:
                                     print(f"    ⚠ Skipping: VAR requires at least 2 columns, but only {len(available_columns)} available after column matching")
                                     continue
+                                # CRITICAL: Maintain exact column order from training to match pipeline expectations
+                                # The pipeline may use integer indices internally, so column order matters
                                 fit_data = train_data_filtered[available_columns].copy()
+                                # Ensure columns are in the exact same order as training_columns
+                                # This is critical because VAR's internal ColumnEnsembleTransformer may use integer indices
+                                fit_data = fit_data.reindex(columns=available_columns)
+                                
+                                # CRITICAL FIX: VAR's internal transformation pipeline may have been fitted with integer column indices
+                                # If the pipeline uses integer indices, we need to ensure the DataFrame structure matches
+                                # Check if forecaster has a transformation pipeline and if it uses integer indices
+                                # If so, we may need to reset the pipeline or ensure column structure matches
+                                # For now, ensure columns are in the exact same order as training to match pipeline expectations
                             else:
                                 fit_data = train_data_filtered.copy()
                             # Drop rows that are all NaN
@@ -780,34 +831,57 @@ def run_backtest_evaluation(
                         # For monthly data, the last valid index should be within reasonable range
                         # Since we're resampling to monthly, the last index will be a month-end date
                         # For nowcasting, we're predicting the current month using data from previous months
-                        # Use train_data_filtered (now monthly) to get last valid index, not fit_data (which may have been forward-filled)
+                        # Use fit_data (after cleaning) to get last valid index, as it represents the actual data used for fitting
                         if is_multivariate:
-                            if target_series in train_data_filtered.columns:
-                                original_target_col = train_data_filtered[target_series]
+                            if target_series in fit_data.columns:
+                                target_col_for_check = fit_data[target_series]
                             else:
-                                original_target_col = train_data_filtered.iloc[:, 0]
+                                target_col_for_check = fit_data.iloc[:, 0]
                         else:
-                            if target_series in train_data_filtered.columns:
-                                original_target_col = train_data_filtered[target_series]
-                            else:
-                                original_target_col = train_data_filtered.iloc[:, 0]
-                        last_valid_idx = original_target_col.last_valid_index()
+                            target_col_for_check = fit_data.iloc[:, 0]
+                        last_valid_idx = target_col_for_check.last_valid_index()
                         if last_valid_idx is not None:
                             days_since_last = (pd.Timestamp(view_date) - pd.Timestamp(last_valid_idx)).days
                             # For monthly data, allow up to 90 days (3 months) since last data point
                             # This accounts for the fact that monthly data naturally has gaps
                             # and for nowcasting in early January, December data is still recent
+                            # CRITICAL FIX: For monthly data, if view_date is early in a month (e.g., Jan 3),
+                            # the last monthly data point might be from the previous month (Dec 31), which is only
+                            # a few days ago. This is acceptable for nowcasting. However, if the gap is > 90 days,
+                            # it means we're missing recent data, which is a problem.
+                            # Also, for monthly data resampled from weekly, the last valid index should be
+                            # at or very close to view_date (within the same month or previous month).
                             max_days_allowed = 90
                             if days_since_last > max_days_allowed:
-                                print(f"    ⚠ Skipping: Last valid data point is {days_since_last} days before view_date (too old, >{max_days_allowed} days)")
+                                print(f"    ⚠ Skipping: Last valid data point ({last_valid_idx}) is {days_since_last} days before view_date ({view_date}) (too old, >{max_days_allowed} days)")
                                 continue
                             else:
-                                print(f"    ✓ Last valid data point is {days_since_last} days before view_date (acceptable)")
+                                print(f"    ✓ Last valid data point ({last_valid_idx}) is {days_since_last} days before view_date (acceptable)")
                         else:
-                            print(f"    ⚠ Warning: No valid data point found in train_data_filtered")
+                            print(f"    ⚠ Warning: No valid data point found in fit_data after cleaning")
+                            # Don't skip here - let the fitting attempt proceed, it will fail if there's truly no data
                         
                         # Fit on training data
                         try:
+                            # CRITICAL FIX: For VAR models, the internal transformation pipeline may have been fitted
+                            # with integer column indices, but we're passing data with string column names.
+                            # Try to reset the pipeline if it exists, or ensure data structure matches.
+                            # If the forecaster has a ForecastingPipeline, we may need to reset its transformers
+                            if hasattr(forecaster_clone, 'forecaster_') and hasattr(forecaster_clone.forecaster_, 'steps'):
+                                # This is a ForecastingPipeline - try to reset transformers
+                                try:
+                                    for step_name, step_transformer in forecaster_clone.forecaster_.steps:
+                                        if hasattr(step_transformer, 'reset'):
+                                            try:
+                                                step_transformer.reset()
+                                            except (AttributeError, Exception):
+                                                pass
+                                        # Reset fitted state of transformers
+                                        if hasattr(step_transformer, '_is_fitted'):
+                                            step_transformer._is_fitted = False
+                                except (AttributeError, Exception):
+                                    pass
+                            
                             forecaster_clone.fit(fit_data)
                         except Exception as e:
                             print(f"    ✗ Error fitting forecaster: {e}")
@@ -854,7 +928,7 @@ def run_backtest_evaluation(
                             horizon_periods = months_ahead
                         try:
                             fh = np.asarray([horizon_periods])
-                            print(f"    → Predicting with horizon={horizon_periods} periods ({horizon_periods} months, from last data point {last_fit_month} to {target_month_end})")
+                            print(f"    → Predicting with horizon={horizon_periods} periods ({horizon_periods} months, from last data point {last_fit_month} to {target_month_end_ts})")
                             y_pred = forecaster_clone.predict(fh=fh)
                             print(f"    → Prediction result type: {type(y_pred)}, shape: {getattr(y_pred, 'shape', 'N/A')}")
                         except Exception as e:
@@ -999,14 +1073,14 @@ def run_backtest_evaluation(
                                         actual_value = float(raw_value)
                                         print(f"    ✓ Using closest available date {closest_date}: {actual_value:.4f}")
                         else:
-                            print(f"    ⚠ Warning: No monthly data available at or before {target_month_end}")
-                            actual_value = np.nan
+                            print(f"    ⚠ Warning: No monthly data available at or before {target_month_end_ts}")
+                        actual_value = np.nan
                     else:
                         # target_month_end is after data range or full_data_monthly is empty
                         if len(full_data_monthly) == 0:
                             print(f"    ⚠ Warning: full_data_monthly is empty - cannot get actual value")
                         else:
-                            print(f"    ⚠ Warning: target_month_end {target_month_end} is after data range (max: {full_data_monthly.index.max()})")
+                            print(f"    ⚠ Warning: target_month_end {target_month_end_ts} is after data range (max: {full_data_monthly.index.max()})")
                         actual_value = np.nan
                         
                     except Exception as e:
@@ -1056,7 +1130,7 @@ def run_backtest_evaluation(
                     sMAE = abs(error)
                 
                 monthly_results.append({
-                    'month': target_month_end.strftime('%Y-%m'),
+                    'month': target_month_end_ts.strftime('%Y-%m'),
                     'view_date': view_date.strftime('%Y-%m-%d'),
                     'weeks_before': weeks,
                     'forecast_value': float(forecast_value),
