@@ -1223,30 +1223,35 @@ def generate_latex_table_forecasting_results(
     str
         LaTeX table code
     """
-    # Selected horizons for display in table (1, 11, 22 months)
-    # Note: CSV file contains all horizons (1-22), but table shows only selected horizons for readability
-    display_horizons = [1, 11, 22]
-    # Check if horizon 22 exists in data, if not use available max
+    # Selected horizons for display in table (1, 2, 3, 4, 6, 12, 22 months)
+    display_horizons = [1, 2, 3, 4, 6, 12, 22]
+    # Check if horizons exist in data, filter to available ones
     if not aggregated_df.empty:
         available_horizons = sorted(set(aggregated_df['horizon'].unique()))
-        if 22 not in available_horizons and len(available_horizons) > 0:
-            max_horizon = max(available_horizons)
-            # Use 1, middle, max
-            mid_idx = len(available_horizons) // 2
-            display_horizons = [1, available_horizons[mid_idx], max_horizon]
+        display_horizons = [h for h in display_horizons if h in available_horizons]
+        if len(display_horizons) == 0:
+            display_horizons = available_horizons[:7]  # Take first 7 available if none match
+    
     models = ['ARIMA', 'VAR', 'DFM', 'DDFM']
     targets = ['KOIPALL.G', 'KOEQUIPTE', 'KOWRCCNSE']
     metrics = ['sMAE', 'sMSE']
     
-    # Generate LaTeX
+    # Generate LaTeX with merged headers
+    # Structure: Model (merged) | Horizon | Target1 (merged) | Target2 (merged) | Target3 (merged)
+    #            |              |         | sMAE | sMSE      | sMAE | sMSE      | sMAE | sMSE
+    num_horizons = len(display_horizons)
+    num_targets = len(targets)
+    num_metrics = len(metrics)
+    
     latex = """\\begin{table}[h]
 \\centering
-\\caption[Forecasting Results by Model-Horizon and Target-Metric]{Forecasting Results by Model-Horizon and Target-Metric\\footnote{Experiments evaluate all horizons from 1 to 22 months (2024--01 to 2025--10), but table shows only selected horizons (1, 11, 22 months) for readability. Full results for all horizons are available in aggregated\\_results.csv.}}
+\\caption[Forecasting Results by Model-Horizon and Target-Metric]{Forecasting Results by Model-Horizon and Target-Metric\\footnote{Experiments evaluate all horizons from 1 to 22 months (2024--01 to 2025--10), but table shows selected horizons (1, 2, 3, 4, 6, 12, 22 months) for readability. Full results for all horizons are available in aggregated\\_results.csv. Bold values indicate the best (lowest) metric for each target-metric combination.}}
 \\label{tab:forecasting_results}
-\\begin{tabular}{lcccccc}
+\\begin{tabular}{l|l|cc|cc|cc}
 \\toprule
-Model-Horizon & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KOWRCCNSE \\\\
- & sMAE & sMSE & sMAE & sMSE & sMAE & sMSE \\\\
+\\multirow{2}{*}{Model} & \\multirow{2}{*}{Horizon} & \\multicolumn{2}{c|}{KOIPALL.G} & \\multicolumn{2}{c|}{KOEQUIPTE} & \\multicolumn{2}{c}{KOWRCCNSE} \\\\
+\\cmidrule(lr){3-4}\\cmidrule(lr){5-6}\\cmidrule(lr){7-8}
+ & & sMAE & sMSE & sMAE & sMSE & sMAE & sMSE \\\\
 \\midrule
 """
     
@@ -1286,37 +1291,76 @@ Model-Horizon & KOIPALL.G & KOIPALL.G & KOEQUIPTE & KOEQUIPTE & KOWRCCNSE & KOWR
             return f"{val:.4f}"
         return str(val)
     
+    # Create lookup dictionary first
+    data_lookup = {}
+    if not aggregated_df.empty:
+        for _, row in aggregated_df.iterrows():
+            key = (row['model'], row['target'], row['horizon'])
+            data_lookup[key] = row
+    
+    # Find minimum values for each target-metric combination (for bold formatting)
+    min_values = {}  # (target, metric) -> min_value
+    if not aggregated_df.empty:
+        for target in targets:
+            for metric in metrics:
+                # Get all values for this target-metric across all models and horizons
+                values = []
+                for model in models:
+                    for horizon in display_horizons:
+                        key = (model, target, horizon)
+                        if key in data_lookup:
+                            val = data_lookup[key][metric]
+                            if not pd.isna(val) and isinstance(val, (int, float)) and not np.isnan(val) and not np.isinf(val):
+                                if abs(val) < EXTREME_THRESHOLD:
+                                    values.append(val)
+                if values:
+                    min_values[(target, metric)] = min(values)
+    
     if aggregated_df.empty:
         # Generate placeholder table
-        for model in models:
-            for horizon in display_horizons:
-                row_label = f"{model}-{horizon}"
+        for model_idx, model in enumerate(models):
+            for horizon_idx, horizon in enumerate(display_horizons):
                 values = []
                 for target in targets:
                     for metric in metrics:
                         values.append('N/A')
-                latex += f"{row_label} & {' & '.join(values)} \\\\\n"
+                
+                # First row of each model: show model name, subsequent rows: empty
+                if horizon_idx == 0:
+                    latex += f"\\multirow{{{num_horizons}}}{{*}}{{{model}}} & {horizon} & {' & '.join(values)} \\\\\n"
+                else:
+                    latex += f" & {horizon} & {' & '.join(values)} \\\\\n"
     else:
-        # Create lookup dictionary
-        data_lookup = {}
-        for _, row in aggregated_df.iterrows():
-            key = (row['model'], row['target'], row['horizon'])
-            data_lookup[key] = row
-        
-        # Generate rows for model-horizon combinations
-        for model in models:
-            for horizon in display_horizons:
-                row_label = f"{model}-{horizon}"
+        # Generate rows for model-horizon combinations (data_lookup already created above)
+        for model_idx, model in enumerate(models):
+            for horizon_idx, horizon in enumerate(display_horizons):
                 values = []
                 for target in targets:
                     for metric in metrics:
                         key = (model, target, horizon)
                         if key in data_lookup:
                             val = data_lookup[key][metric]
-                            values.append(format_value(val, model=model, horizon=horizon, metric=metric))
+                            formatted_val = format_value(val, model=model, horizon=horizon, metric=metric)
+                            
+                            # Check if this is the minimum value for this target-metric
+                            if formatted_val != 'N/A' and formatted_val != 'Unstable':
+                                try:
+                                    val_float = float(val)
+                                    if (target, metric) in min_values:
+                                        if abs(val_float - min_values[(target, metric)]) < 1e-6:  # Allow small floating point differences
+                                            formatted_val = f"\\textbf{{{formatted_val}}}"
+                                except (ValueError, TypeError):
+                                    pass
+                            
+                            values.append(formatted_val)
                         else:
                             values.append('N/A')
-                latex += f"{row_label} & {' & '.join(values)} \\\\\n"
+                
+                # First row of each model: show model name with multirow, subsequent rows: empty
+                if horizon_idx == 0:
+                    latex += f"\\multirow{{{num_horizons}}}{{*}}{{{model}}} & {horizon} & {' & '.join(values)} \\\\\n"
+                else:
+                    latex += f" & {horizon} & {' & '.join(values)} \\\\\n"
     
     latex += """\\bottomrule
 \\end{tabular}
