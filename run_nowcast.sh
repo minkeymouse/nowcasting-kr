@@ -57,6 +57,10 @@ while [[ $# -gt 0 ]]; do
             SKIP_NOWCAST=1
             shift
             ;;
+        --jobs|-j)
+            MAX_PARALLEL_JOBS="$2"
+            shift 2
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -65,6 +69,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --models MODEL_LIST     Filter models (e.g., 'arima var ddfm')"
             echo "  --skip-forecast         Skip 22 horizon forecast (only run nowcasting)"
             echo "  --skip-nowcast          Skip nowcasting (only run 22 horizon forecast)"
+            echo "  --jobs, -j N            Maximum parallel jobs (default: number of CPU cores)"
             echo "  --help, -h              Show this help message"
             echo ""
             echo "This script runs:"
@@ -146,31 +151,7 @@ checkpoint_exists() {
     fi
 }
 
-# Function to check if forecast results exist
-forecast_results_exist() {
-    local target=$1
-    local json_file="outputs/comparisons/${target}/comparison_results.json"
-    local csv_file="outputs/comparisons/${target}/comparison_table.csv"
-    if [ -f "$json_file" ] && [ -s "$json_file" ] && [ -f "$csv_file" ] && [ -s "$csv_file" ]; then
-        return 0  # Exists
-    else
-        return 1  # Missing
-    fi
-}
-
-# Function to check if nowcast results exist
-nowcast_results_exist() {
-    local target=$1
-    local model=$2
-    local json_file="outputs/backtest/${target}_${model}_backtest.json"
-    if [ -f "$json_file" ] && [ -s "$json_file" ]; then
-        # Check if file has valid results (not just error status)
-        if grep -q '"results_by_timepoint"' "$json_file" 2>/dev/null; then
-            return 0  # Exists with valid results
-        fi
-    fi
-    return 1  # Missing or invalid
-}
+# Note: Results are always overwritten (no existence checks)
 
 # ============================================================================
 # Test Mode Function
@@ -428,6 +409,13 @@ ensure_output_dirs() {
 ensure_output_dirs
 
 # ============================================================================
+# Parallel Execution Configuration
+# ============================================================================
+
+# Maximum number of parallel jobs (default: number of CPU cores)
+MAX_PARALLEL_JOBS=${MAX_PARALLEL_JOBS:-$(nproc 2>/dev/null || echo 4)}
+
+# ============================================================================
 # Part 1: 22 Horizon Forecast (2024-01 to 2025-10)
 # ============================================================================
 
@@ -438,6 +426,7 @@ if [ "$SKIP_FORECAST" != "1" ]; then
     echo "Period: 2024-01 to 2025-10 (22 months)"
     echo "Target Series: ${TARGETS[@]}"
     echo "Models: ${MODELS[@]}"
+    echo "Max Parallel Jobs: $MAX_PARALLEL_JOBS"
     echo "Start Time: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "=========================================="
     echo ""
@@ -446,23 +435,20 @@ if [ "$SKIP_FORECAST" != "1" ]; then
     SUCCESSFUL_TARGETS=()
     FAILED_TARGETS=()
     TOTAL_TARGETS=${#TARGETS[@]}
+    PIDS=()
+    TARGET_PID_MAP=()
     
-    for target_idx in "${!TARGETS[@]}"; do
-        target="${TARGETS[$target_idx]}"
-        target_num=$((target_idx + 1))
-        config_name=$(get_config_name "$target")
+    # Function to run forecast for a single target
+    run_forecast_target() {
+        local target=$1
+        local target_num=$2
+        local config_name=$(get_config_name "$target")
         
-        echo ""
-        echo "=========================================="
-        echo "[$target_num/$TOTAL_TARGETS] Forecasting: $target"
-        echo "Config: $config_name"
-        echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
-        echo "=========================================="
-        echo ""
+        echo "[$target_num/$TOTAL_TARGETS] Starting forecast for: $target"
         
         # Check which models have checkpoints for this target
-        available_models=()
-        missing_models=()
+        local available_models=()
+        local missing_models=()
         for model in "${MODELS[@]}"; do
             if checkpoint_exists "$target" "$model"; then
                 available_models+=("$model")
@@ -471,53 +457,86 @@ if [ "$SKIP_FORECAST" != "1" ]; then
             fi
         done
         
-        if [ ${#missing_models[@]} -gt 0 ]; then
-            echo "⚠ Skipping models without checkpoints: ${missing_models[@]}"
-            echo "   Run 'bash run_train.sh' to train these models first"
-            echo ""
-        fi
-        
         if [ ${#available_models[@]} -eq 0 ]; then
-            echo "✗ No models available for $target (all checkpoints missing)"
-            FAILED_TARGETS+=("$target (no checkpoints)")
-            continue
+            echo "[$target_num/$TOTAL_TARGETS] [$target] ✗ No models available (all checkpoints missing)"
+            return 1
         fi
         
-        # Skip if results already exist
-        if forecast_results_exist "$target"; then
-            echo "[$target_num/$TOTAL_TARGETS] [$target] ⊙ Forecast results already exist, skipping"
-            SUCCESSFUL_TARGETS+=("$target")
-            continue
-        fi
-        
-        echo "Running forecast for models: ${available_models[@]}"
-        echo ""
-        
-        CMD_ARGS=(
+        # Always overwrite existing results
+        local log_file="outputs/forecast/${target}_forecast.log"
+        local CMD_ARGS=(
             "src/train.py" "compare"
             "--config-name" "$config_name"
             "--override" "+checkpoint_dir=checkpoint"
             "--models" "${available_models[@]}"
         )
         
-        # Use fixed log file name (overwrite mode)
-        log_file="outputs/forecast/${target}_forecast.log"
-        # Run with tee to show output in terminal and save to log file
-        # Use timeout with signal handling for graceful shutdown
-        timeout 86400 .venv/bin/python3 "${CMD_ARGS[@]}" 2>&1 | tee "$log_file" &
-        PYTHON_PID=$!
-        wait $PYTHON_PID
-        EXIT_CODE=$?
+        # Run forecast and capture exit code
+        timeout 86400 .venv/bin/python3 "${CMD_ARGS[@]}" > "$log_file" 2>&1
+        local EXIT_CODE=$?
         
         if [ $EXIT_CODE -eq 0 ]; then
             echo "[$target_num/$TOTAL_TARGETS] [$target] ✓ Forecast completed (${#available_models[@]} model(s))"
-            SUCCESSFUL_TARGETS+=("$target")
+            return 0
         elif [ $EXIT_CODE -eq 124 ]; then
             echo "[$target_num/$TOTAL_TARGETS] [$target] ✗ Timeout after 24 hours"
-            FAILED_TARGETS+=("$target (timeout)")
+            return 1
         else
             echo "[$target_num/$TOTAL_TARGETS] [$target] ✗ Failed (exit code: $EXIT_CODE)"
-            FAILED_TARGETS+=("$target (exit code: $EXIT_CODE)")
+            return 1
+        fi
+    }
+    
+    # Run forecasts in parallel with job control
+    for target_idx in "${!TARGETS[@]}"; do
+        target="${TARGETS[$target_idx]}"
+        target_num=$((target_idx + 1))
+        
+        # Wait for available slot if we've reached max parallel jobs
+        while [ ${#PIDS[@]} -ge $MAX_PARALLEL_JOBS ]; do
+            for pid in "${PIDS[@]}"; do
+                if ! kill -0 "$pid" 2>/dev/null; then
+                    # Process finished, wait for it and get result
+                    wait "$pid"
+                    exit_code=$?
+                    target_for_pid="${TARGET_PID_MAP[$pid]}"
+                    if [ $exit_code -eq 0 ]; then
+                        SUCCESSFUL_TARGETS+=("$target_for_pid")
+                    else
+                        FAILED_TARGETS+=("$target_for_pid")
+                    fi
+                    # Remove from arrays
+                    NEW_PIDS=()
+                    for p in "${PIDS[@]}"; do
+                        [ "$p" != "$pid" ] && NEW_PIDS+=("$p")
+                    done
+                    PIDS=("${NEW_PIDS[@]}")
+                    unset TARGET_PID_MAP[$pid]
+                    break
+                fi
+            done
+            sleep 0.5
+        done
+        
+        # Start new job in background
+        (run_forecast_target "$target" "$target_num") &
+        pid=$!
+        PIDS+=("$pid")
+        TARGET_PID_MAP[$pid]="$target"
+    done
+    
+    # Wait for all remaining jobs
+    for pid in "${PIDS[@]}"; do
+        # Wait for process (works even if already finished)
+        wait "$pid" 2>/dev/null
+        exit_code=$?
+        target_for_pid="${TARGET_PID_MAP[$pid]}"
+        if [ -n "$target_for_pid" ]; then
+            if [ $exit_code -eq 0 ]; then
+                SUCCESSFUL_TARGETS+=("$target_for_pid")
+            else
+                FAILED_TARGETS+=("$target_for_pid")
+            fi
         fi
     done
     
@@ -556,6 +575,7 @@ if [ "$SKIP_NOWCAST" != "1" ]; then
     echo "Time points: 4 weeks ago, 1 week ago"
     echo "Target Series: ${TARGETS[@]}"
     echo "Models: ${MODELS[@]}"
+    echo "Max Parallel Jobs: $MAX_PARALLEL_JOBS"
     echo "Start Time: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "=========================================="
     echo ""
@@ -563,70 +583,110 @@ if [ "$SKIP_NOWCAST" != "1" ]; then
     SUCCESSFUL_NOWCASTS=()
     FAILED_NOWCASTS=()
     TOTAL_COMBINATIONS=$((${#TARGETS[@]} * ${#MODELS[@]}))
+    NOWCAST_PIDS=()
+    NOWCAST_PID_MAP=()
     current_combination=0
     
-    for target in "${TARGETS[@]}"; do
-        config_name=$(get_config_name "$target")
+    # Function to run nowcast for a single target-model combination
+    run_nowcast_combination() {
+        local target=$1
+        local model=$2
+        local combination_num=$3
+        local config_name=$(get_config_name "$target")
         
+        # Always overwrite existing results
+        local log_file="outputs/nowcast/${target}_${model}_nowcast.log"
+        
+        # Run nowcast and capture exit code
+        timeout 86400 .venv/bin/python3 src/infer.py backtest \
+            --config-name "$config_name" \
+            --model "$model" \
+            --train-start "1985-01-01" \
+            --train-end "2019-12-31" \
+            --nowcast-start "2024-01-01" \
+            --nowcast-end "2025-10-31" \
+            --weeks-before 4 1 \
+            > "$log_file" 2>&1
+        local EXIT_CODE=$?
+        
+        if [ $EXIT_CODE -eq 0 ]; then
+            echo "[$combination_num/$TOTAL_COMBINATIONS] [$target-$model] ✓ Nowcast completed"
+            return 0
+        elif [ $EXIT_CODE -eq 124 ]; then
+            echo "[$combination_num/$TOTAL_COMBINATIONS] [$target-$model] ✗ Timeout after 24 hours"
+            return 1
+        else
+            echo "[$combination_num/$TOTAL_COMBINATIONS] [$target-$model] ✗ Failed (exit code: $EXIT_CODE)"
+            return 1
+        fi
+    }
+    
+    # Build list of tasks to run
+    TASKS=()
+    for target in "${TARGETS[@]}"; do
         for model in "${MODELS[@]}"; do
-            current_combination=$((current_combination + 1))
-            
             # Skip if checkpoint doesn't exist
             if ! checkpoint_exists "$target" "$model"; then
-                echo "[$current_combination/$TOTAL_COMBINATIONS] Skipping ${target}_${model} (checkpoint missing)"
+                echo "Skipping ${target}_${model} (checkpoint missing)"
                 continue
             fi
-            
-            # Skip if results already exist
-            if nowcast_results_exist "$target" "$model"; then
-                echo "[$current_combination/$TOTAL_COMBINATIONS] ⊙ ${target}_${model}: Nowcast results already exist, skipping"
-                SUCCESSFUL_NOWCASTS+=("${target}_${model}")
-                continue
-            fi
-            
-            echo ""
-            echo "=========================================="
-            echo "[$current_combination/$TOTAL_COMBINATIONS] Nowcasting: $target - $model"
-            echo "Config: $config_name"
-            echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
-            echo "=========================================="
-            echo ""
-            
-            # Use fixed log file name (overwrite mode)
-            log_file="outputs/nowcast/${target}_${model}_nowcast.log"
-            
-            # Run with tee to show output in terminal and save to log file
-            timeout 86400 .venv/bin/python3 src/infer.py backtest \
-                --config-name "$config_name" \
-                --model "$model" \
-                --train-start "1985-01-01" \
-                --train-end "2019-12-31" \
-                --nowcast-start "2024-01-01" \
-                --nowcast-end "2025-10-31" \
-                --weeks-before 4 1 \
-                2>&1 | tee "$log_file" &
-            PYTHON_PID=$!
-            wait $PYTHON_PID
-            EXIT_CODE=$?
-            
-            if [ $EXIT_CODE -eq 0 ]; then
-                echo "[$current_combination/$TOTAL_COMBINATIONS] [$target-$model] ✓ Nowcast completed"
-                SUCCESSFUL_NOWCASTS+=("${target}_${model}")
-                
-                # Check if results file was created
-                results_file="outputs/backtest/${target}_${model}_backtest.json"
-                if [ -f "$results_file" ]; then
-                    echo "  Results saved to: $results_file"
-                fi
-            elif [ $EXIT_CODE -eq 124 ]; then
-                echo "[$current_combination/$TOTAL_COMBINATIONS] [$target-$model] ✗ Timeout after 24 hours"
-                FAILED_NOWCASTS+=("${target}_${model} (timeout)")
-            else
-                echo "[$current_combination/$TOTAL_COMBINATIONS] [$target-$model] ✗ Failed (exit code: $EXIT_CODE)"
-                FAILED_NOWCASTS+=("${target}_${model} (exit code: $EXIT_CODE)")
-                echo "  Check log: $log_file"
-            fi
+            TASKS+=("$target|$model")
         done
+    done
+    
+    # Run nowcasts in parallel with job control
+    for task in "${TASKS[@]}"; do
+        IFS='|' read -r target model <<< "$task"
+        current_combination=$((current_combination + 1))
+        
+        # Wait for available slot if we've reached max parallel jobs
+        while [ ${#NOWCAST_PIDS[@]} -ge $MAX_PARALLEL_JOBS ]; do
+            for pid in "${NOWCAST_PIDS[@]}"; do
+                if ! kill -0 "$pid" 2>/dev/null; then
+                    # Process finished, wait for it and get result
+                    wait "$pid"
+                    exit_code=$?
+                    task_for_pid="${NOWCAST_PID_MAP[$pid]}"
+                    IFS='|' read -r t m <<< "$task_for_pid"
+                    if [ $exit_code -eq 0 ]; then
+                        SUCCESSFUL_NOWCASTS+=("${t}_${m}")
+                    else
+                        FAILED_NOWCASTS+=("${t}_${m}")
+                    fi
+                    # Remove from arrays
+                    NEW_PIDS=()
+                    for p in "${NOWCAST_PIDS[@]}"; do
+                        [ "$p" != "$pid" ] && NEW_PIDS+=("$p")
+                    done
+                    NOWCAST_PIDS=("${NEW_PIDS[@]}")
+                    unset NOWCAST_PID_MAP[$pid]
+                    break
+                fi
+            done
+            sleep 0.5
+        done
+        
+        # Start new job in background
+        (run_nowcast_combination "$target" "$model" "$current_combination") &
+        pid=$!
+        NOWCAST_PIDS+=("$pid")
+        NOWCAST_PID_MAP[$pid]="$target|$model"
+    done
+    
+    # Wait for all remaining jobs
+    for pid in "${NOWCAST_PIDS[@]}"; do
+        # Wait for process (works even if already finished)
+        wait "$pid" 2>/dev/null
+        exit_code=$?
+        task_for_pid="${NOWCAST_PID_MAP[$pid]}"
+        if [ -n "$task_for_pid" ]; then
+            IFS='|' read -r t m <<< "$task_for_pid"
+            if [ $exit_code -eq 0 ]; then
+                SUCCESSFUL_NOWCASTS+=("${t}_${m}")
+            else
+                FAILED_NOWCASTS+=("${t}_${m}")
+            fi
+        fi
     done
     
     echo ""

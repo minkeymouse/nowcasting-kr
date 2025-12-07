@@ -42,6 +42,31 @@ if not logging.getLogger().handlers:
     )
 
 
+def _validate_checkpoint(model_data: dict, target_series: str, model: str) -> None:
+    """Validate checkpoint contains required data.
+    
+    Raises:
+        ValueError: If checkpoint is missing required fields
+    """
+    if not isinstance(model_data, dict):
+        raise ValueError(f"Checkpoint for {target_series}_{model} is not a dictionary")
+    
+    if 'forecaster' not in model_data:
+        raise ValueError(f"Checkpoint for {target_series}_{model} does not contain 'forecaster'")
+    
+    forecaster = model_data.get('forecaster')
+    if forecaster is None:
+        raise ValueError(f"Checkpoint for {target_series}_{model} has None forecaster")
+    
+    # For DFM/DDFM models, check if data_module is present (optional but recommended)
+    if model.lower() in ['dfm', 'ddfm']:
+        if hasattr(forecaster, '_dfm_model') or hasattr(forecaster, '_ddfm_model'):
+            dfm_model = forecaster._dfm_model if hasattr(forecaster, '_dfm_model') else forecaster._ddfm_model
+            if dfm_model is not None:
+                if not hasattr(dfm_model, '_data_module') or dfm_model._data_module is None:
+                    logger.warning(f"Checkpoint for {target_series}_{model} missing data_module - may need to recreate during inference")
+
+
 def _load_model_for_inference(
     project_root: Path,
     target_series: str,
@@ -49,8 +74,8 @@ def _load_model_for_inference(
     supports_nowcast_manager: bool,
     train_start: str,
     train_end: str
-) -> Tuple[Optional[Any], Any, Optional[Any]]:
-    """Load trained model from checkpoint."""
+) -> Tuple[Any, Optional[Any]]:
+    """Load trained model from checkpoint with validation."""
     checkpoint_path = project_root / "checkpoint" / f"{target_series}_{model.lower()}" / "model.pkl"
     if not checkpoint_path.exists():
         comparisons_dir = project_root / "outputs" / "comparisons"
@@ -59,86 +84,234 @@ def _load_model_for_inference(
                 model_path = comparison_dir / model.lower() / "model.pkl"
                 if model_path.exists():
                     checkpoint_path = model_path
+                    logger.info(f"Found checkpoint in comparisons directory: {checkpoint_path}")
                     break
     
     if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Trained {model.upper()} model not found for {target_series}")
+        raise FileNotFoundError(
+            f"Trained {model.upper()} model not found for {target_series}. "
+            f"Expected path: {project_root / 'checkpoint' / f'{target_series}_{model.lower()}' / 'model.pkl'}"
+        )
     
-    with open(checkpoint_path, 'rb') as f:
-        model_data = pickle.load(f)
+    logger.info(f"Loading checkpoint from: {checkpoint_path}")
+    
+    try:
+        with open(checkpoint_path, 'rb') as f:
+            model_data = pickle.load(f)
+    except (pickle.UnpicklingError, EOFError, IOError) as e:
+        raise ValueError(f"Failed to load checkpoint for {target_series}_{model}: {type(e).__name__}: {str(e)}") from e
+    except Exception as e:
+        raise ValueError(f"Unexpected error loading checkpoint for {target_series}_{model}: {type(e).__name__}: {str(e)}") from e
+    
+    # Validate checkpoint structure
+    try:
+        _validate_checkpoint(model_data, target_series, model)
+    except ValueError as e:
+        raise ValueError(f"Checkpoint validation failed for {target_series}_{model}: {str(e)}") from e
     
     forecaster = model_data.get('forecaster')
     if forecaster is None:
-        raise ValueError(f"Model file does not contain forecaster")
+        raise ValueError(f"Model file does not contain forecaster for {target_series}_{model}")
+    
+    logger.info(f"Successfully loaded forecaster for {target_series}_{model}")
     
     if not supports_nowcast_manager:
-        return None, forecaster, None
+        return forecaster, None
     
+    # Extract DFM/DDFM model from forecaster
+    # DFMForecaster/DDFMForecaster store DFMBase/DDFMBase instances directly
     if hasattr(forecaster, '_dfm_model'):
         dfm_model = forecaster._dfm_model
     elif hasattr(forecaster, '_ddfm_model'):
         dfm_model = forecaster._ddfm_model
     else:
-        raise ValueError(f"Forecaster does not contain {model.upper()} model")
+        raise ValueError(f"Forecaster does not contain {model.upper()} model for {target_series}")
     
     if dfm_model is None:
-        raise ValueError(f"{model.upper()} model is None")
+        raise ValueError(f"{model.upper()} model is None for {target_series}")
     
-    # Restore result from checkpoint (don't call get_result() as it may trigger training)
-    if hasattr(dfm_model, '_model') and dfm_model._model is not None:
-        underlying_model = dfm_model._model
-        if hasattr(underlying_model, '_result') and underlying_model._result is None:
-            # Try to restore from checkpoint first (safest, no training)
-            if 'result' in model_data:
+    logger.info(f"Successfully extracted {model.upper()} model from forecaster")
+    
+    # Restore result from checkpoint if needed
+    # DFMBase/DDFMBase are the actual models (not wrappers), so access _result directly
+    if hasattr(dfm_model, '_result') and dfm_model._result is None:
+        # Try to restore from checkpoint first (safest, no training)
+        if 'result' in model_data:
+            try:
+                dfm_model._result = model_data['result']
+                logger.debug(f"Restored result from checkpoint for {target_series}_{model}")
+            except Exception as e:
+                logger.debug(f"Could not restore result from checkpoint: {str(e)}")
+        # Only restore from training_state if result is already computed (no EM)
+        if dfm_model._result is None and hasattr(dfm_model, 'training_state') and dfm_model.training_state is not None:
+            # Check if result is already computed in training_state
+            if hasattr(dfm_model.training_state, '_result'):
                 try:
-                    underlying_model._result = model_data['result']
-                except Exception:
-                    pass
-            # Only restore from training_state if result is already computed (no EM)
-            if underlying_model._result is None and hasattr(underlying_model, 'training_state') and underlying_model.training_state is not None:
-                # Check if result is already computed in training_state
-                if hasattr(underlying_model.training_state, '_result'):
-                    try:
-                        underlying_model._result = underlying_model.training_state._result
-                    except Exception:
-                        pass
+                    dfm_model._result = dfm_model.training_state._result
+                    logger.debug(f"Restored result from training_state for {target_series}_{model}")
+                except Exception as e:
+                    logger.debug(f"Could not restore result from training_state: {str(e)}")
     
-    # Don't recreate data_module - it should be loaded from checkpoint
-    # If data_module is missing, the model was not properly saved or is corrupted
+    # Check for data_module (required for nowcasting)
     if not hasattr(dfm_model, '_data_module') or dfm_model._data_module is None:
-        logger.warning(f"data_module not found in checkpoint for {target_series}_{model}. Model may not work correctly.")
+        logger.warning(f"data_module not found in checkpoint for {target_series}_{model}. Model may not work correctly for nowcasting.")
+        # Try to restore from checkpoint if available
+        if 'data_module' in model_data:
+            try:
+                dfm_model._data_module = model_data['data_module']
+                logger.info(f"Restored data_module from checkpoint for {target_series}_{model}")
+            except Exception as e:
+                logger.warning(f"Could not restore data_module from checkpoint: {str(e)}")
     
-    # nowcast_manager is no longer needed (we use predict directly)
-    # But keep it for backward compatibility with _update_data_module_for_nowcasting
-    nowcast_manager = dfm_model.nowcast if hasattr(dfm_model, 'nowcast') else None
-    return nowcast_manager, forecaster, dfm_model
+    # Return forecaster and dfm_model
+    return forecaster, dfm_model
+
+
+def _extract_target_forecast(
+    X_pred: np.ndarray,
+    pred_step: int,
+    dfm_model: Any,
+    target_series: str
+) -> float:
+    """Extract target series forecast value from prediction array.
+    
+    Args:
+        X_pred: Prediction array (horizon x n_series)
+        pred_step: Time step index to extract
+        dfm_model: DFM/DDFM model instance
+        target_series: Target series name
+        
+    Returns:
+        Forecast value for target series
+    """
+    # Ensure pred_step is valid
+    if pred_step >= X_pred.shape[0]:
+        pred_step = X_pred.shape[0] - 1
+    if pred_step < 0:
+        pred_step = 0
+    
+    # Try to find target series index
+    if hasattr(dfm_model, 'config'):
+        try:
+            from dfm_python.utils.helpers import find_series_index
+            series_idx = find_series_index(dfm_model.config, target_series)
+            if series_idx is not None and series_idx < X_pred.shape[1]:
+                return float(X_pred[pred_step, series_idx])
+        except (ValueError, IndexError, KeyError, AttributeError):
+            pass
+    
+    # Fallback to first column
+    return float(X_pred[pred_step, 0] if X_pred.shape[1] > 0 else 0.0)
+
+
+def _save_json_results(
+    output_file: Path,
+    results: Dict[str, Any],
+    logger: logging.Logger
+) -> None:
+    """Save results to JSON file with validation.
+    
+    Args:
+        output_file: Path to output file
+        results: Results dictionary to save
+        logger: Logger instance
+        
+    Raises:
+        IOError: If file cannot be created or is empty
+    """
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(results, f, indent=2, default=str, ensure_ascii=False)
+        
+        # Validate file was created and is non-empty
+        if not output_file.exists():
+            raise IOError(f"Output file was not created: {output_file}")
+        
+        file_size = output_file.stat().st_size
+        if file_size == 0:
+            raise IOError(f"Output file is empty: {output_file}")
+        
+        logger.info(f"Results saved successfully to: {output_file} (size: {file_size} bytes)")
+    except (IOError, OSError) as e:
+        logger.error(f"Failed to save results to {output_file}: {type(e).__name__}: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error saving results to {output_file}: {type(e).__name__}: {str(e)}")
+        raise
 
 
 def _update_data_module_for_nowcasting(
     dfm_model: Any,
-    nowcast_manager: Any,
     data_up_to_target: pd.DataFrame,
     target_month_end_ts: pd.Timestamp
 ) -> None:
-    """Update data_module with data up to target month end."""
-    if not hasattr(dfm_model, '_data_module') or dfm_model._data_module is None:
-        raise RuntimeError("data_module not available")
+    """Update data_module with data up to target month end.
+    
+    Args:
+        dfm_model: DFMBase or DDFMBase model instance
+        data_up_to_target: DataFrame with data up to view date
+        target_month_end_ts: Target month end timestamp
+        
+    Raises:
+        RuntimeError: If data_module is not available
+        ValueError: If data is empty or invalid
+    """
+    if not hasattr(dfm_model, '_data_module'):
+        raise RuntimeError(f"dfm_model does not have _data_module attribute")
+    
+    if dfm_model._data_module is None:
+        raise RuntimeError(f"data_module is None - cannot update for nowcasting")
+    
+    # Validate input data
+    if data_up_to_target is None:
+        raise ValueError(f"data_up_to_target is None")
+    
+    if not isinstance(data_up_to_target, pd.DataFrame):
+        raise ValueError(f"data_up_to_target must be a DataFrame, got {type(data_up_to_target)}")
+    
+    if len(data_up_to_target) == 0:
+        raise ValueError(f"No data available in data_up_to_target (empty DataFrame)")
+    
+    if len(data_up_to_target.columns) == 0:
+        raise ValueError(f"No columns in data_up_to_target")
     
     from src.preprocessing import resample_to_monthly
     from dfm_python.utils.time import TimeIndex
     
-    data_monthly = resample_to_monthly(data_up_to_target)
-    if len(data_monthly) == 0:
-        raise ValueError(f"No data available up to {target_month_end_ts}")
+    try:
+        data_monthly = resample_to_monthly(data_up_to_target)
+    except Exception as e:
+        raise ValueError(f"Failed to resample data to monthly: {type(e).__name__}: {str(e)}") from e
     
-    time_index = TimeIndex(data_monthly.index.to_pydatetime().tolist())
-    existing_data_module = dfm_model._data_module
-    existing_data_module.data = data_monthly
-    existing_data_module.time_index = time_index
-    dfm_model._data_module = existing_data_module
-    # Update nowcast_manager if provided (for backward compatibility)
-    if nowcast_manager is not None:
-        nowcast_manager.data_module = existing_data_module
+    if len(data_monthly) == 0:
+        raise ValueError(f"No data available after resampling to monthly (target: {target_month_end_ts.strftime('%Y-%m')})")
+    
+    if len(data_monthly.columns) == 0:
+        raise ValueError(f"No columns in resampled monthly data")
+    
+    # Validate index
+    if data_monthly.index is None or len(data_monthly.index) == 0:
+        raise ValueError(f"Invalid index in resampled monthly data")
+    
+    try:
+        time_index = TimeIndex(data_monthly.index.to_pydatetime().tolist())
+    except Exception as e:
+        raise ValueError(f"Failed to create TimeIndex from data: {type(e).__name__}: {str(e)}") from e
+    
+    if len(time_index) == 0:
+        raise ValueError(f"TimeIndex is empty after creation")
+    
+    # Update data_module
+    try:
+        existing_data_module = dfm_model._data_module
+        existing_data_module.data = data_monthly
+        existing_data_module.time_index = time_index
+        dfm_model._data_module = existing_data_module
+        logger.debug(f"Successfully updated data_module with {len(data_monthly)} monthly observations")
+    except Exception as e:
+        raise RuntimeError(f"Failed to update data_module: {type(e).__name__}: {str(e)}") from e
 
 
 def run_backtest_evaluation(
@@ -197,7 +370,7 @@ def run_backtest_evaluation(
                     pass
     
     # Load model
-    nowcast_manager, forecaster, dfm_model = _load_model_for_inference(
+    forecaster, dfm_model = _load_model_for_inference(
         project_root, target_series, model, supports_nowcast_manager, train_start, train_end
     )
     
@@ -231,8 +404,13 @@ def run_backtest_evaluation(
     results_by_timepoint = {}
     train_end_date = datetime.strptime(train_end, "%Y-%m-%d")
     
+    logger.info(f"Starting nowcasting backtest for {target_series} with {model.upper()}")
+    logger.info(f"Target periods: {len(target_periods)} months from {nowcast_start} to {nowcast_end}")
+    logger.info(f"Time points: {weeks_before} weeks before month end")
+    
     for weeks in weeks_before:
         monthly_results = []
+        logger.info(f"Processing {weeks} weeks before time point...")
         
         for target_month_end in target_periods:
             target_month_end_ts = pd.Timestamp(target_month_end) if not isinstance(target_month_end, pd.Timestamp) else target_month_end
@@ -251,8 +429,12 @@ def run_backtest_evaluation(
                     # Update data_module with data up to view_date for nowcasting
                     data_up_to_view = full_data[full_data.index <= pd.Timestamp(view_date)].copy()
                     try:
-                        _update_data_module_for_nowcasting(dfm_model, nowcast_manager, data_up_to_view, pd.Timestamp(view_date))
-                    except Exception:
+                        _update_data_module_for_nowcasting(dfm_model, data_up_to_view, pd.Timestamp(view_date))
+                    except (RuntimeError, ValueError) as e:
+                        logger.warning(f"Failed to update data_module for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {str(e)}")
+                        continue
+                    except Exception as e:
+                        logger.error(f"Unexpected error updating data_module for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
                         continue
                     
                     # Use predict method - can use any horizon (1 for nowcasting, 22 for forecasting)
@@ -264,32 +446,27 @@ def run_backtest_evaluation(
                     horizon = max(1, min(months_ahead, 22)) if months_ahead >= 0 else 1
                     
                     try:
-                        X_pred, Z_pred = dfm_model._model.predict(horizon=horizon, return_series=True, return_factors=True)
+                        # Use dfm_model.predict() directly (it's DFMBase/DDFMBase instance)
+                        X_pred, Z_pred = dfm_model.predict(horizon=horizon, return_series=True, return_factors=True)
                         
                         # Extract target series value
                         # If horizon > 1, we need to select the appropriate time step
                         # For nowcasting, we typically want the last step (horizon-1) if months_ahead matches
                         pred_step = min(horizon - 1, max(0, months_ahead - 1)) if months_ahead > 0 else 0
                         
-                        if hasattr(dfm_model._model, 'config'):
-                            from dfm_python.utils.helpers import find_series_index
-                            try:
-                                series_idx = find_series_index(dfm_model._model.config, target_series)
-                                if series_idx is not None and series_idx < X_pred.shape[1] and pred_step < X_pred.shape[0]:
-                                    forecast_value = float(X_pred[pred_step, series_idx])
-                                else:
-                                    # Fallback to first column
-                                    forecast_value = float(X_pred[pred_step, 0]) if pred_step < X_pred.shape[0] else float(X_pred[0, 0])
-                            except Exception:
-                                # Fallback to first column
-                                forecast_value = float(X_pred[pred_step, 0]) if pred_step < X_pred.shape[0] else float(X_pred[0, 0])
-                        else:
-                            # Fallback to first column
-                            forecast_value = float(X_pred[pred_step, 0]) if pred_step < X_pred.shape[0] else float(X_pred[0, 0])
+                        # Extract target series value from predictions
+                        forecast_value = _extract_target_forecast(
+                            X_pred, pred_step, dfm_model, target_series
+                        )
                         
                         if not np.isfinite(forecast_value):
+                            logger.debug(f"Non-finite forecast value for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {forecast_value}")
                             continue
-                    except Exception:
+                    except (ValueError, RuntimeError, AttributeError) as e:
+                        logger.warning(f"Failed to predict for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
+                        continue
+                    except Exception as e:
+                        logger.error(f"Unexpected error during prediction for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
                         continue
                     
                     # Get actual value
@@ -318,6 +495,7 @@ def run_backtest_evaluation(
                     
                     # Apply release date masking
                     if series_release_dates:
+                        # Import calculate_release_date (defined early in nowcasting.py, doesn't depend on para_const)
                         from src.nowcasting import calculate_release_date
                         view_date_dt = view_date if isinstance(view_date, datetime) else pd.Timestamp(view_date).to_pydatetime()
                         for series_id, release_offset in series_release_dates.items():
@@ -404,7 +582,11 @@ def run_backtest_evaluation(
                         if model == 'var' and original_columns is not None and isinstance(y_pred, pd.DataFrame):
                             if len(y_pred.columns) == len(original_columns):
                                 y_pred.columns = original_columns
-                    except Exception:
+                    except (ValueError, RuntimeError, AttributeError) as e:
+                        logger.warning(f"Failed to predict for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}) with {model.upper()}: {type(e).__name__}: {str(e)}")
+                        continue
+                    except Exception as e:
+                        logger.error(f"Unexpected error during prediction for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}) with {model.upper()}: {type(e).__name__}: {str(e)}")
                         continue
                     
                     # Extract forecast value
@@ -451,6 +633,10 @@ def run_backtest_evaluation(
                                 actual_value = float(raw_value)
                 
                 if np.isnan(forecast_value) or np.isnan(actual_value):
+                    if np.isnan(forecast_value):
+                        logger.debug(f"NaN forecast value for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')})")
+                    if np.isnan(actual_value):
+                        logger.debug(f"NaN actual value for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')})")
                     continue
                 
                 error = forecast_value - actual_value
@@ -474,7 +660,11 @@ def run_backtest_evaluation(
                     'sMAE': float(sMAE)
                 })
                 
-            except Exception:
+            except (ValueError, RuntimeError, AttributeError, KeyError, IndexError) as e:
+                logger.warning(f"Error processing {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
+                continue
+            except Exception as e:
+                logger.error(f"Unexpected error processing {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
                 continue
         
         if len(monthly_results) > 0:
@@ -487,8 +677,14 @@ def run_backtest_evaluation(
                 'overall_rmse': float(np.sqrt(np.nanmean([r['squared_error'] for r in monthly_results]))),
                 'n_months': len(monthly_results)
             }
+            logger.info(f"Completed {weeks} weeks before: {len(monthly_results)} successful predictions out of {len(target_periods)} target months")
+        else:
+            logger.warning(f"No successful predictions for {weeks} weeks before time point")
     
-    # Save results
+    # Save results (always save, even if empty, to indicate status)
+    total_timepoints = len(weeks_before)
+    successful_timepoints = len(results_by_timepoint)
+    
     if len(results_by_timepoint) > 0:
         results = {
             'target_series': target_series,
@@ -497,24 +693,35 @@ def run_backtest_evaluation(
             'nowcast_period': f"{nowcast_start} to {nowcast_end}",
             'weeks_before': weeks_before,
             'results_by_timepoint': results_by_timepoint,
-            'horizon': 1
+            'horizon': 1,
+            'status': 'completed',
+            'summary': {
+                'total_timepoints': total_timepoints,
+                'successful_timepoints': successful_timepoints,
+                'failed_timepoints': total_timepoints - successful_timepoints
+            }
         }
+        logger.info(f"Generated results for {successful_timepoints}/{total_timepoints} time points")
     else:
         results = {
             'target_series': target_series,
             'model': model.upper(),
+            'train_period': f"{train_start} to {train_end}",
+            'nowcast_period': f"{nowcast_start} to {nowcast_end}",
+            'weeks_before': weeks_before,
             'status': 'no_results',
-            'error': 'No valid results generated for any time point'
+            'error': 'No valid results generated for any time point',
+            'summary': {
+                'total_timepoints': total_timepoints,
+                'successful_timepoints': 0,
+                'failed_timepoints': total_timepoints
+            }
         }
+        logger.warning(f"No results generated for any time point - all predictions failed")
     
-    output_dir = project_root / "outputs" / "backtest"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / f"{target_series}_{model}_backtest.json"
+    output_file = project_root / "outputs" / "backtest" / f"{target_series}_{model}_backtest.json"
+    _save_json_results(output_file, results, logger)
     
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(results, f, indent=2, default=str)
-    
-    logger.info(f"Results saved to: {output_file}")
     return results
 
 

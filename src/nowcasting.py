@@ -721,7 +721,8 @@ from dfm_python.utils.helpers import (
     get_clock_frequency,
 )
 from dataclasses import dataclass
-from dfm_python.config.results import para_const
+# para_const is defined in this file, not imported from dfm_python
+# from dfm_python.config.results import para_const  # This doesn't exist - para_const is defined below
 
 # Set up logger
 _logger = get_logger(__name__)

@@ -485,8 +485,23 @@ def evaluate_forecaster(
     """
     logger = _module_logger
     
-    # Fit forecaster
-    forecaster.fit(y_train)
+    # Check if forecaster is already fitted to avoid re-training
+    is_fitted = False
+    if hasattr(forecaster, 'is_fitted'):
+        is_fitted = forecaster.is_fitted()
+    elif hasattr(forecaster, '_is_fitted'):
+        is_fitted = forecaster._is_fitted
+    elif hasattr(forecaster, '_fitted_forecaster'):
+        is_fitted = forecaster._fitted_forecaster is not None
+    elif hasattr(forecaster, '_y'):
+        is_fitted = forecaster._y is not None
+    
+    # Only fit if not already fitted (to avoid re-training loaded models)
+    if not is_fitted:
+        logger.info("Forecaster not fitted, fitting on training data...")
+        forecaster.fit(y_train)
+    else:
+        logger.debug("Forecaster already fitted, skipping fit() to avoid re-training")
     
     # Generate predictions for requested horizons only
     horizons_arr = np.asarray(horizons)
