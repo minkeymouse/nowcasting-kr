@@ -245,14 +245,16 @@ def _save_json_results(
 def _update_data_module_for_nowcasting(
     dfm_model: Any,
     data_up_to_target: pd.DataFrame,
-    target_month_end_ts: pd.Timestamp
+    view_date: pd.Timestamp,
+    config: Optional[Any] = None
 ) -> None:
-    """Update data_module with data up to target month end.
+    """Update data_module with data up to view date, applying release date masking.
     
     Args:
         dfm_model: DFMBase or DDFMBase model instance
         data_up_to_target: DataFrame with data up to view date
-        target_month_end_ts: Target month end timestamp
+        view_date: View date for nowcasting (data after this date should be masked)
+        config: Model configuration with release date information (optional, will try to get from model)
         
     Raises:
         RuntimeError: If data_module is not available
@@ -279,6 +281,7 @@ def _update_data_module_for_nowcasting(
     
     from src.preprocessing import resample_to_monthly
     from dfm_python.utils.time import TimeIndex
+    from src.nowcasting import create_data_view
     
     try:
         data_monthly = resample_to_monthly(data_up_to_target)
@@ -286,7 +289,7 @@ def _update_data_module_for_nowcasting(
         raise ValueError(f"Failed to resample data to monthly: {type(e).__name__}: {str(e)}") from e
     
     if len(data_monthly) == 0:
-        raise ValueError(f"No data available after resampling to monthly (target: {target_month_end_ts.strftime('%Y-%m')})")
+        raise ValueError(f"No data available after resampling to monthly (view_date: {view_date.strftime('%Y-%m-%d')})")
     
     if len(data_monthly.columns) == 0:
         raise ValueError(f"No columns in resampled monthly data")
@@ -303,13 +306,54 @@ def _update_data_module_for_nowcasting(
     if len(time_index) == 0:
         raise ValueError(f"TimeIndex is empty after creation")
     
+    # Get config if not provided
+    if config is None:
+        if hasattr(dfm_model, '_result') and dfm_model._result is not None:
+            if hasattr(dfm_model._result, 'config'):
+                config = dfm_model._result.config
+        elif hasattr(dfm_model, 'config'):
+            config = dfm_model.config
+    
+    # Apply release date masking if config is available
+    if config is not None:
+        try:
+            # Convert DataFrame to numpy array for create_data_view
+            X_data = data_monthly.values
+            X_frame = data_monthly.copy()
+            
+            # Apply release date masking
+            X_masked, time_index_masked, _ = create_data_view(
+                X=X_data,
+                Time=time_index,
+                config=config,
+                view_date=view_date.to_pydatetime(),
+                X_frame=X_frame
+            )
+            
+            # Convert masked array back to DataFrame
+            data_monthly_masked = pd.DataFrame(
+                X_masked,
+                index=data_monthly.index,
+                columns=data_monthly.columns
+            )
+            
+            # Update time_index if it was modified
+            if time_index_masked is not None:
+                time_index = time_index_masked
+            
+            data_monthly = data_monthly_masked
+            logger.debug(f"Applied release date masking for view_date={view_date.strftime('%Y-%m-%d')}")
+        except Exception as e:
+            logger.warning(f"Failed to apply release date masking (will use unmasked data): {type(e).__name__}: {str(e)}")
+            # Continue with unmasked data if masking fails
+    
     # Update data_module
     try:
         existing_data_module = dfm_model._data_module
         existing_data_module.data = data_monthly
         existing_data_module.time_index = time_index
         dfm_model._data_module = existing_data_module
-        logger.debug(f"Successfully updated data_module with {len(data_monthly)} monthly observations")
+        logger.debug(f"Successfully updated data_module with {len(data_monthly)} monthly observations (view_date={view_date.strftime('%Y-%m-%d')})")
     except Exception as e:
         raise RuntimeError(f"Failed to update data_module: {type(e).__name__}: {str(e)}") from e
 
@@ -325,7 +369,12 @@ def run_backtest_evaluation(
     config_dir: Optional[str] = None,
     overrides: Optional[List[str]] = None
 ) -> Dict[str, Any]:
-    """Run backtest evaluation and generate JSON/CSV results."""
+    """Run backtest evaluation and generate JSON/CSV results.
+    
+    Note: Nowcasting is only supported for DFM and DDFM models.
+    ARIMA and VAR models are not suitable for nowcasting due to their
+    inability to handle missing data from release date masking.
+    """
     project_root = get_project_root()
     
     if config_dir is None:
@@ -334,7 +383,32 @@ def run_backtest_evaluation(
     if weeks_before is None:
         weeks_before = [4, 1]
     
-    supports_nowcast_manager = model.lower() in ['dfm', 'ddfm']
+    model_lower = model.lower()
+    
+    # Nowcasting is only supported for DFM and DDFM models
+    if model_lower not in ['dfm', 'ddfm']:
+        error_msg = f"Nowcasting is not supported for {model.upper()} model. Only DFM and DDFM models support nowcasting."
+        logger.error(error_msg)
+        results = {
+            'target_series': None,
+            'model': model.upper(),
+            'train_period': f"{train_start} to {train_end}",
+            'nowcast_period': f"{nowcast_start} to {nowcast_end}",
+            'weeks_before': weeks_before,
+            'status': 'not_supported',
+            'error': error_msg,
+            'summary': {
+                'total_timepoints': len(weeks_before),
+                'successful_timepoints': 0,
+                'failed_timepoints': len(weeks_before)
+            }
+        }
+        # Still save the result file to indicate the status
+        output_file = project_root / "outputs" / "backtest" / f"UNKNOWN_{model_lower}_backtest.json"
+        _save_json_results(output_file, results, logger)
+        return results
+    
+    supports_nowcast_manager = True  # Only DFM/DDFM reach here
     
     cfg = parse_experiment_config(config_name, config_dir, overrides)
     validate_experiment_config(cfg, require_target=True, require_models=False)
@@ -424,239 +498,72 @@ def run_backtest_evaluation(
                 continue
             
             try:
-                if supports_nowcast_manager:
-                    # Use predict method directly (simpler and faster)
-                    # Update data_module with data up to view_date for nowcasting
-                    data_up_to_view = full_data[full_data.index <= pd.Timestamp(view_date)].copy()
-                    try:
-                        _update_data_module_for_nowcasting(dfm_model, data_up_to_view, pd.Timestamp(view_date))
-                    except (RuntimeError, ValueError) as e:
-                        logger.warning(f"Failed to update data_module for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {str(e)}")
-                        continue
-                    except Exception as e:
-                        logger.error(f"Unexpected error updating data_module for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
-                        continue
+                # Nowcasting is only supported for DFM/DDFM models
+                # Use predict method directly (simpler and faster)
+                # Update data_module with data up to view_date for nowcasting
+                # Include data up to view_date (not target_month_end) to properly simulate data availability
+                data_up_to_view = full_data[full_data.index <= pd.Timestamp(view_date)].copy()
+                try:
+                    # Get config for release date masking
+                    config = None
+                    if hasattr(dfm_model, '_result') and dfm_model._result is not None:
+                        if hasattr(dfm_model._result, 'config'):
+                            config = dfm_model._result.config
+                    elif hasattr(dfm_model, 'config'):
+                        config = dfm_model.config
                     
-                    # Use predict method - can use any horizon (1 for nowcasting, 22 for forecasting)
-                    # Calculate horizon: number of months from view_date to target_month_end
-                    view_date_ts = pd.Timestamp(view_date)
-                    months_ahead = (target_month_end_ts.year - view_date_ts.year) * 12 + (target_month_end_ts.month - view_date_ts.month)
-                    # For nowcasting, we want to predict the target period, so horizon should be based on months difference
-                    # But if target is in the past relative to view_date, use horizon=1 (current period)
-                    horizon = max(1, min(months_ahead, 22)) if months_ahead >= 0 else 1
-                    
-                    try:
-                        # Use dfm_model.predict() directly (it's DFMBase/DDFMBase instance)
-                        X_pred, Z_pred = dfm_model.predict(horizon=horizon, return_series=True, return_factors=True)
-                        
-                        # Extract target series value
-                        # If horizon > 1, we need to select the appropriate time step
-                        # For nowcasting, we typically want the last step (horizon-1) if months_ahead matches
-                        pred_step = min(horizon - 1, max(0, months_ahead - 1)) if months_ahead > 0 else 0
-                        
-                        # Extract target series value from predictions
-                        forecast_value = _extract_target_forecast(
-                            X_pred, pred_step, dfm_model, target_series
-                        )
-                        
-                        if not np.isfinite(forecast_value):
-                            logger.debug(f"Non-finite forecast value for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {forecast_value}")
-                            continue
-                    except (ValueError, RuntimeError, AttributeError) as e:
-                        logger.warning(f"Failed to predict for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
-                        continue
-                    except Exception as e:
-                        logger.error(f"Unexpected error during prediction for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
-                        continue
-                    
-                    # Get actual value
-                    actual_value = np.nan
-                    if target_month_end_ts <= full_data_monthly.index.max():
-                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
-                        if len(available_dates) > 0:
-                            closest_date = available_dates.max()
-                            if target_series in full_data_monthly.columns:
-                                raw_value = full_data_monthly.loc[closest_date, target_series]
-                            else:
-                                raw_value = full_data_monthly.loc[closest_date].iloc[0]
-                            if not pd.isna(raw_value):
-                                actual_value = float(raw_value)
+                    _update_data_module_for_nowcasting(dfm_model, data_up_to_view, pd.Timestamp(view_date), config=config)
+                except (RuntimeError, ValueError) as e:
+                    logger.warning(f"Failed to update data_module for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {str(e)}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Unexpected error updating data_module for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
+                    continue
                 
-                else:
-                    # ARIMA/VAR
-                    train_data_filtered = full_data[full_data.index <= pd.Timestamp(view_date)].copy()
-                    if len(train_data_filtered) == 0:
+                # Use predict method - can use any horizon (1 for nowcasting, 22 for forecasting)
+                # Calculate horizon: number of months from view_date to target_month_end
+                view_date_ts = pd.Timestamp(view_date)
+                months_ahead = (target_month_end_ts.year - view_date_ts.year) * 12 + (target_month_end_ts.month - view_date_ts.month)
+                # For nowcasting, we want to predict the target period, so horizon should be based on months difference
+                # But if target is in the past relative to view_date, use horizon=1 (current period)
+                horizon = max(1, min(months_ahead, 22)) if months_ahead >= 0 else 1
+                
+                try:
+                    # Use dfm_model.predict() directly (it's DFMBase/DDFMBase instance)
+                    X_pred, Z_pred = dfm_model.predict(horizon=horizon, return_series=True, return_factors=True)
+                    
+                    # Extract target series value
+                    # If horizon > 1, we need to select the appropriate time step
+                    # For nowcasting, we typically want the last step (horizon-1) if months_ahead matches
+                    pred_step = min(horizon - 1, max(0, months_ahead - 1)) if months_ahead > 0 else 0
+                    
+                    # Extract target series value from predictions
+                    forecast_value = _extract_target_forecast(
+                        X_pred, pred_step, dfm_model, target_series
+                    )
+                    
+                    if not np.isfinite(forecast_value):
+                        logger.debug(f"Non-finite forecast value for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {forecast_value}")
                         continue
-                    
-                    from src.preprocessing import resample_to_monthly
-                    train_data_filtered = resample_to_monthly(train_data_filtered)
-                    if len(train_data_filtered) == 0:
-                        continue
-                    
-                    # Apply release date masking
-                    if series_release_dates:
-                        # Import calculate_release_date (defined early in nowcasting.py, doesn't depend on para_const)
-                        from src.nowcasting import calculate_release_date
-                        view_date_dt = view_date if isinstance(view_date, datetime) else pd.Timestamp(view_date).to_pydatetime()
-                        for series_id, release_offset in series_release_dates.items():
-                            if series_id not in train_data_filtered.columns:
-                                continue
-                            for period_idx in train_data_filtered.index:
-                                period_dt = period_idx.to_pydatetime() if isinstance(period_idx, pd.Timestamp) else period_idx
-                                release_date_dt = calculate_release_date(release_offset, period_dt)
-                                if release_date_dt > view_date_dt:
-                                    train_data_filtered.loc[period_idx, series_id] = np.nan
-                    
-                    # Impute missing values after masking (ARIMA/VAR cannot handle NaN)
-                    from src.preprocessing import impute_missing_values
-                    try:
-                        train_data_filtered = impute_missing_values(train_data_filtered, model_type=model.lower())
-                        if train_data_filtered.isnull().any().any():
-                            # If imputation failed, drop rows with remaining NaN
-                            nan_count = train_data_filtered.isnull().sum().sum()
-                            logger.warning(f"{model.upper()}: {nan_count} NaN values remain after imputation for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}). Dropping rows with NaN...")
-                            train_data_filtered = train_data_filtered.dropna()
-                            if len(train_data_filtered) == 0:
-                                logger.warning(f"{model.upper()}: All data was dropped after imputation for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}). Skipping this timepoint.")
-                                continue
-                    except Exception as e:
-                        logger.warning(f"{model.upper()}: Imputation failed for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}. Skipping this timepoint.")
-                        continue
-                    
-                    # Prepare data
-                    is_multivariate = False
-                    training_columns = None
-                    if hasattr(forecaster, 'get_tag'):
-                        try:
-                            scitype_y = forecaster.get_tag('scitype:y', 'univariate')
-                            is_multivariate = (scitype_y == 'multivariate')
-                        except Exception:
-                            pass
-                    
-                    if hasattr(forecaster, '_y'):
-                        try:
-                            if isinstance(forecaster._y, pd.DataFrame):
-                                is_multivariate = len(forecaster._y.columns) > 1
-                                training_columns = forecaster._y.columns.tolist()
-                        except Exception:
-                            pass
-                    
-                    if not is_multivariate:
-                        is_multivariate = len(train_data_filtered.columns) > 1
-                    
-                    original_columns = None
-                    if is_multivariate:
-                        if training_columns is not None:
-                            available_columns = [col for col in training_columns if col in train_data_filtered.columns]
-                            original_columns = available_columns
-                            if len(available_columns) < 2:
-                                continue
-                            fit_data = train_data_filtered[available_columns].copy()
-                            fit_data = fit_data.reindex(columns=available_columns)
+                except (ValueError, RuntimeError, AttributeError) as e:
+                    logger.warning(f"Failed to predict for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Unexpected error during prediction for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
+                    continue
+                
+                # Get actual value
+                actual_value = np.nan
+                if target_month_end_ts <= full_data_monthly.index.max():
+                    available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
+                    if len(available_dates) > 0:
+                        closest_date = available_dates.max()
+                        if target_series in full_data_monthly.columns:
+                            raw_value = full_data_monthly.loc[closest_date, target_series]
                         else:
-                            fit_data = train_data_filtered.copy()
-                            original_columns = list(fit_data.columns)
-                        fit_data = fit_data.dropna(how='all')
-                    else:
-                        if target_series in train_data_filtered.columns:
-                            fit_data = train_data_filtered[[target_series]].copy()
-                        else:
-                            fit_data = train_data_filtered[[train_data_filtered.columns[0]]].copy()
-                        target_col_name = fit_data.columns[0]
-                        if fit_data[target_col_name].isna().any():
-                            fit_data = fit_data.ffill()
-                        fit_data = fit_data.dropna()
-                        if isinstance(fit_data, pd.Series):
-                            fit_data = fit_data.to_frame()
-                    
-                    if len(fit_data) < 10:
-                        continue
-                    
-                    # Re-fit model on masked and imputed data for nowcasting
-                    # This is necessary because the checkpoint model was trained on full data,
-                    # but nowcasting requires predictions based on masked data
-                    try:
-                        forecaster.fit(fit_data)
-                        logger.debug(f"{model.upper()}: Re-fitted on masked data for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')})")
-                    except Exception as e:
-                        logger.warning(f"{model.upper()}: Failed to re-fit for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}): {type(e).__name__}: {str(e)}")
-                        continue
-                    
-                    # Predict
-                    last_fit_month = fit_data.index.max()
-                    if last_fit_month is None:
-                        continue
-                    
-                    if isinstance(last_fit_month, pd.Timestamp):
-                        last_fit_dt = last_fit_month.to_pydatetime()
-                    else:
-                        last_fit_dt = last_fit_month
-                    target_dt = target_month_end_ts.to_pydatetime()
-                    delta = relativedelta(target_dt, last_fit_dt)
-                    months_ahead = delta.years * 12 + delta.months
-                    if months_ahead < 0:
-                        horizon_periods = 1
-                    elif months_ahead == 0:
-                        horizon_periods = 1
-                    else:
-                        horizon_periods = months_ahead
-                    
-                    try:
-                        fh = np.asarray([horizon_periods])
-                        y_pred = forecaster.predict(fh=fh)
-                        
-                        if model == 'var' and original_columns is not None and isinstance(y_pred, pd.DataFrame):
-                            if len(y_pred.columns) == len(original_columns):
-                                y_pred.columns = original_columns
-                    except (ValueError, RuntimeError, AttributeError) as e:
-                        logger.warning(f"Failed to predict for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}) with {model.upper()}: {type(e).__name__}: {str(e)}")
-                        continue
-                    except Exception as e:
-                        logger.error(f"Unexpected error during prediction for {target_month_end_ts.strftime('%Y-%m')} (view_date={view_date.strftime('%Y-%m-%d')}) with {model.upper()}: {type(e).__name__}: {str(e)}")
-                        continue
-                    
-                    # Extract forecast value
-                    if y_pred is None:
-                        forecast_value = np.nan
-                    elif isinstance(y_pred, pd.DataFrame):
-                        if len(y_pred) == 0:
-                            forecast_value = np.nan
-                        elif target_series in y_pred.columns:
-                            raw_val = y_pred[target_series].iloc[0]
-                            forecast_value = float(raw_val) if not pd.isna(raw_val) else np.nan
-                        elif len(y_pred.columns) > 0:
-                            raw_val = y_pred.iloc[0, 0]
-                            forecast_value = float(raw_val) if not pd.isna(raw_val) else np.nan
-                        else:
-                            forecast_value = np.nan
-                    elif isinstance(y_pred, pd.Series):
-                        if len(y_pred) > 0:
-                            raw_val = y_pred.iloc[0]
-                            forecast_value = float(raw_val) if not pd.isna(raw_val) else np.nan
-                        else:
-                            forecast_value = np.nan
-                    else:
-                        try:
-                            raw_val = y_pred[0] if hasattr(y_pred, '__getitem__') else y_pred
-                            if pd.isna(raw_val) if hasattr(pd, 'isna') else (raw_val is None or (isinstance(raw_val, float) and np.isnan(raw_val))):
-                                forecast_value = np.nan
-                            else:
-                                forecast_value = float(raw_val)
-                        except Exception:
-                            forecast_value = np.nan
-                    
-                    # Get actual value
-                    actual_value = np.nan
-                    if len(full_data_monthly) > 0 and target_month_end_ts <= full_data_monthly.index.max():
-                        available_dates = full_data_monthly.index[full_data_monthly.index <= target_month_end_ts]
-                        if len(available_dates) > 0:
-                            closest_date = available_dates.max()
-                            if target_series in full_data_monthly.columns:
-                                raw_value = full_data_monthly.loc[closest_date, target_series]
-                            else:
-                                raw_value = full_data_monthly.loc[closest_date].iloc[0]
-                            if not pd.isna(raw_value):
-                                actual_value = float(raw_value)
+                            raw_value = full_data_monthly.loc[closest_date].iloc[0]
+                        if not pd.isna(raw_value):
+                            actual_value = float(raw_value)
                 
                 if np.isnan(forecast_value) or np.isnan(actual_value):
                     if np.isnan(forecast_value):
@@ -756,9 +663,10 @@ def main():
     parser = argparse.ArgumentParser(description="Run nowcasting backtest")
     subparsers = parser.add_subparsers(dest='command', required=True)
     
-    backtest_parser = subparsers.add_parser('backtest', help='Run nowcasting backtest')
+    backtest_parser = subparsers.add_parser('backtest', help='Run nowcasting backtest (DFM and DDFM only)')
     backtest_parser.add_argument("--config-name", required=True)
-    backtest_parser.add_argument("--model", required=True, choices=['arima', 'var', 'dfm', 'ddfm'])
+    backtest_parser.add_argument("--model", required=True, choices=['dfm', 'ddfm'], 
+                                 help='Model type (only DFM and DDFM support nowcasting)')
     backtest_parser.add_argument("--train-start", default="1985-01-01")
     backtest_parser.add_argument("--train-end", default="2019-12-31")
     backtest_parser.add_argument("--nowcast-start", default="2024-01-01")
