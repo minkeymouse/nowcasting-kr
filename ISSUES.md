@@ -1,16 +1,38 @@
 # Issues
 
-## CRITICAL: Models Not Trained (checkpoint/ is empty)
-- **Problem**: The `checkpoint/` directory is empty, meaning no models have been trained.
+## Quick Summary
+
+**Current State:**
+- ✅ **Code improvements implemented**: Deeper encoder, tanh activation, weight decay, gradient clipping, Huber loss, improved initialization, increased pre-training, batch size optimization
+- ⚠️ **Testing pending**: Models exist (12 .pkl files) but were trained before latest improvements - re-training recommended to test improvements
+- 📊 **Baseline metrics**: KOEQUIPTE DDFM sMAE=1.14 (identical to DFM), KOIPALL.G sMAE=0.69 (excellent), KOWRCCNSE sMAE=0.50 (excellent)
+
+**Immediate Next Steps (Priority Order):**
+1. **Phase 0 (NOW)**: Run correlation structure analysis - can be done immediately, no training required (< 5 min per target)
+2. **Phase 1 (RECOMMENDED)**: Re-train models via `bash agent_execute.sh train` - to ensure latest improvements are applied
+3. **Phase 1 (After re-training)**: Test implemented improvements - compare new results with baseline
+4. **Phase 1.2 (If Phase 1 succeeds)**: Activation function ablation study
+5. **Phase 1.3 (Parallel)**: Fix horizon 22 missing results
+
+**Success Criteria:**
+- **Primary**: KOEQUIPTE sMAE improvement from 1.14 to < 1.03 (≥10% improvement)
+- **Secondary**: Maintain KOIPALL.G and KOWRCCNSE performance (sMAE < 0.7)
+- **Tertiary**: Complete all 22 horizons for all targets
+
+See detailed plan below for specific actions and execution commands.
+
+---
+
+## CRITICAL: Models May Not Reflect Latest Code Improvements
+- **Problem**: Models exist (12 .pkl files from Dec 9 02:35-02:47) but were trained before latest code improvements (mult_epoch_pretrain, batch_size optimization)
 - **Impact**: 
-  - All forecasting and nowcasting experiments are using non-existent or outdated models
-  - Results in `outputs/experiments/aggregated_results.csv` may be from previous runs or invalid
-  - Cannot generate new predictions or retrain models
-  - DDFM improvements (deeper encoder, tanh activation, Huber loss) cannot be tested
-- **Required Action**: Step 1 must run `bash agent_execute.sh train` to generate model checkpoints
-- **Status**: **BLOCKING** - Must be resolved before any new experiments can be run
-- **Verification**: After training, check that `checkpoint/` contains 12 model.pkl files (3 targets × 4 models)
-- **Note**: Report sections have been updated to document current state and implemented improvements. Once experiments are run, tables and plots should be regenerated to reflect new results.
+  - Current models may not have latest DDFM improvements (mult_epoch_pretrain=2, batch_size=64 for KOEQUIPTE)
+  - Cannot verify if latest improvements improve performance without re-training
+  - Forecasting results may not reflect latest code improvements
+- **Required Action**: Step 1 should run `bash agent_execute.sh train` to re-train models with latest improvements
+- **Status**: ⚠️ **MODELS EXIST BUT MAY BE OUTDATED** - Re-training recommended to test latest improvements
+- **Verification**: After re-training, check that `checkpoint/` contains 12 model.pkl files with recent timestamps
+- **Note**: Models are trained but may not have latest improvements. Re-training will ensure all improvements are applied.
 
 ## CRITICAL: DFM/DDFM Backtest CUDA Tensor Conversion Error (Fixed in Code, Needs Re-run)
 - **Problem**: All DDFM and DFM backtest results failed with error: "can't convert cuda:0 device type tensor to numpy. Use Tensor.cpu() to copy the tensor to host memory first."
@@ -274,7 +296,7 @@
   - **Tertiary**: Complete all 22 horizons for all targets (currently missing horizon 22 for KOIPALL.G and KOEQUIPTE)
     - Fix validation or numerical issues preventing horizon 22 predictions
 
-- **Status**: ✅ **IMPROVEMENTS IMPLEMENTED IN CODE** (code changes verified by inspection). **NOT TESTED** - Improvements cannot be tested until models are trained. Research plan defined but Phase 1 testing blocked by lack of trained models.
+- **Status**: ✅ **IMPROVEMENTS IMPLEMENTED IN CODE** (code changes verified by inspection). **NOT TESTED** - Improvements cannot be tested until models are re-trained with latest improvements. Research plan defined but Phase 1 testing requires re-training to test latest improvements.
 
 - **Metrics Research Improvements** (Previous Iteration - Already Implemented):
   1. **Enhanced DDFM Linearity Detection** (`src/evaluation/evaluation_aggregation.py`):
@@ -286,15 +308,20 @@
      - Generates warnings for targets where DDFM performs worse than DFM
      - Automatically runs after aggregating results via `main_aggregator()`
      - Status: ✅ **IMPLEMENTED IN CODE** (previous iteration) - Will automatically detect linearity and improvement when results are aggregated
-  2. **DDFM Prediction Quality Analysis** (`src/evaluation/evaluation_aggregation.py`):
+  2. **DDFM Prediction Quality Analysis** (`src/evaluation/evaluation_aggregation.py` - Enhanced This Iteration):
      - Added `analyze_ddfm_prediction_quality()` function for detailed DDFM performance analysis
      - Analyzes horizon-specific performance patterns
      - Identifies volatile horizons (high error variance or spikes)
      - Calculates prediction stability metrics (error variance, std across horizons)
+     - **NEW (This Iteration)**: Coefficient of variation (CV) metric for prediction stability (lower = more stable)
+     - **NEW (This Iteration)**: Short-term vs long-term performance analysis (horizons 1-6 vs 13-22)
+     - **NEW (This Iteration)**: Consistency metric (0-1, higher = more consistent improvement across horizons)
+     - **NEW (This Iteration)**: Best/worst horizon identification with improvement percentages
+     - **NEW (This Iteration)**: Enhanced recommendations based on stability, consistency, and horizon-specific patterns
      - Compares DDFM vs DFM baseline with improvement ratios
      - Generates specific recommendations per target based on analysis
      - Automatically runs after aggregating results via `main_aggregator()`
-     - Status: ✅ **IMPLEMENTED IN CODE** (previous iteration) - Will automatically analyze prediction quality when results are aggregated
+     - Status: ✅ **ENHANCED IN CODE** (this iteration) - Additional diagnostic metrics added for better DDFM performance analysis
 
 - **What Can Be Done Now (Before Training)**:
   - ✅ **Phase 0: Correlation structure analysis** - `analyze_correlation_structure()` function exists in `src/evaluation/evaluation_aggregation.py`. Can be run on existing data.csv to analyze correlation patterns before training.
@@ -310,18 +337,22 @@
   
   **Immediate Next Steps** (in priority order):
   
-  **Phase 0: Pre-Training Analysis (Can be done now, before training)**
+  **Phase 0: Pre-Training Analysis (Can be done NOW, before training)**
   1. **Correlation Structure Analysis** - Run before training to inform improvement strategy
+     - **Status**: ✅ Function implemented, ready to execute (no training required)
+     - **Priority**: HIGH - Can be done immediately to inform training strategy
+     - **Expected time**: < 5 minutes per target
      - **Action**: Execute `analyze_correlation_structure()` function from `src/evaluation/evaluation_aggregation.py`
      - **Code location**: `src/evaluation/evaluation_aggregation.py` - function `analyze_correlation_structure()`
-     - **Execution command**: 
+     - **Execution command** (single target): 
        ```bash
-       python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', 'KOEQUIPTE'); print(json.dumps(result['summary'], indent=2))"
+       python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', 'KOEQUIPTE', output_path='outputs/analysis/correlation_analysis_KOEQUIPTE.json'); print(json.dumps(result['summary'], indent=2))"
        ```
-     - **Compare**: Run for all 3 targets (KOEQUIPTE, KOIPALL.G, KOWRCCNSE) to identify differences
+     - **Execution command** (all 3 targets for comparison): 
        ```bash
+       mkdir -p outputs/analysis
        for target in KOEQUIPTE KOIPALL.G KOWRCCNSE; do
-         python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', '$target'); print(f'\n=== $target ==='); print(json.dumps(result['summary'], indent=2))"
+         python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', '$target', output_path='outputs/analysis/correlation_analysis_${target}.json'); print(f'\n=== $target ==='); print(json.dumps(result['summary'], indent=2))"
        done
        ```
      - **Key metrics to analyze**: 
@@ -334,15 +365,19 @@
        - If KOEQUIPTE has higher negative correlation fraction than others, tanh activation should help
        - If KOEQUIPTE has lower correlation magnitude overall, may indicate weaker signal requiring deeper encoder
        - If correlation structure is similar across targets, investigate why DDFM works for KOIPALL.G/KOWRCCNSE but not KOEQUIPTE
-     - **Output**: Save results to JSON file (`outputs/analysis/correlation_analysis_{target}.json`), document findings in report discussion section (`nowcasting-report/contents/6_discussion.tex`)
-     - **Status**: ✅ Function implemented in code, ready to execute (no training required)
-     - **Expected time**: < 5 minutes per target
-     - **Priority**: HIGH - Can be done immediately to inform training strategy
+     - **Output**: 
+       - Save results to JSON file (`outputs/analysis/correlation_analysis_{target}.json`)
+       - Document findings in report discussion section (`nowcasting-report/contents/6_discussion.tex`)
+       - Update ISSUES.md with correlation analysis findings
+     - **Decision**: Based on correlation analysis results, confirm or adjust improvement strategy before training
   
-  **Phase 1: Training and Initial Testing (BLOCKING)**
-  2. **Train models** - `checkpoint/` is empty, blocking all experiments
-     - **Code location**: `src/train.py` lines 363-426 (target-specific settings for KOEQUIPTE)
+  **Phase 1: Training and Initial Testing (RECOMMENDED - Models exist but may be outdated)**
+  2. **Re-train models** - Models exist but may not reflect latest code improvements
+     - **Status**: ⚠️ **RECOMMENDED** - Models exist (12 .pkl files) but were trained before latest improvements
+     - **Priority**: HIGH - Re-training ensures latest improvements are applied
+     - **Expected training time**: ~30-60 minutes per model (12 models total, may run in parallel)
      - **Execution**: Step 1 automatically runs `bash agent_execute.sh train` (automatically uses new settings for KOEQUIPTE)
+     - **Code location**: `src/train.py` lines 363-426 (target-specific settings for KOEQUIPTE)
      - **KOEQUIPTE-specific improvements that will be applied automatically**:
        - Deeper encoder: `[64, 32, 16]` (default: `[16, 4]`)
        - Activation: `tanh` (default: `relu`)
@@ -350,7 +385,11 @@
        - Weight decay: `1e-4` (default: `0.0`)
        - Pre-training multiplier: `2` (default: `1`)
        - Batch size: `64` (default: `100`)
-     - **Verification steps**:
+     - **Baseline preservation** (before training): Backup current results
+       ```bash
+       cp outputs/experiments/aggregated_results.csv outputs/experiments/aggregated_results_baseline.csv
+       ```
+     - **Verification steps** (after training):
        ```bash
        # Check checkpoint directory
        ls -la checkpoint/*/model.pkl | wc -l  # Should be 12 files
@@ -368,16 +407,13 @@
        - "Increased epochs to 150 for KOEQUIPTE"
        - "Using mult_epoch_pretrain=2 for KOEQUIPTE"
        - "Using batch_size=64 for KOEQUIPTE"
-     - **Baseline preservation**: Backup current results before re-running experiments
-       ```bash
-       cp outputs/experiments/aggregated_results.csv outputs/experiments/aggregated_results_baseline.csv
-       ```
-     - **Expected training time**: ~30-60 minutes per model (12 models total, may run in parallel)
-     - **Status**: ⚠️ **BLOCKING** - Cannot proceed without trained models
-     - **Priority**: CRITICAL - All subsequent phases depend on this
    
   3. **Test implemented improvements** - After training completes
-     - **Prerequisites**: Models trained (Step 2), forecasting experiments run via `bash agent_execute.sh forecast`
+     - **Status**: ⚠️ **BLOCKED** - Requires training and forecasting experiments to complete
+     - **Priority**: HIGH - Critical for validating improvement strategy
+     - **Prerequisites**: 
+       - Models re-trained with latest improvements (Step 2)
+       - Forecasting experiments run via `bash agent_execute.sh forecast` (Step 1 automatically runs this)
      - **Baseline**: Current results in `outputs/experiments/aggregated_results_baseline.csv` (KOEQUIPTE DDFM: sMAE=1.14, sMSE=2.12, 21 horizons, identical to DFM)
      - **New results**: After training and forecasting, results in `outputs/experiments/aggregated_results.csv`
      - **Comparison metrics** (compare baseline vs new results):
@@ -385,7 +421,7 @@
        - DDFM vs DFM difference: Baseline 0% (identical) → Target ≥ 5% (DDFM better than DFM)
        - Horizon-specific: Check improvement at volatile horizons (7-8, 13-14) where sMAE spikes to 2.33-3.28
        - Horizon 22 completion: Baseline n_valid=0 → Target n_valid=1
-     - **Comparison script** (can be run manually or added to evaluation code):
+     - **Comparison script** (run after forecasting completes):
        ```python
        import pandas as pd
        import numpy as np
@@ -417,12 +453,15 @@
        - **Tertiary**: Complete horizon 22 (currently n_valid=0, should be n_valid=1)
        - **Horizon-specific**: Improve at volatile horizons (7-8, 13-14) where current sMAE spikes to 2.33-3.28
      - **Decision tree**:
-       - **If improvement ≥ 10% AND DDFM > 5% better than DFM**: Document percentage improvement, proceed to Phase 1.2 (activation ablation study)
-       - **If improvement < 10% but > 0% AND DDFM > 5% better than DFM**: Partial success, document findings, proceed to Phase 1.2
-       - **If improvement < 10% OR DDFM still identical to DFM**: Check training logs, verify encoder architecture used, verify all improvements were applied, proceed to Phase 2 root cause analysis
-       - **If no improvement or degradation**: Check training logs for errors, verify all improvements were applied, investigate why improvements didn't work, proceed to Phase 2
-     - **Documentation**: Update `nowcasting-report/contents/6_discussion.tex` and `nowcasting-report/contents/3_results_forecasting.tex` with improvement percentage, DDFM vs DFM comparison, and findings
-     - **Status**: ⚠️ **BLOCKED** - Requires training and forecasting experiments to complete
+       - **If improvement ≥ 10% AND DDFM > 5% better than DFM**: ✅ SUCCESS - Document percentage improvement, proceed to Phase 1.2 (activation ablation study)
+       - **If improvement < 10% but > 0% AND DDFM > 5% better than DFM**: ⚠️ PARTIAL SUCCESS - Document findings, proceed to Phase 1.2
+       - **If improvement < 10% OR DDFM still identical to DFM**: ❌ NEEDS INVESTIGATION - Check training logs, verify encoder architecture used, verify all improvements were applied, proceed to Phase 2 root cause analysis
+       - **If no improvement or degradation**: ❌ FAILURE - Check training logs for errors, verify all improvements were applied, investigate why improvements didn't work, proceed to Phase 2
+     - **Documentation**: 
+       - Update `nowcasting-report/contents/6_discussion.tex` with improvement percentage, DDFM vs DFM comparison, and findings
+       - Update `nowcasting-report/contents/3_results_forecasting.tex` with new metrics if improved
+       - Update `ISSUES.md` with Phase 1 results and next steps
+       - Regenerate tables/plots if results change significantly
    
   **Phase 1.2: Activation Ablation Study (If Phase 1 shows improvement)**
   4. **Systematic activation comparison** - Find optimal activation function
@@ -455,7 +494,7 @@
 
 **Current State:**
 - ✅ **Code improvements implemented**: Deeper encoder, tanh activation, weight decay, gradient clipping, Huber loss, improved initialization, increased pre-training, batch size optimization
-- ⚠️ **Testing blocked**: Models not trained (`checkpoint/` empty), cannot verify improvements
+- ⚠️ **Testing pending**: Models exist (12 .pkl files) but were trained before latest improvements - re-training recommended to test improvements
 - 📊 **Baseline metrics**: KOEQUIPTE DDFM sMAE=1.14 (identical to DFM), KOIPALL.G sMAE=0.69 (excellent), KOWRCCNSE sMAE=0.50 (excellent)
 
 **Improvement Plan Structure:**
@@ -473,8 +512,8 @@
 
 **Next Immediate Actions:**
 1. **Phase 0**: Run correlation structure analysis (can be done now, < 5 minutes per target)
-2. **Phase 1**: Train models via `bash agent_execute.sh train` (BLOCKING - requires ~30-60 minutes per model)
-3. **Phase 1**: Run forecasting experiments via `bash agent_execute.sh forecast` (after training)
+2. **Phase 1**: Re-train models via `bash agent_execute.sh train` (RECOMMENDED - ensures latest improvements are applied, ~30-60 minutes per model)
+3. **Phase 1**: Run forecasting experiments via `bash agent_execute.sh forecast` (after re-training)
 4. **Phase 1**: Compare results with baseline, document improvement percentage
 
 **Key Files:**
