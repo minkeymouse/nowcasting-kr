@@ -358,14 +358,25 @@ def _train_forecaster(
         # KOEQUIPTE shows identical performance to DFM, suggesting encoder needs more capacity
         # Use larger/deeper encoder for targets that may benefit from more nonlinear capacity
         target_series = _extract_target_series(cfg)
-        if target_series == 'KOEQUIPTE' and encoder_layers == [16, 4]:
-            # KOEQUIPTE: Use deeper encoder to capture more complex nonlinear relationships
-            # Current [16, 4] may be too small - try [64, 32, 16] for more capacity
-            encoder_layers = model_params.get('encoder_layers', [64, 32, 16])
-            logger.info(f"Using target-specific encoder architecture for {target_series}: {encoder_layers}")
+        activation = model_params.get('activation', 'relu')  # Default activation function
+        
+        if target_series == 'KOEQUIPTE':
+            # KOEQUIPTE: Use deeper encoder and different activation to capture nonlinear relationships
+            # Current encoder may be learning only linear features (identical to DFM performance)
+            # Improvements:
+            # 1. Use deeper encoder [64, 32, 16] instead of default [16, 4] for more capacity
+            # 2. Use 'tanh' activation instead of 'relu' to better capture negative correlations
+            #    (ReLU zeros negative values, which may prevent learning negative factor relationships)
+            if encoder_layers == [16, 4] or encoder_layers is None:
+                encoder_layers = [64, 32, 16]
+                logger.info(f"Using target-specific encoder architecture for {target_series}: {encoder_layers}")
+            # Use tanh activation for KOEQUIPTE (unless explicitly overridden in config)
+            if activation == 'relu' and 'activation' not in model_params:
+                activation = 'tanh'
+                logger.info(f"Using tanh activation for {target_series} to better capture negative correlations")
             # Also increase epochs slightly for more complex architecture
             if epochs == 100:
-                epochs = model_params.get('epochs', 150)
+                epochs = 150
                 logger.info(f"Increased epochs to {epochs} for {target_series} with deeper encoder")
         
         # Loss function configuration (default: 'mse', can use 'huber' for robustness to outliers)
@@ -384,7 +395,8 @@ def _train_forecaster(
             learning_rate=learning_rate,
             batch_size=batch_size,
             loss_function=loss_function,
-            huber_delta=huber_delta
+            huber_delta=huber_delta,
+            activation=activation
         )
         
         target_series = _extract_target_series(cfg)
@@ -394,7 +406,7 @@ def _train_forecaster(
         clip_quantiles = model_params.get('clip_quantiles') if isinstance(model_params, dict) else None
         y_train = _apply_target_specific_preprocessing(y_train, target_series, clip_quantiles)
         y_train = set_dataframe_frequency(y_train)
-        logger.info(f"Epochs: {epochs}, Encoder layers: {encoder_layers}, Factors: {num_factors}, Loss: {loss_function}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
+        logger.info(f"Epochs: {epochs}, Encoder layers: {encoder_layers}, Activation: {activation}, Factors: {num_factors}, Loss: {loss_function}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
         
     elif model_type == 'arima':
         if not target_series:
