@@ -10,7 +10,7 @@
   - **KOIPALL.G**: DDFM sMAE=0.69 (21.7x better than DFM sMAE=14.97) - excellent
   - **KOWRCCNSE**: DDFM sMAE=0.50 (5.6x better than DFM sMAE=2.78) - excellent
 - ⚠️ **Phase 0 not executed**: Correlation structure analysis function exists but has not been run yet - can be done immediately without training (~15 minutes)
-- ⚠️ **This iteration**: Updated ISSUES.md with actual quantitative analysis results from aggregated_results.csv - no code changes or experiments executed
+- ⚠️ **This iteration**: Updated documentation (STATUS.md, ISSUES.md, CONTEXT.md) to accurately reflect current state - no code changes, no experiments, no table/plot regeneration
 
 **Immediate Next Steps (Priority Order - Concrete Actions):**
 
@@ -139,15 +139,17 @@ See detailed plan below for specific actions and execution commands.
 **EXECUTIVE SUMMARY - Concrete Actionable Plan:**
 - **Problem**: KOEQUIPTE DDFM shows linear collapse (sMAE=1.14, identical to DFM at all 21 horizons, max difference 0.00212)
 - **Goal**: Improve KOEQUIPTE DDFM sMAE from 1.14 to < 1.03 (≥10% improvement) AND make DDFM ≥ 5% better than DFM
-- **Current Status**: Code improvements implemented but NOT tested (models trained before improvements)
+- **Current Status**: Code improvements implemented but NOT tested (models NOT trained, checkpoint/ is empty)
 - **Next Immediate Action**: Phase 0 correlation analysis (15 minutes, no training required) → Then Phase 1 re-training and testing
 - **Success Metrics**: sMAE < 1.03, DDFM > 5% better than DFM, linearity score < 0.95, horizon 22 completed
-- **Metrics Research Strategy**: Use existing comprehensive DDFM metrics analysis functions to guide improvements:
-  - `detect_ddfm_linearity()`: Monitor linearity score (target: < 0.95, current: ~0.99 for KOEQUIPTE)
-  - `analyze_ddfm_prediction_quality()`: Track improvement ratio, consistency, error distribution patterns
-  - `analyze_correlation_structure()`: Phase 0 analysis to inform improvement strategy before training
-  - Enhanced error distribution metrics: Use skewness, kurtosis, bias-variance decomposition to diagnose issues
-  - Horizon-weighted metrics: Prioritize short-term improvements (1-6 months, 2x weight)
+- **Metrics Research Strategy**: Use existing comprehensive DDFM metrics analysis functions (already implemented) to guide improvements:
+  - **Phase 0 (Pre-training)**: `analyze_correlation_structure()` - Analyze data structure to inform improvement strategy (~15 min, no training required)
+  - **Phase 1 (Post-training)**: `detect_ddfm_linearity()` + `analyze_ddfm_prediction_quality()` - Automatically run after aggregation to monitor improvements
+  - **Key Metrics to Track**:
+    - Linearity score: Target < 0.95 (current: ~0.99 for KOEQUIPTE)
+    - Improvement ratio: Target > 10% (current: ~0% for KOEQUIPTE)
+    - Error distribution differences: Target skewness diff > 0.2, kurtosis diff > 1.0
+    - Horizon-weighted improvement: Target > 5% (prioritizes short-term 1-6 months)
 
 **CONCRETE EXECUTION CHECKLIST (Priority Order):**
 
@@ -281,65 +283,35 @@ See detailed plan below for specific actions and execution commands.
   
   **DDFM Metrics Research Strategy - Using Existing Analysis Functions:**
   
-  The codebase already includes comprehensive DDFM metrics analysis functions that will be used to guide improvements:
+  The codebase already includes comprehensive DDFM metrics analysis functions (all implemented in `src/evaluation/evaluation_aggregation.py` and `src/evaluation/evaluation_metrics.py`). These functions automatically run after result aggregation and provide actionable insights:
   
-  1. **Linearity Detection** (`detect_ddfm_linearity()`):
-     - **Current State**: KOEQUIPTE linearity score ~0.99 (near-perfect linear collapse)
-     - **Target**: < 0.95 after improvements
-     - **Usage**: Run after each experiment iteration to monitor if improvements reduce linearity
-     - **Metrics Tracked**: Linearity score (0-1), similarity by horizon, performance improvement ratio
-     - **Decision Criteria**: If linearity score decreases from 0.99 to < 0.95, improvements are working
-  
-  2. **Prediction Quality Analysis** (`analyze_ddfm_prediction_quality()`):
-     - **Current State**: KOEQUIPTE improvement ratio ~0% (no improvement over DFM)
-     - **Target**: Improvement ratio > 10% (sMAE improvement from 1.14 to < 1.03)
-     - **Usage**: Run after each experiment to track improvement patterns across horizons
-     - **Metrics Tracked**: 
-       - Improvement ratio (DDFM vs DFM, target: > 10%)
-       - Consistency metric (0-1, target: > 0.7 for consistent improvement)
-       - Horizon-weighted improvement (prioritizes short-term, target: > 5%)
-       - Linear collapse risk (0-1, target: < 0.5)
-       - Error pattern similarity (target: < 0.8 to show nonlinear benefit)
-       - Horizon error correlation (target: < 0.7 to show nonlinear benefit)
-     - **Decision Criteria**: If improvement ratio > 10% AND consistency > 0.7, improvements are successful
-  
-  3. **Error Distribution Analysis** (Enhanced metrics in `calculate_standardized_metrics()`):
-     - **Current State**: KOEQUIPTE DDFM and DFM error distributions are nearly identical
-     - **Target**: After improvements, DDFM should show different error patterns (lower bias, different skewness)
-     - **Metrics Tracked**:
-       - Error skewness (target: DDFM should differ from DFM by > 0.2)
-       - Error kurtosis (target: DDFM should differ from DFM by > 1.0)
-       - Error bias squared (target: Lower systematic bias for DDFM)
-       - Error variance (target: Similar or lower variance for DDFM)
-       - Error concentration (target: < 0.7, errors should be more uniform)
-       - Prediction bias (target: |bias| < 0.1, no systematic over/underprediction)
-     - **Usage**: Compare error distributions between DDFM and DFM to identify if encoder learns different patterns
-     - **Decision Criteria**: If error distributions differ significantly (skewness diff > 0.2, kurtosis diff > 1.0), encoder is learning nonlinear features
-  
-  4. **Correlation Structure Analysis** (`analyze_correlation_structure()`, Phase 0):
-     - **Status**: Function implemented, NOT YET EXECUTED (can be done immediately, no training required)
+  **1. Phase 0: Correlation Structure Analysis** (`analyze_correlation_structure()`) - **IMMEDIATE ACTION**
+     - **Status**: ✅ Implemented, ⚠️ NOT YET EXECUTED (can run now, ~15 min, no training required)
      - **Purpose**: Understand why KOEQUIPTE shows linear collapse while others show strong nonlinear benefits
-     - **Key Metrics to Extract**:
-       - `negative_fraction`: Fraction of negative correlations (if KOEQUIPTE > 0.3 and others < 0.2: tanh activation justified)
-       - `strong_negative_count`: Count of correlations < -0.3 (indicates strong negative relationships)
-       - `mean_correlation`: Average correlation magnitude (if KOEQUIPTE < 0.1 and others > 0.2: deeper encoder needed)
-       - `std_correlation`: Correlation distribution spread (indicates structural complexity)
+     - **Key Metrics**: `negative_fraction`, `strong_negative_count`, `mean_correlation`, `std_correlation`
      - **Decision Criteria**: 
        - If KOEQUIPTE `negative_fraction > 0.3` AND others < 0.2 → tanh activation strategy confirmed
        - If KOEQUIPTE `mean_correlation < 0.1` AND others > 0.2 → deeper encoder strategy confirmed
-       - If structures are similar → investigate training dynamics (learning rate, initialization, convergence)
+     - **Action**: Execute before training to inform improvement strategy
   
-  5. **Horizon-Weighted Metrics** (`calculate_horizon_weighted_metrics()`):
-     - **Purpose**: Prioritize short-term forecasting (1-6 months, 2x weight) over long-term (13-22 months, 0.5x weight)
-     - **Current State**: KOEQUIPTE shows similar performance across all horizons (linear collapse)
-     - **Target**: After improvements, short-term horizons should show better improvement than long-term
-     - **Usage**: Calculate weighted improvement percentage to prioritize practical forecasting needs
-     - **Decision Criteria**: If weighted improvement > 5%, improvements are effective for practical use
+  **2. Phase 1: Automatic Analysis After Training** (Runs automatically after `main_aggregator()`)
+     - **Linearity Detection** (`detect_ddfm_linearity()`):
+       - **Current**: KOEQUIPTE linearity score ~0.99 (near-perfect linear collapse)
+       - **Target**: < 0.95 after improvements
+       - **Output**: `outputs/experiments/ddfm_linearity_analysis.json`
+     - **Prediction Quality Analysis** (`analyze_ddfm_prediction_quality()`):
+       - **Current**: KOEQUIPTE improvement ratio ~0% (no improvement over DFM)
+       - **Target**: Improvement ratio > 10%, consistency > 0.7, linear collapse risk < 0.5
+       - **Tracks**: Improvement ratio, consistency, horizon-weighted improvement, error pattern similarity, horizon error correlation
+     - **Error Distribution Analysis** (via `calculate_standardized_metrics()`):
+       - **Current**: KOEQUIPTE DDFM and DFM error distributions nearly identical
+       - **Target**: After improvements, DDFM should differ (skewness diff > 0.2, kurtosis diff > 1.0)
+       - **Tracks**: Error skewness, kurtosis, bias-variance decomposition, error concentration
   
-  6. **Training-Aligned Metrics** (`calculate_training_aligned_metrics()`):
-     - **Purpose**: Ensure evaluation metrics match training loss function (MSE or Huber)
-     - **Usage**: Compare training loss with evaluation metrics to verify model optimization
-     - **Decision Criteria**: If training loss and evaluation metrics align, model is optimizing correctly
+  **3. Metrics-Driven Decision Tree:**
+     - **If linearity score < 0.95 AND improvement ratio > 10%**: ✅ SUCCESS → Proceed to Phase 1.2 (activation ablation)
+     - **If improvement 5-10% OR linearity 0.95-0.98**: ⚠️ PARTIAL → Investigate, proceed to Phase 1.2 with caution
+     - **If improvement < 5% OR linearity > 0.98**: ❌ FAILURE → Proceed to Phase 2 (advanced improvements)
   
   **Metrics-Driven Improvement Workflow:**
   
@@ -672,12 +644,27 @@ See detailed plan below for specific actions and execution commands.
      - Helps distinguish between systematic improvements and random noise at specific horizons
      - Integrated into `analyze_ddfm_prediction_quality()` for automatic analysis
      - Status: ✅ **IMPLEMENTED IN CODE** (current iteration) - Will automatically analyze improvement persistence when results are aggregated
-  11. **Temporal Consistency Metrics** (`src/evaluation/evaluation_metrics.py` - Current Iteration):
+  11. **Temporal Consistency Metrics** (`src/evaluation/evaluation_metrics.py` - Previous Iteration):
      - Added `calculate_temporal_consistency_metrics()` function to detect sudden jumps in predictions across consecutive horizons
      - Calculates temporal consistency score (0-1), jump count, jump fraction, and jump magnitudes
      - Helps detect model instability or factor dynamics issues that cause inconsistent predictions
      - Available for use in evaluation pipeline (can be integrated into analysis functions as needed)
-     - Status: ✅ **IMPLEMENTED IN CODE** (current iteration) - Available for use in evaluation pipeline
+     - Status: ✅ **IMPLEMENTED IN CODE** (previous iteration) - Available for use in evaluation pipeline
+  12. **Robust Statistics and Bootstrap Confidence Intervals** (`src/evaluation/evaluation_metrics.py` - Current Iteration):
+     - Added `calculate_robust_metrics()` function for median-based metrics (more resistant to outliers)
+       - Calculates robust_sMAE, robust_sMSE, robust_sRMSE using median instead of mean
+       - Provides IQR-based metrics and outlier detection using IQR method
+       - Uses MAD (Median Absolute Deviation) for robust normalization
+     - Added `calculate_bootstrap_confidence_intervals()` function for uncertainty quantification
+       - Provides 95% confidence intervals for sMAE, sMSE, sRMSE using bootstrap resampling
+       - Uses 1000 bootstrap samples by default for statistical reliability
+       - Helps assess uncertainty in DDFM performance evaluation
+     - Added `aggregate_robust_metrics_across_horizons()` function for robust horizon aggregation
+       - Aggregates metrics across horizons using median instead of mean
+       - Provides IQR statistics for metric spread across horizons
+       - More resistant to outliers from specific problematic horizons
+     - **Rationale**: Mean-based metrics are sensitive to outliers from numerical instability or model issues at specific horizons. Robust statistics provide more reliable performance evaluation, especially for DDFM where some horizons may have extreme errors. Bootstrap confidence intervals provide uncertainty quantification for more reliable performance comparisons.
+     - **Status**: ✅ **IMPLEMENTED IN CODE** (current iteration) - Robust metrics improve DDFM performance evaluation reliability and provide uncertainty quantification
 
 - **What Can Be Done Now (Before Training)**:
   - ✅ **Phase 0: Correlation structure analysis** - `analyze_correlation_structure()` function exists in `src/evaluation/evaluation_aggregation.py`. Can be run on existing data.csv to analyze correlation patterns before training.
