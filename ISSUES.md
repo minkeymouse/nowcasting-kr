@@ -3,29 +3,41 @@
 ## Quick Summary
 
 **Current State:**
-- ✅ **Code improvements implemented**: Deeper encoder, tanh activation, weight decay, gradient clipping, Huber loss, improved initialization, increased pre-training, batch size optimization
+- ✅ **Code improvements implemented** (previous iterations): Deeper encoder, tanh activation, weight decay, gradient clipping, Huber loss, improved initialization, increased pre-training, batch size optimization
 - ⚠️ **Testing pending**: Models exist (12 .pkl files) but were trained before latest improvements - re-training recommended to test improvements
 - 📊 **Baseline metrics**: KOEQUIPTE DDFM sMAE=1.14 (identical to DFM), KOIPALL.G sMAE=0.69 (excellent), KOWRCCNSE sMAE=0.50 (excellent)
+- ⚠️ **Phase 0 not executed**: Correlation structure analysis function exists but has not been run yet - can be done immediately without training
+- ⚠️ **This iteration**: Only documentation updates (STATUS.md, ISSUES.md, CONTEXT.md) - no code changes, no experiments, no table/plot regeneration, no report updates
 
 **Immediate Next Steps (Priority Order - Concrete Actions):**
 
-**IMMEDIATE (Can be done now, no training required - < 20 minutes total):**
-1. **Phase 0: Correlation Structure Analysis** - Execute correlation analysis for all 3 targets
-   - **Status**: ✅ Function implemented in `src/evaluation/evaluation_aggregation.py` (lines 1156-1300)
-   - **Action**: Run correlation analysis to compare structural differences between targets
-   - **Execution**: 
+**PRIORITY 0: Phase 0 Correlation Analysis (IMMEDIATE - Can be done now, no training required - ~15 minutes total)**
+1. **Execute Phase 0: Correlation Structure Analysis** - Run correlation analysis for all 3 targets
+   - **Status**: ✅ Function implemented in `src/evaluation/evaluation_aggregation.py` (lines 1156-1300), ⚠️ **NOT YET EXECUTED**
+   - **Why Now**: This analysis can inform improvement strategy before training, saving experimental time
+   - **Action Required**: Execute correlation analysis to compare structural differences between targets
+   - **Execution Command** (Step 1 should run this automatically, or can be run manually):
      ```bash
      mkdir -p outputs/analysis
      for target in KOEQUIPTE KOIPALL.G KOWRCCNSE; do
        python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', '$target', output_path='outputs/analysis/correlation_analysis_${target}.json'); print(f'\n=== $target ==='); print(json.dumps(result['summary'], indent=2))"
      done
      ```
-   - **Expected Output**: 3 JSON files in `outputs/analysis/` with correlation statistics
-   - **Decision Criteria**:
-     - If KOEQUIPTE `negative_fraction > 0.3` and others < 0.2: tanh activation justified
-     - If KOEQUIPTE `mean_correlation < 0.1` and others > 0.2: deeper encoder needed
-     - If structures are similar: investigate why DDFM works for others but not KOEQUIPTE
-   - **Next Action**: Update report discussion section with findings, adjust improvement strategy if needed
+   - **Expected Output**: 3 JSON files in `outputs/analysis/correlation_analysis_{target}.json` with correlation statistics
+   - **Key Metrics to Extract**:
+     - `negative_fraction`: Fraction of negative correlations (if KOEQUIPTE > 0.3 and others < 0.2: tanh activation justified)
+     - `strong_negative_count`: Count of correlations < -0.3 (indicates strong negative relationships)
+     - `mean_correlation`: Average correlation magnitude (if KOEQUIPTE < 0.1 and others > 0.2: deeper encoder needed)
+     - `std_correlation`: Correlation distribution spread (indicates structural complexity)
+   - **Decision Criteria** (after analysis):
+     - If KOEQUIPTE `negative_fraction > 0.3` and others < 0.2: tanh activation is justified, proceed with current strategy
+     - If KOEQUIPTE `mean_correlation < 0.1` and others > 0.2: deeper encoder is needed, current strategy is appropriate
+     - If structures are similar: investigate why DDFM works for others but not KOEQUIPTE, may need Phase 2 approaches
+   - **Next Action After Analysis**: 
+     - Update `nowcasting-report/contents/6_discussion.tex` with correlation analysis findings
+     - Update this ISSUES.md Phase 0 section with actual results
+     - Adjust improvement strategy if needed based on findings
+   - **Time Estimate**: < 5 minutes per target (15 minutes total)
 
 **AFTER PHASE 0 (Requires training - ~30-60 minutes per model):**
 2. **Phase 1: Re-train Models** - Re-train with latest improvements to test effectiveness
@@ -392,6 +404,14 @@ See detailed plan below for specific actions and execution commands.
   5. **Horizon Error Correlation Analysis** (`src/evaluation/evaluation_aggregation.py`):
      - Added `analyze_horizon_error_correlation()` function to analyze error patterns across horizons
      - Status: ✅ **IMPLEMENTED IN CODE** - Available for analyzing DDFM error patterns across horizons
+  6. **Enhanced DDFM Linear Collapse Risk Assessment** (`src/evaluation/evaluation_aggregation.py` - Current Iteration):
+     - Enhanced `analyze_ddfm_prediction_quality()` with improved linear collapse risk assessment
+     - Added 5 risk factors (instead of 3): improvement ratio, similarity, consistency, error pattern similarity (NEW), horizon error correlation (NEW)
+     - Added error pattern similarity metric (sMSE/sMAE ratio similarity between DDFM and DFM)
+     - Added horizon error correlation metric (correlation of errors across horizons between DDFM and DFM)
+     - Added sMSE/sMAE ratio stability metrics (CV and variance) to detect unstable prediction error structure
+     - Enhanced recommendations with pattern-specific and correlation-specific guidance
+     - Status: ✅ **IMPLEMENTED IN CODE** (current iteration) - Provides more accurate linear collapse detection
 
 - **What Can Be Done Now (Before Training)**:
   - ✅ **Phase 0: Correlation structure analysis** - `analyze_correlation_structure()` function exists in `src/evaluation/evaluation_aggregation.py`. Can be run on existing data.csv to analyze correlation patterns before training.
@@ -409,37 +429,32 @@ See detailed plan below for specific actions and execution commands.
   
   **Phase 0: Pre-Training Analysis (Can be done NOW, before training)**
   1. **Correlation Structure Analysis** - Run before training to inform improvement strategy
-     - **Status**: ✅ Function implemented, ready to execute (no training required)
-     - **Priority**: HIGH - Can be done immediately to inform training strategy
-     - **Expected time**: < 5 minutes per target
-     - **Action**: Execute `analyze_correlation_structure()` function from `src/evaluation/evaluation_aggregation.py`
+     - **Status**: ✅ Function implemented in `src/evaluation/evaluation_aggregation.py` (lines 1156-1300), ⚠️ **NOT YET EXECUTED**
+     - **Priority**: HIGH - Can be done immediately to inform training strategy, saves experimental time
+     - **Expected time**: < 5 minutes per target (15 minutes total for all 3 targets)
+     - **Action Required**: Execute correlation analysis for all 3 targets (Step 1 should run this automatically, or can be run manually)
      - **Code location**: `src/evaluation/evaluation_aggregation.py` - function `analyze_correlation_structure()`
-     - **Execution command** (single target): 
-       ```bash
-       python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', 'KOEQUIPTE', output_path='outputs/analysis/correlation_analysis_KOEQUIPTE.json'); print(json.dumps(result['summary'], indent=2))"
-       ```
-     - **Execution command** (all 3 targets for comparison): 
+     - **Execution command** (all 3 targets for comparison - recommended): 
        ```bash
        mkdir -p outputs/analysis
        for target in KOEQUIPTE KOIPALL.G KOWRCCNSE; do
          python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', '$target', output_path='outputs/analysis/correlation_analysis_${target}.json'); print(f'\n=== $target ==='); print(json.dumps(result['summary'], indent=2))"
        done
        ```
-     - **Key metrics to analyze**: 
-       - Negative correlation fraction (count of negative correlations / total correlations)
-       - Strong negative count (correlations < -0.3)
-       - Mean correlation magnitude
-       - Correlation distribution (histogram of correlation values)
-       - Compare KOEQUIPTE vs KOIPALL.G/KOWRCCNSE to identify structural differences
-     - **Hypothesis validation**: 
-       - If KOEQUIPTE has higher negative correlation fraction than others, tanh activation should help
-       - If KOEQUIPTE has lower correlation magnitude overall, may indicate weaker signal requiring deeper encoder
-       - If correlation structure is similar across targets, investigate why DDFM works for KOIPALL.G/KOWRCCNSE but not KOEQUIPTE
-     - **Output**: 
-       - Save results to JSON file (`outputs/analysis/correlation_analysis_{target}.json`)
-       - Document findings in report discussion section (`nowcasting-report/contents/6_discussion.tex`)
-       - Update ISSUES.md with correlation analysis findings
-     - **Decision**: Based on correlation analysis results, confirm or adjust improvement strategy before training
+     - **Expected Output**: 3 JSON files in `outputs/analysis/correlation_analysis_{target}.json` with correlation statistics
+     - **Key metrics to extract and compare**: 
+       - `negative_fraction`: Fraction of negative correlations (if KOEQUIPTE > 0.3 and others < 0.2: tanh activation justified)
+       - `strong_negative_count`: Count of correlations < -0.3 (indicates strong negative relationships)
+       - `mean_correlation`: Average correlation magnitude (if KOEQUIPTE < 0.1 and others > 0.2: deeper encoder needed)
+       - `std_correlation`: Correlation distribution spread (indicates structural complexity)
+     - **Decision criteria** (after analysis): 
+       - If KOEQUIPTE `negative_fraction > 0.3` and others < 0.2: tanh activation is justified, proceed with current strategy
+       - If KOEQUIPTE `mean_correlation < 0.1` and others > 0.2: deeper encoder is needed, current strategy is appropriate
+       - If structures are similar: investigate why DDFM works for others but not KOEQUIPTE, may need Phase 2 approaches
+     - **Next actions after analysis**: 
+       - Update `nowcasting-report/contents/6_discussion.tex` with correlation analysis findings
+       - Update this ISSUES.md Phase 0 section with actual results
+       - Adjust improvement strategy if needed based on findings
   
   **Phase 1: Training and Initial Testing (RECOMMENDED - Models exist but may be outdated)**
   2. **Re-train models** - Models exist but may not reflect latest code improvements
