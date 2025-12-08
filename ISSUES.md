@@ -23,6 +23,16 @@
   - All now convert CUDA tensors to CPU before numpy conversion using `.cpu().numpy()`
 - **Status**: ✅ **FIXED IN CODE** (code changes verified by inspection). **NOT VERIFIED BY EXPERIMENTS** - Backtest experiments MUST be re-run via `bash agent_execute.sh backtest` after training to verify fix works. Current backtest JSON files all show "failed" status with CUDA errors. Fix may work, but needs experimental verification.
 
+## Backtest JSON Structure Mismatch (Fixed in Code - This Iteration)
+- **Problem**: The `nowcast()` function saved backtest results in a flat `results` array, but table/plot generation code expects a `results_by_timepoint` structure with nested timepoint data.
+- **Resolution** (This Iteration): Updated `nowcast()` function in `src/train.py` (lines 1365-1512) to:
+  - Default to `weeks_before=[4, 1]` if not provided
+  - Run nowcasting for each timepoint separately with appropriate data cutoffs
+  - Load actual values and calculate errors for each target month
+  - Structure results by timepoint with `monthly_results` array
+  - Keep flat `results` array for backward compatibility
+- **Status**: ✅ **FIXED IN CODE** - Not verified by experiments (blocked by lack of trained models). Current backtest JSON files all show "failed" status with CUDA errors. Once CUDA fixes are verified and backtests succeed, the new structure will be properly generated.
+
 ## ARIMA Forecasting Results Missing
 - **Problem**: ARIMA model produces no valid results (n_valid=0) for all three targets (KOIPALL.G, KOEQUIPTE, KOWRCCNSE) across all 22 forecast horizons.
 - **Impact**: ARIMA cannot be included in forecasting comparison. All ARIMA entries in aggregated_results.csv have empty sMSE, sMAE, sRMSE values. Report sections have been updated to reflect that ARIMA is excluded from comparison.
@@ -100,17 +110,15 @@
      - VAR(2) can capture multi-period dependencies but requires more data
      - Rationale: Some targets may have complex multi-period dynamics that VAR(1) cannot capture
      - Status: ✅ **IMPLEMENTED IN CODE** - Configurable via model_params['factor_order'], not yet tested (blocked by lack of trained models)
-  8. **Increased Pre-Training for KOEQUIPTE** (`src/train.py` lines 407-418, `src/models/models_forecasters.py` - This Iteration):
+  8. **Increased Pre-Training for KOEQUIPTE** (`src/train.py` lines 407-418 - This Iteration):
      - Added `mult_epoch_pretrain` parameter support to DDFMForecaster (default: 1)
      - KOEQUIPTE: Automatically uses `mult_epoch_pretrain=2` (double pre-training epochs)
-     - Pre-training helps encoder learn better nonlinear features before MCMC training starts
-     - Rationale: More pre-training epochs give encoder more time to learn nonlinear features before MCMC iterations, which can help prevent encoder from collapsing to linear behavior
-     - Status: ✅ **IMPLEMENTED IN CODE** (this iteration) - Not yet tested (blocked by lack of trained models)
+     - Rationale: More pre-training epochs give encoder more time to learn nonlinear features before MCMC iterations
+     - Status: ✅ **IMPLEMENTED IN CODE** (this iteration) - Not tested (blocked by lack of trained models)
   9. **Batch Size Optimization for KOEQUIPTE** (`src/train.py` lines 420-426 - This Iteration):
      - KOEQUIPTE: Automatically uses `batch_size=64` instead of default 100
-     - Smaller batch sizes improve gradient diversity and can help encoder escape linear solutions
-     - Rationale: Smaller batch sizes provide more diverse gradients per epoch, which can help the encoder learn nonlinear features instead of collapsing to linear PCA-like behavior
-     - Status: ✅ **IMPLEMENTED IN CODE** (this iteration) - Not yet tested (blocked by lack of trained models)
+     - Rationale: Smaller batch sizes provide more diverse gradients per epoch, helping encoder learn nonlinear features
+     - Status: ✅ **IMPLEMENTED IN CODE** (this iteration) - Not tested (blocked by lack of trained models)
   10. **Enhanced Training Stability** (`dfm-python/src/dfm_python/models/ddfm.py` - Previous Iteration):
      - Improved input clipping for deeper networks (tighter clipping range for networks with >2 layers)
      - Better numerical stability handling in training step
@@ -245,9 +253,16 @@
 
 - **Status**: ✅ **IMPROVEMENTS IMPLEMENTED IN CODE** (code changes verified by inspection). **NOT TESTED** - Improvements cannot be tested until models are trained. Research plan defined but Phase 1 testing blocked by lack of trained models.
 
+- **Metrics Research Improvements** (This Iteration):
+  1. **DDFM Linearity Detection** (`src/evaluation/evaluation_aggregation.py`):
+     - Added `detect_ddfm_linearity()` function to compare DDFM vs DFM metrics
+     - Calculates linearity scores (0-1) per target and horizon
+     - Generates warnings for targets with high linearity (≥0.95 similarity to DFM)
+     - Automatically runs after aggregating results via `main_aggregator()`
+     - Status: ✅ **IMPLEMENTED IN CODE** - Will automatically detect linearity when results are aggregated
+
 - **What Can Be Done Now (Before Training)**:
-  - ✅ **Phase 0: Correlation structure analysis** - Implemented `analyze_correlation_structure()` function in `src/evaluation/evaluation_aggregation.py` (previous iteration). Can be run on existing data.csv to analyze KOEQUIPTE correlation patterns before training. Function calculates negative/positive correlation counts, magnitude distributions, and summary statistics.
-  - ✅ **Factor order configuration** - Added `factor_order` parameter support (this iteration). Allows VAR(2) factor dynamics, configurable via model_params.
+  - ✅ **Phase 0: Correlation structure analysis** - `analyze_correlation_structure()` function exists in `src/evaluation/evaluation_aggregation.py`. Can be run on existing data.csv to analyze correlation patterns before training.
   - Code review: Verify all improvements are correctly implemented
   - Planning: Refine research plan based on current results analysis
 
@@ -263,38 +278,90 @@
   **Phase 0: Pre-Training Analysis (Can be done now)**
   1. **Correlation Structure Analysis** - Run before training to inform improvement strategy
      - **Action**: Execute `analyze_correlation_structure()` function from `src/evaluation/evaluation_aggregation.py`
-     - **Command**: `python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; result = analyze_correlation_structure('data/data.csv', 'KOEQUIPTE'); print(result['summary'])"`
+     - **Code location**: `src/evaluation/evaluation_aggregation.py` - function `analyze_correlation_structure()`
+     - **Execution command**: 
+       ```bash
+       python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', 'KOEQUIPTE'); print(json.dumps(result['summary'], indent=2))"
+       ```
      - **Compare**: Run for all 3 targets (KOEQUIPTE, KOIPALL.G, KOWRCCNSE) to identify differences
-     - **Key metrics**: Negative correlation fraction, strong negative count, mean correlation
+       ```bash
+       for target in KOEQUIPTE KOIPALL.G KOWRCCNSE; do
+         python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', '$target'); print(f'\n=== $target ==='); print(json.dumps(result['summary'], indent=2))"
+       done
+       ```
+     - **Key metrics to analyze**: 
+       - Negative correlation fraction (count of negative correlations / total correlations)
+       - Strong negative count (correlations < -0.3)
+       - Mean correlation magnitude
+       - Correlation distribution (histogram of correlation values)
      - **Hypothesis validation**: If KOEQUIPTE has higher negative correlation fraction than others, tanh activation should help
-     - **Output**: Save results to JSON, document findings in report discussion section
-     - **Status**: Function implemented, ready to execute (no training required)
+     - **Output**: Save results to JSON file (`outputs/analysis/correlation_analysis_{target}.json`), document findings in report discussion section (`nowcasting-report/contents/6_discussion.tex`)
+     - **Status**: ✅ Function implemented in code, ready to execute (no training required)
+     - **Expected time**: < 5 minutes per target
   
   **Phase 1: Training and Initial Testing (BLOCKING)**
   2. **Train models** - `checkpoint/` is empty, blocking all experiments
-     - **Execute**: `bash agent_execute.sh train` (automatically uses new settings for KOEQUIPTE)
-     - **Verification**: Check `checkpoint/` contains 12 model.pkl files (3 targets × 4 models)
-     - **Expected logs**: KOEQUIPTE DDFM should log "Using target-specific encoder architecture [64, 32, 16]", "Using tanh activation", "Using weight_decay=1e-4", "Increased epochs to 150"
-     - **Baseline preservation**: Backup current `outputs/experiments/aggregated_results.csv` before re-running experiments
+     - **Code location**: `src/train.py` lines 363-426 (target-specific settings for KOEQUIPTE)
+     - **Execution**: Step 1 automatically runs `bash agent_execute.sh train` (automatically uses new settings for KOEQUIPTE)
+     - **Verification steps**:
+       ```bash
+       # Check checkpoint directory
+       ls -la checkpoint/*/model.pkl | wc -l  # Should be 12 files
+       
+       # Verify KOEQUIPTE DDFM checkpoint exists
+       test -f checkpoint/KOEQUIPTE_DDFM/model.pkl && echo "KOEQUIPTE DDFM trained" || echo "Missing"
+       
+       # Check training logs for KOEQUIPTE DDFM
+       grep -i "target-specific\|tanh\|weight_decay\|epochs" log/KOEQUIPTE_ddfm_*.log | tail -20
+       ```
+     - **Expected log messages** (in `log/KOEQUIPTE_ddfm_*.log`):
+       - "Using target-specific encoder architecture [64, 32, 16]"
+       - "Using tanh activation for KOEQUIPTE"
+       - "Using weight_decay=1e-4 for KOEQUIPTE"
+       - "Increased epochs to 150 for KOEQUIPTE"
+       - "Using mult_epoch_pretrain=2 for KOEQUIPTE"
+       - "Using batch_size=64 for KOEQUIPTE"
+     - **Baseline preservation**: Backup current results before re-running experiments
+       ```bash
+       cp outputs/experiments/aggregated_results.csv outputs/experiments/aggregated_results_baseline.csv
+       ```
+     - **Expected training time**: ~30-60 minutes per model (12 models total, may run in parallel)
+     - **Status**: ⚠️ **BLOCKING** - Cannot proceed without trained models
    
   3. **Test implemented improvements** - After training completes
-     - **Baseline**: Current results in `outputs/experiments/aggregated_results.csv` (KOEQUIPTE DDFM: sMAE=1.14, sMSE=2.12, 21 horizons)
-     - **New results**: After training and forecasting, compare with baseline
-     - **Comparison script**: 
+     - **Prerequisites**: Models trained (Step 2), forecasting experiments run via `bash agent_execute.sh forecast`
+     - **Baseline**: Current results in `outputs/experiments/aggregated_results_baseline.csv` (KOEQUIPTE DDFM: sMAE=1.14, sMSE=2.12, 21 horizons)
+     - **New results**: After training and forecasting, results in `outputs/experiments/aggregated_results.csv`
+     - **Comparison script** (`src/evaluation/compare_ddfm_improvements.py` - to be created):
        ```python
        import pandas as pd
-       baseline = pd.read_csv('outputs/experiments/aggregated_results.csv')
-       new = pd.read_csv('outputs/experiments/aggregated_results.csv')  # After re-run
+       import numpy as np
+       
+       baseline = pd.read_csv('outputs/experiments/aggregated_results_baseline.csv')
+       new = pd.read_csv('outputs/experiments/aggregated_results.csv')
+       
        koequipte_ddfm_baseline = baseline[(baseline['target']=='KOEQUIPTE') & (baseline['model']=='DDFM')]
        koequipte_ddfm_new = new[(new['target']=='KOEQUIPTE') & (new['model']=='DDFM')]
-       improvement = (koequipte_ddfm_baseline['sMAE'].mean() - koequipte_ddfm_new['sMAE'].mean()) / koequipte_ddfm_baseline['sMAE'].mean() * 100
+       
+       baseline_smae = koequipte_ddfm_baseline['sMAE'].mean()
+       new_smae = koequipte_ddfm_new['sMAE'].mean()
+       improvement_pct = (baseline_smae - new_smae) / baseline_smae * 100
+       
+       print(f"Baseline sMAE: {baseline_smae:.4f}")
+       print(f"New sMAE: {new_smae:.4f}")
+       print(f"Improvement: {improvement_pct:.2f}%")
+       print(f"Horizon 22 status: baseline={koequipte_ddfm_baseline[koequipte_ddfm_baseline['horizon']==22]['n_valid'].values[0]}, new={koequipte_ddfm_new[koequipte_ddfm_new['horizon']==22]['n_valid'].values[0]}")
        ```
      - **Success criteria**: 
-       - Primary: sMAE improvement ≥ 10% (target: sMAE < 1.03 from baseline 1.14)
-       - Secondary: Maintain performance at all horizons (no degradation)
-       - Tertiary: Complete horizon 22 (currently n_valid=0)
-     - **If improvement**: Document percentage, proceed to Phase 1.2 (activation ablation)
-     - **If no improvement**: Check training logs, verify encoder used, proceed to Phase 2
+       - **Primary**: sMAE improvement ≥ 10% (target: sMAE < 1.03 from baseline 1.14)
+       - **Secondary**: Maintain performance at all horizons (no degradation > 5% at any horizon)
+       - **Tertiary**: Complete horizon 22 (currently n_valid=0, should be n_valid=1)
+     - **Decision tree**:
+       - **If improvement ≥ 10%**: Document percentage improvement, proceed to Phase 1.2 (activation ablation study)
+       - **If improvement < 10% but > 0%**: Check training logs, verify encoder architecture used, consider Phase 1.3 (horizon 22 investigation), then proceed to Phase 2
+       - **If no improvement or degradation**: Check training logs for errors, verify all improvements were applied, proceed to Phase 2 root cause analysis
+     - **Documentation**: Update `nowcasting-report/contents/6_discussion.tex` with improvement percentage and findings
+     - **Status**: ⚠️ **BLOCKED** - Requires training and forecasting experiments to complete
    
   **Phase 1.2: Activation Ablation Study (If Phase 1 shows improvement)**
   4. **Systematic activation comparison** - Find optimal activation function
@@ -316,6 +383,42 @@
    
   **Documentation Updates (After each phase)**
   9. **Update report sections** with findings:
-     - `nowcasting-report/contents/6_discussion.tex`: Add Phase 0/1 results, improvement percentages
-     - `nowcasting-report/contents/7_issues.tex`: Mark resolved issues, update research status
-     - `nowcasting-report/contents/3_results_forecasting.tex`: Update metrics if improved
+     - `nowcasting-report/contents/6_discussion.tex`: Add Phase 0/1 results, improvement percentages, correlation analysis findings
+     - `nowcasting-report/contents/7_issues.tex`: Mark resolved issues, update research status, document Phase 1 results
+     - `nowcasting-report/contents/3_results_forecasting.tex`: Update metrics if improved, regenerate tables/plots if results change
+     - `STATUS.md`: Update experiment status, document Phase 0/1 findings, update next iteration priorities
+
+---
+
+## DDFM Metrics Improvement Summary
+
+**Current State:**
+- ✅ **Code improvements implemented**: Deeper encoder, tanh activation, weight decay, gradient clipping, Huber loss, improved initialization, increased pre-training, batch size optimization
+- ⚠️ **Testing blocked**: Models not trained (`checkpoint/` empty), cannot verify improvements
+- 📊 **Baseline metrics**: KOEQUIPTE DDFM sMAE=1.14 (identical to DFM), KOIPALL.G sMAE=0.69 (excellent), KOWRCCNSE sMAE=0.50 (excellent)
+
+**Improvement Plan Structure:**
+1. **Phase 0 (Pre-training)**: Correlation structure analysis - can be done now, no training required
+2. **Phase 1 (Initial testing)**: Test implemented improvements after training - requires trained models
+3. **Phase 1.2 (Ablation)**: Activation function comparison - if Phase 1 shows improvement
+4. **Phase 1.3 (Investigation)**: Horizon 22 fix - parallel with Phase 1
+5. **Phase 2 (Advanced)**: Architecture grid search, factor analysis, regularization - if Phase 1 fails
+6. **Phase 3 (Advanced techniques)**: Ensemble, feature engineering, hybrid approach - if Phase 2 fails
+
+**Success Criteria:**
+- **Primary**: KOEQUIPTE sMAE improvement from 1.14 to < 1.03 (≥10% improvement)
+- **Secondary**: Maintain KOIPALL.G and KOWRCCNSE performance (sMAE < 0.7)
+- **Tertiary**: Complete all 22 horizons for all targets (currently missing horizon 22 for KOIPALL.G and KOEQUIPTE)
+
+**Next Immediate Actions:**
+1. **Phase 0**: Run correlation structure analysis (can be done now, < 5 minutes per target)
+2. **Phase 1**: Train models via `bash agent_execute.sh train` (BLOCKING - requires ~30-60 minutes per model)
+3. **Phase 1**: Run forecasting experiments via `bash agent_execute.sh forecast` (after training)
+4. **Phase 1**: Compare results with baseline, document improvement percentage
+
+**Key Files:**
+- **Code**: `src/train.py` (lines 363-426) - target-specific settings for KOEQUIPTE
+- **Analysis**: `src/evaluation/evaluation_aggregation.py` - `analyze_correlation_structure()` function
+- **Results**: `outputs/experiments/aggregated_results.csv` - forecasting results
+- **Baseline**: `outputs/experiments/aggregated_results_baseline.csv` - backup of current results
+- **Report**: `nowcasting-report/contents/6_discussion.tex` - discussion section with improvement analysis

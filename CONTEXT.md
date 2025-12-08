@@ -24,9 +24,10 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
   - **Status**: ALL FAILED - All 6 files show "status": "failed" with CUDA tensor conversion errors
   - **Code Fix**: CUDA tensor conversion errors fixed in code (`.cpu().numpy()` pattern added) - **NOT VERIFIED BY EXPERIMENTS**
   - **Action Required**: Re-run backtest experiments after training to verify fix works
+  - **Structure Issue**: Current JSON files use flat `results` array, but table/plot code expects `results_by_timepoint` structure (see ISSUES.md for details)
 - **Tables**: tab_nowcasting_backtest.tex generated from current backtest JSON files (correctly shows N/A for all failed backtests)
 - **Plots**: Nowcasting plots generated from current backtest data: 3 comparison plots, 3 trend_error plots (placeholders since all backtests failed)
-- **Note**: Tables/plots correctly reflect current state (all backtests failed). Will need regeneration after backtests are re-run with fixed code.
+- **Note**: Tables/plots correctly reflect current state (all backtests failed). Will need regeneration after backtests are re-run with fixed code. When backtests succeed, `nowcast()` function needs to be updated to create `results_by_timepoint` structure.
 
 ## Code Improvements Applied (Not Yet Verified by Experiments)
 

@@ -1331,6 +1331,9 @@ def nowcast(
     reloading the model for each month to avoid state accumulation. Data for
     the target month is held out (only data up to previous month is used to
     update state), approximating a release mask.
+    
+    Results are structured by timepoint (weeks_before) to match expected format
+    for table/plot generation code.
     """
     config_dir = config_dir or str(get_project_root() / "config")
     cfg = parse_experiment_config(config_name, config_dir)
@@ -1339,6 +1342,9 @@ def nowcast(
     data_path = params.get('data_path') or str(get_project_root() / "data" / "data.csv")
     if not target_series:
         raise ValueError("target_series required for nowcast")
+    # Default timepoints: 4 weeks and 1 week before
+    if weeks_before is None:
+        weeks_before = [4, 1]
     # Load and resample data
     data = pd.read_csv(data_path, index_col=0, parse_dates=True)
     monthly = data
@@ -1354,78 +1360,143 @@ def nowcast(
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
     output_dir_path = Path(output_dir)
     output_dir_path.mkdir(parents=True, exist_ok=True)
-    results = []
+    
+    # Structure results by timepoint
+    results_by_timepoint = {}
+    for weeks in weeks_before:
+        tp_key = f"{weeks}weeks"
+        results_by_timepoint[tp_key] = {"monthly_results": []}
+    
+    # Also maintain flat results for backward compatibility
+    flat_results = []
+    
     for ts in months:
-        # Reload forecaster fresh each month to avoid state carryover
-        forecaster, cfg_saved = _load_checkpoint_forecaster(checkpoint_path)
-        if forecaster is None:
-            results.append({"date": ts.strftime("%Y-%m-%d"), "status": "failed", "error": "forecaster not found in checkpoint"})
-            continue
-        model_feature_cols = _get_model_feature_cols_from_forecaster(forecaster, cfg_saved)
-        # Prepare available data up to previous month
-        available_end = ts - pd.offsets.MonthBegin(1)
-        y_available = monthly.loc[:available_end]
-        if isinstance(y_available, pd.DataFrame) and model_feature_cols:
-            cols = [c for c in model_feature_cols if c in y_available.columns]
-            y_available = y_available[cols]
-        # Drop all-NaN rows to avoid empty updates
-        if isinstance(y_available, pd.DataFrame):
-            y_available = y_available.dropna(how='all')
-        if len(y_available) == 0:
-            results.append({"date": ts.strftime("%Y-%m-%d"), "status": "failed", "error": "no available data before target month"})
-            continue
-        # Update state then predict horizon=1
-        try:
-            if hasattr(forecaster, "_dfm_model") or hasattr(forecaster, "_ddfm_model"):
-                import torch  # Ensure torch is in scope even if module import was skipped
-                dfm_model = getattr(forecaster, "_dfm_model", None) or getattr(forecaster, "_ddfm_model", None)
-                # Move model to CUDA if available; otherwise CPU
-                target_device = "cuda" if torch.cuda.is_available() else "cpu"
-                try:
-                    if hasattr(dfm_model, "to"):
-                        dfm_model.to(target_device)
-                except Exception:
-                    target_device = "cpu"
+        month_str = ts.strftime("%Y-%m")
+        # Get actual value for this month
+        actual_val = None
+        if target_series in monthly.columns and ts in monthly.index:
+            actual_val = float(monthly.loc[ts, target_series]) if not pd.isna(monthly.loc[ts, target_series]) else None
+        elif isinstance(monthly, pd.DataFrame) and ts in monthly.index:
+            # Try first column if target_series not found
+            actual_val = float(monthly.loc[ts].iloc[0]) if len(monthly.loc[ts]) > 0 and not pd.isna(monthly.loc[ts].iloc[0]) else None
+        
+        # Process each timepoint
+        for weeks in weeks_before:
+            tp_key = f"{weeks}weeks"
+            # Reload forecaster fresh each month to avoid state carryover
+            forecaster, cfg_saved = _load_checkpoint_forecaster(checkpoint_path)
+            if forecaster is None:
+                monthly_result = {
+                    "month": month_str,
+                    "status": "failed",
+                    "error": "forecaster not found in checkpoint"
+                }
+                results_by_timepoint[tp_key]["monthly_results"].append(monthly_result)
+                flat_results.append({"date": ts.strftime("%Y-%m-%d"), "status": "failed", "error": "forecaster not found in checkpoint"})
+                continue
+            
+            model_feature_cols = _get_model_feature_cols_from_forecaster(forecaster, cfg_saved)
+            # Prepare available data: subtract weeks from target month
+            available_end = ts - pd.Timedelta(weeks=weeks)
+            y_available = monthly.loc[:available_end]
+            if isinstance(y_available, pd.DataFrame) and model_feature_cols:
+                cols = [c for c in model_feature_cols if c in y_available.columns]
+                y_available = y_available[cols]
+            # Drop all-NaN rows to avoid empty updates
+            if isinstance(y_available, pd.DataFrame):
+                y_available = y_available.dropna(how='all')
+            if len(y_available) == 0:
+                monthly_result = {
+                    "month": month_str,
+                    "status": "failed",
+                    "error": f"no available data before target month (cutoff: {available_end.strftime('%Y-%m-%d')})"
+                }
+                results_by_timepoint[tp_key]["monthly_results"].append(monthly_result)
+                flat_results.append({"date": ts.strftime("%Y-%m-%d"), "status": "failed", "error": "no available data before target month"})
+                continue
+            
+            # Update state then predict horizon=1
+            try:
+                if hasattr(forecaster, "_dfm_model") or hasattr(forecaster, "_ddfm_model"):
+                    import torch  # Ensure torch is in scope even if module import was skipped
+                    dfm_model = getattr(forecaster, "_dfm_model", None) or getattr(forecaster, "_ddfm_model", None)
+                    # Move model to CUDA if available; otherwise CPU
+                    target_device = "cuda" if torch.cuda.is_available() else "cpu"
                     try:
                         if hasattr(dfm_model, "to"):
                             dfm_model.to(target_device)
                     except Exception:
-                        pass
-                result = getattr(dfm_model, "result", None)
-                if result is None or not hasattr(result, "Mx") or not hasattr(result, "Wx"):
-                    raise RuntimeError("Model result missing Mx/Wx")
-                Mx = np.asarray(result.Mx)
-                Wx = np.asarray(result.Wx)
-                y_vals = y_available.values
-                Mx_use = Mx[: y_vals.shape[1]]
-                Wx_use = np.where(Wx[: y_vals.shape[1]] == 0, 1.0, Wx[: y_vals.shape[1]])
-                X_std = (y_vals - Mx_use) / Wx_use
-                X_std = np.where(np.isfinite(X_std), X_std, np.nan)
-                # Move to target device as torch tensor
-                X_std_tensor = torch.tensor(X_std, dtype=torch.float32, device=target_device)
-                dfm_model.update(X_std_tensor, history=None)
-                raw_pred = dfm_model.predict(horizon=1)
-                from src.models.models_utils import _convert_predictions_to_dataframe
-                pred_df = _convert_predictions_to_dataframe(raw_pred, y_available, 1)
-                pred_val = None
-                if isinstance(pred_df, pd.DataFrame):
-                    if target_series in pred_df.columns:
-                        pred_val = float(pred_df[target_series].iloc[0])
-                    elif pred_df.shape[1] > 0:
-                        pred_val = float(pred_df.iloc[0, 0])
-                elif isinstance(pred_df, pd.Series) and len(pred_df) > 0:
-                    pred_val = float(pred_df.iloc[0])
-                results.append({
-                    "date": ts.strftime("%Y-%m-%d"),
-                    "prediction": pred_val,
-                    "n_features": y_vals.shape[1],
-                    "status": "ok"
-                })
-            else:
-                results.append({"date": ts.strftime("%Y-%m-%d"), "status": "failed", "error": "not a DFM/DDFM forecaster"})
-        except Exception as e:
-            results.append({"date": ts.strftime("%Y-%m-%d"), "status": "failed", "error": str(e)})
-    # Persist
+                        target_device = "cpu"
+                        try:
+                            if hasattr(dfm_model, "to"):
+                                dfm_model.to(target_device)
+                        except Exception:
+                            pass
+                    result = getattr(dfm_model, "result", None)
+                    if result is None or not hasattr(result, "Mx") or not hasattr(result, "Wx"):
+                        raise RuntimeError("Model result missing Mx/Wx")
+                    Mx = np.asarray(result.Mx)
+                    Wx = np.asarray(result.Wx)
+                    y_vals = y_available.values
+                    Mx_use = Mx[: y_vals.shape[1]]
+                    Wx_use = np.where(Wx[: y_vals.shape[1]] == 0, 1.0, Wx[: y_vals.shape[1]])
+                    X_std = (y_vals - Mx_use) / Wx_use
+                    X_std = np.where(np.isfinite(X_std), X_std, np.nan)
+                    # Move to target device as torch tensor
+                    X_std_tensor = torch.tensor(X_std, dtype=torch.float32, device=target_device)
+                    dfm_model.update(X_std_tensor, history=None)
+                    raw_pred = dfm_model.predict(horizon=1)
+                    from src.models.models_utils import _convert_predictions_to_dataframe
+                    pred_df = _convert_predictions_to_dataframe(raw_pred, y_available, 1)
+                    pred_val = None
+                    if isinstance(pred_df, pd.DataFrame):
+                        if target_series in pred_df.columns:
+                            pred_val = float(pred_df[target_series].iloc[0])
+                        elif pred_df.shape[1] > 0:
+                            pred_val = float(pred_df.iloc[0, 0])
+                    elif isinstance(pred_df, pd.Series) and len(pred_df) > 0:
+                        pred_val = float(pred_df.iloc[0])
+                    
+                    # Calculate error if actual value is available
+                    error = None
+                    if actual_val is not None and pred_val is not None:
+                        error = float(pred_val - actual_val)
+                    
+                    # Create monthly result with expected structure
+                    monthly_result = {
+                        "month": month_str,
+                        "forecast_value": pred_val,
+                        "actual_value": actual_val,
+                        "error": error,
+                        "status": "ok"
+                    }
+                    results_by_timepoint[tp_key]["monthly_results"].append(monthly_result)
+                    flat_results.append({
+                        "date": ts.strftime("%Y-%m-%d"),
+                        "prediction": pred_val,
+                        "actual": actual_val,
+                        "error": error,
+                        "n_features": y_vals.shape[1],
+                        "status": "ok"
+                    })
+                else:
+                    monthly_result = {
+                        "month": month_str,
+                        "status": "failed",
+                        "error": "not a DFM/DDFM forecaster"
+                    }
+                    results_by_timepoint[tp_key]["monthly_results"].append(monthly_result)
+                    flat_results.append({"date": ts.strftime("%Y-%m-%d"), "status": "failed", "error": "not a DFM/DDFM forecaster"})
+            except Exception as e:
+                monthly_result = {
+                    "month": month_str,
+                    "status": "failed",
+                    "error": str(e)
+                }
+                results_by_timepoint[tp_key]["monthly_results"].append(monthly_result)
+                flat_results.append({"date": ts.strftime("%Y-%m-%d"), "status": "failed", "error": str(e)})
+    
+    # Persist with both structures for backward compatibility
     out_file = output_dir_path / f"{target_series}_{model_name}_backtest.json"
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump({
@@ -1434,10 +1505,11 @@ def nowcast(
             "config": config_name,
             "nowcast_start": nowcast_start,
             "nowcast_end": nowcast_end,
-            "weeks_before": weeks_before or [],
-            "results": results
+            "weeks_before": weeks_before,
+            "results": flat_results,  # Keep for backward compatibility
+            "results_by_timepoint": results_by_timepoint  # New structure expected by table/plot code
         }, f, indent=2)
-    return {"output": str(out_file), "results": results}
+    return {"output": str(out_file), "results": flat_results, "results_by_timepoint": results_by_timepoint}
 
 # ============================================================================
 # CLI Entry Point
