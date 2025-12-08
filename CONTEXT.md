@@ -15,16 +15,18 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
   - DFM: Valid results for all 3 targets (21 horizons for KOIPALL.G/KOEQUIPTE, 22 for KOWRCCNSE) (from previous runs)
   - DDFM: Valid results for all 3 targets (21 horizons for KOIPALL.G/KOEQUIPTE, 22 for KOWRCCNSE) (from previous runs, before code improvements)
   - ARIMA: n_valid=0 for all targets/horizons (no valid results)
-- **Tables**: All forecasting tables regenerated (this iteration): tab_dataset_params.tex, tab_forecasting_results.tex, 4 appendix tables (tab_appendix_forecasting_*.tex)
-- **Plots**: All forecasting plots regenerated (this iteration): 3 forecast_vs_actual_*.png, accuracy_heatmap.png, horizon_trend.png
+- **Tables**: All forecasting tables generated from current aggregated_results.csv: tab_dataset_params.tex, tab_forecasting_results.tex, 4 appendix tables (tab_appendix_forecasting_*.tex)
+- **Plots**: All forecasting plots generated from current data: 3 forecast_vs_actual_*.png, accuracy_heatmap.png, horizon_trend.png
+- **Note**: Tables/plots are correctly generated from current data, but results may be outdated since models are not trained. Will need regeneration after new experiments are run.
 
 ### Nowcasting Status
 - **outputs/backtest/**: 6 JSON files exist (DFM/DDFM for 3 targets)
   - **Status**: ALL FAILED - All 6 files show "status": "failed" with CUDA tensor conversion errors
   - **Code Fix**: CUDA tensor conversion errors fixed in code (`.cpu().numpy()` pattern added) - **NOT VERIFIED BY EXPERIMENTS**
   - **Action Required**: Re-run backtest experiments after training to verify fix works
-- **Tables**: tab_nowcasting_backtest.tex regenerated (this iteration, correctly shows N/A for all failed backtests)
-- **Plots**: Nowcasting plots regenerated (this iteration): 3 comparison plots, 3 trend_error plots (placeholders since all backtests failed)
+- **Tables**: tab_nowcasting_backtest.tex generated from current backtest JSON files (correctly shows N/A for all failed backtests)
+- **Plots**: Nowcasting plots generated from current backtest data: 3 comparison plots, 3 trend_error plots (placeholders since all backtests failed)
+- **Note**: Tables/plots correctly reflect current state (all backtests failed). Will need regeneration after backtests are re-run with fixed code.
 
 ## Code Improvements Applied (Not Yet Verified by Experiments)
 
@@ -74,7 +76,7 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 - **Rationale**: Better weight initialization improves training stability and convergence, especially for deeper networks
 - **Status**: Implemented in code (verified by code inspection), improves training stability and convergence
 
-### Factor Order Configuration (This Iteration)
+### Factor Order Configuration (Previous Iteration)
 - **Files Modified**: `src/models/models_forecasters.py`, `src/train.py`
 - **Changes**:
   - Added `factor_order` parameter to DDFMForecaster (default: 1, supports 1 or 2)
@@ -82,7 +84,24 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
   - Configurable via model_params['factor_order'] in training config
   - Parameter extracted in `src/train.py` and passed to DDFMForecaster constructor
 - **Rationale**: Some targets may have complex multi-period dynamics that VAR(1) cannot capture
-- **Status**: Implemented in code (this iteration, verified by code inspection), configurable via model_params, not yet tested (blocked by lack of trained models)
+- **Status**: Implemented in code (verified by code inspection), configurable via model_params, not yet tested (blocked by lack of trained models)
+
+### Increased Pre-Training for KOEQUIPTE (This Iteration)
+- **Files Modified**: `src/train.py` (lines 407-418), `src/models/models_forecasters.py`
+- **Changes**:
+  - Added `mult_epoch_pretrain` parameter support to DDFMForecaster (default: 1)
+  - KOEQUIPTE: Automatically uses `mult_epoch_pretrain=2` (double pre-training epochs)
+  - Pre-training helps encoder learn better nonlinear features before MCMC training starts
+- **Rationale**: More pre-training epochs give encoder more time to learn nonlinear features before MCMC iterations, which can help prevent encoder from collapsing to linear behavior
+- **Status**: Implemented in code (this iteration, verified by code inspection), not yet tested (blocked by lack of trained models)
+
+### Batch Size Optimization for KOEQUIPTE (This Iteration)
+- **Files Modified**: `src/train.py` (lines 420-426)
+- **Changes**:
+  - KOEQUIPTE: Automatically uses `batch_size=64` instead of default 100
+  - Smaller batch sizes improve gradient diversity and can help encoder escape linear solutions
+- **Rationale**: Smaller batch sizes provide more diverse gradients per epoch, which can help the encoder learn nonlinear features instead of collapsing to linear PCA-like behavior
+- **Status**: Implemented in code (this iteration, verified by code inspection), not yet tested (blocked by lack of trained models)
 
 ### Enhanced Training Stability (Current Iteration)
 - **Files Modified**: `dfm-python/src/dfm_python/models/ddfm.py`
@@ -116,7 +135,8 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 - All report sections reference tables/plots correctly
 - Report accurately reflects current experimental state (ARIMA excluded, backtest results noted as failed)
 - Report structure finalized (methodology title fixed, results hierarchy corrected)
-- Tanh activation documented across relevant sections
+- All DDFM improvements documented across relevant sections (deeper encoder, tanh activation, weight decay, gradient clipping, Huber loss, weight initialization, factor order, mult_epoch_pretrain, batch_size optimization)
+- **This Iteration**: Added documentation for `mult_epoch_pretrain=2` and `batch_size=64` improvements in methodology, results, discussion, and issues sections
 
 ## Next Steps
 

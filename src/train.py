@@ -407,6 +407,24 @@ def _train_forecaster(
                 # VAR(2) requires more data and may not always improve performance
                 pass  # Use default VAR(1) for now, can be overridden in config if needed
         
+        # Pre-training configuration
+        # Increased pre-training helps encoder learn better nonlinear features before MCMC
+        mult_epoch_pretrain = model_params.get('mult_epoch_pretrain', 1)
+        if target_series == 'KOEQUIPTE':
+            # Increase pre-training for KOEQUIPTE to help encoder learn nonlinear features
+            # More pre-training epochs give encoder more time to learn before MCMC starts
+            if mult_epoch_pretrain == 1:
+                mult_epoch_pretrain = 2  # Double pre-training epochs for KOEQUIPTE
+                logger.info(f"Increased mult_epoch_pretrain to {mult_epoch_pretrain} for {target_series} to improve encoder learning")
+        
+        # Batch size optimization for KOEQUIPTE
+        # Smaller batch sizes can improve gradient diversity and help escape linear solutions
+        if target_series == 'KOEQUIPTE' and batch_size >= 100:
+            # Use smaller batch size for KOEQUIPTE to improve gradient diversity
+            # This can help encoder learn nonlinear features instead of collapsing to linear
+            batch_size = 64  # Smaller batch size for better gradient diversity
+            logger.info(f"Using smaller batch_size={batch_size} for {target_series} to improve gradient diversity")
+        
         config_dict = model_cfg_dict if model_cfg_dict else {}
         if not config_dict or 'series' not in config_dict:
             raise ValidationError(f"No series found in config. Config: {config_name}")
@@ -423,7 +441,8 @@ def _train_forecaster(
             activation=activation,
             weight_decay=weight_decay,
             grad_clip_val=grad_clip_val,
-            factor_order=factor_order
+            factor_order=factor_order,
+            mult_epoch_pretrain=mult_epoch_pretrain
         )
         
         target_series = _extract_target_series(cfg)
