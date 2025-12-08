@@ -395,6 +395,18 @@ def _train_forecaster(
         # Gradient clipping for training stability (default: 1.0)
         grad_clip_val = model_params.get('grad_clip_val', 1.0)
         
+        # Factor order configuration (VAR lag order for factor dynamics: 1 or 2)
+        # VAR(2) can capture longer-term dependencies but requires more data
+        # For KOEQUIPTE with deeper encoder, VAR(2) might help capture more complex dynamics
+        factor_order = model_params.get('factor_order', 1)
+        if target_series == 'KOEQUIPTE':
+            # Consider VAR(2) for KOEQUIPTE to capture longer-term dependencies
+            # This may help if the series has complex multi-period dynamics
+            if factor_order == 1:
+                # Keep VAR(1) as default, but allow override via config
+                # VAR(2) requires more data and may not always improve performance
+                pass  # Use default VAR(1) for now, can be overridden in config if needed
+        
         config_dict = model_cfg_dict if model_cfg_dict else {}
         if not config_dict or 'series' not in config_dict:
             raise ValidationError(f"No series found in config. Config: {config_name}")
@@ -410,7 +422,8 @@ def _train_forecaster(
             huber_delta=huber_delta,
             activation=activation,
             weight_decay=weight_decay,
-            grad_clip_val=grad_clip_val
+            grad_clip_val=grad_clip_val,
+            factor_order=factor_order
         )
         
         target_series = _extract_target_series(cfg)

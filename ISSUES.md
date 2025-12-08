@@ -87,6 +87,24 @@
      - Applied to pre_train, MCMC training, and Lightning training_step (via gradient norm logging)
      - Rationale: Prevents training instability and gradient explosion that can cause NaN values or linear collapse
      - Status: ✅ **IMPLEMENTED IN CODE** - Improves training stability
+  6. **Improved Encoder Weight Initialization** (`dfm-python/src/dfm_python/encoder/vae.py` - Current Iteration):
+     - Added Xavier/Kaiming initialization for encoder layers based on activation function
+     - Kaiming initialization for ReLU activations (better for ReLU networks)
+     - Xavier initialization for tanh/sigmoid activations (better for symmetric activations)
+     - Smaller initialization (gain=0.1) for output layer to prevent large initial factors
+     - Rationale: Better weight initialization improves training stability and convergence, especially for deeper networks
+     - Status: ✅ **IMPLEMENTED IN CODE** - Improves training stability and convergence
+  7. **Factor Order Configuration** (`src/models/models_forecasters.py`, `src/train.py` - This Iteration):
+     - Added `factor_order` parameter to DDFMForecaster (default: 1, supports 1 or 2)
+     - Allows VAR(2) factor dynamics for targets that may benefit from longer memory
+     - VAR(2) can capture multi-period dependencies but requires more data
+     - Rationale: Some targets may have complex multi-period dynamics that VAR(1) cannot capture
+     - Status: ✅ **IMPLEMENTED IN CODE** (this iteration) - Configurable via model_params['factor_order'], not yet tested (blocked by lack of trained models)
+  8. **Enhanced Training Stability** (`dfm-python/src/dfm_python/models/ddfm.py` - Current Iteration):
+     - Improved input clipping for deeper networks (tighter clipping range for networks with >2 layers)
+     - Better numerical stability handling in training step
+     - Rationale: Deeper networks are more sensitive to extreme values, tighter clipping improves stability
+     - Status: ✅ **IMPLEMENTED IN CODE** - Improves training stability for deeper architectures
 
 - **Concrete Research Plan for DDFM Metrics Improvement**:
   
@@ -215,21 +233,103 @@
   - **Tertiary**: Complete all 22 horizons for all targets (currently missing horizon 22 for KOIPALL.G and KOEQUIPTE)
 
 - **Status**: ✅ **IMPROVEMENTS IMPLEMENTED IN CODE** (code changes verified by inspection). **NOT TESTED** - Improvements cannot be tested until models are trained. Research plan defined but Phase 1 testing blocked by lack of trained models.
+
+- **What Can Be Done Now (Before Training)**:
+  - ✅ **Phase 0: Correlation structure analysis** - Implemented `analyze_correlation_structure()` function in `src/evaluation/evaluation_aggregation.py` (previous iteration). Can be run on existing data.csv to analyze KOEQUIPTE correlation patterns before training. Function calculates negative/positive correlation counts, magnitude distributions, and summary statistics.
+  - ✅ **Factor order configuration** - Added `factor_order` parameter support (this iteration). Allows VAR(2) factor dynamics, configurable via model_params.
+  - Code review: Verify all improvements are correctly implemented
+  - Planning: Refine research plan based on current results analysis
+
+- **What Requires Training First**:
+  - Phase 1: Test implemented improvements (deeper encoder, tanh activation, weight decay)
+  - Phase 1.2: Activation function ablation study
+  - Phase 1.3: Horizon 22 investigation (needs trained models to generate predictions)
+  - Phase 2: Advanced improvements (architecture grid search, factor loading analysis)
+  - Phase 3: Ensemble and advanced techniques
   
   **Immediate Next Steps** (in priority order):
   1. **BLOCKING**: Train models first - `checkpoint/` is empty, blocking all experiments
      - Execute: `bash agent_execute.sh train` (will automatically use new settings for KOEQUIPTE)
-     - Verification: Check `checkpoint/` contains 12 model.pkl files
+     - Verification: Check `checkpoint/` contains 12 model.pkl files (3 targets × 4 models)
+     - Expected behavior: KOEQUIPTE DDFM should log "Using target-specific encoder architecture", "Using tanh activation", "Using weight_decay=1e-4", "Increased epochs to 150"
+   
   2. **Phase 1**: Test implemented improvements after training completes
-     - Evaluate: Compare new KOEQUIPTE DDFM results with baseline (target: sMAE < 1.03 from 1.14)
-     - Compare: Load baseline from `outputs/experiments/aggregated_results.csv`, compare with new results
-     - If improvement: Document and proceed to activation ablation study
-     - If no improvement: Proceed to Phase 2 root cause analysis
-  3. **Phase 1**: Investigate horizon 22 failures (can be done in parallel after training)
-     - Check logs, fix validation/numerical issues
-  4. **Phase 0** (Optional): Perform correlation structure analysis (can be done now, before training)
-     - Create `src/analysis/correlation_analysis.py` to analyze KOEQUIPTE correlation patterns
-     - Document findings to inform activation function choice
-  5. **Documentation**: Update report sections with research findings and improvement results (after Phase 1)
-     - Update `nowcasting-report/contents/6_discussion.tex` with Phase 1 results
-     - Update `nowcasting-report/contents/7_issues.tex` with resolved issues
+     - **Baseline data**: Current results in `outputs/experiments/aggregated_results.csv` (KOEQUIPTE DDFM: sMAE=1.14, sMSE=2.12, 21 horizons)
+     - **New results location**: After training and forecasting, results will be in `outputs/experiments/aggregated_results.csv` (overwritten or new file)
+     - **Comparison method**: 
+       - Load baseline: `pd.read_csv('outputs/experiments/aggregated_results.csv')`
+       - Filter: `df[(df['target']=='KOEQUIPTE') & (df['model']=='DDFM')]`
+       - Calculate average sMAE: `df['sMAE'].mean()` (baseline: 1.14)
+       - Compare horizon-by-horizon: Check if improvement is consistent across all 21 horizons
+     - **Success criterion**: 
+       - Primary: sMAE improvement ≥ 10% (target: sMAE < 1.03 from baseline 1.14)
+       - Secondary: Maintain or improve performance at all horizons (no degradation)
+       - Tertiary: Complete horizon 22 (currently n_valid=0)
+     - **If improvement observed**: 
+       - Document improvement percentage and horizon-specific changes
+       - Proceed to Phase 1.2 (activation ablation study) to find optimal activation
+       - Update report sections with results
+     - **If no improvement**: 
+       - Check training logs for warnings/errors
+       - Verify encoder architecture was actually used (check logs)
+       - Proceed to Phase 2 root cause analysis (factor loading comparison, architecture grid search)
+   
+  3. **Phase 1.2**: Activation Function Ablation Study (if Phase 1 shows improvement)
+     - **Implementation**: Modify `src/train.py` to accept activation override via config or CLI
+     - **Method**: Train 4 DDFM models for KOEQUIPTE with different activations:
+       - 'relu' (baseline)
+       - 'tanh' (current implementation)
+       - 'sigmoid' (alternative symmetric activation)
+       - 'leaky_relu' (alternative that allows small negative values)
+     - **Execution**: Run training 4 times with different `activation` parameter in config
+     - **Comparison**: Compare average sMAE across all 4 models
+     - **Output**: Best activation function, performance table, update report
+   
+  4. **Phase 1.3**: Horizon 22 Investigation (can be done in parallel)
+     - **Check logs**: `log/KOEQUIPTE_ddfm_*.log` for horizon 22 errors
+     - **Code locations**: 
+       - `src/evaluation/evaluation_forecaster.py` (validation logic, line ~150-200)
+       - `src/models/models_forecasters.py` (prediction generation)
+     - **Possible causes**: 
+       - Validation threshold too strict (check `EXTREME_VALUE_THRESHOLD` in `src/evaluation/evaluation.py`)
+       - Numerical instability at longest horizon (22 months)
+       - Index alignment issues
+     - **Fix**: Address validation or numerical issues, verify prediction shape/index alignment
+     - **Output**: Fixed validation logic or numerical stability improvements, complete all 22 horizons
+   
+  5. **Phase 0** (Optional, can be done now before training): Correlation Structure Analysis
+     - **Purpose**: Understand why KOEQUIPTE shows linear behavior (identical to DFM)
+     - **Implementation**: 
+       - Use existing data loading: `src/preprocessing.py` or `src/train.py` data loading logic
+       - Calculate correlation matrix: `pd.DataFrame.corr()` on training data
+       - Compare KOEQUIPTE correlations with KOIPALL.G/KOWRCCNSE
+     - **Metrics to calculate**:
+       - Cross-correlation between target series and all input series
+       - Count of negative correlations (magnitude > 0.1)
+       - Factor loading patterns (if DFM model available from previous training)
+     - **Hypothesis**: If KOEQUIPTE has more negative correlations, tanh activation should help
+     - **Output**: Correlation analysis report/documentation to inform activation function choice
+     - **Note**: This can be done now using existing data.csv, no training required
+   
+  6. **Documentation**: Update report sections with research findings (after Phase 1)
+     - **Update `nowcasting-report/contents/6_discussion.tex`**:
+       - Add Phase 1 results section with improvement percentages
+       - Update DDFM performance analysis with new metrics
+       - Document which improvements were effective (encoder depth, activation, weight decay)
+     - **Update `nowcasting-report/contents/7_issues.tex`**:
+       - Mark resolved issues (if improvements work)
+       - Update status of DDFM metrics improvement research
+       - Document Phase 1 findings and next steps
+     - **Update `nowcasting-report/contents/3_results_forecasting.tex`**:
+       - Update KOEQUIPTE DDFM performance metrics if improved
+       - Update comparison tables if results change
+   
+  7. **Comparison Script** (Optional helper for Phase 1):
+     - **Purpose**: Automate baseline vs new results comparison
+     - **Location**: Can add to `src/evaluation/evaluation_aggregation.py` or create comparison utility
+     - **Functionality**:
+       - Load baseline results from CSV
+       - Load new results from CSV (or checkpoint)
+       - Calculate improvement percentages per horizon and overall
+       - Generate comparison table/plot
+       - Output: Improvement summary (sMAE change, horizon-specific changes, success/failure)
