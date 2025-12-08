@@ -45,24 +45,24 @@ See detailed plan below for specific actions and execution commands.
   - All now convert CUDA tensors to CPU before numpy conversion using `.cpu().numpy()`
 - **Status**: ✅ **FIXED IN CODE** (code changes verified by inspection). **NOT VERIFIED BY EXPERIMENTS** - Backtest experiments MUST be re-run via `bash agent_execute.sh backtest` after training to verify fix works. Current backtest JSON files all show "failed" status with CUDA errors. Fix may work, but needs experimental verification.
 
-## Backtest JSON Structure Mismatch (Fixed in Code - This Iteration)
+## Backtest JSON Structure Mismatch (Fixed in Code - Previous Iteration)
 - **Problem**: The `nowcast()` function saved backtest results in a flat `results` array, but table/plot generation code expects a `results_by_timepoint` structure with nested timepoint data.
-- **Resolution** (This Iteration): Updated `nowcast()` function in `src/train.py` (lines 1365-1512) to:
+- **Resolution** (Previous Iteration): Updated `nowcast()` function in `src/train.py` (lines 1365-1512) to:
   - Default to `weeks_before=[4, 1]` if not provided
   - Run nowcasting for each timepoint separately with appropriate data cutoffs
   - Load actual values and calculate errors for each target month
   - Structure results by timepoint with `monthly_results` array
   - Keep flat `results` array for backward compatibility
-- **Status**: ✅ **FIXED IN CODE** (this iteration) - Not verified by experiments (blocked by lack of trained models). Current backtest JSON files all show "failed" status with CUDA errors. Once CUDA fixes are verified and backtests succeed, the new structure will be properly generated.
+- **Status**: ✅ **FIXED IN CODE** (previous iteration) - Not verified by experiments. Current backtest JSON files all show "failed" status with CUDA errors. Once CUDA fixes are verified and backtests succeed, the new structure will be properly generated.
 
-## Table Generation Bug for Nowcasting Results (Fixed in Code - This Iteration)
+## Table Generation Bug for Nowcasting Results (Fixed in Code - Previous Iteration)
 - **Problem**: The `table_nowcasts.py` code tried to extract errors directly from the `error` field, which could be a string for failed entries. It also didn't correctly check for successful results with `forecast_value` and `actual_value`.
-- **Resolution** (This Iteration): Updated `table_nowcasts.py` to:
+- **Resolution** (Previous Iteration): Updated `table_nowcasts.py` to:
   - Check for `status: 'ok'` or both `forecast_value` and `actual_value` being present
   - Calculate errors from `forecast_value - actual_value` instead of using error field directly
   - Handle string error messages in failed entries correctly (skip them)
   - Only process numeric errors for metric calculation
-- **Status**: ✅ **FIXED IN CODE** (this iteration) - Table generation now correctly processes successful results when available. When backtests succeed with the new `results_by_timepoint` structure, metrics will be correctly extracted.
+- **Status**: ✅ **FIXED IN CODE** (previous iteration) - Table generation now correctly processes successful results when available. When backtests succeed with the new `results_by_timepoint` structure, metrics will be correctly extracted.
 
 ## ARIMA Forecasting Results Missing
 - **Problem**: ARIMA model produces no valid results (n_valid=0) for all three targets (KOIPALL.G, KOEQUIPTE, KOWRCCNSE) across all 22 forecast horizons.
@@ -510,11 +510,24 @@ See detailed plan below for specific actions and execution commands.
 - **Secondary**: Maintain KOIPALL.G and KOWRCCNSE performance (sMAE < 0.7)
 - **Tertiary**: Complete all 22 horizons for all targets (currently missing horizon 22 for KOIPALL.G and KOEQUIPTE)
 
-**Next Immediate Actions:**
+**Next Immediate Actions (Priority Order):**
 1. **Phase 0**: Run correlation structure analysis (can be done now, < 5 minutes per target)
+   - Execute: `python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', 'KOEQUIPTE', output_path='outputs/analysis/correlation_analysis_KOEQUIPTE.json'); print(json.dumps(result['summary'], indent=2))"`
+   - Repeat for KOIPALL.G and KOWRCCNSE for comparison
+   - Analyze: negative correlation fraction, strong negative count, mean correlation
+   - Decision: If KOEQUIPTE has higher negative correlation fraction, tanh activation is justified
+   - Output: Save results to `outputs/analysis/correlation_analysis_{target}.json`, document findings in report
 2. **Phase 1**: Re-train models via `bash agent_execute.sh train` (RECOMMENDED - ensures latest improvements are applied, ~30-60 minutes per model)
+   - Backup baseline: `cp outputs/experiments/aggregated_results.csv outputs/experiments/aggregated_results_baseline.csv`
+   - Verify KOEQUIPTE DDFM uses: deeper encoder [64, 32, 16], tanh activation, weight_decay=1e-4, mult_epoch_pretrain=2, batch_size=64
+   - Check logs for confirmation of target-specific settings
 3. **Phase 1**: Run forecasting experiments via `bash agent_execute.sh forecast` (after re-training)
+   - Results saved to `outputs/experiments/aggregated_results.csv`
+   - Automatic analysis via `detect_ddfm_linearity()` and `analyze_ddfm_prediction_quality()` functions
 4. **Phase 1**: Compare results with baseline, document improvement percentage
+   - Use comparison script in ISSUES.md (lines 424-449) to calculate improvement metrics
+   - Success criteria: sMAE improvement ≥ 10% (target < 1.03) AND DDFM ≥ 5% better than DFM
+   - Update report sections with findings, regenerate tables/plots if results change significantly
 
 **Key Files:**
 - **Code**: `src/train.py` (lines 363-426) - target-specific settings for KOEQUIPTE
