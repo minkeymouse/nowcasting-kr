@@ -852,12 +852,19 @@ def run_backtest_evaluation(
     
     model_lower = model.lower()
     
+    # Parse config first to get target_series for proper error messages
+    cfg = parse_experiment_config(config_name, config_dir, overrides)
+    validate_experiment_config(cfg, require_target=True, require_models=False)
+    
+    params = extract_experiment_params(cfg)
+    target_series = params['target_series']
+    
     # Nowcasting is only supported for DFM and DDFM models
     if model_lower not in ['dfm', 'ddfm']:
         error_msg = f"Nowcasting is not supported for {model.upper()} model. Only DFM and DDFM models support nowcasting."
         logger.error(error_msg)
         results = {
-            'target_series': None,
+            'target_series': target_series,
             'model': model.upper(),
             'train_period': f"{train_start} to {train_end}",
             'nowcast_period': f"{nowcast_start} to {nowcast_end}",
@@ -870,18 +877,12 @@ def run_backtest_evaluation(
                 'failed_timepoints': len(weeks_before)
             }
         }
-        # Still save the result file to indicate the status
-        output_file = project_root / "outputs" / "backtest" / f"UNKNOWN_{model_lower}_backtest.json"
+        # Save the result file with proper target_series name
+        output_file = project_root / "outputs" / "backtest" / f"{target_series}_{model_lower}_backtest.json"
         _save_json_results(output_file, results, logger)
         return results
     
     supports_nowcast_manager = True  # Only DFM/DDFM reach here
-    
-    cfg = parse_experiment_config(config_name, config_dir, overrides)
-    validate_experiment_config(cfg, require_target=True, require_models=False)
-    
-    params = extract_experiment_params(cfg)
-    target_series = params['target_series']
     exp_cfg = params.get('exp_cfg', cfg)
     
     # Load release dates
@@ -939,11 +940,22 @@ def run_backtest_evaluation(
     
     train_start_ts = pd.Timestamp(train_start)
     train_end_ts = pd.Timestamp(train_end)
-    train_data_filtered = full_data[(full_data.index >= train_start_ts) & (full_data.index <= train_end_ts)]
+    # FIX: Use monthly data for train statistics since nowcasting works with monthly data
+    train_data_filtered = full_data_monthly[(full_data_monthly.index >= train_start_ts) & (full_data_monthly.index <= train_end_ts)]
     train_std = train_data_filtered[target_series].std() if target_series in train_data_filtered.columns else train_data_filtered.iloc[:, 0].std() if len(train_data_filtered.columns) > 0 else 1.0
+    train_mean = train_data_filtered[target_series].mean() if target_series in train_data_filtered.columns else train_data_filtered.iloc[:, 0].mean() if len(train_data_filtered.columns) > 0 else 0.0
     
     results_by_timepoint = {}
     train_end_date = datetime.strptime(train_end, "%Y-%m-%d")
+    
+    # Initialize local state dictionaries (replaces function attributes for cleaner code)
+    # These track state across iterations within a single backtest run
+    _predictions = {}  # Track predictions to detect repetitive patterns
+    _clipped_values = {}  # Track clipped values for diagnostics
+    _extreme_values = {}  # Track extreme values for soft clipping
+    _factor_states = {}  # Track factor states for diagnostics
+    _data_masking_history = {}  # Track data masking changes
+    _kalman_failure_history = []  # Track Kalman filter failures
     
     logger.info(f"Starting nowcasting backtest for {target_series} with {model.upper()}")
     logger.info(f"Target periods: {len(target_periods)} months from {nowcast_start} to {nowcast_end}")
@@ -1030,11 +1042,11 @@ def run_backtest_evaluation(
                         
                         # CRITICAL: Validate that factor state is actually different from previous timepoints
                         # This helps detect when Kalman filter is failing silently and returning constant states
-                        if not hasattr(run_backtest_evaluation, '_previous_factor_states'):
-                            run_backtest_evaluation._previous_factor_states = {}
+                        _previous_factor_states = {}  # Local state for previous factor states
+                        _previous_data_hashes = {}  # Local state for previous data hashes
                         key = f"{target_series}_{model}"
-                        if key in run_backtest_evaluation._previous_factor_states:
-                            prev_state = run_backtest_evaluation._previous_factor_states[key]
+                        if key in _previous_factor_states:
+                            prev_state = _previous_factor_states[key]
                             state_diff = np.linalg.norm(Z_last_current - prev_state)
                             if state_diff < 1e-6:
                                 logger.warning(
@@ -1047,52 +1059,49 @@ def run_backtest_evaluation(
                                     data_masked = dfm_model._data_module.data
                                     if isinstance(data_masked, pd.DataFrame):
                                         data_hash = hashlib.md5(pd.util.hash_pandas_object(data_masked.fillna(0)).values).hexdigest()
-                                        if hasattr(run_backtest_evaluation, '_previous_data_hashes'):
-                                            if key in run_backtest_evaluation._previous_data_hashes:
-                                                prev_hash = run_backtest_evaluation._previous_data_hashes[key]
-                                                if data_hash != prev_hash:
-                                                    logger.warning(
-                                                        f"Data masking changed but factor state is identical - "
-                                                        f"Kalman filter may be failing. Attempting alternative calculation..."
-                                                    )
-                                                    # Try alternative: use last valid observation to estimate factor state
-                                                    # This is a fallback when Kalman filter fails but data has changed
-                                                    try:
-                                                        # Get last valid row of masked data
-                                                        last_valid_idx = data_masked.last_valid_index()
-                                                        if last_valid_idx is not None:
-                                                            last_row = data_masked.loc[last_valid_idx].values
-                                                            # Standardize using result's Wx and Mx
-                                                            if hasattr(dfm_model._result, 'Wx') and hasattr(dfm_model._result, 'Mx'):
-                                                                Wx = dfm_model._result.Wx
-                                                                Mx = dfm_model._result.Mx
-                                                                last_row_std = (last_row - Mx) / np.where(Wx != 0, Wx, 1.0)
-                                                                # Use C matrix to estimate factor state: X = Z @ C^T, so Z ≈ X @ C @ (C^T @ C)^-1
-                                                                C = dfm_model._result.C
-                                                                if C is not None and len(C.shape) == 2:
-                                                                    # Pseudo-inverse: Z ≈ X @ C @ (C^T @ C)^-1
-                                                                    CtC = C.T @ C
-                                                                    if np.linalg.cond(CtC) < 1e12:  # Check condition number
-                                                                        CtC_inv = np.linalg.inv(CtC)
-                                                                        Z_estimated = last_row_std @ C @ CtC_inv
-                                                                        # Blend with previous state (weighted average)
-                                                                        Z_last_current = 0.3 * Z_estimated + 0.7 * Z_last_current
-                                                                        logger.info(
-                                                                            f"Used alternative factor state calculation (blended with previous): "
-                                                                            f"norm={np.linalg.norm(Z_last_current):.4f}"
-                                                                        )
-                                                    except Exception as alt_error:
-                                                        logger.warning(f"Alternative factor state calculation failed: {alt_error}")
-                        run_backtest_evaluation._previous_factor_states[key] = Z_last_current.copy()
+                                        if key in _previous_data_hashes:
+                                            prev_hash = _previous_data_hashes[key]
+                                            if data_hash != prev_hash:
+                                                logger.warning(
+                                                    f"Data masking changed but factor state is identical - "
+                                                    f"Kalman filter may be failing. Attempting alternative calculation..."
+                                                )
+                                                # Try alternative: use last valid observation to estimate factor state
+                                                # This is a fallback when Kalman filter fails but data has changed
+                                                try:
+                                                    # Get last valid row of masked data
+                                                    last_valid_idx = data_masked.last_valid_index()
+                                                    if last_valid_idx is not None:
+                                                        last_row = data_masked.loc[last_valid_idx].values
+                                                        # Standardize using result's Wx and Mx
+                                                        if hasattr(dfm_model._result, 'Wx') and hasattr(dfm_model._result, 'Mx'):
+                                                            Wx = dfm_model._result.Wx
+                                                            Mx = dfm_model._result.Mx
+                                                            last_row_std = (last_row - Mx) / np.where(Wx != 0, Wx, 1.0)
+                                                            # Use C matrix to estimate factor state: X = Z @ C^T, so Z ≈ X @ C @ (C^T @ C)^-1
+                                                            C = dfm_model._result.C
+                                                            if C is not None and len(C.shape) == 2:
+                                                                # Pseudo-inverse: Z ≈ X @ C @ (C^T @ C)^-1
+                                                                CtC = C.T @ C
+                                                                if np.linalg.cond(CtC) < 1e12:  # Check condition number
+                                                                    CtC_inv = np.linalg.inv(CtC)
+                                                                    Z_estimated = last_row_std @ C @ CtC_inv
+                                                                    # Blend with previous state (weighted average)
+                                                                    Z_last_current = 0.3 * Z_estimated + 0.7 * Z_last_current
+                                                                    logger.info(
+                                                                        f"Used alternative factor state calculation (blended with previous): "
+                                                                        f"norm={np.linalg.norm(Z_last_current):.4f}"
+                                                                    )
+                                                except Exception as alt_error:
+                                                    logger.warning(f"Alternative factor state calculation failed: {alt_error}")
+                        _previous_factor_states[key] = Z_last_current.copy()
                         
                         # Store data hash for comparison
-                        if not hasattr(run_backtest_evaluation, '_previous_data_hashes'):
-                            run_backtest_evaluation._previous_data_hashes = {}
                         if hasattr(dfm_model, '_data_module') and dfm_model._data_module is not None:
                             data_masked = dfm_model._data_module.data
                             if isinstance(data_masked, pd.DataFrame):
                                 data_hash = hashlib.md5(pd.util.hash_pandas_object(data_masked.fillna(0)).values).hexdigest()
-                                run_backtest_evaluation._previous_data_hashes[key] = data_hash
+                                _previous_data_hashes[key] = data_hash
                         
                         # Log factor state values for debugging repetitive predictions
                         # Enhanced logging: show first 5 values, norm, mean, std, and min/max
@@ -1174,12 +1183,10 @@ def run_backtest_evaluation(
                                         f"Factor state norm: {np.linalg.norm(Z_last_current):.4f}"
                                     )
                                     # CRITICAL: Track when we fall back to training state to detect repetitive predictions
-                                    if not hasattr(run_backtest_evaluation, '_kalman_failures'):
-                                        run_backtest_evaluation._kalman_failures = {}
                                     key = f"{target_series}_{model}"
-                                    if key not in run_backtest_evaluation._kalman_failures:
-                                        run_backtest_evaluation._kalman_failures[key] = []
-                                    run_backtest_evaluation._kalman_failures[key].append({
+                                    if key not in _kalman_failure_history:
+                                        _kalman_failure_history[key] = []
+                                    _kalman_failure_history[key].append({
                                         'month': target_month_end_ts.strftime('%Y-%m'),
                                         'weeks': weeks,
                                         'error': str(e),
@@ -1228,15 +1235,11 @@ def run_backtest_evaluation(
                         
                         # CRITICAL: Store factor state for repetitive prediction detection
                         # This helps diagnose why KOIPALL.G DFM produces only 2 unique predictions
-                        if not hasattr(run_backtest_evaluation, '_factor_states'):
-                            run_backtest_evaluation._factor_states = {}
-                        if not hasattr(run_backtest_evaluation, '_data_masking_history'):
-                            run_backtest_evaluation._data_masking_history = {}
                         key = f"{target_series}_{model}"
-                        if key not in run_backtest_evaluation._factor_states:
-                            run_backtest_evaluation._factor_states[key] = []
-                        if key not in run_backtest_evaluation._data_masking_history:
-                            run_backtest_evaluation._data_masking_history[key] = []
+                        if key not in _factor_states:
+                            _factor_states[key] = []
+                        if key not in _data_masking_history:
+                            _data_masking_history[key] = []
                         
                         # Store data masking info to check if data is actually changing
                         if hasattr(dfm_model, '_data_module') and dfm_model._data_module is not None:
@@ -1247,7 +1250,7 @@ def run_backtest_evaluation(
                                 nan_pct = (nan_count / total_cells * 100) if total_cells > 0 else 0
                                 # Create a hash of the masked data pattern to detect if it's changing
                                 data_hash = hashlib.md5(pd.util.hash_pandas_object(data_masked.fillna(0)).values).hexdigest() if isinstance(data_masked, pd.DataFrame) else None
-                                run_backtest_evaluation._data_masking_history[key].append({
+                                _data_masking_history[key].append({
                                     'month': target_month_end_ts.strftime('%Y-%m'),
                                     'weeks': weeks,
                                     'nan_count': nan_count,
@@ -1255,7 +1258,7 @@ def run_backtest_evaluation(
                                     'data_hash': data_hash
                                 })
                         
-                        run_backtest_evaluation._factor_states[key].append({
+                        _factor_states[key].append({
                             'month': target_month_end_ts.strftime('%Y-%m'),
                             'weeks': weeks,
                             'factor_state': Z_last_current.copy(),
@@ -1265,27 +1268,27 @@ def run_backtest_evaluation(
                         })
                         
                         # Check if factor states are repetitive (only 2 unique states)
-                        if len(run_backtest_evaluation._factor_states[key]) >= 5:
+                        if len(_factor_states[key]) >= 5:
                             # Compare factor states using norm (faster than full comparison)
-                            factor_norms = [s['factor_norm'] for s in run_backtest_evaluation._factor_states[key]]
+                            factor_norms = [s['factor_norm'] for s in _factor_states[key]]
                             unique_norms = set(np.round(factor_norms, 6))  # Round to detect near-duplicates
                             if len(unique_norms) <= 2:
                                 # Also check if data masking is changing
                                 data_changing = True
-                                if key in run_backtest_evaluation._data_masking_history and len(run_backtest_evaluation._data_masking_history[key]) >= 2:
-                                    data_hashes = [d['data_hash'] for d in run_backtest_evaluation._data_masking_history[key] if d.get('data_hash')]
+                                if key in _data_masking_history and len(_data_masking_history[key]) >= 2:
+                                    data_hashes = [d['data_hash'] for d in _data_masking_history[key] if d.get('data_hash')]
                                     unique_hashes = set(data_hashes)
                                     data_changing = len(unique_hashes) > 1
                                     if not data_changing:
                                         logger.warning(
                                             f"DATA MASKING NOT CHANGING for {target_series} {model}: "
-                                            f"All {len(run_backtest_evaluation._data_masking_history[key])} timepoints have same data hash. "
+                                            f"All {len(_data_masking_history[key])} timepoints have same data hash. "
                                             f"This explains why factor states are repetitive - data masking is identical across timepoints."
                                         )
                                 
                                 logger.warning(
                                     f"REPETITIVE FACTOR STATES DETECTED for {target_series} {model}: "
-                                    f"Only {len(unique_norms)} unique factor state norms in last {len(run_backtest_evaluation._factor_states[key])} timepoints: {sorted(unique_norms)}. "
+                                    f"Only {len(unique_norms)} unique factor state norms in last {len(_factor_states[key])} timepoints: {sorted(unique_norms)}. "
                                     f"Data masking changing: {data_changing}. "
                                     f"This will cause repetitive predictions. Check data masking and Kalman filter re-run."
                                 )
@@ -1315,20 +1318,18 @@ def run_backtest_evaluation(
                     
                     # CRITICAL: Detect repetitive predictions early
                     # Store predictions to detect if we're only getting 2 unique values (like KOIPALL.G DFM)
-                    if not hasattr(run_backtest_evaluation, '_predictions'):
-                        run_backtest_evaluation._predictions = {}
                     key = f"{target_series}_{model}"
-                    if key not in run_backtest_evaluation._predictions:
-                        run_backtest_evaluation._predictions[key] = []
-                    run_backtest_evaluation._predictions[key].append(forecast_value)
+                    if key not in _predictions:
+                        _predictions[key] = []
+                    _predictions[key].append(forecast_value)
                     
                     # Check if we have repetitive predictions (only 2 unique values)
-                    if len(run_backtest_evaluation._predictions[key]) >= 5:
-                        unique_values = set(run_backtest_evaluation._predictions[key])
+                    if len(_predictions[key]) >= 5:
+                        unique_values = set(_predictions[key])
                         if len(unique_values) <= 2:
                             logger.warning(
                                 f"REPETITIVE PREDICTIONS DETECTED for {target_series} {model}: "
-                                f"Only {len(unique_values)} unique values in last {len(run_backtest_evaluation._predictions[key])} predictions: {sorted(unique_values)}. "
+                                f"Only {len(unique_values)} unique values in last {len(_predictions[key])} predictions: {sorted(unique_values)}. "
                                 f"This indicates factor state is not varying enough. Check data masking and Kalman filter re-run."
                             )
                     
@@ -1344,20 +1345,16 @@ def run_backtest_evaluation(
                     # Check if forecast is extremely large compared to typical values (e.g., > 100x typical range)
                     # This helps catch numerical instability issues like KOIPALL.G DFM
                     abs_forecast = abs(forecast_value)
-                    train_mean = train_data_filtered[target_series].mean() if target_series in train_data_filtered.columns else train_data_filtered.iloc[:, 0].mean() if len(train_data_filtered.columns) > 0 else 0.0
+                    # train_mean is already calculated before the loop (line 946) - no need to recalculate
                     original_forecast = forecast_value  # Store original before any clipping
                     
                     # CRITICAL FIX: Track clipped values and extreme value ranges to preserve variation
                     # This prevents the repetitive prediction bug where all extreme values get clipped to exact bounds
-                    if not hasattr(run_backtest_evaluation, '_clipped_values'):
-                        run_backtest_evaluation._clipped_values = {}
-                    if not hasattr(run_backtest_evaluation, '_extreme_ranges'):
-                        run_backtest_evaluation._extreme_ranges = {}
                     key_clip = f"{target_series}_{model}"
-                    if key_clip not in run_backtest_evaluation._clipped_values:
-                        run_backtest_evaluation._clipped_values[key_clip] = []
-                    if key_clip not in run_backtest_evaluation._extreme_ranges:
-                        run_backtest_evaluation._extreme_ranges[key_clip] = {'positive': {'min': None, 'max': None}, 'negative': {'min': None, 'max': None}}
+                    if key_clip not in _clipped_values:
+                        _clipped_values[key_clip] = []
+                    if key_clip not in _extreme_values:
+                        _extreme_values[key_clip] = {'positive': [], 'negative': []}
                     
                     if train_std and train_std > 0:
                         # Use ±10 standard deviations as reasonable bounds (more conservative than 50 std devs for warnings)
@@ -1366,77 +1363,56 @@ def run_backtest_evaluation(
                         
                         # CRITICAL FIX: Improved soft clipping that preserves relative differences
                         # Track the range of extreme values and normalize them to preserve variation
-                        # BUG FIX: Use a hash-based approach to preserve variation even when values are very similar
+                        # Helper function to apply soft clipping for a single extreme value
+                        def _apply_soft_clipping(value: float, is_positive: bool, extreme_list: list, 
+                                                clip_bound: float, soft_clip_range: float) -> float:
+                            """Apply soft clipping to preserve variation in extreme values."""
+                            order = len(extreme_list)  # Order is determined by length before appending
+                            extreme_list.append(value)
+                            
+                            if len(extreme_list) > 1:
+                                extreme_min = min(extreme_list)
+                                extreme_max = max(extreme_list)
+                                extreme_range = extreme_max - extreme_min
+                                
+                                if extreme_range > 1e-10:  # Avoid division by zero
+                                    # Map original value to clipping range, preserving relative position
+                                    normalized = (value - extreme_min) / extreme_range
+                                    if is_positive:
+                                        return clip_bound + normalized * soft_clip_range
+                                    else:
+                                        return clip_bound - (1.0 - normalized) * soft_clip_range
+                                else:
+                                    # All values are very similar - distribute evenly across range
+                                    # Use order of appearance to ensure variation
+                                    total_count = len(extreme_list)
+                                    normalized = order / max(1, total_count - 1) if total_count > 1 else 0.5
+                                    if is_positive:
+                                        return clip_bound + normalized * soft_clip_range
+                                    else:
+                                        return clip_bound - (1.0 - normalized) * soft_clip_range
+                            else:
+                                # First extreme value - place in middle of range
+                                return clip_bound + (0.5 * soft_clip_range if is_positive else -0.5 * soft_clip_range)
+                        
+                        # Apply soft clipping if value is extreme
                         if forecast_value > max_forecast or forecast_value < min_forecast:
                             was_clipped = True
-                            
-                            # Store all original extreme values to compute proper range
-                            if not hasattr(run_backtest_evaluation, '_extreme_values'):
-                                run_backtest_evaluation._extreme_values = {}
-                            if key_clip not in run_backtest_evaluation._extreme_values:
-                                run_backtest_evaluation._extreme_values[key_clip] = {'positive': [], 'negative': []}
+                            soft_clip_range = 2 * train_std  # Allow 2 std devs of variation
                             
                             if forecast_value > max_forecast:
-                                # Track all positive extreme values with their order of appearance
-                                extreme_list = run_backtest_evaluation._extreme_values[key_clip]['positive']
-                                order = len(extreme_list)  # Order is determined by length before appending
-                                extreme_list.append(original_forecast)
-                                
-                                # Compute range from all observed extreme values
-                                if len(extreme_list) > 1:
-                                    extreme_min = min(extreme_list)
-                                    extreme_max = max(extreme_list)
-                                    extreme_range = extreme_max - extreme_min
-                                    
-                                    if extreme_range > 1e-10:  # Avoid division by zero
-                                        # Map original value to [max_forecast, max_forecast + 2*std] range
-                                        # Preserve relative position within observed extreme range
-                                        normalized = (original_forecast - extreme_min) / extreme_range
-                                        soft_clip_range = 2 * train_std  # Allow 2 std devs of variation
-                                        forecast_value = max_forecast + normalized * soft_clip_range
-                                    else:
-                                        # All values are very similar - distribute evenly across range
-                                        # Use order of appearance to ensure variation (each value gets unique position)
-                                        total_count = len(extreme_list)
-                                        normalized = order / max(1, total_count - 1) if total_count > 1 else 0.5
-                                        soft_clip_range = 2 * train_std
-                                        forecast_value = max_forecast + normalized * soft_clip_range
-                                else:
-                                    # First extreme value - place in middle of range
-                                    soft_clip_range = 2 * train_std
-                                    forecast_value = max_forecast + 0.5 * soft_clip_range
+                                extreme_list = _extreme_values[key_clip]['positive']
+                                forecast_value = _apply_soft_clipping(
+                                    original_forecast, True, extreme_list, max_forecast, soft_clip_range
+                                )
                             else:  # forecast_value < min_forecast
-                                # Track all negative extreme values with their order of appearance
-                                extreme_list = run_backtest_evaluation._extreme_values[key_clip]['negative']
-                                order = len(extreme_list)  # Order is determined by length before appending
-                                extreme_list.append(original_forecast)
-                                
-                                # Compute range from all observed extreme values
-                                if len(extreme_list) > 1:
-                                    extreme_min = min(extreme_list)
-                                    extreme_max = max(extreme_list)
-                                    extreme_range = extreme_max - extreme_min
-                                    
-                                    if extreme_range > 1e-10:  # Avoid division by zero
-                                        # Map original value to [min_forecast - 2*std, min_forecast] range
-                                        # Preserve relative position within observed extreme range
-                                        normalized = (original_forecast - extreme_min) / extreme_range
-                                        soft_clip_range = 2 * train_std
-                                        forecast_value = min_forecast - (1.0 - normalized) * soft_clip_range
-                                    else:
-                                        # All values are very similar - distribute evenly across range
-                                        # Use order of appearance to ensure variation (each value gets unique position)
-                                        total_count = len(extreme_list)
-                                        normalized = order / max(1, total_count - 1) if total_count > 1 else 0.5
-                                        soft_clip_range = 2 * train_std
-                                        forecast_value = min_forecast - (1.0 - normalized) * soft_clip_range
-                                else:
-                                    # First extreme value - place in middle of range
-                                    soft_clip_range = 2 * train_std
-                                    forecast_value = min_forecast - 0.5 * soft_clip_range
+                                extreme_list = _extreme_values[key_clip]['negative']
+                                forecast_value = _apply_soft_clipping(
+                                    original_forecast, False, extreme_list, min_forecast, soft_clip_range
+                                )
                             
                             # Track clipped values to detect repetitive patterns
-                            run_backtest_evaluation._clipped_values[key_clip].append({
+                            _clipped_values[key_clip].append({
                                 'original': original_forecast,
                                 'clipped': forecast_value,
                                 'month': target_month_end_ts.strftime('%Y-%m')
@@ -1454,8 +1430,8 @@ def run_backtest_evaluation(
                             )
                             
                             # CRITICAL: Detect if all clipped values are collapsing to same 2 bounds
-                            if len(run_backtest_evaluation._clipped_values[key_clip]) >= 5:
-                                clipped_vals = [v['clipped'] for v in run_backtest_evaluation._clipped_values[key_clip]]
+                            if len(_clipped_values[key_clip]) >= 5:
+                                clipped_vals = [v['clipped'] for v in _clipped_values[key_clip]]
                                 unique_clipped = set(np.round(clipped_vals, 6))
                                 if len(unique_clipped) <= 2:
                                     logger.error(
