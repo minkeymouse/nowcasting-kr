@@ -7,12 +7,69 @@
 - ⚠️ **Testing pending**: Models exist (12 .pkl files) but were trained before latest improvements - re-training recommended to test improvements
 - 📊 **Baseline metrics**: KOEQUIPTE DDFM sMAE=1.14 (identical to DFM), KOIPALL.G sMAE=0.69 (excellent), KOWRCCNSE sMAE=0.50 (excellent)
 
-**Immediate Next Steps (Priority Order):**
-1. **Phase 0 (NOW)**: Run correlation structure analysis - can be done immediately, no training required (< 5 min per target)
-2. **Phase 1 (RECOMMENDED)**: Re-train models via `bash agent_execute.sh train` - to ensure latest improvements are applied
-3. **Phase 1 (After re-training)**: Test implemented improvements - compare new results with baseline
-4. **Phase 1.2 (If Phase 1 succeeds)**: Activation function ablation study
-5. **Phase 1.3 (Parallel)**: Fix horizon 22 missing results
+**Immediate Next Steps (Priority Order - Concrete Actions):**
+
+**IMMEDIATE (Can be done now, no training required - < 20 minutes total):**
+1. **Phase 0: Correlation Structure Analysis** - Execute correlation analysis for all 3 targets
+   - **Status**: ✅ Function implemented in `src/evaluation/evaluation_aggregation.py` (lines 1156-1300)
+   - **Action**: Run correlation analysis to compare structural differences between targets
+   - **Execution**: 
+     ```bash
+     mkdir -p outputs/analysis
+     for target in KOEQUIPTE KOIPALL.G KOWRCCNSE; do
+       python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', '$target', output_path='outputs/analysis/correlation_analysis_${target}.json'); print(f'\n=== $target ==='); print(json.dumps(result['summary'], indent=2))"
+     done
+     ```
+   - **Expected Output**: 3 JSON files in `outputs/analysis/` with correlation statistics
+   - **Decision Criteria**:
+     - If KOEQUIPTE `negative_fraction > 0.3` and others < 0.2: tanh activation justified
+     - If KOEQUIPTE `mean_correlation < 0.1` and others > 0.2: deeper encoder needed
+     - If structures are similar: investigate why DDFM works for others but not KOEQUIPTE
+   - **Next Action**: Update report discussion section with findings, adjust improvement strategy if needed
+
+**AFTER PHASE 0 (Requires training - ~30-60 minutes per model):**
+2. **Phase 1: Re-train Models** - Re-train with latest improvements to test effectiveness
+   - **Status**: ⚠️ Models exist (12 .pkl files) but were trained before latest improvements
+   - **Action**: Step 1 runs `bash agent_execute.sh train` (automatically applies KOEQUIPTE-specific settings)
+   - **KOEQUIPTE-Specific Settings** (automatically applied):
+     - Encoder: `[64, 32, 16]` (default: `[16, 4]`)
+     - Activation: `tanh` (default: `relu`)
+     - Epochs: `150` (default: `100`)
+     - Weight decay: `1e-4` (default: `0.0`)
+     - Pre-training multiplier: `2` (default: `1`)
+     - Batch size: `64` (default: `100`)
+   - **Verification**: Check logs for target-specific settings, verify checkpoint files exist
+   - **Expected Time**: ~30-60 minutes per model (12 models total, may run in parallel)
+
+3. **Phase 1: Run Forecasting** - Generate new results with improved models
+   - **Action**: Step 1 runs `bash agent_execute.sh forecast` after training
+   - **Baseline Preservation**: Before forecasting, backup current results:
+     ```bash
+     cp outputs/experiments/aggregated_results.csv outputs/experiments/aggregated_results_baseline.csv
+     ```
+   - **Results Location**: `outputs/experiments/aggregated_results.csv`
+   - **Automatic Analysis**: `detect_ddfm_linearity()` and `analyze_ddfm_prediction_quality()` run automatically
+   - **Analysis Output**: `outputs/experiments/ddfm_linearity_analysis.json`
+
+4. **Phase 1: Compare Results** - Compare new results with baseline
+   - **Action**: Run comparison script (see Phase 1 section below for full script)
+   - **Success Criteria**: 
+     - Primary: sMAE improvement ≥ 10% (target: sMAE < 1.03 from baseline 1.14) AND DDFM ≥ 5% better than DFM
+     - Secondary: No degradation > 5% at any horizon
+     - Tertiary: Horizon 22 completed (n_valid=1)
+   - **Decision Tree**: See Phase 1 section for detailed decision criteria
+
+**CONDITIONAL (If Phase 1 shows improvement):**
+5. **Phase 1.2: Activation Ablation Study** - Systematic comparison of activation functions
+   - **Prerequisite**: Phase 1 shows ≥ 5% improvement
+   - **Action**: Train 4 DDFM models for KOEQUIPTE with different activations (relu, tanh, sigmoid, leaky_relu)
+   - **Expected Time**: ~2-4 hours (4 models × 30-60 minutes each)
+
+**PARALLEL (Can be done alongside Phase 1):**
+6. **Phase 1.3: Horizon 22 Investigation** - Fix missing horizon 22 results
+   - **Status**: Currently n_valid=0 for KOIPALL.G and KOEQUIPTE at horizon 22
+   - **Action**: Investigate validation logic, numerical stability, index alignment issues
+   - **Code Locations**: `src/evaluation/evaluation_forecaster.py`, `src/models/models_forecasters.py`
 
 **Success Criteria:**
 - **Primary**: KOEQUIPTE sMAE improvement from 1.14 to < 1.03 (≥10% improvement)
@@ -45,24 +102,6 @@ See detailed plan below for specific actions and execution commands.
   - All now convert CUDA tensors to CPU before numpy conversion using `.cpu().numpy()`
 - **Status**: ✅ **FIXED IN CODE** (code changes verified by inspection). **NOT VERIFIED BY EXPERIMENTS** - Backtest experiments MUST be re-run via `bash agent_execute.sh backtest` after training to verify fix works. Current backtest JSON files all show "failed" status with CUDA errors. Fix may work, but needs experimental verification.
 
-## Backtest JSON Structure Mismatch (Fixed in Code - Previous Iteration)
-- **Problem**: The `nowcast()` function saved backtest results in a flat `results` array, but table/plot generation code expects a `results_by_timepoint` structure with nested timepoint data.
-- **Resolution** (Previous Iteration): Updated `nowcast()` function in `src/train.py` (lines 1365-1512) to:
-  - Default to `weeks_before=[4, 1]` if not provided
-  - Run nowcasting for each timepoint separately with appropriate data cutoffs
-  - Load actual values and calculate errors for each target month
-  - Structure results by timepoint with `monthly_results` array
-  - Keep flat `results` array for backward compatibility
-- **Status**: ✅ **FIXED IN CODE** (previous iteration) - Not verified by experiments. Current backtest JSON files all show "failed" status with CUDA errors. Once CUDA fixes are verified and backtests succeed, the new structure will be properly generated.
-
-## Table Generation Bug for Nowcasting Results (Fixed in Code - Previous Iteration)
-- **Problem**: The `table_nowcasts.py` code tried to extract errors directly from the `error` field, which could be a string for failed entries. It also didn't correctly check for successful results with `forecast_value` and `actual_value`.
-- **Resolution** (Previous Iteration): Updated `table_nowcasts.py` to:
-  - Check for `status: 'ok'` or both `forecast_value` and `actual_value` being present
-  - Calculate errors from `forecast_value - actual_value` instead of using error field directly
-  - Handle string error messages in failed entries correctly (skip them)
-  - Only process numeric errors for metric calculation
-- **Status**: ✅ **FIXED IN CODE** (previous iteration) - Table generation now correctly processes successful results when available. When backtests succeed with the new `results_by_timepoint` structure, metrics will be correctly extracted.
 
 ## ARIMA Forecasting Results Missing
 - **Problem**: ARIMA model produces no valid results (n_valid=0) for all three targets (KOIPALL.G, KOEQUIPTE, KOWRCCNSE) across all 22 forecast horizons.
@@ -77,11 +116,7 @@ See detailed plan below for specific actions and execution commands.
   - Verify ARIMA model instantiation and fitting in `src/models/`
   - Check prediction generation code for ARIMA
   - Verify data compatibility (index alignment, missing value handling)
-- **Report Updates** (Previous Iteration):
-  - Fixed inconsistencies in report sections (7_issues.tex, 6_discussion.tex) - removed incorrect ARIMA performance analysis
-  - Updated plot captions to reflect that ARIMA is excluded (3_results_forecasting.tex)
-  - Updated result completeness statistics to accurately reflect ARIMA's status
-- **Status**: Unresolved. Requires investigation and fix before ARIMA can be included in results. Report has been updated to accurately reflect current state. Investigation should be done after training completes.
+- **Status**: Unresolved. Requires investigation and fix before ARIMA can be included in results. Investigation should be done after training completes.
 
 ## DDFM Metrics Improvement (Research Plan)
 - **Current Performance Analysis** (from aggregated_results.csv - quantitative analysis):
@@ -108,7 +143,7 @@ See detailed plan below for specific actions and execution commands.
   - **Encoder Capacity**: Default encoder `[16, 4]` may be too small to capture complex nonlinear relationships for KOEQUIPTE.
   - **Linear Collapse**: The encoder may be collapsing to linear behavior (equivalent to PCA/DFM) due to insufficient capacity or activation function limitations.
 
-- **Implemented Improvements** (Previous Iteration - Verified in Code):
+- **Implemented Improvements** (Verified in Code):
   1. **Target-Specific Encoder Architectures** (`src/train.py` lines 363-397):
      - KOEQUIPTE: Automatically uses deeper encoder `[64, 32, 16]` instead of default `[16, 4]`
      - Increased epochs to 150 for KOEQUIPTE with deeper encoder (from default 100)
@@ -135,29 +170,29 @@ See detailed plan below for specific actions and execution commands.
      - Applied to pre_train, MCMC training, and Lightning training_step (via gradient norm logging)
      - Rationale: Prevents training instability and gradient explosion that can cause NaN values or linear collapse
      - Status: ✅ **IMPLEMENTED IN CODE** - Improves training stability
-  6. **Improved Encoder Weight Initialization** (`dfm-python/src/dfm_python/encoder/vae.py` - Current Iteration):
+  6. **Improved Encoder Weight Initialization** (`dfm-python/src/dfm_python/encoder/vae.py`):
      - Added Xavier/Kaiming initialization for encoder layers based on activation function
      - Kaiming initialization for ReLU activations (better for ReLU networks)
      - Xavier initialization for tanh/sigmoid activations (better for symmetric activations)
      - Smaller initialization (gain=0.1) for output layer to prevent large initial factors
      - Rationale: Better weight initialization improves training stability and convergence, especially for deeper networks
      - Status: ✅ **IMPLEMENTED IN CODE** - Improves training stability and convergence
-  7. **Factor Order Configuration** (`src/models/models_forecasters.py`, `src/train.py` - Previous Iteration):
+  7. **Factor Order Configuration** (`src/models/models_forecasters.py`, `src/train.py`):
      - Added `factor_order` parameter to DDFMForecaster (default: 1, supports 1 or 2)
      - Allows VAR(2) factor dynamics for targets that may benefit from longer memory
      - VAR(2) can capture multi-period dependencies but requires more data
      - Rationale: Some targets may have complex multi-period dynamics that VAR(1) cannot capture
      - Status: ✅ **IMPLEMENTED IN CODE** - Configurable via model_params['factor_order'], not yet tested (blocked by lack of trained models)
-  8. **Increased Pre-Training for KOEQUIPTE** (`src/train.py` lines 407-418 - This Iteration):
+  8. **Increased Pre-Training for KOEQUIPTE** (`src/train.py` lines 407-418):
      - Added `mult_epoch_pretrain` parameter support to DDFMForecaster (default: 1)
      - KOEQUIPTE: Automatically uses `mult_epoch_pretrain=2` (double pre-training epochs)
      - Rationale: More pre-training epochs give encoder more time to learn nonlinear features before MCMC iterations
-     - Status: ✅ **IMPLEMENTED IN CODE** (this iteration) - Not tested (blocked by lack of trained models)
-  9. **Batch Size Optimization for KOEQUIPTE** (`src/train.py` lines 420-426 - This Iteration):
+     - Status: ✅ **IMPLEMENTED IN CODE** - Not tested (models need re-training)
+  9. **Batch Size Optimization for KOEQUIPTE** (`src/train.py` lines 420-426):
      - KOEQUIPTE: Automatically uses `batch_size=64` instead of default 100
      - Rationale: Smaller batch sizes provide more diverse gradients per epoch, helping encoder learn nonlinear features
-     - Status: ✅ **IMPLEMENTED IN CODE** (this iteration) - Not tested (blocked by lack of trained models)
-  10. **Enhanced Training Stability** (`dfm-python/src/dfm_python/models/ddfm.py` - Previous Iteration):
+     - Status: ✅ **IMPLEMENTED IN CODE** - Not tested (models need re-training)
+  10. **Enhanced Training Stability** (`dfm-python/src/dfm_python/models/ddfm.py`):
      - Improved input clipping for deeper networks (tighter clipping range for networks with >2 layers)
      - Better numerical stability handling in training step
      - Rationale: Deeper networks are more sensitive to extreme values, tighter clipping improves stability
@@ -337,40 +372,26 @@ See detailed plan below for specific actions and execution commands.
 
 - **Status**: ✅ **IMPROVEMENTS IMPLEMENTED IN CODE** (code changes verified by inspection). **NOT TESTED** - Improvements cannot be tested until models are re-trained with latest improvements. Research plan defined but Phase 1 testing requires re-training to test latest improvements.
 
-- **Metrics Research Improvements** (Previous Iteration - Already Implemented):
+- **Metrics Research Improvements** (Already Implemented):
   1. **Enhanced DDFM Linearity Detection** (`src/evaluation/evaluation_aggregation.py`):
      - Enhanced `detect_ddfm_linearity()` function with performance improvement metrics
-     - Calculates linearity scores (0-1) per target and horizon
-     - Calculates performance improvement ratio (DDFM vs DFM) per horizon
-     - Tracks best/worst horizon improvements and improvement variance
-     - Generates warnings for targets with high linearity (≥0.95 similarity to DFM)
-     - Generates warnings for targets where DDFM performs worse than DFM
      - Automatically runs after aggregating results via `main_aggregator()`
-     - Status: ✅ **IMPLEMENTED IN CODE** (previous iteration) - Will automatically detect linearity and improvement when results are aggregated
-  2. **DDFM Prediction Quality Analysis** (`src/evaluation/evaluation_aggregation.py` - Enhanced This Iteration):
+     - Status: ✅ **IMPLEMENTED IN CODE** - Will automatically detect linearity and improvement when results are aggregated
+  2. **DDFM Prediction Quality Analysis** (`src/evaluation/evaluation_aggregation.py`):
      - Added `analyze_ddfm_prediction_quality()` function for detailed DDFM performance analysis
-     - Analyzes horizon-specific performance patterns
-     - Identifies volatile horizons (high error variance or spikes)
-     - Calculates prediction stability metrics (error variance, std across horizons)
-     - **NEW (This Iteration)**: Coefficient of variation (CV) metric for prediction stability (lower = more stable)
-     - **NEW (This Iteration)**: Short-term vs long-term performance analysis (horizons 1-6 vs 13-22)
-     - **NEW (This Iteration)**: Consistency metric (0-1, higher = more consistent improvement across horizons)
-     - **NEW (This Iteration)**: Best/worst horizon identification with improvement percentages
-     - **NEW (This Iteration)**: Enhanced recommendations based on stability, consistency, and horizon-specific patterns
-     - **NEW (This Iteration)**: Linear collapse risk assessment (0-1 score, higher = more risk of encoder learning only linear features)
-     - **NEW (This Iteration)**: Horizon degradation detection (identifies horizons where DDFM performs worse than DFM)
-     - Compares DDFM vs DFM baseline with improvement ratios
-     - Generates specific recommendations per target based on analysis
+     - Includes CV, consistency metrics, linear collapse risk assessment, horizon degradation detection
      - Automatically runs after aggregating results via `main_aggregator()`
-     - Status: ✅ **ENHANCED IN CODE** (this iteration) - Additional diagnostic metrics added for better DDFM performance analysis
-  3. **Missing Horizons Analysis** (`src/evaluation/evaluation_aggregation.py` - NEW This Iteration):
+     - Status: ✅ **IMPLEMENTED IN CODE** - Additional diagnostic metrics available for DDFM performance analysis
+  3. **Missing Horizons Analysis** (`src/evaluation/evaluation_aggregation.py`):
      - Added `analyze_missing_horizons()` function to identify validation failures (n_valid=0)
-     - Analyzes missing horizons by target, model, and horizon
-     - Identifies patterns: horizons where all models fail, long-horizon failures, model-specific failures
-     - Provides recommendations for fixing validation issues
-     - Helps identify why horizon 22 fails for KOIPALL.G and KOEQUIPTE
      - Automatically runs after aggregating results via `main_aggregator()`
-     - Status: ✅ **IMPLEMENTED IN CODE** (this iteration) - Will automatically analyze missing horizons when results are aggregated
+     - Status: ✅ **IMPLEMENTED IN CODE** - Will automatically analyze missing horizons when results are aggregated
+  4. **Enhanced Error Distribution Metrics** (`src/evaluation/evaluation_metrics.py`):
+     - Added error distribution analysis: skewness, kurtosis, bias-variance decomposition, error concentration
+     - Status: ✅ **IMPLEMENTED IN CODE** - Enhanced metrics available in per-horizon evaluation results
+  5. **Horizon Error Correlation Analysis** (`src/evaluation/evaluation_aggregation.py`):
+     - Added `analyze_horizon_error_correlation()` function to analyze error patterns across horizons
+     - Status: ✅ **IMPLEMENTED IN CODE** - Available for analyzing DDFM error patterns across horizons
 
 - **What Can Be Done Now (Before Training)**:
   - ✅ **Phase 0: Correlation structure analysis** - `analyze_correlation_structure()` function exists in `src/evaluation/evaluation_aggregation.py`. Can be run on existing data.csv to analyze correlation patterns before training.
