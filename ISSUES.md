@@ -4,7 +4,7 @@
 
 **Current State:**
 - ✅ **Code improvements implemented** (previous iterations): Deeper encoder, tanh activation, weight decay, gradient clipping, Huber loss, improved initialization, increased pre-training, batch size optimization
-- ❌ **Models NOT trained**: `checkpoint/` is empty, no model.pkl files exist. Training is REQUIRED before any experiments can proceed.
+- ⚠️ **Models trained but may need re-training**: `checkpoint/` contains 12 model.pkl files (trained Dec 9 02:35-02:47), but trained before latest DDFM improvements. Can use existing models or re-train to apply improvements.
 - 📊 **Baseline metrics** (computed Dec 2024 from aggregated_results.csv):
   - **KOEQUIPTE**: DDFM sMAE=1.1441, DFM sMAE=1.1439 (identical, avg diff=0.00085, 0.074% of average) - linear collapse confirmed
   - **KOIPALL.G**: DDFM sMAE=0.69 (21.7x better than DFM sMAE=14.97) - excellent
@@ -12,12 +12,21 @@
 - ⚠️ **Phase 0 not executed**: Correlation structure analysis function exists but has not been run yet - can be done immediately without training (~15 minutes)
 - ⚠️ **This iteration**: Updated documentation (STATUS.md, ISSUES.md, CONTEXT.md) to accurately reflect current state - no code changes, no experiments, no table/plot regeneration
 
+**Quick Action Reference:**
+1. **IMMEDIATE (No training needed)**: Run Phase 0 correlation analysis - see "PRIORITY 0" below
+2. **REQUIRED (Before experiments)**: Train models via `bash agent_execute.sh train`
+3. **After training**: Run forecasting via `bash agent_execute.sh forecast` to test improvements
+4. **After training**: Run backtesting via `bash agent_execute.sh backtest` to verify CUDA fixes
+
 **Immediate Next Steps (Priority Order - Concrete Actions):**
 
 **PRIORITY 0: Phase 0 Correlation Analysis (IMMEDIATE - Can be done now, no training required - ~15 minutes total)**
+
+⚠️ **CRITICAL: This should be executed BEFORE training to inform improvement strategy and save experimental time.**
+
 1. **Execute Phase 0: Correlation Structure Analysis** - Run correlation analysis for all 3 targets
    - **Status**: ✅ Function implemented in `src/evaluation/evaluation_aggregation.py` (lines 1156-1300), ⚠️ **NOT YET EXECUTED**
-   - **Why Now**: This analysis can inform improvement strategy before training, saving experimental time
+   - **Why Now**: This analysis can inform improvement strategy before training, saving experimental time. Results will help validate whether tanh activation and deeper encoder strategies are appropriate for KOEQUIPTE.
    - **Action Required**: Execute correlation analysis to compare structural differences between targets
    - **Execution Command** (Step 1 should run this automatically, or can be run manually):
      ```bash
@@ -95,17 +104,19 @@ See detailed plan below for specific actions and execution commands.
 
 ---
 
-## CRITICAL: Models NOT Trained
-- **Problem**: `checkpoint/` directory is EMPTY - no model.pkl files exist. Models are NOT trained.
+## Models Trained (May Need Re-training for Latest Improvements)
+- **Current State**: `checkpoint/` directory contains 12 model.pkl files (all 3 targets × 4 models: ARIMA, VAR, DFM, DDFM), trained Dec 9 02:35-02:47
+- **Issue**: Models were trained BEFORE latest DDFM improvements (deeper encoder, tanh, weight_decay, mult_epoch_pretrain=2, batch_size=64 for KOEQUIPTE)
 - **Impact**: 
-  - Cannot run any forecasting or backtesting experiments without trained models
-  - Cannot verify if DDFM improvements (mult_epoch_pretrain=2, batch_size=64 for KOEQUIPTE) improve performance
-  - Cannot generate new forecasting results
-  - Cannot verify CUDA fixes work
-- **Required Action**: Step 1 MUST run `bash agent_execute.sh train` to train all 12 models (3 targets × 4 models: ARIMA, VAR, DFM, DDFM) with latest improvements
-- **Status**: ❌ **NOT TRAINED** - Training is REQUIRED before any experiments can proceed
-- **Verification**: After training, check that `checkpoint/` contains 12 model.pkl files (currently EMPTY)
-- **Note**: All DDFM improvements are implemented in code and will be automatically applied during training. Training is the first priority.
+  - Can run forecasting and backtesting experiments with existing models
+  - Cannot verify if latest DDFM improvements improve performance (models don't have improvements)
+  - CUDA fixes can be verified with existing models (re-run backtesting)
+- **Options**:
+  1. **Use existing models**: Run `bash agent_execute.sh forecast` and `bash agent_execute.sh backtest` to test with current models
+  2. **Re-train with improvements**: Run `bash agent_execute.sh train` to apply latest DDFM improvements (recommended for KOEQUIPTE)
+- **Status**: ✅ **TRAINED** - Models exist and can be used, but may need re-training to apply latest improvements
+- **Verification**: `checkpoint/` contains 12 model.pkl files (verified)
+- **Note**: All DDFM improvements are implemented in code and will be automatically applied during re-training if Option 2 is chosen.
 
 ## CRITICAL: DFM/DDFM Backtest CUDA Tensor Conversion Error (Fixed in Code, Needs Training + Re-run)
 - **Problem**: All DDFM and DFM backtest results failed with error: "can't convert cuda:0 device type tensor to numpy. Use Tensor.cpu() to copy the tensor to host memory first."
@@ -116,7 +127,7 @@ See detailed plan below for specific actions and execution commands.
   - `src/evaluation/evaluation_forecaster.py`: Prediction value extraction - Added `.cpu().numpy()` pattern
   - `src/evaluation/evaluation_metrics.py`: Metric calculation - Added `.cpu().numpy()` pattern
   - All now convert CUDA tensors to CPU before numpy conversion using `.cpu().numpy()`
-- **Status**: ✅ **FIXED IN CODE** (code changes verified by inspection). **NOT VERIFIED BY EXPERIMENTS** - Cannot verify without trained models. Backtest experiments MUST be re-run via `bash agent_execute.sh backtest` AFTER training to verify fix works. Current backtest JSON files all show "failed" status with CUDA errors. Fix may work, but needs experimental verification after models are trained.
+- **Status**: ✅ **FIXED IN CODE** (code changes verified by inspection). **NOT VERIFIED BY EXPERIMENTS** - Models exist, backtest experiments MUST be re-run via `bash agent_execute.sh backtest` to verify fix works. Current backtest JSON files all show "failed" status with CUDA errors. Fix may work, but needs experimental verification.
 
 
 ## ARIMA Forecasting Results Missing
@@ -650,7 +661,7 @@ See detailed plan below for specific actions and execution commands.
      - Helps detect model instability or factor dynamics issues that cause inconsistent predictions
      - Available for use in evaluation pipeline (can be integrated into analysis functions as needed)
      - Status: ✅ **IMPLEMENTED IN CODE** (previous iteration) - Available for use in evaluation pipeline
-  12. **Robust Statistics and Bootstrap Confidence Intervals** (`src/evaluation/evaluation_metrics.py` - Current Iteration):
+  12. **Robust Statistics and Bootstrap Confidence Intervals** (`src/evaluation/evaluation_metrics.py`, `src/evaluation/evaluation_aggregation.py` - Current Iteration):
      - Added `calculate_robust_metrics()` function for median-based metrics (more resistant to outliers)
        - Calculates robust_sMAE, robust_sMSE, robust_sRMSE using median instead of mean
        - Provides IQR-based metrics and outlier detection using IQR method
@@ -659,6 +670,13 @@ See detailed plan below for specific actions and execution commands.
        - Provides 95% confidence intervals for sMAE, sMSE, sRMSE using bootstrap resampling
        - Uses 1000 bootstrap samples by default for statistical reliability
        - Helps assess uncertainty in DDFM performance evaluation
+     - **Enhanced Integration** (Current Iteration):
+       - `analyze_ddfm_prediction_quality()` now automatically calculates robust metrics alongside mean-based metrics
+       - Automatically uses robust (median-based) metrics when coefficient of variation > 0.5 (indicating outliers)
+       - Provides both mean-based and robust improvement percentages for comparison
+       - Recommendations indicate when robust metrics are used and explain why
+       - Summary logging includes robust metrics when outliers are detected
+       - Improves reliability of DDFM performance evaluation, especially for targets with volatile horizons
      - Added `aggregate_robust_metrics_across_horizons()` function for robust horizon aggregation
        - Aggregates metrics across horizons using median instead of mean
        - Provides IQR statistics for metric spread across horizons

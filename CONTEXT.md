@@ -6,10 +6,12 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 ## Current Experiment State
 
 ### Training Status
-- **checkpoint/**: ❌ **NOT TRAINED** - Directory is EMPTY (no model.pkl files exist)
-- **Critical**: No models exist. Training is REQUIRED before any forecasting or backtesting experiments can be run.
-- **Action Required**: Step 1 must run `bash agent_execute.sh train` to train all 12 models (3 targets × 4 models: ARIMA, VAR, DFM, DDFM)
-- **Code Improvements Ready**: All DDFM improvements are implemented in code and will be automatically applied during training (deeper encoder, tanh, weight_decay, mult_epoch_pretrain, batch_size for KOEQUIPTE)
+- **checkpoint/**: ✅ **TRAINED** - Directory contains 12 model.pkl files (all 3 targets × 4 models: ARIMA, VAR, DFM, DDFM), trained Dec 9 02:35-02:47
+- **Note**: Models exist but were trained BEFORE latest DDFM improvements (deeper encoder, tanh, weight_decay, mult_epoch_pretrain, batch_size for KOEQUIPTE)
+- **Options**: 
+  1. Use existing models for experiments (forecasting/backtesting can run now)
+  2. Re-train with latest improvements via `bash agent_execute.sh train` (recommended to test DDFM improvements)
+- **Code Improvements Ready**: All DDFM improvements are implemented in code and will be automatically applied during re-training if Option 2 is chosen
 
 ### Forecasting Status
 - **outputs/experiments/aggregated_results.csv**: EXISTS (265 lines) - **OLD RESULTS from previous runs**
@@ -17,8 +19,8 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
   - DFM: Valid results for all 3 targets (21 horizons for KOIPALL.G/KOEQUIPTE, 22 for KOWRCCNSE) (from old runs)
   - DDFM: Valid results for all 3 targets (21 horizons for KOIPALL.G/KOEQUIPTE, 22 for KOWRCCNSE) (from old runs, before latest code improvements)
   - ARIMA: n_valid=0 for all targets/horizons (no valid results)
-- **Tables**: All forecasting tables regenerated (Dec 9 08:19) from aggregated_results.csv: tab_dataset_params.tex, tab_forecasting_results.tex, 4 appendix tables (tab_appendix_forecasting_*.tex)
-- **Plots**: All forecasting plots regenerated (Dec 9 08:19) from current data: 3 forecast_vs_actual_*.png, accuracy_heatmap.png, horizon_trend.png
+- **Tables**: All forecasting tables regenerated (Dec 9 08:30) from aggregated_results.csv: tab_dataset_params.tex, tab_forecasting_results.tex, 4 appendix tables (tab_appendix_forecasting_*.tex)
+- **Plots**: All forecasting plots regenerated (Dec 9 08:30) from current data: 3 forecast_vs_actual_*.png, accuracy_heatmap.png, horizon_trend.png
 - **Note**: Tables/plots regenerated and reflect current experiment state. Cannot generate new results without trained models. Training is REQUIRED first.
 
 ### Nowcasting Status
@@ -27,9 +29,9 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
   - **Code Fix**: CUDA tensor conversion errors fixed in code (`.cpu().numpy()` pattern added) - **NOT VERIFIED BY EXPERIMENTS** (cannot verify without trained models)
   - **Action Required**: (1) Train models first via `bash agent_execute.sh train`, then (2) re-run backtest experiments via `bash agent_execute.sh backtest` to verify fix works
   - **Structure Fix (Previous Iteration)**: `nowcast()` function in `src/train.py` now creates `results_by_timepoint` structure expected by table/plot code (lines 1365-1512)
-- **Tables**: tab_nowcasting_backtest.tex regenerated (Dec 9 08:19) from current backtest JSON files (correctly shows N/A for all failed backtests)
+- **Tables**: tab_nowcasting_backtest.tex regenerated (Dec 9 08:30) from current backtest JSON files (correctly shows N/A for all failed backtests)
   - `table_nowcasts.py` correctly handles successful vs failed results (checks for `status: 'ok'` and calculates errors from `forecast_value - actual_value`)
-- **Plots**: Nowcasting plots regenerated (Dec 9 08:19) from current backtest data: 3 comparison plots (nowcasting_comparison_*.png), 3 trend_error plots (nowcasting_trend_error_*.png) showing placeholders since all backtests failed
+- **Plots**: Nowcasting plots regenerated (Dec 9 08:30) from current backtest data: 3 comparison plots (nowcasting_comparison_*.png), 3 trend_error plots (nowcasting_trend_error_*.png) showing placeholders since all backtests failed
 - **Note**: Tables/plots regenerated and correctly reflect current state (all backtests failed). Will need regeneration after backtests are re-run with fixed code. `nowcast()` function now creates `results_by_timepoint` structure, and `table_nowcasts.py` correctly processes successful results when available.
 
 ## Code Improvements Applied (Not Yet Verified by Experiments)
