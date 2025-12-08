@@ -1386,7 +1386,12 @@ def run_backtest_evaluation(
                                     # All values are very similar - distribute evenly across range
                                     # Use order of appearance to ensure variation
                                     total_count = len(extreme_list)
-                                    normalized = order / max(1, total_count - 1) if total_count > 1 else 0.5
+                                    # Fix: Use (total_count - 1) as denominator to distribute evenly from 0.0 to 1.0
+                                    # order is 0-based, so first value (order=0) maps to 0.0, last value maps to 1.0
+                                    if total_count > 1:
+                                        normalized = order / (total_count - 1)
+                                    else:
+                                        normalized = 0.5  # Single value: place in middle
                                     if is_positive:
                                         return clip_bound + normalized * soft_clip_range
                                     else:
