@@ -383,6 +383,18 @@ def _train_forecaster(
         loss_function = model_params.get('loss_function', 'mse')
         huber_delta = model_params.get('huber_delta', 1.0)
         
+        # Regularization and training stability improvements
+        # Weight decay helps prevent encoder from collapsing to linear behavior
+        weight_decay = model_params.get('weight_decay', 0.0)
+        if target_series == 'KOEQUIPTE':
+            # Use weight decay for KOEQUIPTE to prevent linear collapse
+            if weight_decay == 0.0:
+                weight_decay = 1e-4  # Small weight decay to encourage nonlinear features
+                logger.info(f"Using weight_decay={weight_decay} for {target_series} to prevent linear collapse")
+        
+        # Gradient clipping for training stability (default: 1.0)
+        grad_clip_val = model_params.get('grad_clip_val', 1.0)
+        
         config_dict = model_cfg_dict if model_cfg_dict else {}
         if not config_dict or 'series' not in config_dict:
             raise ValidationError(f"No series found in config. Config: {config_name}")
@@ -396,7 +408,9 @@ def _train_forecaster(
             batch_size=batch_size,
             loss_function=loss_function,
             huber_delta=huber_delta,
-            activation=activation
+            activation=activation,
+            weight_decay=weight_decay,
+            grad_clip_val=grad_clip_val
         )
         
         target_series = _extract_target_series(cfg)

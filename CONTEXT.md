@@ -10,29 +10,29 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 - **Impact**: All experiments require trained models. Cannot proceed with forecasting/nowcasting until training completes.
 
 ### Forecasting Status
-- **outputs/experiments/aggregated_results.csv**: EXISTS (265 lines)
-  - VAR: Valid results for all 3 targets × 22 horizons
-  - DFM: Valid results for all 3 targets (21 horizons for KOIPALL.G/KOEQUIPTE, 22 for KOWRCCNSE)
-  - DDFM: Valid results for all 3 targets (21 horizons for KOIPALL.G/KOEQUIPTE, 22 for KOWRCCNSE)
+- **outputs/experiments/aggregated_results.csv**: EXISTS (265 lines) - **NOTE: Results may be outdated since models are not trained**
+  - VAR: Valid results for all 3 targets × 22 horizons (from previous runs)
+  - DFM: Valid results for all 3 targets (21 horizons for KOIPALL.G/KOEQUIPTE, 22 for KOWRCCNSE) (from previous runs)
+  - DDFM: Valid results for all 3 targets (21 horizons for KOIPALL.G/KOEQUIPTE, 22 for KOWRCCNSE) (from previous runs, before code improvements)
   - ARIMA: n_valid=0 for all targets/horizons (no valid results)
-- **Tables**: All forecasting tables regenerated (tab_forecasting_results.tex, tab_appendix_forecasting_*.tex)
-- **Plots**: All forecasting plots regenerated (forecast_vs_actual_*.png, accuracy_heatmap.png, horizon_trend.png)
+- **Tables**: All forecasting tables generated (2025-12-09): tab_dataset_params.tex, tab_forecasting_results.tex, 4 appendix tables (tab_appendix_forecasting_*.tex)
+- **Plots**: All forecasting plots generated (2025-12-09): 3 forecast_vs_actual_*.png, accuracy_heatmap.png, horizon_trend.png
 
 ### Nowcasting Status
 - **outputs/backtest/**: 6 JSON files exist (DFM/DDFM for 3 targets)
   - **Status**: ALL FAILED - All 6 files show "status": "failed" with CUDA tensor conversion errors
-  - **Code Fix**: CUDA tensor conversion errors fixed in code (`.cpu().numpy()` pattern added)
+  - **Code Fix**: CUDA tensor conversion errors fixed in code (`.cpu().numpy()` pattern added) - **NOT VERIFIED BY EXPERIMENTS**
   - **Action Required**: Re-run backtest experiments after training to verify fix works
-- **Tables**: tab_nowcasting_backtest.tex regenerated (correctly shows N/A for all failed backtests)
-- **Plots**: Nowcasting plots regenerated (placeholders since all backtests failed)
+- **Tables**: tab_nowcasting_backtest.tex generated (2025-12-09, correctly shows N/A for all failed backtests)
+- **Plots**: Nowcasting plots generated (2025-12-09): 3 comparison plots, 3 trend_error plots (placeholders since all backtests failed)
 
-## Code Improvements Applied (Not Yet Tested)
+## Code Improvements Applied (Not Yet Verified by Experiments)
 
 ### CUDA Tensor Conversion Fix
 - **Files Modified**: `src/models/models_utils.py`, `src/evaluation/evaluation_forecaster.py`, `src/evaluation/evaluation_metrics.py`
 - **Change**: All tensor conversions now use `.cpu().numpy()` pattern to move CUDA tensors to CPU before numpy conversion
 - **Impact**: Should fix all DFM/DDFM backtest failures
-- **Status**: Fixed in code, needs verification by re-running experiments after training
+- **Status**: Fixed in code (verified by code inspection), needs experimental verification by re-running experiments after training
 
 ### DDFM Improvements for KOEQUIPTE
 - **File Modified**: `src/train.py` (lines 363-397)
@@ -41,7 +41,7 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
   - Automatically uses tanh activation for KOEQUIPTE (instead of default 'relu')
   - Increased epochs to 150 for KOEQUIPTE with deeper encoder (from default 100)
 - **Rationale**: KOEQUIPTE shows identical performance to DFM (sMAE=1.14), suggesting encoder may be too small or activation function limiting
-- **Status**: Implemented in code, needs experiments to test effectiveness
+- **Status**: Implemented in code (verified by code inspection), needs experiments to test effectiveness (blocked by lack of trained models)
 
 ### Huber Loss Support
 - **Files Modified**: `dfm-python/src/dfm_python/models/ddfm.py`, `src/models/models_forecasters.py`
@@ -49,6 +49,20 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 - **Change**: Added `huber_delta` parameter (default 1.0) for Huber loss transition point
 - **Rationale**: Huber loss is more robust to outliers than MSE
 - **Status**: Implemented in code, needs experiments to test robustness
+
+### Weight Decay (L2 Regularization) for DDFM
+- **Files Modified**: `dfm-python/src/dfm_python/models/ddfm.py`, `src/models/models_forecasters.py`, `src/train.py`
+- **Change**: Added `weight_decay` parameter to DDFM model and DDFMForecaster (default: 0.0)
+- **Change**: KOEQUIPTE automatically uses weight_decay=1e-4 to prevent encoder from collapsing to linear behavior
+- **Rationale**: L2 regularization encourages encoder to learn diverse features, preventing overfitting to linear PCA-like solutions
+- **Status**: Implemented in code (verified by code inspection), needs experiments to test effectiveness (blocked by lack of trained models)
+
+### Gradient Clipping Improvements
+- **Files Modified**: `dfm-python/src/dfm_python/models/ddfm.py`, `dfm-python/src/dfm_python/models/mcmc.py`
+- **Change**: Added `grad_clip_val` parameter to DDFM model (default: 1.0, configurable)
+- **Change**: Gradient clipping now uses configurable value instead of hardcoded 1.0 in all training loops
+- **Rationale**: Prevents training instability and gradient explosion that can cause NaN values or linear collapse
+- **Status**: Implemented in code (verified by code inspection), improves training stability (not yet tested)
 
 ## Report Status
 
