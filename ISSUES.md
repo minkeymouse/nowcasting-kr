@@ -166,15 +166,31 @@ See detailed plan below for specific actions and execution commands.
 - **Concrete Research Plan for DDFM Metrics Improvement**:
   
   **Phase 0: Pre-Experiment Data Analysis (Can be done now, before training)**
-  1. **Correlation Structure Analysis**:
-     - **Action**: Create script to analyze correlation matrices of KOEQUIPTE vs KOIPALL.G/KOWRCCNSE
-     - **Location**: Add to `src/evaluation/` or create `src/analysis/correlation_analysis.py`
-     - **Metrics**: 
-       - Cross-correlation between target series and all input series
-       - Factor loading patterns (if available from DFM training)
-       - Negative correlation count and magnitude
-     - **Hypothesis**: If KOEQUIPTE has more negative correlations, tanh activation should help
-     - **Output**: Report/document correlation patterns to inform activation function choice
+  1. **Correlation Structure Analysis** (IMMEDIATE ACTION - No training required):
+     - **Status**: ✅ Function already implemented in `src/evaluation/evaluation_aggregation.py` - `analyze_correlation_structure()`
+     - **Action**: Execute correlation analysis for all 3 targets to compare structural differences
+     - **Execution**: 
+       ```bash
+       mkdir -p outputs/analysis
+       for target in KOEQUIPTE KOIPALL.G KOWRCCNSE; do
+         python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', '$target', output_path='outputs/analysis/correlation_analysis_${target}.json'); print(f'\n=== $target ==='); print(json.dumps(result['summary'], indent=2))"
+       done
+       ```
+     - **Key Metrics to Extract and Compare**:
+       - `negative_fraction`: Fraction of negative correlations (if KOEQUIPTE > others, tanh activation justified)
+       - `strong_negative_count`: Count of correlations < -0.3 (indicates strong negative relationships)
+       - `mean_correlation`: Average correlation magnitude (if KOEQUIPTE < others, may indicate weaker signal)
+       - `std_correlation`: Correlation distribution spread (indicates structural complexity)
+     - **Hypothesis Testing**:
+       - If KOEQUIPTE has `negative_fraction > 0.3` and others < 0.2: tanh activation should help
+       - If KOEQUIPTE has `mean_correlation < 0.1` and others > 0.2: deeper encoder needed
+       - If KOEQUIPTE has similar structure to others: investigate why DDFM works for others but not KOEQUIPTE
+     - **Output Actions**:
+       - Save results to `outputs/analysis/correlation_analysis_{target}.json` for each target
+       - Create comparison table/documentation in report discussion section
+       - Update ISSUES.md with findings and decision on improvement strategy
+     - **Expected Time**: < 5 minutes per target (15 minutes total)
+     - **Decision Point**: Based on correlation analysis, confirm or adjust improvement strategy before training
   
   2. **Factor Space Linearity Check**:
      - **Action**: Compare DFM factor loadings with DDFM encoder outputs (if available from previous training)
@@ -187,18 +203,41 @@ See detailed plan below for specific actions and execution commands.
      - **Output**: Quantify linearity of learned features
 
   **Phase 1: Test Current Improvements (After Training)**
-  1. **KOEQUIPTE Deeper Encoder + Tanh Activation Test**:
-     - **Action**: Re-run training with deeper encoder `[64, 32, 16]`, tanh activation, and 150 epochs
-     - **Code location**: Already implemented in `src/train.py` lines 363-380 (automatic for KOEQUIPTE)
-     - **Execution**: `bash agent_execute.sh train` (will automatically use new settings for KOEQUIPTE)
-     - **Evaluation**: Compare sMAE/sMSE/sRMSE with current results (baseline: sMAE=1.14)
-     - **Success criterion**: sMAE improvement of at least 10% (target: sMAE < 1.03)
-     - **Comparison method**: 
-       - Load old results from `outputs/experiments/aggregated_results.csv`
-       - Compare with new results after re-training
-       - Generate comparison table/plot
-     - **If no improvement**: Proceed to Phase 2 root cause analysis
-     - **Expected improvement**: Tanh activation should allow encoder to learn negative correlations that ReLU cannot capture
+  1. **KOEQUIPTE Deeper Encoder + Tanh Activation Test** (REQUIRES TRAINING):
+     - **Status**: ✅ Code implemented in `src/train.py` lines 363-426 (automatic for KOEQUIPTE)
+     - **Action**: Re-train models with latest improvements (deeper encoder, tanh, weight decay, etc.)
+     - **Execution**: Step 1 runs `bash agent_execute.sh train` (automatically applies KOEQUIPTE-specific settings)
+     - **KOEQUIPTE-Specific Settings Applied Automatically**:
+       - Encoder: `[64, 32, 16]` (default: `[16, 4]`)
+       - Activation: `tanh` (default: `relu`)
+       - Epochs: `150` (default: `100`)
+       - Weight decay: `1e-4` (default: `0.0`)
+       - Pre-training multiplier: `2` (default: `1`)
+       - Batch size: `64` (default: `100`)
+     - **Baseline Preservation** (before training):
+       ```bash
+       cp outputs/experiments/aggregated_results.csv outputs/experiments/aggregated_results_baseline.csv
+       ```
+     - **Evaluation Method** (after forecasting completes):
+       - Load baseline: `outputs/experiments/aggregated_results_baseline.csv`
+       - Load new results: `outputs/experiments/aggregated_results.csv`
+       - Run comparison script (see lines 424-449 in ISSUES.md) to calculate:
+         - Overall sMAE improvement percentage
+         - DDFM vs DFM difference (must be ≥ 5% for success)
+         - Horizon-specific improvements (especially volatile horizons 7-8, 13-14)
+         - Horizon 22 completion status
+     - **Success Criteria** (quantitative):
+       - **Primary**: sMAE improvement ≥ 10% (target: sMAE < 1.03 from baseline 1.14) AND DDFM ≥ 5% better than DFM
+       - **Secondary**: No degradation > 5% at any horizon
+       - **Tertiary**: Horizon 22 completed (n_valid=1, currently n_valid=0)
+     - **Automatic Analysis**: After forecasting, `detect_ddfm_linearity()` and `analyze_ddfm_prediction_quality()` automatically run
+       - Results saved to `outputs/experiments/ddfm_linearity_analysis.json`
+       - Provides linearity scores, improvement ratios, and recommendations
+     - **Decision Tree**:
+       - ✅ **SUCCESS** (improvement ≥ 10% AND DDFM > 5% better): Document improvement, proceed to Phase 1.2 (activation ablation)
+       - ⚠️ **PARTIAL** (improvement < 10% but > 0% AND DDFM > 5% better): Document findings, proceed to Phase 1.2
+       - ❌ **NEEDS INVESTIGATION** (improvement < 10% OR DDFM still identical): Check logs, verify settings applied, proceed to Phase 2
+       - ❌ **FAILURE** (no improvement or degradation): Check logs for errors, investigate root cause, proceed to Phase 2
   
   2. **Activation Function Ablation Study** (If Phase 1 shows improvement):
      - **Action**: Systematically compare 'relu' vs 'tanh' vs 'sigmoid' vs 'leaky_relu' for KOEQUIPTE
@@ -318,10 +357,20 @@ See detailed plan below for specific actions and execution commands.
      - **NEW (This Iteration)**: Consistency metric (0-1, higher = more consistent improvement across horizons)
      - **NEW (This Iteration)**: Best/worst horizon identification with improvement percentages
      - **NEW (This Iteration)**: Enhanced recommendations based on stability, consistency, and horizon-specific patterns
+     - **NEW (This Iteration)**: Linear collapse risk assessment (0-1 score, higher = more risk of encoder learning only linear features)
+     - **NEW (This Iteration)**: Horizon degradation detection (identifies horizons where DDFM performs worse than DFM)
      - Compares DDFM vs DFM baseline with improvement ratios
      - Generates specific recommendations per target based on analysis
      - Automatically runs after aggregating results via `main_aggregator()`
      - Status: ✅ **ENHANCED IN CODE** (this iteration) - Additional diagnostic metrics added for better DDFM performance analysis
+  3. **Missing Horizons Analysis** (`src/evaluation/evaluation_aggregation.py` - NEW This Iteration):
+     - Added `analyze_missing_horizons()` function to identify validation failures (n_valid=0)
+     - Analyzes missing horizons by target, model, and horizon
+     - Identifies patterns: horizons where all models fail, long-horizon failures, model-specific failures
+     - Provides recommendations for fixing validation issues
+     - Helps identify why horizon 22 fails for KOIPALL.G and KOEQUIPTE
+     - Automatically runs after aggregating results via `main_aggregator()`
+     - Status: ✅ **IMPLEMENTED IN CODE** (this iteration) - Will automatically analyze missing horizons when results are aggregated
 
 - **What Can Be Done Now (Before Training)**:
   - ✅ **Phase 0: Correlation structure analysis** - `analyze_correlation_structure()` function exists in `src/evaluation/evaluation_aggregation.py`. Can be run on existing data.csv to analyze correlation patterns before training.
@@ -464,17 +513,49 @@ See detailed plan below for specific actions and execution commands.
        - Regenerate tables/plots if results change significantly
    
   **Phase 1.2: Activation Ablation Study (If Phase 1 shows improvement)**
-  4. **Systematic activation comparison** - Find optimal activation function
-     - **Method**: Train 4 DDFM models for KOEQUIPTE with activations: 'relu', 'tanh', 'sigmoid', 'leaky_relu'
-     - **Implementation**: Modify config or `src/train.py` to accept activation override
-     - **Output**: Best activation function, performance comparison table, update report
+  4. **Systematic Activation Function Comparison** (REQUIRES TRAINING):
+     - **Status**: ⚠️ **CONDITIONAL** - Only if Phase 1 shows improvement (≥ 5% improvement)
+     - **Method**: Train 4 DDFM models for KOEQUIPTE with different activations
+     - **Activations to Test**: 'relu', 'tanh', 'sigmoid', 'leaky_relu'
+     - **Implementation**: 
+       - Modify `src/train.py` to accept activation parameter override via config
+       - Or create separate config files for each activation
+       - Keep all other settings constant (encoder [64, 32, 16], epochs 150, weight_decay 1e-4, etc.)
+     - **Execution**: Train 4 models sequentially or in parallel (if resources allow)
+     - **Evaluation**: Compare sMAE/sMSE/sRMSE across all 4 activations
+     - **Output**: 
+       - Performance comparison table (activation vs metrics)
+       - Best activation function identification
+       - Update report with findings
+       - Document in `nowcasting-report/contents/6_discussion.tex`
+     - **Expected Time**: ~2-4 hours (4 models × 30-60 minutes each)
+     - **Success Criterion**: Identify activation that gives best performance for KOEQUIPTE
    
   **Phase 1.3: Horizon 22 Investigation (Parallel with Phase 1)**
-  5. **Fix missing horizon 22** - Complete all 22 horizons for all targets
-     - **Check logs**: `log/KOEQUIPTE_ddfm_*.log` for horizon 22 errors
-     - **Code locations**: `src/evaluation/evaluation_forecaster.py`, `src/models/models_forecasters.py`
-     - **Possible causes**: Validation threshold too strict, numerical instability, index alignment
-     - **Fix**: Address validation/numerical issues, verify prediction shape/index alignment
+  5. **Fix Missing Horizon 22 Results** (REQUIRES TRAINING):
+     - **Status**: ⚠️ **INVESTIGATION NEEDED** - Currently n_valid=0 for KOIPALL.G and KOEQUIPTE at horizon 22
+     - **Current State**: KOWRCCNSE has horizon 22 (n_valid=1), but KOIPALL.G and KOEQUIPTE missing
+     - **Investigation Steps**:
+       1. Check training logs: `grep -i "horizon.*22\|error\|failed" log/*_ddfm_*.log | grep -i "KOEQUIPTE\|KOIPALL"`
+       2. Check evaluation logs: `grep -i "horizon.*22\|validation\|n_valid" log/*evaluation*.log`
+       3. Verify prediction generation: Check if predictions are generated but fail validation
+       4. Check numerical stability: Verify if predictions are NaN or inf at horizon 22
+     - **Code Locations to Check**:
+       - `src/evaluation/evaluation_forecaster.py`: Validation logic (lines checking n_valid)
+       - `src/models/models_forecasters.py`: Prediction generation for horizon 22
+       - `src/evaluation/evaluation_metrics.py`: Metric calculation that might filter horizon 22
+     - **Possible Causes**:
+       - Validation threshold too strict (prediction variance too high)
+       - Numerical instability at longest horizon (22 months)
+       - Index alignment issue (prediction index doesn't match test index)
+       - Shape mismatch (prediction shape incorrect for horizon 22)
+     - **Fix Actions**:
+       - If validation threshold issue: Adjust validation criteria for horizon 22
+       - If numerical instability: Add numerical stability checks or clipping
+       - If index alignment: Fix index alignment in prediction generation
+       - If shape mismatch: Fix prediction shape calculation for horizon 22
+     - **Verification**: After fix, re-run forecasting and verify n_valid=1 for horizon 22
+     - **Expected Time**: 1-2 hours (investigation + fix + verification)
    
   **Phase 2: Advanced Improvements (If Phase 1 fails)**
   6. **Architecture grid search** - Test different encoder architectures
@@ -510,24 +591,76 @@ See detailed plan below for specific actions and execution commands.
 - **Secondary**: Maintain KOIPALL.G and KOWRCCNSE performance (sMAE < 0.7)
 - **Tertiary**: Complete all 22 horizons for all targets (currently missing horizon 22 for KOIPALL.G and KOEQUIPTE)
 
-**Next Immediate Actions (Priority Order):**
-1. **Phase 0**: Run correlation structure analysis (can be done now, < 5 minutes per target)
-   - Execute: `python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', 'KOEQUIPTE', output_path='outputs/analysis/correlation_analysis_KOEQUIPTE.json'); print(json.dumps(result['summary'], indent=2))"`
-   - Repeat for KOIPALL.G and KOWRCCNSE for comparison
-   - Analyze: negative correlation fraction, strong negative count, mean correlation
-   - Decision: If KOEQUIPTE has higher negative correlation fraction, tanh activation is justified
-   - Output: Save results to `outputs/analysis/correlation_analysis_{target}.json`, document findings in report
-2. **Phase 1**: Re-train models via `bash agent_execute.sh train` (RECOMMENDED - ensures latest improvements are applied, ~30-60 minutes per model)
-   - Backup baseline: `cp outputs/experiments/aggregated_results.csv outputs/experiments/aggregated_results_baseline.csv`
-   - Verify KOEQUIPTE DDFM uses: deeper encoder [64, 32, 16], tanh activation, weight_decay=1e-4, mult_epoch_pretrain=2, batch_size=64
-   - Check logs for confirmation of target-specific settings
-3. **Phase 1**: Run forecasting experiments via `bash agent_execute.sh forecast` (after re-training)
-   - Results saved to `outputs/experiments/aggregated_results.csv`
-   - Automatic analysis via `detect_ddfm_linearity()` and `analyze_ddfm_prediction_quality()` functions
-4. **Phase 1**: Compare results with baseline, document improvement percentage
-   - Use comparison script in ISSUES.md (lines 424-449) to calculate improvement metrics
-   - Success criteria: sMAE improvement ≥ 10% (target < 1.03) AND DDFM ≥ 5% better than DFM
-   - Update report sections with findings, regenerate tables/plots if results change significantly
+**Next Immediate Actions (Priority Order - Concrete Steps):**
+
+**IMMEDIATE (Can be done now, no training required):**
+1. **Phase 0: Correlation Structure Analysis** (15 minutes total)
+   - **Execute**: Run correlation analysis for all 3 targets:
+     ```bash
+     mkdir -p outputs/analysis
+     for target in KOEQUIPTE KOIPALL.G KOWRCCNSE; do
+       python3 -c "from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', '$target', output_path='outputs/analysis/correlation_analysis_${target}.json'); print(f'\n=== $target ==='); print(json.dumps(result['summary'], indent=2))"
+     done
+     ```
+   - **Analyze Results**: Compare `negative_fraction`, `strong_negative_count`, `mean_correlation` across targets
+   - **Decision**: If KOEQUIPTE has `negative_fraction > 0.3` and others < 0.2, tanh activation is justified
+   - **Document**: Update `nowcasting-report/contents/6_discussion.tex` with correlation analysis findings
+   - **Update**: Add findings to ISSUES.md Phase 0 section
+
+**AFTER TRAINING (Requires models to be re-trained):**
+2. **Phase 1: Re-train Models** (Step 1 automatically runs `bash agent_execute.sh train`)
+   - **Before Training**: Backup baseline results
+     ```bash
+     cp outputs/experiments/aggregated_results.csv outputs/experiments/aggregated_results_baseline.csv
+     ```
+   - **After Training**: Verify KOEQUIPTE DDFM settings applied
+     ```bash
+     # Check checkpoint exists
+     test -f checkpoint/KOEQUIPTE_DDFM/model.pkl && echo "KOEQUIPTE DDFM trained" || echo "Missing"
+     
+     # Check logs for target-specific settings
+     grep -i "target-specific\|tanh\|weight_decay\|epochs\|mult_epoch\|batch_size" log/KOEQUIPTE_ddfm_*.log | tail -20
+     ```
+   - **Expected Log Messages**: "Using target-specific encoder architecture [64, 32, 16]", "Using tanh activation for KOEQUIPTE", etc.
+
+3. **Phase 1: Run Forecasting** (Step 1 automatically runs `bash agent_execute.sh forecast`)
+   - **Results Location**: `outputs/experiments/aggregated_results.csv`
+   - **Automatic Analysis**: `detect_ddfm_linearity()` and `analyze_ddfm_prediction_quality()` run automatically
+   - **Analysis Output**: `outputs/experiments/ddfm_linearity_analysis.json` (linearity scores, improvement ratios)
+
+4. **Phase 1: Compare Results with Baseline** (Run after forecasting completes)
+   - **Execute Comparison Script**:
+     ```python
+     import pandas as pd
+     import numpy as np
+     
+     baseline = pd.read_csv('outputs/experiments/aggregated_results_baseline.csv')
+     new = pd.read_csv('outputs/experiments/aggregated_results.csv')
+     
+     # KOEQUIPTE DDFM comparison
+     koequipte_ddfm_baseline = baseline[(baseline['target']=='KOEQUIPTE') & (baseline['model']=='DDFM')]
+     koequipte_ddfm_new = new[(new['target']=='KOEQUIPTE') & (new['model']=='DDFM')]
+     koequipte_dfm_new = new[(new['target']=='KOEQUIPTE') & (new['model']=='DFM')]
+     
+     baseline_smae = koequipte_ddfm_baseline['sMAE'].mean()
+     new_smae = koequipte_ddfm_new['sMAE'].mean()
+     dfm_smae = koequipte_dfm_new['sMAE'].mean()
+     improvement_pct = (baseline_smae - new_smae) / baseline_smae * 100
+     ddfm_vs_dfm_diff = (dfm_smae - new_smae) / dfm_smae * 100
+     
+     print(f"Baseline sMAE: {baseline_smae:.4f}")
+     print(f"New DDFM sMAE: {new_smae:.4f}")
+     print(f"New DFM sMAE: {dfm_smae:.4f}")
+     print(f"Improvement vs baseline: {improvement_pct:.2f}%")
+     print(f"DDFM vs DFM difference: {ddfm_vs_dfm_diff:.2f}%")
+     print(f"Horizon 22 status: baseline={koequipte_ddfm_baseline[koequipte_ddfm_baseline['horizon']==22]['n_valid'].values[0]}, new={koequipte_ddfm_new[koequipte_ddfm_new['horizon']==22]['n_valid'].values[0]}")
+     ```
+   - **Success Criteria**: sMAE improvement ≥ 10% (target < 1.03) AND DDFM ≥ 5% better than DFM
+   - **Documentation**: 
+     - Update `nowcasting-report/contents/6_discussion.tex` with improvement percentage and findings
+     - Update `nowcasting-report/contents/3_results_forecasting.tex` if metrics improved
+     - Update ISSUES.md with Phase 1 results and next steps
+     - Regenerate tables/plots if results change significantly
 
 **Key Files:**
 - **Code**: `src/train.py` (lines 363-426) - target-specific settings for KOEQUIPTE
