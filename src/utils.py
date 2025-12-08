@@ -8,6 +8,7 @@ This module combines:
 """
 
 import sys
+import logging
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
@@ -29,6 +30,83 @@ class ValidationError(Exception):
 class ConfigError(Exception):
     """Custom exception for configuration errors."""
     pass
+
+
+# ============================================================================
+# Centralized Logging Configuration
+# ============================================================================
+
+# Global flag to ensure logging is configured only once
+_logging_configured = False
+
+
+def setup_logging(
+    level: int = logging.INFO,
+    format_string: Optional[str] = None,
+    force: bool = False
+) -> None:
+    """Centralized logging configuration for the entire project.
+    
+    This function ensures logging is configured exactly once, preventing
+    duplicate log messages from multiple handlers.
+    
+    **Key Design Decisions:**
+    1. **No root logger handlers**: We don't use `basicConfig()` which adds
+       handlers to the root logger, as this causes duplicate messages when
+       combined with package-specific loggers.
+    2. **Package-specific loggers**: Each package (src, dfm_python) manages
+       its own logger hierarchy without propagating to root.
+    3. **Single configuration point**: All modules should call this function
+       instead of `logging.basicConfig()`.
+    
+    Parameters
+    ----------
+    level : int, default logging.INFO
+        Logging level
+    format_string : str, optional
+        Custom format string. If None, uses default format.
+    force : bool, default False
+        Force reconfiguration even if already configured. Use with caution.
+        
+    Notes
+    -----
+    - This function is idempotent - safe to call multiple times
+    - Prevents duplicate handlers by checking a global flag
+    - Removes any existing root logger handlers to prevent conflicts
+    """
+    global _logging_configured
+    
+    if _logging_configured and not force:
+        return
+    
+    if format_string is None:
+        format_string = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    
+    # CRITICAL: Remove any existing root logger handlers to prevent duplicates
+    # Root logger handlers are added by basicConfig() or other code
+    root_logger = logging.getLogger()
+    if root_logger.handlers:
+        # Remove all root handlers to prevent duplicate messages
+        # Package-specific loggers (src, dfm_python) will handle their own output
+        root_logger.handlers.clear()
+    
+    # Configure root logger level (but no handlers - let packages handle their own)
+    root_logger.setLevel(level)
+    
+    # Configure src package logger (separate from dfm_python)
+    src_logger = logging.getLogger('src')
+    src_logger.setLevel(level)
+    src_logger.propagate = False  # Don't propagate to root
+    
+    # Add handler to src logger if not already present
+    if not src_logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(
+            logging.Formatter(format_string, datefmt='%Y-%m-%d %H:%M:%S')
+        )
+        src_logger.addHandler(handler)
+    
+    _logging_configured = True
 
 
 # ============================================================================

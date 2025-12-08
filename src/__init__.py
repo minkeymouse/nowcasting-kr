@@ -1,12 +1,10 @@
-"""Source package for nowcasting experiments.
+"""Source package for forecasting experiments.
 
 This package provides:
 - Training and model comparison functionality (train.py)
-- Inference and nowcasting evaluation (infer.py)
-- Model implementations (models.py)
+- Model implementations (models/)
 - Preprocessing utilities (preprocessing.py)
-- Evaluation metrics (evaluation.py)
-- Nowcasting logic (nowcasting.py)
+- Evaluation metrics (evaluation/)
 - Configuration parsing and utilities (utils.py)
 """
 

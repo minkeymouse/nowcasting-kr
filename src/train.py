@@ -25,6 +25,7 @@ from datetime import datetime
 import json
 import numpy as np
 import pandas as pd
+import torch
 
 # Set up paths BEFORE importing from src
 # Minimal path setup to allow importing setup_cli_environment
@@ -60,15 +61,12 @@ except ImportError as e:
 
 from src.models import DFM, DDFM  # For type hints
 
+# Set up logging (centralized configuration)
+from src.utils import setup_logging
+setup_logging()
+
 # Set up logger
 logger = logging.getLogger(__name__)
-# Configure logging if not already configured
-if not logging.getLogger().handlers:
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
 
 # ============================================================================
 # Helper Functions
@@ -143,13 +141,16 @@ def _load_series_configs(cfg: DictConfig, config_path: str) -> List[dict]:
     series_dir = config_path_obj / "series"
     
     for series_id in series_ids:
-        series_config_path = series_dir / f"{series_id}.yaml"
+        # Normalize series_id: replace dots with underscores to match filename
+        # e.g., "KOIPALL.G" -> "KOIPALL_G.yaml"
+        series_id_normalized = str(series_id).replace('.', '_')
+        series_config_path = series_dir / f"{series_id_normalized}.yaml"
         
         # Default series config
         dfm_series = {
             'series_id': series_id,
             'frequency': 'm',
-            'transformation': 'lin',
+            'transformation': 'lin',  # Default fallback if not specified in config
             '_block_names': None
         }
         
@@ -159,10 +160,11 @@ def _load_series_configs(cfg: DictConfig, config_path: str) -> List[dict]:
                 with open(series_config_path, 'r') as f:
                     series_cfg = yaml.safe_load(f) or {}
                 
+                # Use transformation from series config file
                 dfm_series.update({
                     'series_id': series_cfg.get('series_id', series_id),
                     'frequency': series_cfg.get('frequency', 'm'),
-                    'transformation': series_cfg.get('transformation', 'lin'),
+                    'transformation': series_cfg.get('transformation', 'lin'),  # Use config value or default to 'lin'
                 })
                 
                 # Handle blocks/block field
@@ -171,7 +173,7 @@ def _load_series_configs(cfg: DictConfig, config_path: str) -> List[dict]:
                 elif 'block' in series_cfg and series_cfg['block'] is not None:
                     dfm_series['_block_names'] = series_cfg['block']
             except Exception as e:
-                print(f"Warning: Failed to load series config {series_id}: {e}")
+                logger.warning(f"Failed to load series config {series_id}: {e}")
         
         # Apply overrides
         if series_id in series_overrides:
@@ -198,6 +200,28 @@ def _extract_data_path(cfg: DictConfig) -> Optional[str]:
         return source_cfg.get('data_path')
     else:
         return getattr(source_cfg, 'data_path', None)
+
+
+# Target-specific preprocessing (supports optional quantile clipping)
+def _apply_target_specific_preprocessing(
+    df: pd.DataFrame,
+    target_series: str,
+    clip_quantiles: Optional[List[float]] = None
+) -> pd.DataFrame:
+    """Apply extra preprocessing for specific targets."""
+    if clip_quantiles and len(clip_quantiles) == 2:
+        try:
+            lower, upper = float(clip_quantiles[0]), float(clip_quantiles[1])
+            lower = max(0.0, min(lower, 1.0))
+            upper = max(lower, min(upper, 1.0))
+            df = df.clip(lower=df.quantile(lower), upper=df.quantile(upper), axis=1)
+            logger.info(
+                f"Applied quantile clipping for {target_series}: "
+                f"lower={lower:.3f}, upper={upper:.3f}"
+            )
+        except Exception as e:
+            logger.warning(f"Quantile clipping skipped for {target_series}: {e}")
+    return df
 
 
 # Import preprocessing functions
@@ -279,9 +303,9 @@ def _train_forecaster(
     if len(data) == 0:
         raise ValidationError(f"No data available in training period (1985-2019). Data range: {data.index.min()} to {data.index.max()}")
     
-    print(f"Training data period: {data.index.min()} to {data.index.max()} (1985-2019 enforced)")
-    print(f"Original data frequency: Weekly ({len(data)} points)")
-    print(f"All models will use monthly frequency (window-averaged from weekly data)")
+    logger.info(f"Training data period: {data.index.min()} to {data.index.max()} (1985-2019 enforced)")
+    logger.info(f"Original data frequency: Weekly ({len(data)} points)")
+    logger.info(f"All models will use monthly frequency (window-averaged from weekly data)")
     
     source_cfg = cfg.experiment if 'experiment' in cfg else cfg
     target_series = _extract_target_series(cfg)
@@ -295,11 +319,11 @@ def _train_forecaster(
         if isinstance(model_overrides_dict, dict) and model_type in model_overrides_dict:
             model_params = model_overrides_dict[model_type] or {}
     
-    print(f"\n{'='*70}")
-    print(f"Training {model_type.upper()} model")
-    print(f"{'='*70}")
-    print(f"Config: {config_name}")
-    print(f"Data: {data_file}")
+    logger.info(f"\n{'='*70}")
+    logger.info(f"Training {model_type.upper()} model")
+    logger.info(f"{'='*70}")
+    logger.info(f"Config: {config_name}")
+    logger.info(f"Data: {data_file}")
     
     if model_type == 'dfm':
         max_iter = model_params.get('max_iter', 5000)
@@ -318,8 +342,10 @@ def _train_forecaster(
         # Preprocess multivariate data for DFM (resample to monthly, set frequency)
         # Note: DFM uses internal preprocessing pipeline (imputation + scaling), so we only do resampling and frequency setting here
         y_train = prepare_multivariate_data(data, config_dict, cfg, target_series, model_type='dfm')
+        clip_quantiles = model_params.get('clip_quantiles') if isinstance(model_params, dict) else None
+        y_train = _apply_target_specific_preprocessing(y_train, target_series, clip_quantiles)
         y_train = set_dataframe_frequency(y_train)
-        print(f"Max iterations: {max_iter}, Threshold: {threshold}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
+        logger.info(f"Max iterations: {max_iter}, Threshold: {threshold}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
         
     elif model_type == 'ddfm':
         epochs = model_params.get('epochs', 100)
@@ -327,6 +353,24 @@ def _train_forecaster(
         num_factors = model_params.get('num_factors', 1)
         learning_rate = model_params.get('learning_rate', 0.005)  # Updated to match original DDFM default
         batch_size = model_params.get('batch_size', 100)  # Updated to match original DDFM default
+        
+        # Target-specific encoder architecture improvements
+        # KOEQUIPTE shows identical performance to DFM, suggesting encoder needs more capacity
+        # Use larger/deeper encoder for targets that may benefit from more nonlinear capacity
+        target_series = _extract_target_series(cfg)
+        if target_series == 'KOEQUIPTE' and encoder_layers == [16, 4]:
+            # KOEQUIPTE: Use deeper encoder to capture more complex nonlinear relationships
+            # Current [16, 4] may be too small - try [64, 32, 16] for more capacity
+            encoder_layers = model_params.get('encoder_layers', [64, 32, 16])
+            logger.info(f"Using target-specific encoder architecture for {target_series}: {encoder_layers}")
+            # Also increase epochs slightly for more complex architecture
+            if epochs == 100:
+                epochs = model_params.get('epochs', 150)
+                logger.info(f"Increased epochs to {epochs} for {target_series} with deeper encoder")
+        
+        # Loss function configuration (default: 'mse', can use 'huber' for robustness to outliers)
+        loss_function = model_params.get('loss_function', 'mse')
+        huber_delta = model_params.get('huber_delta', 1.0)
         
         config_dict = model_cfg_dict if model_cfg_dict else {}
         if not config_dict or 'series' not in config_dict:
@@ -338,15 +382,19 @@ def _train_forecaster(
             num_factors=num_factors,
             epochs=epochs,
             learning_rate=learning_rate,
-            batch_size=batch_size
+            batch_size=batch_size,
+            loss_function=loss_function,
+            huber_delta=huber_delta
         )
         
         target_series = _extract_target_series(cfg)
         # Preprocess multivariate data for DDFM (resample to monthly, set frequency)
         # Note: DDFM uses internal preprocessing pipeline (imputation + scaling), so we only do resampling and frequency setting here
         y_train = prepare_multivariate_data(data, config_dict, cfg, target_series, model_type='ddfm')
+        clip_quantiles = model_params.get('clip_quantiles') if isinstance(model_params, dict) else None
+        y_train = _apply_target_specific_preprocessing(y_train, target_series, clip_quantiles)
         y_train = set_dataframe_frequency(y_train)
-        print(f"Epochs: {epochs}, Encoder layers: {encoder_layers}, Factors: {num_factors}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
+        logger.info(f"Epochs: {epochs}, Encoder layers: {encoder_layers}, Factors: {num_factors}, Loss: {loss_function}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
         
     elif model_type == 'arima':
         if not target_series:
@@ -357,7 +405,7 @@ def _train_forecaster(
         if len(y_train) == 0:
             raise ValidationError(f"No valid monthly data for target series '{target_series}' after resampling")
         
-        print(f"Target series: {target_series} (resampled to monthly)")
+        logger.info(f"Target series: {target_series} (resampled to monthly)")
         order = model_params.get('order', [1, 1, 1])
         auto_arima = model_params.get('auto_arima', {})
         
@@ -391,7 +439,7 @@ def _train_forecaster(
             ('forecaster', base_forecaster)
         ])
         
-        print(f"Order: {order}")
+        logger.info(f"Order: {order}")
         
     elif model_type == 'var':
         lag_order = model_params.get('lag_order')
@@ -431,7 +479,7 @@ def _train_forecaster(
             if maxlags is None:
                 maxlags = 1
             forecaster = SktimeVAR(maxlags=int(maxlags), trend=str(trend))
-        print(f"Max lags: {maxlags}, Trend: {trend}, Series: {y_train.shape[1]}")
+        logger.info(f"Max lags: {maxlags}, Trend: {trend}, Series: {y_train.shape[1]}")
         # NOTE: VAR models can become numerically unstable for long forecasting horizons (>7 months)
         # This is a known limitation of VAR models. The evaluation code (evaluation.py) automatically
         # filters extreme values (>1e10) and marks them as NaN. This is expected behavior.
@@ -443,7 +491,7 @@ def _train_forecaster(
     
     # Train once on full training data (no evaluation split to avoid double training)
     forecaster.fit(y_train)
-    print(f"{'='*70}\n")
+    logger.info(f"{'='*70}\n")
     
     # No evaluation metrics (trained on full data, no held-out test set)
     forecast_metrics = {}
@@ -492,7 +540,7 @@ def _train_forecaster(
         else:
             shutil.move(str(temp_file), str(model_file))
         
-        print(f"Saved model checkpoint: {model_file}")
+        logger.info(f"Saved model checkpoint: {model_file}")
     except Exception as e:
         # Clean up temp file if save failed
         if temp_file and temp_file.exists():
@@ -686,7 +734,7 @@ def train(
                                 series_item['blocks'] = [1] + [0] * (len(block_names_order) - 1) if len(block_names_order) > 1 else [1]
                                 filtered_series_list.append(series_item)
                             else:
-                                print(f"Warning: Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with first block clock '{first_block_clock}'. Skipping.")
+                                logger.warning(f"Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with first block clock '{first_block_clock}'. Skipping.")
                         else:
                             filtered_series_list.append(series_item)
                         continue
@@ -718,7 +766,7 @@ def train(
                         series_item['blocks'] = block_vector
                         filtered_series_list.append(series_item)
                     else:
-                        print(f"Warning: Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with block clocks. Skipping.")
+                        logger.warning(f"Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with block clocks. Skipping.")
                 else:
                     if block_names_order:
                         first_block_name = block_names_order[0]
@@ -728,7 +776,7 @@ def train(
                             series_item['blocks'] = [1] + [0] * (len(block_names_order) - 1) if len(block_names_order) > 1 else [1]
                             filtered_series_list.append(series_item)
                         else:
-                            print(f"Warning: Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with first block clock '{first_block_clock}'. Skipping.")
+                            logger.warning(f"Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with first block clock '{first_block_clock}'. Skipping.")
                     else:
                         filtered_series_list.append(series_item)
         else:
@@ -764,7 +812,7 @@ def train(
 def compare_models(
     target_series: str,
     models: List[str],
-    horizons: List[int] = list(range(1, 23)),  # 22 monthly horizons: 2024-01 to 2025-10
+    horizons: List[int] = list(range(1, 23)),  # 22 monthly horizons: relative positions in test period (2024-01 to 2025-10)
     data_path: Optional[str] = None,
     config_dir: Optional[str] = None,
     config_name: Optional[str] = None,
@@ -928,14 +976,42 @@ def compare_models(
                     y_train_eval = train_data
                     y_test_eval = test_data
                     
+                    # For DFM/DDFM, extract recent data (2020-2023) for factor state update
+                    # This period is between training (1985-2019) and test (2024-2025)
+                    y_recent_eval = None
+                    if model_name.lower() in ['dfm', 'ddfm']:
+                        recent_start = pd.Timestamp('2020-01-01')
+                        recent_end = pd.Timestamp('2023-12-31')
+                        recent_data = full_data[(full_data.index >= recent_start) & (full_data.index <= recent_end)]
+                        if len(recent_data) > 0:
+                            recent_data_monthly = resample_to_monthly(recent_data)
+                            # Align columns with training data
+                            if isinstance(y_train_eval, pd.DataFrame):
+                                available_cols = [col for col in y_train_eval.columns if col in recent_data_monthly.columns]
+                                if len(available_cols) > 0:
+                                    y_recent_eval = recent_data_monthly[available_cols].copy()
+                                    # Reorder to match training data column order
+                                    y_recent_eval = y_recent_eval[y_train_eval.columns]
+                                    logger.info(f"Extracted {len(y_recent_eval)} recent periods ({recent_start} to {recent_end}) for {model_name.upper()} update")
+                                else:
+                                    logger.warning(f"No matching columns for recent data, skipping update for {model_name.upper()}")
+                            else:
+                                y_recent_eval = recent_data_monthly
+                        else:
+                            logger.warning(f"No recent data available ({recent_start} to {recent_end}) for {model_name.upper()} update")
+                    
                     logger.info(f"Evaluation data: train={len(y_train_eval)} points ({train_start} to {train_end}), test={len(y_test_eval)} points ({test_start} to {test_end})")
+                    if y_recent_eval is not None:
+                        logger.info(f"Recent data for update: {len(y_recent_eval)} points (2020-01-01 to 2023-12-31)")
                     
                     from src.evaluation import evaluate_forecaster
                     try:
                         # evaluate_forecaster will call fit() internally, but since forecaster is already fitted,
                         # it should use the existing fitted state. However, to be safe, we check if it's fitted first.
+                        # For DFM/DDFM, pass y_recent_eval to update factor state before prediction
                         forecast_metrics_raw = evaluate_forecaster(
-                            forecaster, y_train_eval, y_test_eval, horizons, target_series=target_series
+                            forecaster, y_train_eval, y_test_eval, horizons, 
+                            target_series=target_series, y_recent=y_recent_eval
                         )
                         forecast_metrics = {str(k): v for k, v in forecast_metrics_raw.items()}
                         result['metrics'] = {'forecast_metrics': forecast_metrics}
@@ -1090,7 +1166,7 @@ def train_model(
     if model_name is None:
         model_name = models[0] if models else None
         if len(models) > 1:
-            print(f"Warning: Config specifies {len(models)} models, training only first: {model_name}")
+            logger.warning(f"Config specifies {len(models)} models, training only first: {model_name}")
     
     if not model_name:
         raise ValueError(f"Config {config_name} must specify at least one model in 'models' list")
@@ -1153,6 +1229,159 @@ def compare_models_by_config(
 
 
 # ============================================================================
+# Nowcasting (DFM/DDFM) entry point
+# ============================================================================
+
+def _load_checkpoint_forecaster(checkpoint_path: Path):
+    """Load forecaster from checkpoint pickle."""
+    import pickle
+    with open(checkpoint_path, 'rb') as f:
+        data = pickle.load(f)
+    forecaster = data.get('forecaster')
+    cfg_saved = data.get('config')
+    return forecaster, cfg_saved
+
+
+def _get_model_feature_cols_from_forecaster(forecaster, cfg_saved) -> Optional[List[str]]:
+    """Derive feature columns used to train the DFM/DDFM forecaster."""
+    if hasattr(forecaster, "_y") and isinstance(getattr(forecaster, "_y"), pd.DataFrame):
+        return list(forecaster._y.columns)
+    try:
+        if cfg_saved and isinstance(cfg_saved, dict):
+            exp_cfg = cfg_saved.get('experiment', cfg_saved)
+            series = exp_cfg.get('series') or []
+            if isinstance(series, list):
+                return [str(s) for s in series]
+    except Exception:
+        pass
+    return None
+
+
+def nowcast(
+    config_name: str,
+    config_dir: Optional[str],
+    checkpoint_dir: str,
+    model_name: str,
+    nowcast_start: str,
+    nowcast_end: str,
+    output_dir: str = "outputs/backtest",
+    weeks_before: Optional[List[int]] = None
+) -> Dict[str, Any]:
+    """Generate simple nowcasts using checkpointed DFM/DDFM models.
+    
+    This uses an update() -> predict(horizon=1) pattern per nowcast month,
+    reloading the model for each month to avoid state accumulation. Data for
+    the target month is held out (only data up to previous month is used to
+    update state), approximating a release mask.
+    """
+    config_dir = config_dir or str(get_project_root() / "config")
+    cfg = parse_experiment_config(config_name, config_dir)
+    params = extract_experiment_params(cfg)
+    target_series = params.get('target_series')
+    data_path = params.get('data_path') or str(get_project_root() / "data" / "data.csv")
+    if not target_series:
+        raise ValueError("target_series required for nowcast")
+    # Load and resample data
+    data = pd.read_csv(data_path, index_col=0, parse_dates=True)
+    monthly = data
+    if isinstance(monthly.index, pd.DatetimeIndex):
+        monthly = monthly.sort_index()
+    monthly = monthly[(monthly.index >= pd.Timestamp('1985-01-01'))]
+    monthly = monthly.resample('MS').mean()
+    nowcast_start_ts = pd.to_datetime(nowcast_start)
+    nowcast_end_ts = pd.to_datetime(nowcast_end)
+    months = pd.date_range(nowcast_start_ts, nowcast_end_ts, freq='MS')
+    checkpoint_path = Path(checkpoint_dir) / f"{target_series}_{model_name}" / "model.pkl"
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+    output_dir_path = Path(output_dir)
+    output_dir_path.mkdir(parents=True, exist_ok=True)
+    results = []
+    for ts in months:
+        # Reload forecaster fresh each month to avoid state carryover
+        forecaster, cfg_saved = _load_checkpoint_forecaster(checkpoint_path)
+        if forecaster is None:
+            results.append({"date": ts.strftime("%Y-%m-%d"), "status": "failed", "error": "forecaster not found in checkpoint"})
+            continue
+        model_feature_cols = _get_model_feature_cols_from_forecaster(forecaster, cfg_saved)
+        # Prepare available data up to previous month
+        available_end = ts - pd.offsets.MonthBegin(1)
+        y_available = monthly.loc[:available_end]
+        if isinstance(y_available, pd.DataFrame) and model_feature_cols:
+            cols = [c for c in model_feature_cols if c in y_available.columns]
+            y_available = y_available[cols]
+        # Drop all-NaN rows to avoid empty updates
+        if isinstance(y_available, pd.DataFrame):
+            y_available = y_available.dropna(how='all')
+        if len(y_available) == 0:
+            results.append({"date": ts.strftime("%Y-%m-%d"), "status": "failed", "error": "no available data before target month"})
+            continue
+        # Update state then predict horizon=1
+        try:
+            if hasattr(forecaster, "_dfm_model") or hasattr(forecaster, "_ddfm_model"):
+                import torch  # Ensure torch is in scope even if module import was skipped
+                dfm_model = getattr(forecaster, "_dfm_model", None) or getattr(forecaster, "_ddfm_model", None)
+                # Move model to CUDA if available; otherwise CPU
+                target_device = "cuda" if torch.cuda.is_available() else "cpu"
+                try:
+                    if hasattr(dfm_model, "to"):
+                        dfm_model.to(target_device)
+                except Exception:
+                    target_device = "cpu"
+                    try:
+                        if hasattr(dfm_model, "to"):
+                            dfm_model.to(target_device)
+                    except Exception:
+                        pass
+                result = getattr(dfm_model, "result", None)
+                if result is None or not hasattr(result, "Mx") or not hasattr(result, "Wx"):
+                    raise RuntimeError("Model result missing Mx/Wx")
+                Mx = np.asarray(result.Mx)
+                Wx = np.asarray(result.Wx)
+                y_vals = y_available.values
+                Mx_use = Mx[: y_vals.shape[1]]
+                Wx_use = np.where(Wx[: y_vals.shape[1]] == 0, 1.0, Wx[: y_vals.shape[1]])
+                X_std = (y_vals - Mx_use) / Wx_use
+                X_std = np.where(np.isfinite(X_std), X_std, np.nan)
+                # Move to target device as torch tensor
+                X_std_tensor = torch.tensor(X_std, dtype=torch.float32, device=target_device)
+                dfm_model.update(X_std_tensor, history=None)
+                raw_pred = dfm_model.predict(horizon=1)
+                from src.models.models_utils import _convert_predictions_to_dataframe
+                pred_df = _convert_predictions_to_dataframe(raw_pred, y_available, 1)
+                pred_val = None
+                if isinstance(pred_df, pd.DataFrame):
+                    if target_series in pred_df.columns:
+                        pred_val = float(pred_df[target_series].iloc[0])
+                    elif pred_df.shape[1] > 0:
+                        pred_val = float(pred_df.iloc[0, 0])
+                elif isinstance(pred_df, pd.Series) and len(pred_df) > 0:
+                    pred_val = float(pred_df.iloc[0])
+                results.append({
+                    "date": ts.strftime("%Y-%m-%d"),
+                    "prediction": pred_val,
+                    "n_features": y_vals.shape[1],
+                    "status": "ok"
+                })
+            else:
+                results.append({"date": ts.strftime("%Y-%m-%d"), "status": "failed", "error": "not a DFM/DDFM forecaster"})
+        except Exception as e:
+            results.append({"date": ts.strftime("%Y-%m-%d"), "status": "failed", "error": str(e)})
+    # Persist
+    out_file = output_dir_path / f"{target_series}_{model_name}_backtest.json"
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump({
+            "target_series": target_series,
+            "model": model_name,
+            "config": config_name,
+            "nowcast_start": nowcast_start,
+            "nowcast_end": nowcast_end,
+            "weeks_before": weeks_before or [],
+            "results": results
+        }, f, indent=2)
+    return {"output": str(out_file), "results": results}
+
+# ============================================================================
 # CLI Entry Point
 # ============================================================================
 
@@ -1171,6 +1400,15 @@ def main():
     compare_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/investment_koequipte_report)")
     compare_parser.add_argument("--override", action="append", help="Hydra config override")
     compare_parser.add_argument("--models", nargs="+", help="Filter models to run (e.g., --models arima var). If not specified, runs all models from config.")
+
+    nowcast_parser = subparsers.add_parser('nowcast', help='Run nowcasting using checkpointed DFM/DDFM models')
+    nowcast_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/investment_koequipte_report)")
+    nowcast_parser.add_argument("--model", required=True, help="Model name (dfm or ddfm)")
+    nowcast_parser.add_argument("--checkpoint-dir", default="checkpoint", help="Checkpoint directory (default: checkpoint)")
+    nowcast_parser.add_argument("--nowcast-start", required=True, help="Nowcast start date (YYYY-MM-DD)")
+    nowcast_parser.add_argument("--nowcast-end", required=True, help="Nowcast end date (YYYY-MM-DD)")
+    nowcast_parser.add_argument("--output-dir", default="outputs/backtest", help="Output directory for backtest JSON")
+    nowcast_parser.add_argument("--weeks-before", nargs="*", help="Optional weeks-before releases (unused placeholder)")
     
     args = parser.parse_args()
     
@@ -1198,6 +1436,21 @@ def main():
         print(f"\n✓ Comparison saved to: {result['output_dir']}")
         if result.get('failed_models'):
             print(f"  Failed: {', '.join(result['failed_models'])}")
+    elif args.command == 'nowcast':
+        result = nowcast(
+            config_name=args.config_name,
+            config_dir=config_path,
+            checkpoint_dir=args.checkpoint_dir,
+            model_name=args.model,
+            nowcast_start=args.nowcast_start,
+            nowcast_end=args.nowcast_end,
+            output_dir=args.output_dir,
+            weeks_before=args.weeks_before
+        )
+        print(f"\n✓ Nowcast saved to: {result['output']}")
+        failed = [r for r in result['results'] if r.get('status') != 'ok']
+        if failed:
+            print(f"  Failed entries: {len(failed)}")
 
 
 if __name__ == "__main__":

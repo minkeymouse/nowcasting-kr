@@ -295,7 +295,8 @@ except Exception as e:
     # Test 5: Source code structure
     echo "[TEST 5] Checking source code structure..."
     local missing_files=0
-    for file in "src/train.py" "src/infer.py" "src/models.py" "src/utils.py" "src/preprocessing.py" "src/evaluation.py"; do
+    # Check for main entry points and key modules (organized in subdirectories)
+    for file in "src/train.py" "src/infer.py" "src/utils.py" "src/preprocessing.py" "src/models/__init__.py" "src/models/models.py" "src/evaluation/__init__.py" "src/evaluation/evaluation.py"; do
         if [ -f "$file" ]; then
             echo "  ✓ PASS: $file exists"
             test_passed=$((test_passed + 1))
@@ -558,14 +559,18 @@ validate_environment() {
     }
     echo "✓ Virtual environment activated"
     
-    if [ -f "data/data.csv" ]; then
+    # Prefer the aggregated weekly→monthly file; fall back to original for sanity.
+    if [ -f "data/data_weekly_averaged.csv" ]; then
+        DATA_FILE="data/data_weekly_averaged.csv"
+        echo "✓ Data file exists: $DATA_FILE"
+    elif [ -f "data/data.csv" ]; then
         DATA_FILE="data/data.csv"
         echo "✓ Data file exists: $DATA_FILE"
     elif [ -f "data/sample_data.csv" ]; then
         DATA_FILE="data/sample_data.csv"
         echo "✓ Data file exists: $DATA_FILE"
     else
-        echo "✗ Error: Data file not found"
+        echo "✗ Error: Data file not found (expected data/data_weekly_averaged.csv)"
         return 1
     fi
     
@@ -655,6 +660,10 @@ run_training() {
     
     # All models save logs to log/ folder (stdout/stderr capture)
     # DFM/DDFM detailed logs also go to lightning_logs/ (PyTorch Lightning default)
+    mkdir -p log || {
+        echo "✗ Error: Cannot create log/ directory"
+        return 1
+    }
     local log_file="log/${target}_${model}_$(date +%Y%m%d_%H%M%S).log"
     
     echo ""

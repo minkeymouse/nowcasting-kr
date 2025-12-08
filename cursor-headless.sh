@@ -2,13 +2,14 @@
 # Cursor headless workflow runner for nowcasting-kr
 # Implements the steps described in WORKFLOW.md using cursor-agent
 #
-# FINALIZED WORKFLOW:
-# - Generic model performance anomaly detection (near-perfect, too good, or too poor results)
-# - dfm-python package inspection for code quality and theoretical correctness
-# - Report documentation emphasis (theoretically correct details per WORKFLOW.md)
-# - Optional LaTeX PDF compilation (LaTeX installed, compilation optional)
-# - Automatic commit and push to remote origin (submodules pushed every 2 iterations)
-# - Comprehensive error handling and logging
+# REPORT-FOCUSED WORKFLOW:
+# - Report writing and improvement (primary focus)
+# - DDFM metrics improvement research (continuous)
+# - Experiment execution via agent_execute.sh (run_train.sh, run_nowcast.sh, run_forecast.sh as needed)
+# - Table and plot generation from experiment results
+# - LaTeX PDF compilation (LaTeX installed, compilation optional)
+# - Automatic commit and push to remote origin (submodules pushed every 10 iterations)
+# - Legacy code cleanup (dfm-python updated to latest version)
 
 # Don't exit on error - pipeline should persist until user cancels
 set +e
@@ -41,14 +42,14 @@ Runs the specified number of iterations (each iteration runs steps 1-9).
 Arguments:
   number_of_iterations  Number of iterations to run (1, 2, 3, ...)
 
-Steps in each iteration (match WORKFLOW.md):
-  1   Run experiments automatically via @agent_execute.sh (checks what's needed and runs train/forecast/backtest/all)
-  2   Inspect codebases - fresh start, check FEEDBACK.md
-  3   Work on the plan from step 2 (incorporate FEEDBACK.md)
-  4   Analyze results; update STATUS/ISSUES/CONTEXT
-  5   Plan improvements for dfm-python & report (check FEEDBACK.md)
-  6   Execute improvement plan (code/report updates, incorporate FEEDBACK.md)
-  7   Continue remaining plan items (check FEEDBACK.md)
+Steps in each iteration (report-focused workflow):
+  1   Run experiments if needed via @agent_execute.sh (checks what's needed and runs train/forecast/backtest/all)
+  2   Report writing: Analyze results and write/update report sections (check FEEDBACK.md)
+  3   Report writing: Continue report sections and plan DDFM metrics improvements (check FEEDBACK.md)
+  4   Report writing: Generate tables and plots, update report with results (check FEEDBACK.md)
+  5   DDFM metrics research: Plan and implement DDFM metrics improvements (check FEEDBACK.md)
+  6   Report writing: Continue report sections and incorporate DDFM improvements (check FEEDBACK.md)
+  7   Report writing: Finalize report sections, compile PDF, verify content (check FEEDBACK.md)
   8   Summarize iteration; refresh CONTEXT/STATUS/ISSUES
   9   Stage, commit & push to origin (push submodules every 2nd iteration for user review)
 
@@ -296,22 +297,23 @@ workflow_context() {
 
 # GOAL
 - Write complete report (under 15 pages) comparing 4 models (ARIMA, VAR, DFM, DDFM) on 3 targets
-- Finalize @dfm-python/ with clean code pattern, consistent and generic naming
+- Improve DDFM metrics through continuous research and experimentation
+- Clean up legacy code (dfm-python updated to latest version, remove deprecated code)
 
 # EXPERIMENT CONFIGURATION
 - Targets: 3 (KOEQUIPTE, KOWRCCNSE, KOIPALL.G)
 - Models: 4 (ARIMA, VAR, DFM, DDFM)
-- Forecasting Horizons: 1-30 days (table shows 1, 7, 30)
-- Forecasting Total: 360 combinations (3 × 4 × 30) if using all horizons
-- Nowcasting: 12 months (2024-01 ~ 2024-12), 2 time points (4 weeks, 1 week before)
+- Forecasting Horizons: 22 months (2024-01 to 2025-10)
+- Nowcasting: 22 months (2024-01 to 2025-10), 2 time points (4 weeks, 1 week before)
 - Series configs: All series use block: null
 - Data file: data/data.csv
 - Training period: 1985-01-01 to 2019-12-31 (no data leakage)
 
 # REPORT STRUCTURE
-- 6 sections: Introduction, Methodology, Production Model, Investment Model, Consumption Model, Conclusion
+- 7 sections: Introduction, Methodology, Results (Forecasting, Nowcasting, Performance), Discussion, Issues
 - Target: Under 15 pages
-- Tables: tab_overall_metrics, tab_by_target, tab_by_horizon
+- Tables: 3 required tables (dataset/params, forecasting results, nowcasting backtest)
+- Plots: 4 required plots (forecast vs actual, accuracy heatmap, performance trend, nowcasting comparison)
 
 # DESIRED OUTPUT (from WORKFLOW.md)
 ## Tables (3 required):
@@ -319,39 +321,46 @@ workflow_context() {
 2. Standardized MSE/MAE for (target, model, horizon) pairs - 36 rows
 3. DFM/DDFM backtest results for 2024-2025 by month (train 1985-2019, nowcast Jan 2024-Oct 2025)
 
-## Images (3 required):
-1. Forecast vs actual plots: 3 plots (one per target), 60 months total (30 historical + 30 forecasts)
+## Images (4 required):
+1. Forecast vs actual plots: 3 plots (one per target), 34 months total (12 historical + 22 forecasts)
 2. Accuracy heatmap: 4 models × 3 targets (standardized RMSE)
-3. Performance trend: Performance by forecasting horizon (1, 7, 28 days)
+3. Performance trend: Performance by forecasting horizon (1-22 months)
+4. Nowcasting comparison: 3 pairs of plots (4 weeks vs 1 week before) for each target
 
-# WORKFLOW PRIORITY:
-1. FIRST: Inspect and fix critical issues (model performance anomalies - near-perfect, too good, or too poor results, dfm-python package)
-2. THEN: Run missing experiments if needed (use @agent_execute.sh to decide which to run: train/forecast/backtest/all)
-3. THEN: Generate tables and plots from experiment results as specified in WORKFLOW.md
-4. FINALLY: Build/update report sections using generated tables and plots - ensure all theoretically correct details are documented
-5. OPTIONAL: Check LaTeX PDF compilation if needed (LaTeX is installed, but compilation is optional)
-6. COMMIT & PUSH: Ensure all changes are committed and pushed to remote origin
+# WORKFLOW PRIORITY (REPORT-FOCUSED):
+1. FIRST: Run experiments if needed (use @agent_execute.sh to decide which to run: train/forecast/backtest/all)
+2. THEN: Generate tables and plots from experiment results as specified in WORKFLOW.md
+3. THEN: Write/update report sections using generated tables and plots - ensure all theoretically correct details are documented
+4. CONTINUOUS: Research and improve DDFM metrics (evaluate, experiment, iterate)
+5. CLEANUP: Remove legacy code (dfm-python updated to latest version, remove deprecated/unused code)
+6. OPTIONAL: Check LaTeX PDF compilation if needed (LaTeX is installed, but compilation is optional)
+7. COMMIT & PUSH: Ensure all changes are committed and pushed to remote origin
 
 # EXPERIMENT EXECUTION RULES:
 - Step 1 automatically checks what experiments are needed and runs @agent_execute.sh
 - Step 1 checks: checkpoint/ (training), outputs/experiments/aggregated_results.csv (forecasting), outputs/backtest/ (backtesting)
-- Step 1 automatically executes: bash agent_execute.sh {train|forecast|backtest|all} based on what's needed
+- Step 1 automatically executes: bash agent_execute.sh (auto-detects what's needed)
+- agent_execute.sh calls: run_train.sh, run_nowcast.sh, run_forecast.sh as needed
 - Agent ONLY modifies code - Agent MUST NOT execute any scripts
-- Agent MUST NOT directly execute run_train.sh, run_forecast.sh, run_backtest.sh, or agent_execute.sh
+- Agent MUST NOT directly execute run_train.sh, run_nowcast.sh, run_forecast.sh, or agent_execute.sh
 
-# KNOWN ISSUES TO INSPECT:
-- Model performance anomalies: Results that are near-perfect, too good, or too poor may indicate issues (data leakage, numerical instability, implementation errors, etc.) - inspect training/evaluation code and model implementations
-- dfm-python inspection: Inspect @dfm-python/ package for code quality, numerical stability, theoretical correctness, and potential improvements
-- Report documentation: Ensure all theoretically correct details and tables are properly documented in the report as specified in WORKFLOW.md
+# FOCUS AREAS:
+- Report writing: Write and update report sections with results, analysis, and discussion
+- DDFM metrics improvement: Research and improve DDFM evaluation metrics through experimentation
+- Table and plot generation: Generate all required tables and plots from experiment results
+- Legacy code cleanup: Remove deprecated/unused code (dfm-python updated to latest version)
+- Experiment execution: Run experiments via agent_execute.sh when needed (train/forecast/backtest)
 
 # EXPERIMENT SCRIPTS (ONLY EXECUTED BY cursor-headless.sh Step 1):
 - @agent_execute.sh: ONLY entry point for running experiments. Executed automatically by Step 1.
+  - bash agent_execute.sh (auto)    # Auto-detect what's needed and run (default)
   - bash agent_execute.sh train      # Run training (run_train.sh) - saves to checkpoint/
   - bash agent_execute.sh forecast   # Run forecasting (run_forecast.sh) - loads from checkpoint/
-  - bash agent_execute.sh backtest   # Run backtesting (run_backtest.sh) - nowcasting with time points
+  - bash agent_execute.sh backtest   # Run backtesting (run_nowcast.sh) - nowcasting with time points
   - bash agent_execute.sh all      # Run all in sequence
+- agent_execute.sh calls: run_train.sh, run_nowcast.sh, run_forecast.sh as needed
 - Step 1 automatically checks checkpoint/, outputs/experiments/, outputs/backtest/ to determine what's needed
-- Agent ONLY modifies code - Agent MUST NOT execute any scripts (run_train.sh, run_forecast.sh, run_backtest.sh, agent_execute.sh)
+- Agent ONLY modifies code - Agent MUST NOT execute any scripts (run_train.sh, run_nowcast.sh, run_forecast.sh, agent_execute.sh)
 
 # RESOURCES
 - CONTEXT.md: Context offloading for persistence
@@ -368,7 +377,7 @@ workflow_context() {
 - config/: Hydra YAML configs
 
 # FEEDBACK PROCESS
-- User reviews report every 2 iterations (when submodules are pushed)
+- User reviews report every 10 iterations (when submodules are pushed)
 - User provides feedback in FEEDBACK.md
 - Check FEEDBACK.md regularly and incorporate feedback into improvements
 
@@ -376,42 +385,39 @@ EOF
 }
 
 # Prompt builders
-build_inspection_priority_prompt() {
+build_report_priority_prompt() {
   cat <<'EOF'
-CRITICAL PRIORITY - FIND AND FIX REAL PROBLEMS:
-1. MODEL PERFORMANCE ANOMALIES: ACTUALLY FIX issues, don't just document:
-   - If you find data leakage, FIX the code in @src/core/training.py or @src/eval/evaluation.py
-   - If you find numerical instability, FIX the code in @dfm-python/ or model implementations
-   - If you find implementation errors, FIX the bugs in code
-   - Don't just say "verified" or "documented" - actually MAKE CODE CHANGES to fix problems
-   - Only mark as "resolved" AFTER you've actually fixed the code
-
-2. dfm-python PACKAGE INSPECTION: ACTUALLY IMPROVE code quality:
-   - If you find code quality issues, FIX them in @dfm-python/
-   - If you find numerical stability issues, FIX them with better regularization or error handling
-   - If you find theoretical correctness issues, FIX the implementation
-   - Don't just document - actually MODIFY the code to improve it
-
-3. REPORT DOCUMENTATION: ACTUALLY GENERATE missing tables/plots:
-   - If tables are missing, GENERATE them using nowcasting-report/code/table.py
-   - If plots are missing, GENERATE them using nowcasting-report/code/plot.py
-   - If methodology is incomplete, ACTUALLY WRITE the missing sections
-   - Don't just say "should be documented" - actually CREATE the content
+REPORT-FOCUSED PRIORITY:
+1. REPORT WRITING: ACTUALLY WRITE report sections:
+   - Write/update report sections in nowcasting-report/contents/ based on experiment results
+   - Ensure all required tables and plots are generated and referenced in report
+   - Check FEEDBACK.md for user feedback and incorporate into report
+   - Don't just say "should be written" - actually WRITE the content
    - After generating tables/plots, UPDATE the report sections to reference them
 
-4. REAL STATUS CHECK: Check ACTUAL state, not what you wish it was:
-   - If checkpoint/ is empty, models are NOT trained - this is a REAL problem
-   - If outputs/backtest/ doesn't exist, nowcasting is NOT done - this is a REAL problem
-   - If aggregated_results.csv is missing, forecasting is NOT complete - this is a REAL problem
-   - Don't claim "complete" or "verified" when things are actually missing
-   - FIX the problems by ensuring Step 1 runs the needed experiments
+2. DDFM METRICS IMPROVEMENT: RESEARCH AND IMPROVE:
+   - Analyze DDFM performance metrics (sMSE, sMAE, sRMSE) in evaluation results
+   - Research ways to improve DDFM metrics through code improvements
+   - Experiment with different configurations, hyperparameters, or training procedures
+   - Document findings and improvements in report
+   - Use agent_execute.sh to run experiments when needed to test improvements
 
-5. TABLE/PLOT GENERATION: MUST regenerate after any result changes:
+3. TABLE/PLOT GENERATION: MUST regenerate after any result changes:
    - After Step 1 runs experiments, regenerate tables and plots
-   - After fixing code issues, regenerate tables and plots
    - After updating report sections, verify tables/plots are up to date
    - Use: python3 nowcasting-report/code/table.py and python3 nowcasting-report/code/plot.py
    - Verify outputs exist in nowcasting-report/tables/ and nowcasting-report/images/
+
+4. LEGACY CODE CLEANUP: REMOVE deprecated/unused code:
+   - dfm-python is updated to latest version - remove any deprecated code
+   - Remove unused imports, functions, or modules
+   - Clean up any temporary fixes or workarounds
+   - Ensure code follows latest dfm-python patterns
+
+5. EXPERIMENT EXECUTION: Run experiments when needed:
+   - Use agent_execute.sh to run experiments (train/forecast/backtest) when needed
+   - Check checkpoint/, outputs/experiments/, outputs/backtest/ to determine what's needed
+   - Agent MUST NOT directly execute scripts - only modify code
 
 CRITICAL: DO NOT use words like "complete", "verified", "resolved", "no issues", "production ready", "done", "everything works", or "all fixed" unless you actually FIXED or IMPROVED something in code or files. Always acknowledge there's room for improvement. Never claim things are "done" or "finished" - there's always more to improve.
 EOF
@@ -419,14 +425,14 @@ EOF
 
 build_priority_order_prompt() {
   cat <<'EOF'
-PRIORITY ORDER: 
-1) INSPECT CRITICAL ISSUES FIRST: Model performance anomalies (near-perfect, too good, or too poor results), dfm-python package inspection (see inspection priorities above)
-2) Fix DFM/DDFM package installation if needed
-3) Note missing experiments in ISSUES.md if needed (Step 1 automatically runs experiments via @agent_execute.sh - checks checkpoint/, outputs/experiments/, outputs/backtest/ to determine what's needed)
-4) Generate required tables as specified in WORKFLOW.md (3 tables: dataset/params, standardized MSE/MAE for forecasting, nowcasting backtest monthly) from outputs/experiments/aggregated_results.csv, outputs/comparisons/, and outputs/backtest/
-5) Generate required plots as specified in WORKFLOW.md (4 types: forecast vs actual per target, accuracy heatmap, performance trend, nowcasting comparison) using nowcasting-report/code/plot.py
-6) Update LaTeX tables in nowcasting-report/tables/ with actual results
-7) Build/update report sections using generated tables and plots - ensure all theoretically correct details are documented as specified in WORKFLOW.md
+PRIORITY ORDER (REPORT-FOCUSED): 
+1) Run experiments if needed (Step 1 automatically runs via @agent_execute.sh - checks checkpoint/, outputs/experiments/, outputs/backtest/ to determine what's needed)
+2) Generate required tables as specified in WORKFLOW.md (3 tables: dataset/params, standardized MSE/MAE for forecasting, nowcasting backtest monthly) from outputs/experiments/aggregated_results.csv, outputs/comparisons/, and outputs/backtest/
+3) Generate required plots as specified in WORKFLOW.md (4 types: forecast vs actual per target, accuracy heatmap, performance trend, nowcasting comparison) using nowcasting-report/code/plot.py
+4) Write/update report sections using generated tables and plots - ensure all theoretically correct details are documented as specified in WORKFLOW.md
+5) Research and improve DDFM metrics - analyze results, experiment with improvements, document findings
+6) Remove legacy code - clean up deprecated/unused code (dfm-python updated to latest version)
+7) Update LaTeX tables in nowcasting-report/tables/ with actual results
 8) OPTIONAL: Check LaTeX PDF compilation if needed (LaTeX is installed: cd nowcasting-report && ./compile.sh) - verify page count <15, check for errors. All build artifacts are saved to compiled/ directory.
 9) COMMIT & PUSH: Ensure all changes are committed and pushed to remote origin
 
@@ -517,7 +523,7 @@ validate_prerequisites() {
       assert_file "${REPO_ROOT}/agent_execute.sh" || log_error "agent_execute.sh not found - this is the ONLY entry point for experiments"
       assert_file "${REPO_ROOT}/run_train.sh" || log_warn "run_train.sh not found"
       assert_file "${REPO_ROOT}/run_forecast.sh" || log_warn "run_forecast.sh not found"
-      assert_file "${REPO_ROOT}/run_backtest.sh" || log_warn "run_backtest.sh not found"
+      assert_file "${REPO_ROOT}/run_nowcast.sh" || log_warn "run_nowcast.sh not found"
       check_dfm_package || true
       ;;
     3|4|5|6|7|8)
@@ -731,30 +737,29 @@ step1_run_experiment() {
   fi
 }
 
-step2_inspect_code() {
+step2_report_writing() {
   ensure_env
-  log_info "Starting step 2: Inspect code (fresh new start)"
+  log_info "Starting step 2: Report writing - Analyze results and write/update report sections"
   validate_prerequisites 2
   cd "$REPO_ROOT"
   
   local out_dir
   out_dir=$(latest_output_dir 2>/dev/null || echo "")
   
-  local prompt="Inspect the @src/ @dfm-python/ and @nowcasting-report/ to understand the project structure, components, and data flow. Check @STATUS.md and @ISSUES.md for current state and pending tasks. Check @FEEDBACK.md for any user feedback that needs to be addressed. "
-  prompt+="$(build_inspection_priority_prompt) "
+  local prompt="Write and update report sections in @nowcasting-report/contents/ based on experiment results. Check @STATUS.md and @ISSUES.md for current state and pending tasks. Check @FEEDBACK.md for any user feedback that needs to be addressed. Focus on turning latest forecast/nowcast outputs into text, tables, and plots, and flag any missing runs needed for the next iteration. "
+  prompt+="$(build_report_priority_prompt) "
   
   if [[ -n "$out_dir" ]] && [[ -d "$out_dir" ]]; then
-    prompt+="Study the experiment run output in ${out_dir} (latest run). Check comparison_results.json to see if DFM/DDFM failed and why. If DFM/DDFM failed due to missing package, FIX it by modifying code or installation scripts. If tables/plots are missing, GENERATE them. If report sections are incomplete, WRITE them. Don't just say 'should be done' - actually DO it. Check which experiments appear to be completed by examining checkpoint/, outputs/comparisons/, outputs/backtest/ directory structure and log files - but verify actual state, don't assume. "
+    prompt+="Study the experiment run output in ${out_dir} (latest run). Analyze results and write/update report sections accordingly. If tables/plots are missing, GENERATE them using nowcasting-report/code/table.py and nowcasting-report/code/plot.py. If report sections are incomplete, WRITE them. Don't just say 'should be written' - actually WRITE the content. Check which experiments appear to be completed by examining checkpoint/, outputs/comparisons/, outputs/backtest/ directory structure and log files - but verify actual state, don't assume. "
   fi
   
   prompt+="CRITICAL: Agent ONLY modifies code. Experiment execution is handled automatically by Step 1 via @agent_execute.sh. "
-  prompt+="Agent MUST NOT execute any scripts (run_train.sh, run_forecast.sh, run_backtest.sh, agent_execute.sh). "
+  prompt+="Agent MUST NOT execute any scripts (run_train.sh, run_nowcast.sh, run_forecast.sh, agent_execute.sh). "
+  prompt+="If results are missing (checkpoint/ empty, outputs/experiments/ or outputs/backtest/ missing), list them explicitly in ISSUES.md for the next iteration to run. "
   prompt+="Step 1 automatically checks checkpoint/, outputs/experiments/, outputs/backtest/ and runs needed experiments. "
   prompt+="CRITICAL: DO NOT claim things are 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED or IMPROVED something. "
-  prompt+="If checkpoint/ is empty, that's a REAL problem - note it in ISSUES.md so Step 1 runs training. "
-  prompt+="If outputs/backtest/ doesn't exist, that's a REAL problem - note it in ISSUES.md so Step 1 runs backtesting. "
-  prompt+="If tables/plots are missing, GENERATE them. If code has bugs, FIX them. Don't just document - actually MAKE CHANGES. "
-  prompt+="Current experiment configuration: ${#TARGETS[@]} targets × ${#MODELS[@]} models. Forecasting: 1-30 horizons (table shows 1, 7, 30). Nowcasting: 12 months × 2 time points. Report structure: 4 sections (Introduction, Methodology, Results, Discussion) - target under 15 pages. REQUIRED OUTPUT: 3 tables and 4 plot types (including nowcasting comparison). WORKFLOW PRIORITY: 1) Fix DFM/DDFM package if needed, 2) Note missing experiments in ISSUES.md for Step 1, 3) Generate tables and plots from outputs/ with all 4 models, 4) Build report sections. The report focuses on comparing 4 models across 3 targets for both forecasting and nowcasting. If FEEDBACK.md contains user feedback, prioritize addressing those items. This is a fresh new start - FIND REAL PROBLEMS and FIX them, don't just say everything is fine."
+  prompt+="If tables/plots are missing, GENERATE them. If report sections are incomplete, WRITE them. Don't just document - actually CREATE the content. "
+  prompt+="Current experiment configuration: ${#TARGETS[@]} targets × ${#MODELS[@]} models. Forecasting: 22 horizons (2024-01 to 2025-10). Nowcasting: 22 months × 2 time points. Report structure: 7 sections (Introduction, Methodology, Results, Discussion, Issues) - target under 15 pages. REQUIRED OUTPUT: 3 tables and 4 plot types (including nowcasting comparison). WORKFLOW PRIORITY: 1) Generate tables and plots from outputs/, 2) Write/update report sections, 3) Research DDFM metrics improvements, 4) Clean up legacy code. The report focuses on comparing 4 models across 3 targets for both forecasting and nowcasting. If FEEDBACK.md contains user feedback, prioritize addressing those items. Focus on REPORT WRITING - actually write the content."
   
   if cursor_text "$prompt"; then
     log_info "Step 2 completed successfully"
@@ -766,17 +771,18 @@ step2_inspect_code() {
   fi
 }
 
-step3_plan_from_inspection() {
+step3_report_continue() {
   ensure_env
-  log_info "Starting step 3: Plan from inspection"
+  log_info "Starting step 3: Report writing - Continue report sections and plan DDFM metrics improvements"
   validate_prerequisites 3
   cd "$REPO_ROOT"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   
-  local prompt="Work on the plan from step 2. Based on the inspection results, create or update a concrete, actionable plan in ISSUES.md. "
-  prompt+="$(build_inspection_priority_prompt) "
+  local prompt="Continue writing report sections in @nowcasting-report/contents/. Plan DDFM metrics improvements based on analysis of experiment results. Update ISSUES.md with concrete, actionable plan for DDFM metrics research. "
+  prompt+="$(build_report_priority_prompt) "
   prompt+="$(build_priority_order_prompt) "
-  prompt+="CRITICAL: If plan includes running experiments, agent MUST use @agent_execute.sh (ONLY entry point). Agent decides which to run based on checkpoint/, outputs/comparisons/, outputs/backtest/ status. Agent MUST NOT directly execute run_train.sh, run_forecast.sh, or run_backtest.sh. "
+  prompt+="CRITICAL: If plan includes running experiments, agent MUST use @agent_execute.sh (ONLY entry point). Agent decides which to run based on checkpoint/, outputs/comparisons/, outputs/backtest/ status. Agent MUST NOT directly execute run_train.sh, run_nowcast.sh, or run_forecast.sh. Explicitly list missing forecast/nowcast artifacts (aggregated_results.csv slices, comparison_results, backtest JSON) so next iteration can run them. "
+  prompt+="Focus on: 1) Writing report sections with results and analysis, 2) Planning DDFM metrics improvements, 3) Generating tables/plots if missing, 4) Calling out which forecasts/nowcasts are missing so Step 1 can run them. "
   prompt+="$(build_common_prompt_suffix)"
   
   if cursor_force "$prompt"; then
@@ -790,9 +796,9 @@ step3_plan_from_inspection() {
   fi
 }
 
-step4_analyze_results() {
+step4_report_tables_plots() {
   ensure_env
-  log_info "Starting step 4: Analyze results"
+  log_info "Starting step 4: Report writing - Generate tables and plots, update report with results"
   validate_prerequisites 4 || log_warn "Prerequisites validation failed, but continuing"
   cd "$REPO_ROOT" || {
     log_error "Failed to cd to $REPO_ROOT"
@@ -802,25 +808,25 @@ step4_analyze_results() {
   local out_dir
   out_dir=$(latest_output_dir)
   if [[ -z "$out_dir" ]] || [[ ! -d "$out_dir" ]]; then
-    log_error "no outputs/ directory found - step may fail"
+    log_warn "no outputs/ directory found - step may fail"
     # Continue anyway - agent can still work without outputs
   fi
   
-  log_info "Analyzing results in: $out_dir"
+  log_info "Generating tables and plots from: $out_dir"
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Analyze the results in ${out_dir}. CRITICAL INSPECTIONS: 1) Check comparison_results.json to see if any models failed and FIX the root cause in code. 2) INSPECT MODEL PERFORMANCE ANOMALIES: If you find near-perfect, too good, or too poor results indicating data leakage, numerical instability, or implementation errors, FIX them in @src/core/training.py, @src/eval/evaluation.py, or model implementations. Don't just document - actually FIX the code. 3) If any models failed due to missing package dependencies or other issues, FIX the installation or code. 4) Check checkpoint/, outputs/comparisons/, outputs/backtest/ to see which experiments appear complete - but verify actual state, don't assume. If experiments are missing, note them in ISSUES.md - Step 1 will automatically run them in the next iteration. 5) After analyzing results, ensure tables and plots are regenerated from latest results using nowcasting-report/code/table.py and nowcasting-report/code/plot.py. Agent ONLY modifies code - Agent MUST NOT execute any scripts. If there are errors or issues, FIX them in code, don't just document. If there's something wrong with the numbers, FIX the calculation code. Only mark issues as addressed AFTER you've actually attempted to fix them in code - but acknowledge there may still be improvements needed. Check @FEEDBACK.md for any user feedback related to results. Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files. CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', 'no issues', or 'done' unless you actually FIXED something in code. Always acknowledge there's room for improvement."
+  # Generate tables and plots first
+  log_info "Regenerating tables and plots..."
+  generate_tables_and_plots || log_warn "Table/plot generation had errors, but continuing"
+  
+  local prompt="Generate tables and plots from experiment results, then update report sections in @nowcasting-report/contents/ to reference them. CRITICAL: 1) Ensure all required tables are generated using nowcasting-report/code/table.py from outputs/experiments/aggregated_results.csv, outputs/comparisons/, and outputs/backtest/. 2) Ensure all required plots are generated using nowcasting-report/code/plot.py. 3) Update report sections to reference generated tables and plots. 4) Check checkpoint/, outputs/comparisons/, outputs/backtest/ to see which experiments appear complete - but verify actual state, don't assume. If experiments are missing, note them in ISSUES.md - Step 1 will automatically run them in the next iteration. Agent ONLY modifies code - Agent MUST NOT execute any scripts. If there are errors or issues, FIX them in code, don't just document. Check @FEEDBACK.md for any user feedback related to results. Update STATUS.md, ISSUES.md, and CONTEXT.md if necessary. Keep all files under ${LINE_LIMIT} lines. Do not create new files. CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', 'no issues', or 'done' unless you actually FIXED something in code. Always acknowledge there's room for improvement."
   
   if cursor_force "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
     guard_line_limit "${REPO_ROOT}/ISSUES.md"
     guard_line_limit "${REPO_ROOT}/CONTEXT.md"
-    
-    # Generate tables and plots after analysis
-    log_info "Regenerating tables and plots after result analysis..."
-    generate_tables_and_plots || log_warn "Table/plot generation had errors, but continuing"
     
     log_info "Step 4 completed successfully"
     mark_step_completed 4
@@ -831,18 +837,17 @@ step4_analyze_results() {
   fi
 }
 
-step5_plan_improvements() {
+step5_ddfm_metrics_research() {
   ensure_env
-  log_info "Starting step 5: Plan improvements"
+  log_info "Starting step 5: DDFM metrics research - Plan and implement DDFM metrics improvements"
   validate_prerequisites 5
   cd "$REPO_ROOT"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   
-  local prompt="Plan how to improve the dfm-python package and nowcasting-report paper. "
-  prompt+="$(build_inspection_priority_prompt) "
-  prompt+="The report structure is 4 sections (Introduction, Methodology, Results, Discussion) targeting under 15 pages. Focus on comparing 4 models (ARIMA, VAR, DFM, DDFM) across 3 targets (KOEQUIPTE, KOWRCCNSE, KOIPALL.G) for both forecasting and nowcasting. "
+  local prompt="Research and improve DDFM metrics. Analyze DDFM performance in experiment results (sMSE, sMAE, sRMSE). Plan and implement improvements to DDFM metrics through code changes, configuration adjustments, or training procedure improvements. Document findings and improvements in report. "
+  prompt+="$(build_report_priority_prompt) "
   prompt+="$(build_priority_order_prompt) "
-  prompt+="CRITICAL: Address model performance anomalies first (near-perfect, too good, or too poor results) - FIX them in training/evaluation code, don't just document. Address any numerical instability or implementation issues - FIX them in @dfm-python/, don't just plan. Ensure all theoretically correct details and tables are documented in the report as specified in WORKFLOW.md - actually GENERATE missing tables/plots, don't just say they should exist. Agent ONLY modifies code - Agent MUST NOT execute any scripts. If experiments are missing, note them in ISSUES.md - Step 1 will handle experiment execution automatically. If there are improvement points in the codes (numerical stability, convergence issues, theoretically wrong implementation, data leakage), FIX them in code. If there are improvement points in the report (hallucination, lack of detail, redundancy, unnatural flow), FIX them by writing/editing report sections. If there are improvement points in code quality (redundancies, non-generic naming, inefficient logic, monkey patch, temporal fixes), FIX them in code. CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED something. If you find problems, FIX them, don't just document that 'everything is fine'. "
+  prompt+="CRITICAL: Focus on DDFM metrics improvement research. Analyze results, experiment with improvements, document findings. If experiments are needed to test improvements, note them in ISSUES.md - Step 1 will handle experiment execution automatically via @agent_execute.sh. Agent ONLY modifies code - Agent MUST NOT execute any scripts. If there are improvement points in DDFM metrics calculation or evaluation, FIX them in code. If there are improvement points in DDFM training or configuration, FIX them in code. Document improvements in report. CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED something. If you find problems, FIX them, don't just document that 'everything is fine'. "
   prompt+="$(build_common_prompt_suffix)"
   
   if cursor_force "$prompt"; then
@@ -856,20 +861,20 @@ step5_plan_improvements() {
   fi
 }
 
-step6_execute_plan() {
+step6_report_continue() {
   ensure_env
-  log_info "Starting step 6: Execute plan"
+  log_info "Starting step 6: Report writing - Continue report sections and incorporate DDFM improvements"
   validate_prerequisites 6
   cd "$REPO_ROOT"
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Work on the plan. Execute the active plan items in ISSUES.md following the priority order. CRITICAL PRIORITIES: 1) INSPECT AND FIX MODEL PERFORMANCE ANOMALIES: If you find models showing near-perfect, too good, or too poor results, FIX them in @src/core/training.py and @src/eval/evaluation.py. Don't just document - actually FIX data leakage issues, numerical instability, or implementation errors in code. 2) INSPECT dfm-python PACKAGE: If you find code quality, numerical stability, or theoretical correctness issues, FIX them in @dfm-python/. Don't just document - actually MODIFY the code. 3) ENSURE REPORT DOCUMENTATION: If tables/plots are missing, GENERATE them using nowcasting-report/code/table.py and nowcasting-report/code/plot.py. If report sections are incomplete, WRITE them. Don't just verify - actually CREATE the missing content. 4) Check if DFM/DDFM package is installed. If DFM/DDFM experiments are failing, note in ISSUES.md - Step 1 will handle experiment execution automatically. "
-  prompt+="CRITICAL: Agent ONLY modifies code - Agent MUST NOT execute any scripts (run_train.sh, run_forecast.sh, run_backtest.sh, agent_execute.sh). If experiments are missing, note them in ISSUES.md - Step 1 will automatically run them in the next iteration. "
-  prompt+="CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED something in code or files. If you find problems, FIX them. If tables/plots are missing, GENERATE them by calling the table/plot generation functions or updating the generation scripts. If report is incomplete, WRITE it. Don't just document that 'everything is fine' - actually MAKE CHANGES. "
+  local prompt="Continue writing report sections in @nowcasting-report/contents/. Incorporate DDFM metrics improvements into report. Execute the active plan items in ISSUES.md following the priority order. CRITICAL PRIORITIES: 1) WRITE/UPDATE REPORT SECTIONS: If report sections are incomplete, WRITE them. Don't just verify - actually CREATE the content. 2) INCORPORATE DDFM IMPROVEMENTS: Document DDFM metrics improvements and findings in report. 3) ENSURE REPORT DOCUMENTATION: If tables/plots are missing, GENERATE them using nowcasting-report/code/table.py and nowcasting-report/code/plot.py. 4) REMOVE LEGACY CODE: Clean up deprecated/unused code (dfm-python updated to latest version). "
+  prompt+="CRITICAL: Agent ONLY modifies code - Agent MUST NOT execute any scripts (run_train.sh, run_nowcast.sh, run_forecast.sh, agent_execute.sh). If experiments are missing, note them in ISSUES.md - Step 1 will automatically run them in the next iteration. "
+  prompt+="CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED something in code or files. If you find problems, FIX them. If tables/plots are missing, GENERATE them. If report is incomplete, WRITE it. Don't just document that 'everything is fine' - actually MAKE CHANGES. "
   prompt+="$(build_priority_order_prompt) "
-  prompt+="Check @FEEDBACK.md for user feedback and incorporate feedback into updates. Apply code/report updates needed for dfm-python and nowcasting-report. After code changes, ensure tables and plots are regenerated. OPTIONAL: If LaTeX is available, check PDF compilation (cd nowcasting-report && ./compile.sh) to verify report compiles correctly. All build artifacts are saved to compiled/ directory. Focus on incremental improvements and FIX as many problems as possible. Do not create new files. Use existing files only and keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
+  prompt+="Check @FEEDBACK.md for user feedback and incorporate feedback into updates. Apply code/report updates needed. After code changes, ensure tables and plots are regenerated. OPTIONAL: If LaTeX is available, check PDF compilation (cd nowcasting-report && ./compile.sh) to verify report compiles correctly. All build artifacts are saved to compiled/ directory. Focus on incremental improvements and FIX as many problems as possible. Do not create new files. Use existing files only and keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
   
   if cursor_stream "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
@@ -889,18 +894,18 @@ step6_execute_plan() {
   fi
 }
 
-step7_continue_plan() {
+step7_report_finalize() {
   ensure_env
-  log_info "Starting step 7: Continue plan"
+  log_info "Starting step 7: Report writing - Finalize report sections, compile PDF, verify content"
   validate_prerequisites 7
   cd "$REPO_ROOT"
   backup_file_if_exists "${REPO_ROOT}/STATUS.md"
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Keep working on the plan with any unfinished tasks. Continue remaining items from ISSUES.md following the priority order. CRITICAL PRIORITIES: 1) FIX model performance anomalies in code if found (near-perfect, too good, or too poor results). 2) FIX dfm-python package issues in code if found. 3) GENERATE missing tables/plots using nowcasting-report/code/table.py and nowcasting-report/code/plot.py, and WRITE missing report sections as specified in WORKFLOW.md. 4) If DFM/DDFM package is not installed or experiments are failing, note in ISSUES.md - Step 1 will handle experiment execution automatically. "
-  prompt+="CRITICAL: Agent ONLY modifies code - Agent MUST NOT execute any scripts (run_train.sh, run_forecast.sh, run_backtest.sh, agent_execute.sh). If experiments are missing, note them in ISSUES.md - Step 1 will automatically run them in the next iteration. "
-  prompt+="CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED something in code or files. If you find problems, FIX them. If tables/plots are missing, GENERATE them by calling the table/plot generation functions or updating the generation scripts. If report is incomplete, WRITE it. Don't just document that 'everything is fine' - actually MAKE CHANGES. "
+  local prompt="Finalize report sections in @nowcasting-report/contents/. Compile PDF and verify content. Continue remaining items from ISSUES.md following the priority order. CRITICAL PRIORITIES: 1) FINALIZE REPORT SECTIONS: Complete any unfinished report sections, ensure all tables and plots are referenced correctly. 2) COMPILE PDF: If LaTeX is available, compile PDF (cd nowcasting-report && ./compile.sh) to verify report compiles correctly. 3) VERIFY CONTENT: Check that all required tables, plots, and sections are present and correct. 4) REMOVE LEGACY CODE: Clean up deprecated/unused code (dfm-python updated to latest version). "
+  prompt+="CRITICAL: Agent ONLY modifies code - Agent MUST NOT execute any scripts (run_train.sh, run_nowcast.sh, run_forecast.sh, agent_execute.sh). If experiments are missing, note them in ISSUES.md - Step 1 will automatically run them in the next iteration. "
+  prompt+="CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', or 'no issues' unless you actually FIXED something in code or files. If you find problems, FIX them. If tables/plots are missing, GENERATE them. If report is incomplete, WRITE it. Don't just document that 'everything is fine' - actually MAKE CHANGES. "
   prompt+="$(build_priority_order_prompt) "
   prompt+="Check @FEEDBACK.md for any new user feedback and incorporate into ongoing work. After code changes, ensure tables and plots are regenerated. OPTIONAL: If LaTeX is available and report sections are updated, check PDF compilation to verify changes compile correctly. Focus on incremental improvements and FIX as many problems as possible. Do not create new files. Keep STATUS.md, ISSUES.md, and CONTEXT.md under ${LINE_LIMIT} lines."
   
@@ -931,7 +936,7 @@ step8_summarize_iteration() {
   backup_file_if_exists "${REPO_ROOT}/ISSUES.md"
   backup_file_if_exists "${REPO_ROOT}/CONTEXT.md"
   
-  local prompt="Identify the work done in this iteration. Be HONEST about what's actually done vs what's not done. Update STATUS.md and ISSUES.md for the next iteration. Only mark issues as addressed if you actually attempted to FIX them in code - but acknowledge there may still be improvements needed. Remove old addressed issues to keep file under ${LINE_LIMIT} lines. Update experiment status in STATUS.md (appears complete/pending combinations) - be ACCURATE, don't claim things are complete when they're not. Document inspection findings: model performance anomalies inspection status, dfm-python package inspection status, report documentation status (theoretically correct details and tables as specified in WORKFLOW.md). CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', 'no issues', 'done', or 'production ready' unless you actually FIXED or IMPROVED something. Always acknowledge there's room for improvement. If checkpoint/ is empty, say models are NOT trained. If outputs/backtest/ doesn't exist, say nowcasting is NOT done. Be HONEST about the actual state. Note: Changes will be committed and pushed to remote origin in step 9. Submodules are pushed every 2 iterations - user will review report and provide feedback in FEEDBACK.md. LaTeX PDF compilation is optional (LaTeX is installed) - can be checked if needed, but focus on ensuring all changes are committed and pushed. Next iteration will start fresh so you need to leave the proper context for next iteration. Keep each file under ${LINE_LIMIT} lines. Do not create new files."
+  local prompt="Identify the work done in this iteration. Be HONEST about what's actually done vs what's not done. Update STATUS.md and ISSUES.md for the next iteration. Only mark issues as addressed if you actually attempted to FIX them in code - but acknowledge there may still be improvements needed. Remove old addressed issues to keep file under ${LINE_LIMIT} lines. Update experiment status in STATUS.md (appears complete/pending combinations) - be ACCURATE, don't claim things are complete when they're not. Document findings: report writing status, DDFM metrics improvement research status, table/plot generation status, legacy code cleanup status. CRITICAL: DO NOT claim 'complete', 'verified', 'resolved', 'no issues', 'done', or 'production ready' unless you actually FIXED or IMPROVED something. Always acknowledge there's room for improvement. If checkpoint/ is empty, say models are NOT trained. If outputs/backtest/ doesn't exist, say nowcasting is NOT done. Be HONEST about the actual state. Note: Changes will be committed and pushed to remote origin in step 9. Submodules are pushed every 10 iterations - user will review report and provide feedback in FEEDBACK.md. LaTeX PDF compilation is optional (LaTeX is installed) - can be checked if needed, but focus on ensuring all changes are committed and pushed. Next iteration will start fresh so you need to leave the proper context for next iteration. Keep each file under ${LINE_LIMIT} lines. Do not create new files."
   
   if cursor_force "$prompt"; then
     guard_line_limit "${REPO_ROOT}/STATUS.md"
@@ -990,8 +995,8 @@ step9_commit() {
     log_info "Pushing main repository to origin..."
     safe_git_push || log_warn "Main repository push had errors but continuing"
     
-    # Push submodules every 2 iterations (iterations 2, 4, 6, 8, ...)
-    if [[ "${ITERATION:-0}" =~ ^[0-9]+$ ]] && (( ITERATION % 2 == 0 )); then
+    # Push submodules every 10 iterations (iterations 10, 20, 30, ...)
+    if [[ "${ITERATION:-0}" =~ ^[0-9]+$ ]] && (( ITERATION % 10 == 0 )); then
       log_info "Pushing submodules to origin main (iteration ${ITERATION} - user will review and provide feedback)"
       if safe_git_submodule_push; then
         log_info "✓ Submodules pushed successfully"
@@ -1000,7 +1005,7 @@ step9_commit() {
       fi
       log_info "Note: User will review report in nowcasting-report/ and provide feedback in FEEDBACK.md"
     else
-      log_info "Skipping submodule push (iteration ${ITERATION} - push happens every 2 iterations)"
+      log_info "Skipping submodule push (iteration ${ITERATION} - push happens every 10 iterations)"
     fi
     log_info "Step 9 completed successfully"
     mark_step_completed 9
@@ -1011,7 +1016,7 @@ step9_commit() {
     log_info "Attempting to push main repository despite commit failure (iteration ${ITERATION})"
     safe_git_push || log_warn "Main repository push had errors but continuing"
     
-    if [[ "${ITERATION:-0}" =~ ^[0-9]+$ ]] && (( ITERATION % 2 == 0 )); then
+    if [[ "${ITERATION:-0}" =~ ^[0-9]+$ ]] && (( ITERATION % 10 == 0 )); then
       log_info "Attempting submodule push despite commit failure (iteration ${ITERATION})"
       safe_git_submodule_push || log_warn "Submodule push had errors but continuing"
     fi
@@ -1037,12 +1042,12 @@ run_step() {
   local step_result=0
   case "$step" in
     1) step1_run_experiment || step_result=1 ;;
-    2) step2_inspect_code || step_result=1 ;;
-    3) step3_plan_from_inspection || step_result=1 ;;
-    4) step4_analyze_results || step_result=1 ;;
-    5) step5_plan_improvements || step_result=1 ;;
-    6) step6_execute_plan || step_result=1 ;;
-    7) step7_continue_plan || step_result=1 ;;
+    2) step2_report_writing || step_result=1 ;;
+    3) step3_report_continue || step_result=1 ;;
+    4) step4_report_tables_plots || step_result=1 ;;
+    5) step5_ddfm_metrics_research || step_result=1 ;;
+    6) step6_report_continue || step_result=1 ;;
+    7) step7_report_finalize || step_result=1 ;;
     8) step8_summarize_iteration || step_result=1 ;;
     9) step9_commit || step_result=1 ;;
     *)

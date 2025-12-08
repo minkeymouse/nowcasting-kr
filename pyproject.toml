@@ -24,4 +24,6 @@ dependencies = [
     "sktime[forecasting]>=0.40.1",
     "scipy>=1.10.0",
     "scikit-learn>=1.7.2",
+    "linearmodels>=7.0",
+    "rpy2>=3.6.4",
 ]

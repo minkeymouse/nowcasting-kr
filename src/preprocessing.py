@@ -15,6 +15,7 @@ All preprocessing uses sktime transformers for consistency and compatibility.
 """
 
 import warnings
+import logging
 from pathlib import Path
 from typing import List, Optional, Tuple, Union, Any, Callable
 from datetime import datetime
@@ -27,6 +28,9 @@ import polars as pl
 
 # Import custom exceptions for error handling
 from src.utils import ValidationError, ConfigError
+
+# Module-level logger
+_logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Sktime Optional Dependency Handling
@@ -1291,7 +1295,7 @@ def impute_missing_values(y_train: pd.DataFrame, model_type: str = "var") -> pd.
     if not y_train.isnull().any().any():
         return y_train
     
-    print(f"Warning: {model_type.upper()} data contains NaN values. Applying imputation...")
+    _logger.warning(f"{model_type.upper()} data contains NaN values. Applying imputation...")
     check_sktime_available()
     
     from sktime.transformations.series.impute import Imputer
@@ -1317,7 +1321,7 @@ def impute_missing_values(y_train: pd.DataFrame, model_type: str = "var") -> pd.
                 col_imputed = imputer_forecaster.fit_transform(col_imputed)
             except Exception as e:
                 # If forecaster imputation fails, log warning but continue
-                print(f"  Warning: Forecaster imputation failed for {col}: {e}")
+                _logger.warning(f"Forecaster imputation failed for {col}: {e}")
         
         y_train[col] = col_imputed[col]
     
@@ -1325,7 +1329,7 @@ def impute_missing_values(y_train: pd.DataFrame, model_type: str = "var") -> pd.
     if y_train.isnull().any().any():
         nan_count_before = y_train.isnull().sum().sum()
         nan_rows = y_train.isnull().any(axis=1).sum()
-        print(f"Warning: {nan_count_before} NaN values remain after all imputation attempts ({nan_rows} rows). Dropping rows with NaN...")
+        _logger.warning(f"{nan_count_before} NaN values remain after all imputation attempts ({nan_rows} rows). Dropping rows with NaN...")
         y_train = y_train.dropna()
         if len(y_train) == 0:
             raise ValidationError(f"{model_type.upper()}: All data was dropped after imputation. Check data quality.")
