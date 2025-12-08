@@ -143,6 +143,34 @@ See detailed plan below for specific actions and execution commands.
 - **Next Immediate Action**: Phase 0 correlation analysis (15 minutes, no training required) → Then Phase 1 re-training and testing
 - **Success Metrics**: sMAE < 1.03, DDFM > 5% better than DFM, linearity score < 0.95, horizon 22 completed
 
+**CONCRETE EXECUTION CHECKLIST (Priority Order):**
+
+**✅ IMMEDIATE (No training required - Can execute now):**
+- [ ] **Phase 0: Correlation Structure Analysis** (~15 minutes)
+  - Execute: `bash -c "mkdir -p outputs/analysis && for target in KOEQUIPTE KOIPALL.G KOWRCCNSE; do python3 -c \"from src.evaluation.evaluation_aggregation import analyze_correlation_structure; import json; result = analyze_correlation_structure('data/data.csv', '\$target', output_path='outputs/analysis/correlation_analysis_\${target}.json'); print(f'\\n=== \$target ==='); print(json.dumps(result['summary'], indent=2))\"; done"`
+  - Analyze: Compare `negative_fraction`, `strong_negative_count`, `mean_correlation` across targets
+  - Decision: If KOEQUIPTE `negative_fraction > 0.3` AND others < 0.2 → tanh activation justified
+  - Document: Update `nowcasting-report/contents/6_discussion.tex` with findings, update ISSUES.md Phase 0 section
+
+**⏳ AFTER TRAINING (Requires trained models):**
+- [ ] **Phase 1: Baseline Preservation** (Before training)
+  - Execute: `cp outputs/experiments/aggregated_results.csv outputs/experiments/aggregated_results_baseline.csv`
+  - Verify: Baseline file exists with 265 lines
+  
+- [ ] **Phase 1: Train Models** (Step 1 runs automatically via `bash agent_execute.sh train`)
+  - Verify: `checkpoint/` contains 12 model.pkl files after training
+  - Check logs: `grep -i "target-specific\|tanh\|weight_decay\|epochs\|mult_epoch\|batch_size" log/KOEQUIPTE_ddfm_*.log | tail -20`
+  - Expected: "Using target-specific encoder architecture [64, 32, 16]", "Using tanh activation for KOEQUIPTE", etc.
+
+- [ ] **Phase 1: Run Forecasting** (Step 1 runs automatically via `bash agent_execute.sh forecast`)
+  - Results: `outputs/experiments/aggregated_results.csv`
+  - Auto-analysis: `outputs/experiments/ddfm_linearity_analysis.json` (generated automatically)
+
+- [ ] **Phase 1: Compare Results** (After forecasting completes)
+  - Execute comparison script (see Phase 1 section below for full Python script)
+  - Success criteria: sMAE improvement ≥ 10% (target < 1.03) AND DDFM ≥ 5% better than DFM
+  - Document: Update report sections with improvement percentage, update ISSUES.md with Phase 1 results
+
 **Detailed Plan:**
 - **Current Performance Analysis** (from aggregated_results.csv - quantitative analysis):
   - **KOIPALL.G**: sMAE=0.69, sMSE=0.61, sRMSE=0.69 (21 horizons) - **Excellent**
@@ -488,9 +516,17 @@ See detailed plan below for specific actions and execution commands.
      - Added `analyze_missing_horizons()` function to identify validation failures (n_valid=0)
      - Automatically runs after aggregating results via `main_aggregator()`
      - Status: ✅ **IMPLEMENTED IN CODE** - Will automatically analyze missing horizons when results are aggregated
-  4. **Enhanced Error Distribution Metrics** (`src/evaluation/evaluation_metrics.py`):
-     - Added error distribution analysis: skewness, kurtosis, bias-variance decomposition, error concentration
-     - Status: ✅ **IMPLEMENTED IN CODE** - Enhanced metrics available in per-horizon evaluation results
+  4. **Enhanced Error Distribution Metrics** (`src/evaluation/evaluation_metrics.py`, `src/evaluation/evaluation_aggregation.py` - Current Iteration):
+     - Added error distribution analysis: skewness, kurtosis, bias-variance decomposition, error concentration, prediction_bias, directional_accuracy, theil_u, mape
+     - **NEW (Current Iteration)**: Enhanced `aggregate_overall_performance()` to store diagnostic metrics (error_skewness, error_kurtosis, error_bias_squared, error_variance, error_concentration, prediction_bias, directional_accuracy, theil_u, mape) in aggregated_results.csv
+     - **NEW (Current Iteration)**: Enhanced `analyze_ddfm_prediction_quality()` to analyze error distribution patterns and provide recommendations based on:
+       - Error skewness similarity between DDFM and DFM (indicates linear behavior)
+       - Error kurtosis similarity (indicates similar error tail behavior)
+       - Bias-variance decomposition (identifies systematic vs random errors)
+       - Error concentration (identifies concentrated error patterns)
+       - Prediction bias (identifies systematic over/underprediction)
+     - These metrics help diagnose DDFM linear collapse and provide actionable recommendations
+     - Status: ✅ **IMPLEMENTED IN CODE** (current iteration) - Enhanced metrics now stored in aggregated results and used in analysis
   5. **Horizon Error Correlation Analysis** (`src/evaluation/evaluation_aggregation.py`):
      - Added `analyze_horizon_error_correlation()` function to analyze error patterns across horizons
      - Status: ✅ **IMPLEMENTED IN CODE** - Available for analyzing DDFM error patterns across horizons

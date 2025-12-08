@@ -3,21 +3,27 @@
 ## Iteration Summary
 
 **What Was Done This Iteration:**
+- ✅ **Documentation Updates** - Updated STATUS.md and ISSUES.md to reflect current project state:
+  - Updated STATUS.md with accurate state verification (checkpoint empty, backtests failed, tables/plots exist)
+  - Updated ISSUES.md with concrete execution checklist for Phase 0 and Phase 1 DDFM improvement plan
+  - Documented that DDFM metrics enhancements exist in code from previous iterations (not implemented this iteration)
+  - Clarified that no code changes were made this iteration - only documentation updates
 - ✅ **State Verification** - Verified actual state of experiments by inspection:
-  - Training: ❌ **NOT TRAINED** - `checkpoint/` directory is EMPTY (no model.pkl files found) - **CRITICAL CORRECTION**: Previous STATUS.md incorrectly stated 12 model.pkl files exist
+  - Training: ❌ **NOT TRAINED** - `checkpoint/` directory is EMPTY (no model.pkl files found)
   - Forecasting: aggregated_results.csv exists (265 lines), ARIMA has n_valid=0 for all targets/horizons
   - Nowcasting: All 6 backtest JSON files show "status": "failed" with CUDA errors
-  - Tables: 7 tables exist (last regenerated Dec 9 07:18) from current aggregated_results.csv
+  - Tables: 8 tables exist (last regenerated Dec 9 07:18) from current aggregated_results.csv and backtest JSON files
   - Plots: 11 plots exist (last regenerated Dec 9 07:18) from current data
-- ✅ **Documentation Corrections** - Updated STATUS.md, ISSUES.md, and CONTEXT.md to reflect ACTUAL project state:
-  - Corrected training status: Changed from "12 model.pkl files exist" to "checkpoint/ is empty, NOT TRAINED"
-  - Updated all references to model training status across all three documentation files
-  - Updated priority actions to reflect that training is REQUIRED (not optional re-training)
-  - Updated experiment status summaries to accurately reflect current state
+- ✅ **Table/Plot Status Check** - Verified tables and plots exist and reflect current experiment state:
+  - Tables: All 8 tables exist (7 forecasting + 1 nowcasting) and correctly reflect current experiment state
+  - Plots: All 11 plots exist (5 forecasting + 6 nowcasting) and correctly display current data or placeholders for failed experiments
+  - Report References: All report sections correctly reference tables/plots with proper LaTeX labels and cross-references
+  - Data Verification: Verified table values match aggregated_results.csv (e.g., KOEQUIPTE DDFM sMAE=1.14 matches data)
 
 **What Was NOT Done This Iteration:**
-- ❌ **No code changes** - No code modifications were made in this iteration
+- ❌ **No code changes** - No Python code files were modified. Only documentation (STATUS.md, ISSUES.md) was updated.
 - ❌ **No experiments run** - No training, forecasting, or backtesting experiments executed
+- ❌ **No table/plot regeneration** - Tables/plots exist and are correct, but Agent cannot execute scripts to regenerate them
 - ❌ **Models NOT trained** - `checkpoint/` is empty, no model.pkl files exist. Training is REQUIRED before any forecasting/backtesting can be done.
 - ❌ **CUDA fixes NOT verified** - Code fixed in previous iterations but backtests still show "failed" (needs training + re-run to verify fix works)
 - ❌ **DDFM improvements NOT tested** - Code implemented in previous iterations but cannot be tested without trained models
@@ -55,20 +61,21 @@
 - ARIMA/VAR: "status": "no_results" (expected - not supported for nowcasting)
 - **Action Required**: (1) Train models first via `bash agent_execute.sh train`, then (2) re-run backtest experiments via `bash agent_execute.sh backtest` to verify CUDA fixes work
 
-**Tables/Plots**: ✅ **EXIST AND VERIFIED** - All tables and plots exist from previous regeneration (Dec 9 07:18) and correctly reflect current experiment state
+**Tables/Plots**: ✅ **EXIST, VERIFIED, AND CORRECT** - All tables and plots exist from previous regeneration (Dec 9 07:18) and correctly reflect current experiment state
 - **Forecasting**: 7 tables and 5 plots generated from current aggregated_results.csv:
   - 7 tables: tab_dataset_params.tex, tab_forecasting_results.tex, 4 appendix tables (tab_appendix_forecasting_*.tex)
   - 5 plots: 3 forecast_vs_actual_*.png, accuracy_heatmap.png, horizon_trend.png
   - Tables correctly show VAR/DFM/DDFM results (ARIMA excluded due to n_valid=0)
   - Plots correctly display forecast vs actual comparisons and performance metrics from current data
+  - **Data Verification**: Verified table values match aggregated_results.csv (e.g., KOEQUIPTE DDFM sMAE=1.14, DFM sMAE=1.14)
   - **Code Status**: Table/plot generation code verified and working correctly
 - **Nowcasting**: 1 table and 6 plots generated from current backtest JSON files:
   - 1 table: tab_nowcasting_backtest.tex showing N/A for all failed backtests (correctly reflects current state)
   - 6 plots: 3 comparison plots (nowcasting_comparison_*.png), 3 trend_error plots (nowcasting_trend_error_*.png) showing placeholders (all backtests failed)
   - Tables/plots correctly reflect current state (all backtests failed with CUDA errors)
   - **Code Status**: Table/plot generation code verified - correctly handles `results_by_timepoint` structure and failed status
-- **Report References**: All report sections correctly reference tables/plots with proper LaTeX labels and cross-references
-- **Regeneration**: Tables/plots will need regeneration after new experiments are run (forecasting with improved models, backtesting with fixed CUDA code) to reflect updated results. Code is ready and verified.
+- **Report References**: All report sections correctly reference tables/plots with proper LaTeX labels and cross-references (verified this iteration)
+- **Regeneration**: Tables/plots are current and correct. Will need regeneration after new experiments are run (forecasting with improved models, backtesting with fixed CUDA code) to reflect updated results. Code is ready and verified.
 
 ---
 
@@ -207,12 +214,14 @@
 - Automatically runs after aggregating results via `main_aggregator()`
 - Status: ✅ **IMPLEMENTED IN CODE** (previous iteration) - Will automatically analyze missing horizons when results are aggregated
 
-**Enhanced Error Distribution Metrics** (Implemented - Current Iteration):
+**Enhanced Error Distribution Metrics** (Implemented - Previous Iterations):
 - Enhanced `calculate_standardized_metrics()` in `src/evaluation/evaluation_metrics.py` with error distribution analysis
-- Added metrics: error_skewness, error_kurtosis, error_bias_squared, error_variance, error_concentration
+- Added metrics: error_skewness, error_kurtosis, error_bias_squared, error_variance, error_concentration, prediction_bias, directional_accuracy, theil_u, mape
 - These metrics help identify systematic error patterns, outlier-prone predictions, and error sources (bias vs variance)
 - Calculated per-horizon in evaluation results
-- Status: ✅ **IMPLEMENTED IN CODE** (current iteration) - Enhanced metrics available in per-horizon evaluation results
+- Enhanced `aggregate_overall_performance()` to store diagnostic metrics in aggregated_results.csv
+- Enhanced `analyze_ddfm_prediction_quality()` to use error distribution metrics for better linear collapse detection
+- Status: ✅ **IMPLEMENTED IN CODE** (previous iterations) - Enhanced metrics now stored in aggregated results and used in analysis
 
 **Horizon Error Correlation Analysis** (Implemented - Previous Iteration):
 - Added `analyze_horizon_error_correlation()` function in `src/evaluation/evaluation_aggregation.py` (previous iteration)
@@ -221,19 +230,19 @@
 - Provides recommendations based on correlation patterns
 - Status: ✅ **IMPLEMENTED IN CODE** (previous iteration) - Available for analyzing DDFM error patterns across horizons
 
-**Enhanced DDFM Linear Collapse Risk Assessment** (Implemented - Current Iteration):
-- Enhanced `analyze_ddfm_prediction_quality()` function in `src/evaluation/evaluation_aggregation.py` (current iteration)
+**Enhanced DDFM Linear Collapse Risk Assessment** (Implemented - Previous Iterations):
+- Enhanced `analyze_ddfm_prediction_quality()` function in `src/evaluation/evaluation_aggregation.py` (previous iterations)
 - Improved linear collapse risk assessment with 5 risk factors instead of 3:
   1. DFM 대비 개선 정도 (< 5% = high risk)
   2. 시점별 DFM과의 유사성 (high similarity = high risk)
   3. 일관성 (low consistency = high risk)
-  4. 오차 패턴 유사성 (sMSE/sMAE 비율 유사성) - NEW
-  5. 시점 간 오차 상관관계 (DDFM과 DFM 오차의 상관관계) - NEW
+  4. 오차 패턴 유사성 (sMSE/sMAE 비율 유사성)
+  5. 시점 간 오차 상관관계 (DDFM과 DFM 오차의 상관관계)
 - Added error pattern similarity metric (0-1, higher = more similar error patterns to DFM)
 - Added horizon error correlation metric (-1 to 1, high positive = similar error patterns across horizons)
 - Added sMSE/sMAE ratio stability metrics (CV and variance) to detect unstable prediction error structure
 - Enhanced recommendations with pattern-specific and correlation-specific guidance
-- Status: ✅ **IMPLEMENTED IN CODE** (current iteration) - Provides more accurate linear collapse detection and actionable insights
+- Status: ✅ **IMPLEMENTED IN CODE** (previous iterations) - Provides more accurate linear collapse detection and actionable insights
 
 ---
 
@@ -294,11 +303,12 @@ See ISSUES.md for detailed issue tracking.
    - **Note**: Detailed comparison script and success criteria are documented in ISSUES.md Phase 1 section
 
 **PRIORITY 4 (Medium)**:
-4. **Regenerate tables/plots** - ✅ **CODE VERIFIED, READY FOR REGENERATION** - All tables and plots exist from previous regeneration (Dec 9 07:18)
-   - Status: 7 forecasting tables and 5 plots exist from current aggregated_results.csv (correctly reflect current state)
-   - Status: 1 nowcasting table and 6 plots exist from current backtest JSON files (correctly show N/A/placeholders for failed backtests)
-   - Code Status: Table/plot generation code verified and working correctly - handles both successful and failed results
-   - Action: Regenerate after new experiments complete to reflect updated results
+4. **Tables/plots status** - ✅ **VERIFIED AND CORRECT** - All tables and plots exist and correctly reflect current experiment state (verified this iteration)
+   - Status: 8 tables (7 forecasting + 1 nowcasting) and 11 plots (5 forecasting + 6 nowcasting) exist from previous regeneration (Dec 9 07:18)
+   - Data Verification: Verified table values match aggregated_results.csv (e.g., KOEQUIPTE DDFM sMAE=1.14 matches data)
+   - Report References: All report sections correctly reference tables/plots with proper LaTeX labels (verified this iteration)
+   - Code Status: Table/plot generation code verified - correctly handles `results_by_timepoint` structure, failed status, and ARIMA exclusion
+   - Action: No immediate action needed - tables/plots are current and correct. Regenerate after new experiments complete to reflect updated results.
    - Regeneration Commands (after experiments):
      - Forecasting: `cd nowcasting-report/code && python3 table_forecasts.py && python3 plot_forecasts.py`
      - Nowcasting: `cd nowcasting-report/code && python3 table_nowcasts.py && python3 plot_nowcasts.py`
@@ -357,3 +367,27 @@ See ISSUES.md for detailed issue tracking.
 - **Plots**: ⚠️ **EXIST FROM PREVIOUS ITERATION** - 11 plots exist from previous regeneration (Dec 9 07:18) from current data (5 forecasting + 6 nowcasting)
 - **Status**: ⚠️ **TABLES/PLOTS EXIST** - All tables and plots exist from previous iteration. Report sections reference tables/plots. Will need regeneration after new experiments are run to reflect updated results (Phase 0 correlation analysis findings, Phase 1 improvement testing results, etc.).
 - **PDF Compilation**: ⚠️ **NOT EXECUTED** - LaTeX compilation available but not executed (Agent cannot execute scripts). **ACTION REQUIRED**: To compile PDF manually: `cd nowcasting-report && ./compile.sh`. All build artifacts will be saved to `compiled/` directory. After compilation, verify page count < 15 pages and check for LaTeX errors. Report sections are finalized, verified, and ready for compilation.
+
+---
+
+## Summary for Next Iteration
+
+**This Iteration (Iteration 15):**
+- ✅ **Documentation only** - Updated STATUS.md and ISSUES.md to accurately reflect project state
+- ✅ **State verification** - Confirmed checkpoint/ is empty, backtests failed, tables/plots exist
+- ❌ **No code changes** - No Python files modified
+- ❌ **No experiments** - No training, forecasting, or backtesting executed
+
+**Critical Blockers:**
+1. **Models NOT trained** - `checkpoint/` is empty. Training is REQUIRED before any experiments can proceed.
+2. **CUDA fixes NOT verified** - Code fixed but cannot verify without trained models.
+3. **DDFM improvements NOT tested** - Code exists but cannot test without trained models.
+
+**Next Iteration Must:**
+1. **Train models** - Step 1 should run `bash agent_execute.sh train` (checkpoint/ is empty, training REQUIRED)
+2. **Run forecasting** - After training, run `bash agent_execute.sh forecast` to test DDFM improvements
+3. **Run backtesting** - After training, run `bash agent_execute.sh backtest` to verify CUDA fixes
+4. **Regenerate tables/plots** - After experiments complete, regenerate to reflect new results
+
+**Optional (Can be done before training):**
+- Phase 0 correlation analysis - Function exists, can run immediately (~15 minutes, no training required)
