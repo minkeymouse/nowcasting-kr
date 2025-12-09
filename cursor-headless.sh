@@ -655,29 +655,21 @@ generate_tables_and_plots() {
   local plots_generated=0
   
   # Generate tables
-  if [[ -f "nowcasting-report/code/table.py" ]]; then
-    log_info "Generating LaTeX tables..."
-    if python3 nowcasting-report/code/table.py 2>&1; then
-      log_info "✓ Tables generated successfully"
-      tables_generated=1
-    else
-      log_warn "⚠ Table generation had errors (may be due to missing data)"
-    fi
+  log_info "Generating LaTeX tables..."
+  if python3 nowcasting-report/code/table_forecasts.py 2>&1 && python3 nowcasting-report/code/table_nowcasts.py 2>&1; then
+    log_info "✓ Tables generated successfully"
+    tables_generated=1
   else
-    log_warn "⚠ nowcasting-report/code/table.py not found"
+    log_warn "⚠ Table generation had errors (may be due to missing data)"
   fi
   
   # Generate plots
-  if [[ -f "nowcasting-report/code/plot.py" ]]; then
-    log_info "Generating plots..."
-    if python3 nowcasting-report/code/plot.py 2>&1; then
-      log_info "✓ Plots generated successfully"
-      plots_generated=1
-    else
-      log_warn "⚠ Plot generation had errors (may be due to missing data)"
-    fi
+  log_info "Generating plots..."
+  if python3 nowcasting-report/code/plot_forecasts.py 2>&1 && python3 nowcasting-report/code/plot_nowcasts.py 2>&1; then
+    log_info "✓ Plots generated successfully"
+    plots_generated=1
   else
-    log_warn "⚠ nowcasting-report/code/plot.py not found"
+    log_warn "⚠ Plot generation had errors (may be due to missing data)"
   fi
   
   # Verify outputs
