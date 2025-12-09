@@ -139,7 +139,7 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 ## Report Status
 
 ### Tables Generated
-- **Status**: ✅ All tables exist and correctly reflect current experiment state (generated Dec 9 07:18)
+- **Status**: ✅ All tables exist and correctly reflect current experiment state (regenerated Dec 9 09:36)
 - tab_dataset_params.tex: Dataset details and model parameters
 - tab_forecasting_results.tex: Forecasting results by model-target (average across horizons) - correctly shows VAR/DFM/DDFM, excludes ARIMA
 - tab_appendix_forecasting_koipall_g.tex: Detailed results for KOIPALL.G (all horizons)
@@ -150,7 +150,7 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 - **Code Status**: Table generation code verified and working correctly - handles both successful and failed results
 
 ### Plots Generated
-- **Status**: ✅ All plots exist and correctly reflect current experiment state (generated Dec 9 07:18)
+- **Status**: ✅ All plots exist and correctly reflect current experiment state (regenerated Dec 9 09:36)
 - forecast_vs_actual_koipall_g.png: Forecast vs actual for KOIPALL.G (correctly shows VAR/DFM/DDFM, excludes ARIMA)
 - forecast_vs_actual_koequipte.png: Forecast vs actual for KOEQUIPTE
 - forecast_vs_actual_kowrccnse.png: Forecast vs actual for KOWRCCNSE
