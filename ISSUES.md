@@ -10,7 +10,7 @@
   - **KOIPALL.G**: DDFM sMAE=0.69 (21.7x better than DFM sMAE=14.97) - excellent
   - **KOWRCCNSE**: DDFM sMAE=0.50 (5.6x better than DFM sMAE=2.78) - excellent
 - ⚠️ **Phase 0 not executed**: Correlation structure analysis function exists but has not been run yet - can be done immediately without training (~15 minutes)
-- ⚠️ **This iteration**: Tables/plots regenerated (Dec 9 09:03), documentation updated (STATUS.md, ISSUES.md, CONTEXT.md). No code changes, no experiments run.
+- ⚠️ **This iteration**: Documentation enhanced (ISSUES.md DDFM metrics documentation, CONTEXT.md timestamps). No code changes, no experiments run.
 
 **Quick Action Reference:**
 1. **REQUIRED (Before experiments)**: Train models via `bash agent_execute.sh train` - `checkpoint/` is EMPTY, training is REQUIRED
@@ -146,25 +146,50 @@ See detailed plan below for specific actions and execution commands.
 
 ## DDFM Metrics Improvement (Research Plan)
 
-**EXECUTIVE SUMMARY - Concrete Actionable Plan:**
+**EXECUTIVE SUMMARY - Metrics-Driven Research Plan:**
 - **Problem**: KOEQUIPTE DDFM shows linear collapse (sMAE=1.14, identical to DFM at all 21 horizons, max difference 0.00212)
 - **Goal**: Improve KOEQUIPTE DDFM sMAE from 1.14 to < 1.03 (≥10% improvement) AND make DDFM ≥ 5% better than DFM
 - **Current Status**: 
   - ✅ Code improvements implemented (deeper encoder, tanh, weight_decay, etc.)
-  - ✅ Models exist in `checkpoint/` (12 files, trained Dec 9) but trained BEFORE latest improvements
+  - ❌ Models NOT trained: `checkpoint/` is EMPTY - no model.pkl files exist. Training is REQUIRED before any experiments can proceed
   - ⚠️ Phase 0 correlation analysis NOT executed (can be done now, ~15 min, no training required)
   - ❌ Latest improvements NOT tested (models need re-training to apply improvements)
 - **Next Immediate Action**: Phase 0 correlation analysis (15 minutes, no training required) → Then Phase 1 re-training and testing
 - **Success Metrics**: sMAE < 1.03, DDFM > 5% better than DFM, linearity score < 0.95, horizon 22 completed
-- **Metrics Research Strategy**: Use existing comprehensive DDFM metrics analysis functions (already implemented) to guide improvements:
+- **Metrics-Driven Research Strategy**: Use existing comprehensive DDFM metrics analysis functions (already implemented) to guide improvements:
   - **Phase 0 (Pre-training)**: `analyze_correlation_structure()` - Analyze data structure to inform improvement strategy (~15 min, no training required)
   - **Phase 1 (Post-training)**: `detect_ddfm_linearity()` + `analyze_ddfm_prediction_quality()` - Automatically run after aggregation to monitor improvements
-  - **Key Metrics to Track**:
-    - Linearity score: Target < 0.95 (current: ~0.99 for KOEQUIPTE, estimated from identical performance)
-    - Improvement ratio: Target > 10% (current: ~0% for KOEQUIPTE, computed from aggregated_results.csv)
-    - Error distribution differences: Target skewness diff > 0.2, kurtosis diff > 1.0 (indicates DDFM learning different patterns)
-    - Horizon-weighted improvement: Target > 5% (prioritizes short-term 1-6 months)
-    - Consistency metric: Target > 0.7 (measures consistent improvement across horizons)
+  - **Key Metrics to Track** (with target values and interpretation):
+    - **Linearity score**: Target < 0.95 (current: ~0.99 for KOEQUIPTE, estimated from identical performance)
+      - Interpretation: 0.95+ indicates encoder learning only linear features (PCA-like behavior)
+      - Action if > 0.95: Deeper encoder, tanh activation, weight decay, increased pre-training
+    - **Improvement ratio**: Target > 10% (current: ~0% for KOEQUIPTE, computed from aggregated_results.csv)
+      - Interpretation: Percentage improvement of DDFM over DFM (positive = DDFM better)
+      - Action if < 10%: Check encoder architecture, activation function, training dynamics
+    - **Error distribution differences**: Target skewness diff > 0.2, kurtosis diff > 1.0
+      - Interpretation: Indicates DDFM learning different patterns from DFM (nonlinear behavior)
+      - Action if diff < 0.2: DDFM and DFM have similar error patterns (linear collapse risk)
+    - **Horizon-weighted improvement**: Target > 5% (prioritizes short-term 1-6 months)
+      - Interpretation: Weighted average improvement prioritizing short-term horizons (2x weight)
+      - Action if < 5%: Short-term performance not improving, may need different strategy
+    - **Consistency metric**: Target > 0.7 (measures consistent improvement across horizons)
+      - Interpretation: How consistent DDFM improvement is across all horizons (0-1 scale)
+      - Action if < 0.7: Improvement is inconsistent, may need horizon-specific tuning
+    - **Linear collapse risk**: Target < 0.5 (current: ~0.95+ for KOEQUIPTE)
+      - Interpretation: 7-factor risk assessment (0-1, higher = more risk of linear collapse)
+      - Action if > 0.5: High risk of encoder learning only linear features, apply all improvements
+    - **Error pattern similarity**: Target < 0.6 (indicates DDFM learning different patterns from DFM)
+      - Interpretation: Similarity of sMSE/sMAE ratio patterns between DDFM and DFM (0-1 scale)
+      - Action if > 0.6: DDFM and DFM have similar error patterns (linear behavior)
+    - **Horizon error correlation**: Target < 0.5 (low correlation indicates nonlinear behavior)
+      - Interpretation: Correlation of errors across horizons between DDFM and DFM (-1 to 1)
+      - Action if > 0.5: High correlation indicates systematic linear behavior
+    - **Relative improvement consistency**: Target > 0.7 (DDFM improves over DFM at >70% of horizons)
+      - Interpretation: Fraction of horizons where DDFM improves over DFM
+      - Action if < 0.7: Improvement is not consistent across horizons
+    - **Improvement persistence**: Target > 0.7 (improvements are consistent, not transient)
+      - Interpretation: Whether DDFM improvements are persistent (systematic) or transient (noise)
+      - Action if < 0.7: Improvements may be random noise, not systematic model improvement
 
 **What Can Be Done NOW (No Training Required):**
 1. **Phase 0: Correlation Structure Analysis** - Execute `analyze_correlation_structure()` for all 3 targets (~15 min)
@@ -285,39 +310,66 @@ See detailed plan below for specific actions and execution commands.
     - All 22 horizons completed
   - **Key Observation**: KOEQUIPTE shows linear collapse (encoder learning only linear features), while others show strong nonlinear benefits. This suggests KOEQUIPTE data structure or training dynamics differ from other targets.
   
-  **DDFM Metrics Research Strategy - Using Existing Analysis Functions:**
+  **DDFM Metrics Research Strategy - Metrics-Driven Approach Using Existing Analysis Functions:**
   
-  The codebase already includes comprehensive DDFM metrics analysis functions (all implemented in `src/evaluation/evaluation_aggregation.py` and `src/evaluation/evaluation_metrics.py`). These functions automatically run after result aggregation and provide actionable insights:
+  The codebase already includes comprehensive DDFM metrics analysis functions (all implemented in `src/evaluation/evaluation_aggregation.py` and `src/evaluation/evaluation_metrics.py`). These functions automatically run after result aggregation and provide actionable insights. The research plan follows a metrics-driven approach where each phase uses specific metrics to guide decisions:
   
   **1. Phase 0: Correlation Structure Analysis** (`analyze_correlation_structure()`) - **IMMEDIATE ACTION**
      - **Status**: ✅ Implemented, ⚠️ NOT YET EXECUTED (can run now, ~15 min, no training required)
      - **Purpose**: Understand why KOEQUIPTE shows linear collapse while others show strong nonlinear benefits
-     - **Key Metrics**: `negative_fraction`, `strong_negative_count`, `mean_correlation`, `std_correlation`
-     - **Decision Criteria**: 
-       - If KOEQUIPTE `negative_fraction > 0.3` AND others < 0.2 → tanh activation strategy confirmed
-       - If KOEQUIPTE `mean_correlation < 0.1` AND others > 0.2 → deeper encoder strategy confirmed
-     - **Action**: Execute before training to inform improvement strategy
+     - **Key Metrics to Extract**:
+       - `negative_fraction`: Fraction of negative correlations (0-1)
+       - `strong_negative_count`: Count of correlations < -0.3
+       - `mean_correlation`: Average correlation magnitude (absolute value)
+       - `std_correlation`: Correlation distribution spread (standard deviation)
+     - **Metrics-Driven Decision Criteria**: 
+       - If KOEQUIPTE `negative_fraction > 0.3` AND others < 0.2 → tanh activation strategy confirmed (ReLU limitation)
+       - If KOEQUIPTE `strong_negative_count > 10` AND others < 5 → tanh activation critical (strong negative relationships)
+       - If KOEQUIPTE `mean_correlation < 0.1` AND others > 0.2 → deeper encoder strategy confirmed (weak signal)
+       - If KOEQUIPTE `std_correlation < 0.15` AND others > 0.25 → structural complexity differs (may need different approach)
+     - **Action**: Execute before training to inform improvement strategy. Results inform whether current improvements (tanh, deeper encoder) are appropriate or need adjustment.
+     - **Output**: JSON files with correlation statistics for each target, comparison across targets to identify structural differences
   
   **2. Phase 1: Automatic Analysis After Training** (Runs automatically after `main_aggregator()`)
      - **Linearity Detection** (`detect_ddfm_linearity()`):
-       - **Current**: KOEQUIPTE linearity score ~0.99 (near-perfect linear collapse)
-       - **Target**: < 0.95 after improvements
-       - **Output**: `outputs/experiments/ddfm_linearity_analysis.json`
+       - **Current Baseline**: KOEQUIPTE linearity score ~0.99 (near-perfect linear collapse)
+       - **Target After Improvements**: < 0.95 (indicates encoder learning nonlinear features)
+       - **Interpretation**: 0.95+ indicates encoder learning only linear features (PCA-like behavior)
+       - **Output**: `outputs/experiments/ddfm_linearity_analysis.json` with linearity scores and recommendations
+       - **Action if > 0.95**: Apply deeper encoder, tanh activation, weight decay, increased pre-training
      - **Prediction Quality Analysis** (`analyze_ddfm_prediction_quality()`):
-       - **Current**: KOEQUIPTE improvement ratio ~0% (no improvement over DFM)
-       - **Target**: Improvement ratio > 10%, consistency > 0.7, linear collapse risk < 0.5
-       - **Tracks**: Improvement ratio, consistency, horizon-weighted improvement, error pattern similarity, horizon error correlation
+       - **Current Baseline**: KOEQUIPTE improvement ratio ~0% (no improvement over DFM)
+       - **Target After Improvements**: 
+         - Improvement ratio > 10% (DDFM > 10% better than DFM)
+         - Consistency > 0.7 (consistent improvement across horizons)
+         - Linear collapse risk < 0.5 (low risk of linear collapse)
+       - **Tracks**: Improvement ratio, consistency, horizon-weighted improvement, error pattern similarity, horizon error correlation, relative improvement consistency, improvement persistence
+       - **Output**: Comprehensive analysis in `outputs/experiments/ddfm_linearity_analysis.json` with all metrics and recommendations
+       - **Action if improvement < 10%**: Check encoder architecture, activation function, training dynamics, proceed to Phase 2
      - **Error Distribution Analysis** (via `calculate_standardized_metrics()`):
-       - **Current**: KOEQUIPTE DDFM and DFM error distributions nearly identical
-       - **Target**: After improvements, DDFM should differ (skewness diff > 0.2, kurtosis diff > 1.0)
-       - **Tracks**: Error skewness, kurtosis, bias-variance decomposition, error concentration
+       - **Current Baseline**: KOEQUIPTE DDFM and DFM error distributions nearly identical (skewness diff ~0, kurtosis diff ~0)
+       - **Target After Improvements**: DDFM should differ from DFM (skewness diff > 0.2, kurtosis diff > 1.0)
+       - **Interpretation**: Different error distributions indicate DDFM learning different patterns from DFM (nonlinear behavior)
+       - **Tracks**: Error skewness, kurtosis, bias-variance decomposition, error concentration, prediction bias
+       - **Action if diff < 0.2**: DDFM and DFM have similar error patterns (linear collapse risk), apply improvements
   
-  **3. Metrics-Driven Decision Tree** (Quantitative Criteria):
-     - **If linearity score < 0.95 AND improvement ratio > 10% AND consistency > 0.7**: ✅ SUCCESS → Proceed to Phase 1.2 (activation ablation)
-     - **If improvement 5-10% OR linearity 0.95-0.98 OR consistency 0.5-0.7**: ⚠️ PARTIAL → Investigate, proceed to Phase 1.2 with caution
-     - **If improvement < 5% OR linearity > 0.98 OR consistency < 0.5**: ❌ FAILURE → Proceed to Phase 2 (advanced improvements)
-     - **If error distribution differences (skewness diff < 0.2, kurtosis diff < 1.0)**: ⚠️ WARNING → DDFM still learning similar patterns to DFM, may need Phase 2
-     - **If horizon-weighted improvement < 5%**: ⚠️ WARNING → Short-term performance not improving, may need different strategy
+  **3. Metrics-Driven Decision Tree** (Quantitative Criteria Based on Automatic Analysis):
+     - **✅ SUCCESS** (linearity score < 0.95 AND improvement ratio > 10% AND consistency > 0.7 AND collapse_risk < 0.5):
+       - **Action**: Document percentage improvement, proceed to Phase 1.2 (activation ablation study)
+       - **Metrics to Document**: All metrics from automatic analysis (linearity, improvement ratio, consistency, collapse risk, error pattern similarity, horizon error correlation, error distribution differences, horizon-weighted improvement, relative improvement consistency, improvement persistence)
+     - **⚠️ PARTIAL SUCCESS** (improvement 5-10% OR linearity 0.95-0.98 OR consistency 0.5-0.7 OR collapse_risk 0.5-0.7):
+       - **Action**: Document findings, investigate specific metrics that didn't meet targets, proceed to Phase 1.2 with caution
+       - **Investigation**: Check which specific metrics failed (linearity, improvement ratio, consistency, collapse risk, error patterns) and why
+     - **❌ NEEDS INVESTIGATION** (improvement < 10% OR linearity ≥ 0.95 OR collapse_risk ≥ 0.5 OR error pattern similarity > 0.6):
+       - **Action**: Check logs, verify settings were applied correctly, investigate root cause, proceed to Phase 2 (advanced improvements)
+       - **Investigation**: Verify encoder architecture, activation function, weight decay, pre-training, batch size were all applied correctly
+     - **❌ FAILURE** (no improvement or degradation OR improvement < 5% OR linearity > 0.98):
+       - **Action**: Check logs for errors, investigate root cause, proceed to Phase 2 (advanced improvements) or Phase 3 (ensemble/hybrid approaches)
+       - **Investigation**: Check training logs for errors, verify all improvements were applied, investigate why improvements didn't work
+     - **⚠️ WARNING** (error distribution differences: skewness diff < 0.2, kurtosis diff < 1.0):
+       - **Action**: DDFM still learning similar patterns to DFM, may need Phase 2 improvements (architecture grid search, factor loading analysis)
+     - **⚠️ WARNING** (horizon-weighted improvement < 5%):
+       - **Action**: Short-term performance not improving, may need different strategy (horizon-specific tuning, ensemble methods)
   
   **Metrics-Driven Improvement Workflow:**
   
@@ -495,6 +547,16 @@ See detailed plan below for specific actions and execution commands.
     - Fix validation or numerical issues preventing horizon 22 predictions
 
 - **Status**: ✅ **IMPROVEMENTS IMPLEMENTED IN CODE** (code changes verified by inspection). **NOT TESTED** - Improvements cannot be tested until models are re-trained with latest improvements. Research plan defined but Phase 1 testing requires re-training to test latest improvements.
+
+**DDFM Metrics Documentation Improvements** (Current Iteration):
+- Enhanced documentation in `analyze_ddfm_prediction_quality()` function:
+  - Added comprehensive docstring documenting all available metrics and their limitations
+  - Clarified that forecast skill score and information gain require actual predictions (not in aggregated_results.csv)
+  - Documented that factor dynamics stability uses error patterns as proxy for predictions
+  - Added metrics_limitations section to analysis results output
+  - Improved comments explaining metric calculation limitations
+- **Rationale**: Better documentation helps users understand what metrics are available, their limitations, and when additional metrics (forecast skill score, information gain) could be calculated if predictions are available
+- **Status**: ✅ **IMPLEMENTED IN CODE** (current iteration) - Enhanced documentation improves understanding of DDFM metrics capabilities and limitations
 
 - **Metrics Research Improvements** (Already Implemented + Current Iteration):
   1. **Enhanced DDFM Linearity Detection** (`src/evaluation/evaluation_aggregation.py`):
@@ -822,15 +884,57 @@ See detailed plan below for specific actions and execution commands.
 - `analyze_ddfm_prediction_quality()` - Comprehensive performance analysis (runs automatically after aggregation)
 - `analyze_correlation_structure()` - Pre-training data structure analysis (output: `outputs/analysis/correlation_analysis_{target}.json`)
 
-**Key Metrics to Track**:
-- Linearity score: < 0.95 (currently ~0.99 for KOEQUIPTE)
-- Improvement ratio: > 10% (currently ~0% for KOEQUIPTE)
-- Linear collapse risk: < 0.5 (currently ~0.95+ for KOEQUIPTE)
-- Consistency: > 0.7 (measures consistent improvement across horizons)
+**Key Metrics to Track** (with target values and interpretation):
+- **Linearity score**: Target < 0.95 (currently ~0.99 for KOEQUIPTE)
+  - Interpretation: 0.95+ indicates encoder learning only linear features (PCA-like behavior)
+  - Action if > 0.95: Apply deeper encoder, tanh activation, weight decay, increased pre-training
+- **Improvement ratio**: Target > 10% (currently ~0% for KOEQUIPTE)
+  - Interpretation: Percentage improvement of DDFM over DFM (positive = DDFM better)
+  - Action if < 10%: Check encoder architecture, activation function, training dynamics
+- **Linear collapse risk**: Target < 0.5 (currently ~0.95+ for KOEQUIPTE)
+  - Interpretation: 7-factor risk assessment (0-1, higher = more risk of linear collapse)
+  - Action if > 0.5: High risk of encoder learning only linear features, apply all improvements
+- **Consistency**: Target > 0.7 (measures consistent improvement across horizons)
+  - Interpretation: How consistent DDFM improvement is across all horizons (0-1 scale)
+  - Action if < 0.7: Improvement is inconsistent, may need horizon-specific tuning
+- **Error pattern similarity**: Target < 0.6 (indicates DDFM learning different patterns from DFM)
+  - Interpretation: Similarity of sMSE/sMAE ratio patterns between DDFM and DFM (0-1 scale)
+  - Action if > 0.6: DDFM and DFM have similar error patterns (linear behavior)
+- **Horizon error correlation**: Target < 0.5 (low correlation indicates nonlinear behavior)
+  - Interpretation: Correlation of errors across horizons between DDFM and DFM (-1 to 1)
+  - Action if > 0.5: High correlation indicates systematic linear behavior
+- **Error distribution differences**: Target skewness diff > 0.2, kurtosis diff > 1.0
+  - Interpretation: Indicates DDFM learning different patterns from DFM (nonlinear behavior)
+  - Action if diff < 0.2: DDFM and DFM have similar error patterns (linear collapse risk)
+- **Horizon-weighted improvement**: Target > 5% (prioritizes short-term 1-6 months)
+  - Interpretation: Weighted average improvement prioritizing short-term horizons (2x weight)
+  - Action if < 5%: Short-term performance not improving, may need different strategy
+- **Relative improvement consistency**: Target > 0.7 (DDFM improves over DFM at >70% of horizons)
+  - Interpretation: Fraction of horizons where DDFM improves over DFM
+  - Action if < 0.7: Improvement is not consistent across horizons
+- **Improvement persistence**: Target > 0.7 (improvements are consistent, not transient)
+  - Interpretation: Whether DDFM improvements are persistent (systematic) or transient (noise)
+  - Action if < 0.7: Improvements may be random noise, not systematic model improvement
 
-**Workflow**:
+**Metrics-Driven Workflow**:
 1. **Before Training (Phase 0)**: Run `analyze_correlation_structure()` for all targets to inform improvement strategy
+   - Extract correlation metrics (negative_fraction, mean_correlation, etc.)
+   - Compare KOEQUIPTE with KOIPALL.G and KOWRCCNSE
+   - Use metrics to validate or adjust improvement strategy (tanh activation, deeper encoder)
 2. **After Training + Forecasting (Phase 1)**: Check `outputs/experiments/ddfm_linearity_analysis.json` (auto-generated) for metrics
+   - Review all metrics (linearity score, improvement ratio, collapse risk, consistency, etc.)
+   - Compare with baseline metrics to measure improvement
+   - Use metrics-driven decision tree to determine next steps (SUCCESS/PARTIAL/NEEDS INVESTIGATION/FAILURE)
 3. **Iterative Improvement**: Use metrics to guide next iteration's improvements
+   - If metrics don't meet targets, investigate which specific metrics failed and why
+   - Adjust improvement strategy based on metrics (e.g., if error pattern similarity > 0.6, focus on encoder architecture)
+   - Track metrics over time to monitor improvement trends
+
+**Practical Usage Guide**:
+- **Phase 0 Execution**: See "IMMEDIATE (No training required)" section above for correlation analysis command
+- **Phase 1 Automatic Analysis**: Metrics are automatically calculated after result aggregation - check `outputs/experiments/ddfm_linearity_analysis.json`
+- **Baseline Metrics**: Run analysis on current `aggregated_results.csv` to establish baseline before re-training
+- **Comparison**: After re-training, compare new metrics with baseline to measure improvement
+- **Decision Making**: Use metrics-driven decision tree (see section 3 above) to determine next steps based on quantitative criteria
 
 **Execution Commands**: See Phase 0 and Phase 1 sections above for detailed execution commands.
