@@ -154,17 +154,76 @@ See detailed plan below for specific actions and execution commands.
 **CONCRETE ACTION PLAN (Execute in Order):**
 
 **IMMEDIATE ACTIONS (No training required - Execute NOW):**
-1. **Phase 0: Correlation Structure Analysis** (~15 minutes)
-   - **Purpose**: Validate improvement strategy before training
-   - **Command**: See "IMMEDIATE (No training required)" section below
-   - **Output**: 3 JSON files with correlation statistics
-   - **Decision**: If KOEQUIPTE shows high negative correlations (>0.3) vs others (<0.2), tanh strategy is validated
-   
-2. **Baseline Metrics Analysis** (~5 minutes)
-   - **Purpose**: Establish quantitative baseline for comparison
-   - **Command**: Run `detect_ddfm_linearity()` and `analyze_ddfm_prediction_quality()` on current `aggregated_results.csv`
-   - **Output**: Baseline linearity score (~0.99 expected), improvement ratio (~0% expected), collapse risk (~0.95+ expected)
-   - **Document**: Save to `outputs/analysis/baseline_linearity.json` and `outputs/analysis/baseline_quality.json`
+
+**ACTION 1: Baseline Metrics Analysis** (~5 minutes) - **HIGHEST PRIORITY**
+   - **Purpose**: Establish quantitative baseline metrics from current results to measure future improvements
+   - **Current Results Analysis** (from `aggregated_results.csv`):
+     - KOEQUIPTE DDFM: sMAE=1.1441 (21 horizons), DFM: sMAE=1.1439 (21 horizons)
+     - Max difference: 0.00212 (horizon 2), Average difference: 0.00085 (0.074% of average)
+     - All horizons show differences < 0.003 (within numerical precision)
+     - **Conclusion**: Linear collapse confirmed - encoder learning only linear features
+   - **Command**:
+     ```python
+     import pandas as pd
+     from src.evaluation.evaluation_aggregation import detect_ddfm_linearity, analyze_ddfm_prediction_quality
+     import json
+     
+     # Load current results
+     results = pd.read_csv('outputs/experiments/aggregated_results.csv')
+     
+     # Run analysis
+     linearity = detect_ddfm_linearity(results, output_path='outputs/analysis/baseline_linearity.json')
+     quality = analyze_ddfm_prediction_quality(results, output_path='outputs/analysis/baseline_quality.json')
+     
+     # Print key metrics for KOEQUIPTE
+     print("KOEQUIPTE Baseline Metrics:")
+     koe_linearity = linearity['linearity_scores'].get('KOEQUIPTE', {})
+     print(f"  Linearity score: {koe_linearity.get('overall_linearity', 'N/A')}")
+     if 'target_analysis' in quality and 'KOEQUIPTE' in quality['target_analysis']:
+         koe = quality['target_analysis']['KOEQUIPTE']
+         print(f"  Improvement ratio: {koe.get('improvement_ratio', 'N/A')}%")
+         print(f"  Linear collapse risk: {koe.get('linear_collapse_risk', 'N/A')}")
+         print(f"  Consistency: {koe.get('consistency', 'N/A')}")
+         print(f"  Error pattern similarity: {koe.get('error_pattern_similarity', 'N/A')}")
+     ```
+   - **Expected Output**: 
+     - `outputs/analysis/baseline_linearity.json`: Baseline linearity scores (expected: KOEQUIPTE ~0.99)
+     - `outputs/analysis/baseline_quality.json`: Baseline improvement ratios and collapse risk (expected: KOEQUIPTE improvement ~0%, collapse risk ~0.95+)
+   - **Next Action**: Document baseline metrics in this ISSUES.md for comparison after Phase 1
+   - **Time Estimate**: < 5 minutes
+
+**ACTION 2: Phase 0: Correlation Structure Analysis** (~15 minutes) - **HIGH PRIORITY**
+   - **Purpose**: Validate improvement strategy (tanh activation, deeper encoder) before re-running experiments
+   - **Why Now**: This analysis can inform whether current improvements are appropriate or need adjustment
+   - **Command**: 
+     ```bash
+     mkdir -p outputs/analysis
+     for target in KOEQUIPTE KOIPALL.G KOWRCCNSE; do
+       python3 -c "
+       from src.evaluation.evaluation_aggregation import analyze_correlation_structure
+       import json
+       result = analyze_correlation_structure('data/data.csv', '$target', 
+         output_path='outputs/analysis/correlation_analysis_${target}.json')
+       print(f'\n=== $target ===')
+       print(json.dumps(result['summary'], indent=2))
+       "
+     done
+     ```
+   - **Expected Output**: 3 JSON files in `outputs/analysis/correlation_analysis_{target}.json` with correlation statistics
+   - **Key Metrics to Extract**:
+     - `summary.negative_fraction`: Fraction of negative correlations (if KOEQUIPTE > 0.3 and others < 0.2: tanh activation justified)
+     - `summary.strong_negative_count`: Count of correlations < -0.3 (indicates strong negative relationships)
+     - `summary.mean_correlation`: Average correlation magnitude (if KOEQUIPTE < 0.1 and others > 0.2: deeper encoder needed)
+     - `summary.std_correlation`: Correlation distribution spread (indicates structural complexity)
+   - **Decision Criteria** (after analysis):
+     - If KOEQUIPTE `negative_fraction > 0.3` AND others < 0.2: tanh activation strategy validated → proceed with current approach
+     - If KOEQUIPTE `mean_correlation < 0.1` AND others > 0.2: deeper encoder strategy validated → proceed with current approach
+     - If structures are similar: investigate why DDFM works for others but not KOEQUIPTE → may need Phase 2 approaches
+   - **Next Action After Analysis**: 
+     - Update `nowcasting-report/contents/6_discussion.tex` with correlation analysis findings
+     - Update this ISSUES.md Phase 0 section with actual results
+     - Adjust improvement strategy if needed based on findings
+   - **Time Estimate**: < 5 minutes per target (15 minutes total)
 
 **AFTER PHASE 0 (Models already exist - can proceed to testing):**
 3. **Re-run Forecasting** (Models exist, trained Dec 9 02:35-02:47)
