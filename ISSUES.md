@@ -5,12 +5,12 @@
 **Current State:**
 - ✅ **Code improvements implemented** (previous iterations): Deeper encoder, tanh activation, weight decay, gradient clipping, Huber loss, improved initialization, increased pre-training, batch size optimization
 - ❌ **Models NOT trained**: `checkpoint/` is EMPTY - no model.pkl files exist. Training is REQUIRED before any experiments can proceed.
-- 📊 **Baseline metrics** (computed Dec 2024 from aggregated_results.csv):
-  - **KOEQUIPTE**: DDFM sMAE=1.1441, DFM sMAE=1.1439 (identical, avg diff=0.00085, 0.074% of average) - linear collapse confirmed
+- 📊 **Baseline metrics** (from aggregated_results.csv):
+  - **KOEQUIPTE**: DDFM sMAE=1.1441, DFM sMAE=1.1439 (identical, linear collapse confirmed)
   - **KOIPALL.G**: DDFM sMAE=0.69 (21.7x better than DFM sMAE=14.97) - excellent
   - **KOWRCCNSE**: DDFM sMAE=0.50 (5.6x better than DFM sMAE=2.78) - excellent
 - ⚠️ **Phase 0 not executed**: Correlation structure analysis function exists but has not been run yet - can be done immediately without training (~15 minutes)
-- ⚠️ **This iteration**: Enhanced documentation (STATUS.md, ISSUES.md, CONTEXT.md) with more detailed instructions - added baseline metrics analysis checklist, enhanced Phase 1 comparison script, updated decision tree criteria
+- ⚠️ **This iteration**: Tables/plots regenerated (Dec 9 09:03), documentation updated (STATUS.md, ISSUES.md, CONTEXT.md). No code changes, no experiments run.
 
 **Quick Action Reference:**
 1. **REQUIRED (Before experiments)**: Train models via `bash agent_execute.sh train` - `checkpoint/` is EMPTY, training is REQUIRED
@@ -250,87 +250,24 @@ See detailed plan below for specific actions and execution commands.
     - Update ISSUES.md with Phase 1 results and next steps
     - Regenerate tables/plots if results change significantly
 
-**DDFM Metrics Research Plan - Based on Current Experiment Results Analysis:**
+**DDFM Metrics Research Plan:**
 
-**Current Baseline Metrics** (from `outputs/experiments/aggregated_results.csv`, computed from actual results):
-- **KOEQUIPTE DDFM**: sMAE=1.1441 (21 horizons), DFM sMAE=1.1439 (21 horizons)
-  - Average absolute difference: 0.00085 (0.074% of average sMAE)
-  - Maximum absolute difference: 0.00212 (horizon 2)
-  - Minimum absolute difference: 0.00001 (horizon 15)
-  - Relative difference: < 0.15% at every horizon
-  - **Conclusion**: Encoder is learning linear relationships only (equivalent to PCA/DFM)
-  - **Linearity Score Estimate**: ~0.99 (near-perfect linear collapse)
-  - **Improvement Ratio**: ~0% (no improvement over DFM)
-- **KOIPALL.G DDFM**: sMAE=0.69 (21 horizons), DFM sMAE=14.97 (21 horizons)
-  - DDFM outperforms DFM by 21.7x (excellent nonlinear benefit)
-  - Missing horizon 22 (n_valid=0)
-- **KOWRCCNSE DDFM**: sMAE=0.50 (22 horizons), DFM sMAE=2.78 (22 horizons)
-  - DDFM outperforms DFM by 5.6x (excellent nonlinear benefit)
-  - All 22 horizons completed
+**Current Baseline Metrics** (from `outputs/experiments/aggregated_results.csv`):
+- **KOEQUIPTE**: DDFM sMAE=1.1441, DFM sMAE=1.1439 (identical, linear collapse confirmed)
+- **KOIPALL.G**: DDFM sMAE=0.69 (21.7x better than DFM sMAE=14.97) - excellent
+- **KOWRCCNSE**: DDFM sMAE=0.50 (5.6x better than DFM sMAE=2.78) - excellent
 
-**Key Observation**: KOEQUIPTE shows linear collapse (encoder learning only linear features), while others show strong nonlinear benefits. This suggests KOEQUIPTE data structure or training dynamics differ from other targets.
+**Key Observation**: KOEQUIPTE shows linear collapse (encoder learning only linear features), while others show strong nonlinear benefits.
 
-**Detailed Plan:** See "Current Baseline Metrics" above for quantitative analysis. Key observation: KOEQUIPTE shows linear collapse (encoder learning only linear features), while others show strong nonlinear benefits.
+**Root Cause**: ReLU activation limitation (zeros negative values), insufficient encoder capacity, or training dynamics causing linear collapse.
 
-- **Root Cause Analysis**:
-  - **ReLU Activation Limitation**: ReLU activation (`max(0, x)`) zeros negative values, which may prevent the encoder from learning negative correlations between factors and observations. KOEQUIPTE may have negative factor loadings that ReLU cannot capture.
-  - **Encoder Capacity**: Default encoder `[16, 4]` may be too small to capture complex nonlinear relationships for KOEQUIPTE.
-  - **Linear Collapse**: The encoder may be collapsing to linear behavior (equivalent to PCA/DFM) due to insufficient capacity or activation function limitations.
-
-- **Implemented Improvements** (Verified in Code):
-  1. **Target-Specific Encoder Architectures** (`src/train.py` lines 363-397):
-     - KOEQUIPTE: Automatically uses deeper encoder `[64, 32, 16]` instead of default `[16, 4]`
-     - Increased epochs to 150 for KOEQUIPTE with deeper encoder (from default 100)
-     - Rationale: Current encoder may be too small or learning only linear features
-     - Status: ✅ **IMPLEMENTED IN CODE** - Needs experiments after training to test effectiveness
-  2. **Activation Function Support** (`src/models/models_forecasters.py`, `src/train.py`):
-     - Added `activation` parameter support to DDFMForecaster (default: 'relu')
-     - KOEQUIPTE: Automatically uses 'tanh' activation instead of 'relu' (unless explicitly overridden)
-     - Rationale: Tanh activation can capture negative correlations that ReLU cannot (ReLU zeros negative values)
-     - Status: ✅ **IMPLEMENTED IN CODE** - Needs experiments after training to test effectiveness
-  3. **Huber Loss Support** (`dfm-python/src/dfm_python/models/ddfm.py`, `src/models/models_forecasters.py`):
-     - Added `loss_function` parameter: 'mse' (default) or 'huber'
-     - Added `huber_delta` parameter (default 1.0) for transition point
-     - Status: ✅ **IMPLEMENTED IN CODE** - Needs experiments to test robustness to outliers
-  4. **Weight Decay (L2 Regularization)** (`dfm-python/src/dfm_python/models/ddfm.py`, `src/train.py`, `src/models/models_forecasters.py`):
-     - Added `weight_decay` parameter to DDFM model and DDFMForecaster (default: 0.0)
-     - KOEQUIPTE: Automatically uses weight_decay=1e-4 to prevent encoder from collapsing to linear behavior
-     - Rationale: L2 regularization encourages encoder to learn diverse features, preventing overfitting to linear PCA-like solutions
-     - Applied to all optimizer instances (configure_optimizers, _create_optimizer, pre_train)
-     - Status: ✅ **IMPLEMENTED IN CODE** - Needs experiments after training to test effectiveness
-  5. **Gradient Clipping Improvements** (`dfm-python/src/dfm_python/models/ddfm.py`, `dfm-python/src/dfm_python/models/mcmc.py`):
-     - Added `grad_clip_val` parameter to DDFM model (default: 1.0)
-     - Gradient clipping now uses configurable value instead of hardcoded 1.0
-     - Applied to pre_train, MCMC training, and Lightning training_step (via gradient norm logging)
-     - Rationale: Prevents training instability and gradient explosion that can cause NaN values or linear collapse
-     - Status: ✅ **IMPLEMENTED IN CODE** - Improves training stability
-  6. **Improved Encoder Weight Initialization** (`dfm-python/src/dfm_python/encoder/vae.py`):
-     - Added Xavier/Kaiming initialization for encoder layers based on activation function
-     - Kaiming initialization for ReLU activations (better for ReLU networks)
-     - Xavier initialization for tanh/sigmoid activations (better for symmetric activations)
-     - Smaller initialization (gain=0.1) for output layer to prevent large initial factors
-     - Rationale: Better weight initialization improves training stability and convergence, especially for deeper networks
-     - Status: ✅ **IMPLEMENTED IN CODE** - Improves training stability and convergence
-  7. **Factor Order Configuration** (`src/models/models_forecasters.py`, `src/train.py`):
-     - Added `factor_order` parameter to DDFMForecaster (default: 1, supports 1 or 2)
-     - Allows VAR(2) factor dynamics for targets that may benefit from longer memory
-     - VAR(2) can capture multi-period dependencies but requires more data
-     - Rationale: Some targets may have complex multi-period dynamics that VAR(1) cannot capture
-     - Status: ✅ **IMPLEMENTED IN CODE** - Configurable via model_params['factor_order'], not yet tested (blocked by lack of trained models)
-  8. **Increased Pre-Training for KOEQUIPTE** (`src/train.py` lines 407-418):
-     - Added `mult_epoch_pretrain` parameter support to DDFMForecaster (default: 1)
-     - KOEQUIPTE: Automatically uses `mult_epoch_pretrain=2` (double pre-training epochs)
-     - Rationale: More pre-training epochs give encoder more time to learn nonlinear features before MCMC iterations
-     - Status: ✅ **IMPLEMENTED IN CODE** - Not tested (models need re-training)
-  9. **Batch Size Optimization for KOEQUIPTE** (`src/train.py` lines 420-426):
-     - KOEQUIPTE: Automatically uses `batch_size=64` instead of default 100
-     - Rationale: Smaller batch sizes provide more diverse gradients per epoch, helping encoder learn nonlinear features
-     - Status: ✅ **IMPLEMENTED IN CODE** - Not tested (models need re-training)
-  10. **Enhanced Training Stability** (`dfm-python/src/dfm_python/models/ddfm.py`):
-     - Improved input clipping for deeper networks (tighter clipping range for networks with >2 layers)
-     - Better numerical stability handling in training step
-     - Rationale: Deeper networks are more sensitive to extreme values, tighter clipping improves stability
-     - Status: ✅ **IMPLEMENTED IN CODE** - Improves training stability for deeper architectures
+**Implemented Improvements** (Verified in Code):
+  1. **KOEQUIPTE-Specific Settings** (auto-applied in `src/train.py`):
+     - Encoder: `[64, 32, 16]` (default: `[16, 4]`), Activation: `tanh` (default: `relu`)
+     - Epochs: `150` (default: `100`), Weight decay: `1e-4` (default: `0.0`)
+     - Pre-training multiplier: `2` (default: `1`), Batch size: `64` (default: `100`)
+  2. **General Improvements**: Huber loss, gradient clipping, improved weight initialization, factor order configuration, enhanced training stability
+  3. **Status**: ✅ **ALL IMPLEMENTED IN CODE** - Needs experiments after training to test effectiveness
 
 - **Concrete Research Plan for DDFM Metrics Improvement** (Based on Current Results Analysis):
   
@@ -665,6 +602,23 @@ See detailed plan below for specific actions and execution commands.
        - More resistant to outliers from specific problematic horizons
      - **Rationale**: Mean-based metrics are sensitive to outliers from numerical instability or model issues at specific horizons. Robust statistics provide more reliable performance evaluation, especially for DDFM where some horizons may have extreme errors. Bootstrap confidence intervals provide uncertainty quantification for more reliable performance comparisons.
      - **Status**: ✅ **IMPLEMENTED IN CODE** (current iteration) - Robust metrics improve DDFM performance evaluation reliability and provide uncertainty quantification
+  14. **Forecast Skill Score and Information Gain Metrics** (`src/evaluation/evaluation_metrics.py`, `src/evaluation/evaluation_aggregation.py` - Current Iteration):
+     - Added `calculate_forecast_skill_score()` function for comparing DDFM to naive baseline
+       - Skill score ranges from -inf to 1.0 (1.0 = perfect, 0.0 = same as baseline, < 0.0 = worse than baseline)
+       - Calculates skill scores for MSE, MAE, and RMSE
+       - Provides percentage improvement over baseline (persistence or mean forecast)
+       - Helps quantify forecast improvement relative to simple baselines
+     - Added `calculate_information_gain()` function for measuring information gain of DDFM over DFM
+       - Two methods: KL divergence between error distributions, or mutual information between predictions and true values
+       - Quantifies value of nonlinear features learned by DDFM encoder
+       - Helps identify when DDFM is learning different patterns from DFM
+     - **Enhanced horizon improvement tracking**: Added horizon categorization in `analyze_ddfm_prediction_quality()`
+       - Categorizes horizons by improvement level: significant (>10%), moderate (5-10%), marginal (0-5%), no improvement, degradation
+       - Calculates improvement distribution statistics (fractions, counts per category)
+       - Provides actionable insights on which horizons benefit most from DDFM
+       - Recommendations include horizon-specific guidance based on improvement distribution
+     - **Rationale**: Skill score provides standardized measure of forecast improvement relative to naive baselines, making DDFM performance more interpretable. Information gain quantifies the value of nonlinear features. Enhanced horizon tracking helps identify which forecast horizons benefit most from DDFM improvements.
+     - **Status**: ✅ **IMPLEMENTED IN CODE** (current iteration) - New metrics provide additional insights for DDFM performance evaluation and improvement tracking
   13. **Factor Dynamics Stability Inference** (`src/evaluation/evaluation_metrics.py` - Current Iteration):
      - Added `calculate_factor_dynamics_stability()` function to infer VAR factor dynamics stability from prediction patterns
      - **Metrics included**:
@@ -861,72 +815,22 @@ See detailed plan below for specific actions and execution commands.
 
 ---
 
-## DDFM Metrics Research: How to Use Analysis Functions for Continuous Improvement
-
-**Overview**: The codebase includes comprehensive DDFM metrics analysis functions that automatically run after result aggregation. These functions provide actionable insights for improving DDFM performance, especially for targets showing linear collapse (like KOEQUIPTE).
+## DDFM Metrics Research: Analysis Functions
 
 **Key Analysis Functions** (all in `src/evaluation/evaluation_aggregation.py`):
+- `detect_ddfm_linearity()` - Detects linear collapse (output: `outputs/experiments/ddfm_linearity_analysis.json`)
+- `analyze_ddfm_prediction_quality()` - Comprehensive performance analysis (runs automatically after aggregation)
+- `analyze_correlation_structure()` - Pre-training data structure analysis (output: `outputs/analysis/correlation_analysis_{target}.json`)
 
-1. **`detect_ddfm_linearity()`** - Automatically detects when DDFM is collapsing to linear behavior
-   - **Output**: `outputs/experiments/ddfm_linearity_analysis.json`
-   - **Key Metrics**:
-     - `linearity_scores[target]['overall_linearity']`: 0-1 score (higher = more linear, target: < 0.95)
-     - `performance_improvement[target]['overall_improvement']`: DDFM vs DFM improvement ratio (target: > 10%)
-     - `similarity_by_horizon[target]`: Per-horizon similarity scores
-   - **When to Check**: After every forecasting experiment to monitor linear collapse risk
-   - **Action Threshold**: If linearity > 0.95, encoder is learning only linear features → apply improvements
-
-2. **`analyze_ddfm_prediction_quality()`** - Comprehensive DDFM performance analysis
-   - **Output**: Integrated into `ddfm_linearity_analysis.json` (runs automatically)
-   - **Key Metrics**:
-     - `target_analysis[target]['improvement_sMAE']`: Overall improvement ratio (target: > 10%)
-     - `target_analysis[target]['linear_collapse_risk']`: 0-1 risk score (target: < 0.5)
-     - `target_analysis[target]['consistency']`: Consistency across horizons (target: > 0.7)
-     - `target_analysis[target]['error_pattern_similarity']`: Similarity to DFM error patterns (target: < 0.6)
-     - `target_analysis[target]['horizon_error_correlation']`: Correlation with DFM errors (target: < 0.5)
-     - `target_analysis[target]['weighted_improvement_pct']`: Horizon-weighted improvement (target: > 5%)
-     - `target_analysis[target]['relative_improvement_consistency']`: Fraction of horizons with improvement (target: > 0.7)
-     - `target_analysis[target]['improvement_persistence_score']`: Persistence of improvements (target: > 0.7)
-   - **When to Check**: After every forecasting experiment for detailed diagnostics
-   - **Action Threshold**: If collapse_risk > 0.5 OR improvement < 5%, apply encoder improvements
-
-3. **`analyze_correlation_structure()`** - Pre-training data structure analysis
-   - **Output**: `outputs/analysis/correlation_analysis_{target}.json`
-   - **Key Metrics**:
-     - `summary['negative_fraction']`: Fraction of negative correlations (target: > 0.3 for tanh justification)
-     - `summary['strong_negative_count']`: Count of strong negative correlations (target: > 10 for tanh critical)
-     - `summary['mean_correlation']`: Average correlation magnitude (target: < 0.1 for deeper encoder)
-     - `summary['std_correlation']`: Correlation distribution spread (target: < 0.15 for different approach)
-   - **When to Check**: Before training to inform improvement strategy
-   - **Action Threshold**: Use decision criteria in Phase 0 section to select activation/encoder
-
-**Workflow for Continuous Improvement**:
-
-1. **Before Training (Phase 0)**:
-   - Run `analyze_correlation_structure()` for all targets
-   - Compare metrics across targets to inform improvement strategy
-   - Document findings in report and ISSUES.md
-
-2. **After Training + Forecasting (Phase 1)**:
-   - Check `outputs/experiments/ddfm_linearity_analysis.json` (auto-generated)
-   - Extract key metrics: linearity score, improvement ratio, collapse risk
-   - Compare with baseline metrics (if available)
-   - Use decision tree in Phase 1 section to determine next steps
-
-3. **Iterative Improvement**:
-   - After each experiment iteration, check all metrics
-   - Track metrics over time to monitor improvement trends
-   - Use metrics to guide next iteration's improvements
-   - Document findings in report sections
-
-**Example**: After forecasting, check `outputs/experiments/ddfm_linearity_analysis.json` for linearity scores, improvement ratios, and collapse risk. If linearity > 0.95 AND improvement < 5% AND risk > 0.5, apply deeper encoder, tanh activation, weight decay, etc.
-
-**Success Criteria Summary** (from automatic analysis):
+**Key Metrics to Track**:
 - Linearity score: < 0.95 (currently ~0.99 for KOEQUIPTE)
 - Improvement ratio: > 10% (currently ~0% for KOEQUIPTE)
 - Linear collapse risk: < 0.5 (currently ~0.95+ for KOEQUIPTE)
-- Consistency: > 0.7 (measures consistent improvement)
-- Error pattern similarity: < 0.6 (indicates different patterns from DFM)
-- Horizon error correlation: < 0.5 (indicates nonlinear behavior)
-- Relative improvement consistency: > 0.7 (DDFM improves at >70% of horizons)
-- Improvement persistence: > 0.7 (improvements are consistent, not transient)
+- Consistency: > 0.7 (measures consistent improvement across horizons)
+
+**Workflow**:
+1. **Before Training (Phase 0)**: Run `analyze_correlation_structure()` for all targets to inform improvement strategy
+2. **After Training + Forecasting (Phase 1)**: Check `outputs/experiments/ddfm_linearity_analysis.json` (auto-generated) for metrics
+3. **Iterative Improvement**: Use metrics to guide next iteration's improvements
+
+**Execution Commands**: See Phase 0 and Phase 1 sections above for detailed execution commands.

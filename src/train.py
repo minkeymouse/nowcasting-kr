@@ -1538,7 +1538,7 @@ def main():
     nowcast_parser.add_argument("--nowcast-start", required=True, help="Nowcast start date (YYYY-MM-DD)")
     nowcast_parser.add_argument("--nowcast-end", required=True, help="Nowcast end date (YYYY-MM-DD)")
     nowcast_parser.add_argument("--output-dir", default="outputs/backtest", help="Output directory for backtest JSON")
-    nowcast_parser.add_argument("--weeks-before", nargs="*", help="Optional weeks-before releases (unused placeholder)")
+    nowcast_parser.add_argument("--weeks-before", nargs="*", type=int, help="Optional weeks-before releases (default: [4, 1] if not specified)")
     
     args = parser.parse_args()
     
