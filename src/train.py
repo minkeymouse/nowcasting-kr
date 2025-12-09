@@ -328,6 +328,7 @@ def _train_forecaster(
     if model_type == 'dfm':
         max_iter = model_params.get('max_iter', 5000)
         threshold = model_params.get('threshold', 1e-5)
+        mixed_freq = model_params.get('mixed_freq', False)
         config_dict = model_cfg_dict if model_cfg_dict else {}
         if not config_dict or 'series' not in config_dict:
             raise ValidationError(f"No series found in config. Config: {config_name}")
@@ -335,7 +336,8 @@ def _train_forecaster(
         forecaster = DFMForecaster(
             config_dict=config_dict,
             max_iter=max_iter,
-            threshold=threshold
+            threshold=threshold,
+            mixed_freq=mixed_freq
         )
         
         target_series = _extract_target_series(cfg)

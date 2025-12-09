@@ -170,11 +170,16 @@ class DFMForecaster:
         config_dict: Optional[dict] = None,
         max_iter: int = 5000,
         threshold: float = 1e-5,
+        mixed_freq: Optional[bool] = None,
         **kwargs
     ):
         self.config_dict = config_dict
         self.max_iter = max_iter
         self.threshold = threshold
+        # Get mixed_freq from config_dict if not explicitly provided
+        if mixed_freq is None and config_dict and isinstance(config_dict, dict):
+            mixed_freq = config_dict.get('mixed_freq', False)
+        self.mixed_freq = mixed_freq if mixed_freq is not None else False
         self._dfm_model = None
         self._is_fitted = False
         
@@ -191,13 +196,17 @@ class DFMForecaster:
         # Initialize DFMBase (from dfm-python) with max_iter and threshold
         if DFMBase is None:
             raise ImportError("dfm-python package not available")
+        
+        # Get tent_weights_dict from config_dict (legacy support, mixed_freq takes precedence)
         tent_weights = None
         if self.config_dict and isinstance(self.config_dict, dict):
             tent_weights = self.config_dict.get("tent_weights_dict")
+        
         self._dfm_model = DFMBase(
             max_iter=self.max_iter,
             threshold=self.threshold,
-            tent_weights_dict=tent_weights
+            tent_weights_dict=tent_weights,  # Deprecated, kept for backward compatibility
+            mixed_freq=self.mixed_freq
         )
         
         if self.config_dict:
