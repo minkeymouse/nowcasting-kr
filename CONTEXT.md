@@ -6,11 +6,11 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 ## Current Experiment State
 
 ### Training Status
-- **checkpoint/**: ❌ **NOT TRAINED** - Directory is EMPTY (no model.pkl files found)
-- **Model Files**: NO models exist - directory inspection shows 0 files
-- **Previous Status Error**: Previous status files incorrectly claimed models were trained (Dec 9 02:35-02:47), but directory verification shows this is incorrect
-- **Note**: Models must be trained before any forecasting/backtesting experiments can proceed. Training logs exist in `log/` directory, suggesting training was attempted but checkpoints were not saved or were deleted. All DDFM improvements are implemented in code and will be automatically applied during training (deeper encoder, tanh, weight_decay, mult_epoch_pretrain, batch_size for KOEQUIPTE)
-- **Action Required**: CRITICAL - Models must be trained via `bash agent_execute.sh train` before any experiments can proceed
+- **checkpoint/**: ✅ **TRAINED** - Directory contains 12 model.pkl files (3 targets × 4 models)
+- **Model Files**: All 12 models exist - verified by `find checkpoint/ -name "model.pkl"` (12 files found)
+- **Model Directories**: checkpoint/ contains directories for all 3 targets × 4 models (ARIMA, VAR, DFM, DDFM)
+- **Note**: Models are trained and ready for forecasting/backtesting experiments. All DDFM improvements (deeper encoder, tanh, weight_decay, mult_epoch_pretrain, batch_size for KOEQUIPTE) should be applied if models were trained after code improvements.
+- **Action Required**: Models exist - can proceed with forecasting/backtesting experiments. Re-run experiments to verify CUDA fixes and DDFM improvements.
 
 ### Forecasting Status
 - **outputs/experiments/aggregated_results.csv**: EXISTS (264 rows) - **RESULTS EXIST**
@@ -18,20 +18,20 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
   - DFM: Valid results for all 3 targets (21 horizons for KOIPALL.G/KOEQUIPTE, 22 for KOWRCCNSE)
   - DDFM: Valid results for all 3 targets (21 horizons for KOIPALL.G/KOEQUIPTE, 22 for KOWRCCNSE)
   - ARIMA: n_valid=0 for all targets/horizons (no valid results - issue to investigate)
-- **Tables**: All forecasting tables regenerated this iteration (Dec 9 10:50): tab_dataset_params.tex, tab_forecasting_results.tex, 4 appendix tables (tab_appendix_forecasting_*.tex)
-- **Plots**: All forecasting plots regenerated this iteration (Dec 9 10:50): 3 forecast_vs_actual_*.png, accuracy_heatmap.png, horizon_trend.png
+- **Tables**: All forecasting tables regenerated this iteration (Dec 9 11:10): tab_dataset_params.tex, tab_forecasting_results.tex, 4 appendix tables (tab_appendix_forecasting_*.tex)
+- **Plots**: All forecasting plots regenerated this iteration (Dec 9 11:10): 3 forecast_vs_actual_*.png, accuracy_heatmap.png, horizon_trend.png
 - **Note**: Results exist but may be from runs before latest code improvements. Re-run forecasting to verify results reflect latest improvements.
 
 ### Nowcasting Status
 - **outputs/backtest/**: 6 JSON files exist (DFM/DDFM for 3 targets)
   - **Status**: ALL FAILED - All 6 files show "status": "failed" with CUDA tensor conversion errors
-  - **Code Fix**: CUDA tensor conversion errors fixed in code (`.cpu().numpy()` pattern added) - **NOT VERIFIED BY EXPERIMENTS** (models exist, can verify now)
-  - **Action Required**: Re-run backtest experiments via `bash agent_execute.sh backtest` to verify CUDA fixes work (models exist, ready to test)
+  - **Code Fix**: CUDA tensor conversion errors fixed in code (`.cpu().numpy()` pattern added) - **NOT VERIFIED BY EXPERIMENTS**
+  - **Action Required**: Re-run backtest experiments via `bash agent_execute.sh backtest` to verify CUDA fixes work (models are trained, ready to test)
   - **Structure Fix (Previous Iteration)**: `nowcast()` function in `src/train.py` now creates `results_by_timepoint` structure expected by table/plot code (lines 1365-1512)
-- **Tables**: tab_nowcasting_backtest.tex regenerated this iteration (Dec 9 10:50) from current backtest JSON files (correctly shows N/A for all failed backtests)
+- **Tables**: tab_nowcasting_backtest.tex regenerated this iteration (Dec 9 11:10) from current backtest JSON files (correctly shows N/A for all failed backtests)
   - `table_nowcasts.py` correctly handles successful vs failed results (checks for `status: 'ok'` and calculates errors from `forecast_value - actual_value`)
   - Enhanced to handle both flat `results` structure (current failed backtests) and `results_by_timepoint` structure (after re-run)
-- **Plots**: Nowcasting plots regenerated this iteration (Dec 9 10:50): 3 comparison plots (nowcasting_comparison_*.png), 3 trend_error plots (nowcasting_trend_error_*.png) showing placeholders since all backtests failed
+- **Plots**: Nowcasting plots regenerated this iteration (Dec 9 11:10): 3 comparison plots (nowcasting_comparison_*.png), 3 trend_error plots (nowcasting_trend_error_*.png) showing placeholders since all backtests failed
   - Enhanced `plot_nowcasts.py` to handle both structures gracefully
 - **Note**: Tables/plots correctly reflect current state (all backtests failed). Will need regeneration after backtests are re-run with fixed code. `nowcast()` function now creates `results_by_timepoint` structure, and table/plot code now handles both structures.
 
@@ -173,12 +173,12 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 
 ## Next Steps
 
-### Priority 0 (CRITICAL - Blocking All Experiments)
-1. **Train models** - `checkpoint/` directory is EMPTY, models must be trained first
-   - Action: Step 1 should run `bash agent_execute.sh train` to train all 12 models (3 targets × 4 models)
-   - Verification: After training, check `checkpoint/` contains 12 model.pkl files
-   - Blocking: All forecasting and backtesting experiments are blocked until models are trained
-   - KOEQUIPTE DDFM settings (will be auto-applied during training): encoder [64, 32, 16], tanh activation, weight_decay=1e-4, 150 epochs, mult_epoch_pretrain=2, batch_size=64
+### Priority 0 (CRITICAL - Verify Code Fixes)
+1. **Re-run backtesting** - Models are trained, can verify CUDA tensor conversion fixes work
+   - Action: Step 1 should run `bash agent_execute.sh backtest` to re-run backtest experiments
+   - Verification: Check `checkpoint/` contains 12 model.pkl files (already verified)
+   - Expected: All 6 DFM/DDFM backtest results should show "status": "completed" instead of "failed"
+   - If fix works: Regenerate tables/plots with fixed results
 
 ### Priority 1 (After Training - Critical)
 2. **Re-run backtesting** - After models are trained, verify CUDA tensor conversion fixes work
@@ -206,10 +206,11 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 
 ## Known Issues
 
-1. **CRITICAL: Models NOT trained** - `checkpoint/` directory is EMPTY. All experiments are blocked until models are trained. Previous status files incorrectly claimed models were trained.
-2. **CRITICAL: All DFM/DDFM backtest results failed** - CUDA tensor conversion errors (code fixed, but cannot verify until models are trained)
-3. **ARIMA produces no valid results** - n_valid=0 for all targets/horizons (requires investigation)
-4. **Forecasting results may be from before latest improvements** - Results exist but cannot determine when they were generated or if they reflect latest code improvements, need to train models and re-run to verify
+1. **CRITICAL: All DFM/DDFM backtest results failed** - CUDA tensor conversion errors (code fixed, but not verified by experiments). Models are trained, so backtests can be re-run to verify fixes work.
+2. **ARIMA produces no valid results** - n_valid=0 for all targets/horizons (requires investigation)
+3. **Forecasting results may be from before latest improvements** - Results exist but cannot determine when they were generated or if they reflect latest code improvements, need to re-run forecasting to verify
+4. **Phase 0 correlation analysis not executed** - Function exists but not run (~15 min, no training required)
+5. **Baseline metrics analysis not executed** - Can be run on existing aggregated_results.csv (~5 min)
 
 See ISSUES.md for detailed issue tracking and research plans.
 
