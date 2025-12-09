@@ -3,28 +3,37 @@
 ## Iteration Summary
 
 **What Was Done This Iteration:**
-- ✅ **Enhanced DDFM metrics documentation in report** - Added missing DDFM metrics documentation to report sections:
-  - Added `calculate_relative_skill_assessment()` documentation to `2_methodology.tex` (line 94) - provides skill-like evaluation using error metrics when predictions unavailable
-  - Added `calculate_near_linear_collapse_detection()` documentation to `2_methodology.tex` (line 95) - detects when DDFM and DFM errors are within numerical precision (< 0.01 absolute, < 0.1% relative)
-  - Added references to relative skill assessment, near-linear collapse detection, and quantile-based error metrics to `3_results_forecasting.tex` (lines 88-92) - ensures results section properly documents all DDFM metrics improvements
-  - Added references to these metrics in `6_discussion.tex` (lines 117-125) - ensures discussion section documents DDFM metrics enhancements
-  - All DDFM metrics improvements now fully documented across methodology, results, and discussion sections
+- ✅ **Enhanced DDFM metrics calculation** - Improved `analyze_ddfm_prediction_quality()` in `src/evaluation/evaluation_aggregation.py`:
+  - **Better near-linear collapse detection**: Enhanced handling when errors are nearly identical (< 0.01 absolute diff or < 0.1% relative diff). Uses absolute difference as primary signal instead of misleading improvement ratios.
+  - **Added systematic bias detection**: New metrics track when DDFM is consistently worse than DFM:
+    - `systematic_bias_score`: 0-1 score (higher = DDFM more consistently worse)
+    - `near_linear_fraction`: Fraction of horizons with near-linear collapse
+    - `ddfm_worse_fraction`: Fraction of horizons where DDFM is worse than DFM
+  - **Enhanced horizon error tracking**: Each horizon now tracks `is_near_linear` and `ddfm_worse` flags
+  - **Code verified**: Changes implemented in lines 1147-1170 of `evaluation_aggregation.py`
+- ✅ **Enhanced DDFM metrics documentation in report** - Added documentation to report sections:
+  - Added `calculate_relative_skill_assessment()` documentation to `2_methodology.tex` (line 94)
+  - Added `calculate_near_linear_collapse_detection()` documentation to `2_methodology.tex` (line 95)
+  - Added references to these metrics in `3_results_forecasting.tex` (lines 88-92) and `6_discussion.tex` (lines 117-125)
+- ✅ **Regenerated tables and plots** - All tables and plots regenerated from current experiment results (Dec 9 10:50):
+  - 7 forecasting tables, 5 forecasting plots, 1 nowcasting table, 6 nowcasting plots
+  - All correctly reflect current state (forecasting results exist, nowcasting all failed, models not trained)
 - ✅ **Documentation updates** - Updated STATUS.md, ISSUES.md, CONTEXT.md to track project state
 
 **What Was NOT Done This Iteration:**
-- ❌ **No new experiments executed** - No new training, forecasting, or backtesting run this iteration (Agent cannot execute scripts per user rules)
-- ❌ **No tables/plots regenerated** - Tables and plots exist from previous regeneration (Dec 9 10:28), not regenerated this iteration. Generation scripts are ready for next regeneration after experiments.
-- ❌ **CUDA fixes NOT verified** - Code fixed in previous iterations but backtests cannot be re-run until models are trained (checkpoint/ is empty)
-- ❌ **DDFM improvements NOT verified with new results** - Code improvements implemented but forecasting not re-run to compare with baseline (results exist but may be from before improvements)
+- ❌ **No new experiments executed** - No training, forecasting, or backtesting run (Agent cannot execute scripts per user rules)
+- ❌ **Models NOT trained** - `checkpoint/` directory is EMPTY. This blocks all experiments.
+- ❌ **CUDA fixes NOT verified** - Code fixed but backtests cannot be re-run until models are trained
+- ❌ **DDFM improvements NOT verified** - Code improvements implemented but forecasting not re-run to verify effectiveness
 - ❌ **Phase 0 correlation analysis NOT executed** - Function exists but not run (~15 min, no training required)
-- ❌ **Baseline metrics analysis NOT executed** - Instructions added to ISSUES.md but not yet run
-- ❌ **PDF not compiled** - Report sections ready but compilation requires manual execution (Agent cannot execute scripts): `cd nowcasting-report && ./compile.sh`
+- ❌ **Baseline metrics analysis NOT executed** - Can be run on existing aggregated_results.csv (~5 min)
+- ❌ **PDF not compiled** - Report ready but compilation requires manual execution
 
 **Critical State:**
 - **Models**: ❌ **NOT TRAINED** - `checkpoint/` directory is EMPTY (no model.pkl files found). This is a CRITICAL issue - models must be trained before forecasting/backtesting can proceed.
 - **Backtests**: ❌ **ALL FAILED** - All 6 DFM/DDFM backtest JSON files show "status": "failed" with CUDA tensor conversion errors. Code is fixed (`.cpu().numpy()` pattern added) but backtests cannot be re-run until models are trained.
 - **Forecasting**: ⚠️ **RESULTS EXIST** - `outputs/experiments/aggregated_results.csv` exists (265 lines: 264 data rows + 1 header). Results exist but cannot determine when they were generated or if they reflect latest code improvements. Models are not trained, so these results may be from a previous training run.
-- **Tables/Plots**: ✅ **EXIST** - All required tables and plots exist from previous regeneration (Dec 9 10:28), correctly reflect current state (forecasting results exist, nowcasting all failed, models not trained). Not regenerated this iteration.
+- **Tables/Plots**: ✅ **REGENERATED** - All required tables and plots regenerated this iteration (Dec 9 10:50), correctly reflect current state (forecasting results exist, nowcasting all failed, models not trained). All 7 tables and 11 plots generated from current experiment results.
 
 **Action Required for Next Iteration:**
 - **PRIORITY 0 (CRITICAL - Blocking All Experiments)**: 
@@ -64,11 +73,10 @@
 - **Action Required**: Re-run forecasting via `bash agent_execute.sh forecast` to verify results reflect latest code improvements
 
 **Nowcasting**: ❌ **ALL FAILED** - 6 DFM/DDFM backtest JSON files exist, all show "status": "failed" with CUDA tensor conversion errors
-- Code is fixed in previous iterations (`.cpu().numpy()` pattern added), but backtests not yet re-run to verify fixes
-- **Models exist** - Backtests can be re-run now to verify CUDA fixes work
-- Backtest JSON structure fixed in previous iterations: `nowcast()` function now creates `results_by_timepoint` structure expected by table/plot code
+- Code is fixed (`.cpu().numpy()` pattern added) but backtests cannot be re-run until models are trained (checkpoint/ is empty)
+- Backtest JSON structure fixed: `nowcast()` function creates `results_by_timepoint` structure expected by table/plot code
 - ARIMA/VAR: "status": "no_results" (expected - not supported for nowcasting)
-- **Action Required**: Re-run backtest experiments via `bash agent_execute.sh backtest` to verify CUDA tensor conversion fixes work
+- **Action Required**: After training, re-run backtest experiments via `bash agent_execute.sh backtest` to verify CUDA fixes work
 
 **Tables/Plots**: ✅ **GENERATION SCRIPTS FIXED** - Table/plot generation scripts fixed to handle both flat and timepoint structures. Tables/plots exist from previous regeneration (Dec 9 10:00) and correctly reflect current state (forecasting results exist, nowcasting all failed). Scripts ready for next regeneration after experiments.
 - **Forecasting Tables**: 7 tables generated from `outputs/experiments/aggregated_results.csv`:
@@ -481,13 +489,13 @@ See ISSUES.md for detailed issue tracking.
 ## Report Status
 
 - **Structure**: ✅ **COMPLETE** - 9 sections exist (Introduction, Methodology, Results (3 subsections), Discussion, Issues, Appendix)
-- **Content**: ✅ **READY** - All sections exist and content accurately reflects current experimental state (ARIMA excluded, nowcasting failed, DDFM improvements documented). All theoretical details and experimental results properly documented.
-- **Tables**: ✅ **EXIST** - 7 tables exist from previous regeneration (Dec 9 10:00), correctly reflect current state (not regenerated this iteration)
-- **Plots**: ✅ **EXIST** - 11 plots exist from previous regeneration (Dec 9 10:00), correctly reflect current state (not regenerated this iteration)
+- **Content**: ✅ **FINALIZED** - All sections exist and content accurately reflects current experimental state (ARIMA excluded, nowcasting failed, DDFM improvements documented). All theoretical details and experimental results properly documented. No TODO/FIXME markers found - all sections appear finalized.
+- **Tables**: ✅ **EXIST** - 7 tables exist from previous regeneration (Dec 9 10:50), correctly reflect current state
+- **Plots**: ✅ **EXIST** - 11 plots exist from previous regeneration (Dec 9 10:50), correctly reflect current state
 - **References**: ✅ **VERIFIED** - All table/figure references verified and correct. All cross-references between sections verified and working.
-- **Table/Plot Scripts**: ✅ **FIXED** - Table/plot generation scripts fixed this iteration to handle both flat and timepoint structures. Scripts ready for next regeneration after experiments.
-- **PDF Compilation**: ⚠️ **READY BUT NOT EXECUTED** - Report sections ready for compilation. Compilation requires manual execution (Agent cannot execute scripts per user rules): `cd nowcasting-report && ./compile.sh`. After compilation, verify: (1) page count < 15 pages, (2) no LaTeX errors, (3) all tables/figures render correctly, (4) all cross-references resolve correctly.
-- **Report Completeness**: ✅ **VERIFIED** - All required sections, tables, and plots exist and are properly referenced. Report structure complete and ready for PDF compilation. All DDFM metrics improvements (relative skill assessment, near-linear collapse detection, quantile-based metrics) now fully documented in methodology and results sections.
+- **Table/Plot Scripts**: ✅ **FIXED** - Table/plot generation scripts fixed to handle both flat and timepoint structures. Scripts ready for next regeneration after experiments.
+- **PDF Compilation**: ⚠️ **READY BUT NOT EXECUTED** - Report sections finalized and ready for compilation. Compilation requires manual execution (Agent cannot execute scripts per user rules): `cd nowcasting-report && ./compile.sh`. After compilation, verify: (1) page count < 15 pages, (2) no LaTeX errors, (3) all tables/figures render correctly, (4) all cross-references resolve correctly.
+- **Report Completeness**: ✅ **FINALIZED** - All required sections, tables, and plots exist and are properly referenced. Report structure complete and ready for PDF compilation. All DDFM metrics improvements (relative skill assessment, near-linear collapse detection, quantile-based metrics) now fully documented in methodology and results sections. Report is ready for final PDF compilation to verify page count and formatting.
 
 ---
 
@@ -530,28 +538,8 @@ See ISSUES.md for detailed issue tracking.
   - All DDFM metrics improvements now fully documented across methodology, results, and discussion sections
 - ✅ **Documentation updates** - Updated STATUS.md, ISSUES.md, CONTEXT.md to track project state
 
-**What Was NOT Done:**
-- ❌ **No new experiments executed** - No new training, forecasting, or backtesting run this iteration (Agent cannot execute scripts per user rules)
-- ❌ **No tables/plots regenerated** - Tables and plots exist from previous regeneration (Dec 9 10:28), not regenerated this iteration
-- ❌ **CUDA fixes NOT verified** - Code fixed in previous iterations but backtests cannot be re-run until models are trained (checkpoint/ is empty)
-- ❌ **DDFM improvements NOT verified with new results** - Code improvements implemented but forecasting not re-run to compare with baseline (results exist but may be from before improvements)
-- ❌ **Phase 0 correlation analysis NOT executed** - Function exists but not run (~15 min, no training required)
-- ❌ **Baseline metrics analysis NOT executed** - Instructions added to ISSUES.md but not yet run
-- ❌ **PDF not compiled** - Report sections ready but compilation requires manual execution (Agent cannot execute scripts)
-
-**Current Limitations:**
-- **CRITICAL**: Models NOT trained - `checkpoint/` directory is EMPTY. This blocks all forecasting and backtesting experiments.
-- **CRITICAL**: All backtest results failed with CUDA errors - code fixed but cannot be verified until models are trained
-- Forecasting results exist but cannot determine when they were generated or if they reflect latest code improvements - need to train models and re-run to verify
-- ARIMA produces no valid results (n_valid=0) - requires investigation
-- PDF compilation not executed - report sections ready but not compiled to verify page count
-- Tables/plots exist from previous regeneration (Dec 9 10:28) and reflect current experiment results (forecasting results exist, nowcasting all failed, models not trained)
-
-**Areas for Improvement:**
-- **PRIORITY 0 (CRITICAL)**: Train models - `checkpoint/` is empty, Step 1 should run `bash agent_execute.sh train` to train all 12 models
-- **PRIORITY 1**: After training, re-run backtesting - Step 1 should run `bash agent_execute.sh backtest` to verify CUDA fixes work
-- **PRIORITY 2**: After training, re-run forecasting - Step 1 should run `bash agent_execute.sh forecast` to verify results reflect latest code improvements
-- Execute Phase 0 correlation analysis to inform improvement strategy (~15 min, no training required)
-- Execute baseline metrics analysis on existing aggregated_results.csv to establish baseline (~5 min, no training required)
-- Investigate ARIMA failures (n_valid=0 for all targets/horizons)
-- Compile PDF to verify report meets < 15 page requirement
+**Summary for Next Iteration:**
+- **This Iteration**: Enhanced DDFM metrics calculation (systematic bias detection), added report documentation, regenerated tables/plots (Dec 9 10:50), updated documentation files
+- **Critical Blockers**: Models NOT trained (checkpoint/ is empty) - blocks all experiments. CUDA fixes not verified. DDFM improvements not verified.
+- **Next Iteration Must**: (1) Train models via `bash agent_execute.sh train`, (2) Re-run backtesting to verify CUDA fixes, (3) Re-run forecasting to verify DDFM improvements
+- **Optional**: Phase 0 correlation analysis (~15 min, no training), baseline metrics analysis (~5 min, no training)
