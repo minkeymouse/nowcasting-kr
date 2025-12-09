@@ -6,10 +6,11 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 ## Current Experiment State
 
 ### Training Status
-- **checkpoint/**: ✅ **TRAINED** - Directory contains 12 model.pkl files (trained Dec 9 02:35-02:47)
-- **Model Files**: All 12 models exist (3 targets × 4 models: ARIMA, VAR, DFM, DDFM)
-- **Note**: Models are trained and ready for use. All DDFM improvements were automatically applied during training (deeper encoder, tanh, weight_decay, mult_epoch_pretrain, batch_size for KOEQUIPTE)
-- **Action Required**: None - models exist and can be used for forecasting and backtesting experiments
+- **checkpoint/**: ❌ **NOT TRAINED** - Directory is EMPTY (no model.pkl files found)
+- **Model Files**: NO models exist - directory inspection shows 0 files
+- **Previous Status Error**: Previous status files incorrectly claimed models were trained (Dec 9 02:35-02:47), but directory verification shows this is incorrect
+- **Note**: Models must be trained before any forecasting/backtesting experiments can proceed. Training logs exist in `log/` directory, suggesting training was attempted but checkpoints were not saved or were deleted. All DDFM improvements are implemented in code and will be automatically applied during training (deeper encoder, tanh, weight_decay, mult_epoch_pretrain, batch_size for KOEQUIPTE)
+- **Action Required**: CRITICAL - Models must be trained via `bash agent_execute.sh train` before any experiments can proceed
 
 ### Forecasting Status
 - **outputs/experiments/aggregated_results.csv**: EXISTS (264 rows) - **RESULTS EXIST**
@@ -17,8 +18,8 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
   - DFM: Valid results for all 3 targets (21 horizons for KOIPALL.G/KOEQUIPTE, 22 for KOWRCCNSE)
   - DDFM: Valid results for all 3 targets (21 horizons for KOIPALL.G/KOEQUIPTE, 22 for KOWRCCNSE)
   - ARIMA: n_valid=0 for all targets/horizons (no valid results - issue to investigate)
-- **Tables**: All forecasting tables regenerated (Dec 9 10:00): tab_dataset_params.tex, tab_forecasting_results.tex, 4 appendix tables (tab_appendix_forecasting_*.tex)
-- **Plots**: All forecasting plots regenerated (Dec 9 10:00): 3 forecast_vs_actual_*.png, accuracy_heatmap.png, horizon_trend.png
+- **Tables**: All forecasting tables exist from previous regeneration (Dec 9 10:28): tab_dataset_params.tex, tab_forecasting_results.tex, 4 appendix tables (tab_appendix_forecasting_*.tex)
+- **Plots**: All forecasting plots exist from previous regeneration (Dec 9 10:28): 3 forecast_vs_actual_*.png, accuracy_heatmap.png, horizon_trend.png
 - **Note**: Results exist but may be from runs before latest code improvements. Re-run forecasting to verify results reflect latest improvements.
 
 ### Nowcasting Status
@@ -27,11 +28,11 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
   - **Code Fix**: CUDA tensor conversion errors fixed in code (`.cpu().numpy()` pattern added) - **NOT VERIFIED BY EXPERIMENTS** (models exist, can verify now)
   - **Action Required**: Re-run backtest experiments via `bash agent_execute.sh backtest` to verify CUDA fixes work (models exist, ready to test)
   - **Structure Fix (Previous Iteration)**: `nowcast()` function in `src/train.py` now creates `results_by_timepoint` structure expected by table/plot code (lines 1365-1512)
-- **Tables**: tab_nowcasting_backtest.tex regenerated (Dec 9 10:00) from current backtest JSON files (correctly shows N/A for all failed backtests)
+- **Tables**: tab_nowcasting_backtest.tex exists from previous regeneration (Dec 9 10:28) from current backtest JSON files (correctly shows N/A for all failed backtests)
   - `table_nowcasts.py` correctly handles successful vs failed results (checks for `status: 'ok'` and calculates errors from `forecast_value - actual_value`)
-  - **Code Fix (Current Iteration)**: Enhanced to handle both flat `results` structure (current failed backtests) and `results_by_timepoint` structure (after re-run)
-- **Plots**: Nowcasting plots regenerated (Dec 9 10:00): 3 comparison plots (nowcasting_comparison_*.png), 3 trend_error plots (nowcasting_trend_error_*.png) showing placeholders since all backtests failed
-  - **Code Fix (Current Iteration)**: Enhanced `plot_nowcasts.py` to handle both structures gracefully
+  - Enhanced to handle both flat `results` structure (current failed backtests) and `results_by_timepoint` structure (after re-run)
+- **Plots**: Nowcasting plots exist from previous regeneration (Dec 9 10:28): 3 comparison plots (nowcasting_comparison_*.png), 3 trend_error plots (nowcasting_trend_error_*.png) showing placeholders since all backtests failed
+  - Enhanced `plot_nowcasts.py` to handle both structures gracefully
 - **Note**: Tables/plots correctly reflect current state (all backtests failed). Will need regeneration after backtests are re-run with fixed code. `nowcast()` function now creates `results_by_timepoint` structure, and table/plot code now handles both structures.
 
 ## Code Improvements Applied (Not Yet Verified by Experiments)
@@ -141,7 +142,7 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 ## Report Status
 
 ### Tables Generated
-- **Status**: ✅ All tables exist and correctly reflect current experiment state (regenerated Dec 9 09:36)
+- **Status**: ✅ All tables exist from previous regeneration (Dec 9 10:28) and correctly reflect current experiment state
 - tab_dataset_params.tex: Dataset details and model parameters
 - tab_forecasting_results.tex: Forecasting results by model-target (average across horizons) - correctly shows VAR/DFM/DDFM, excludes ARIMA
 - tab_appendix_forecasting_koipall_g.tex: Detailed results for KOIPALL.G (all horizons)
@@ -150,10 +151,9 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 - tab_appendix_forecasting_all.tex: Average results across all targets (all horizons)
 - tab_nowcasting_backtest.tex: Nowcasting backtest results (correctly shows N/A for all failed backtests)
 - **Code Status**: Table generation code verified and working correctly - handles both successful and failed results
-  - **Code Fix (Current Iteration)**: Fixed `cursor-headless.sh` to call correct scripts (`table_forecasts.py`, `table_nowcasts.py`). Enhanced `table_nowcasts.py` to handle both flat `results` structure (failed backtests) and `results_by_timepoint` structure (successful backtests).
 
 ### Plots Generated
-- **Status**: ✅ All plots exist and correctly reflect current experiment state (regenerated Dec 9 09:36)
+- **Status**: ✅ All plots exist from previous regeneration (Dec 9 10:28) and correctly reflect current experiment state
 - forecast_vs_actual_koipall_g.png: Forecast vs actual for KOIPALL.G (correctly shows VAR/DFM/DDFM, excludes ARIMA)
 - forecast_vs_actual_koequipte.png: Forecast vs actual for KOEQUIPTE
 - forecast_vs_actual_kowrccnse.png: Forecast vs actual for KOWRCCNSE
@@ -162,27 +162,33 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 - nowcasting_comparison_*.png: Nowcasting comparison plots (3 targets, correctly show placeholders for failed backtests)
 - nowcasting_trend_error_*.png: Nowcasting trend and error plots (3 targets, correctly show placeholders for failed backtests)
 - **Code Status**: Plot generation code verified and working correctly - handles both successful and failed results
-  - **Code Fix (Current Iteration)**: Fixed `cursor-headless.sh` to call correct scripts (`plot_forecasts.py`, `plot_nowcasts.py`). Enhanced `plot_nowcasts.py` to handle both flat `results` structure (failed backtests) and `results_by_timepoint` structure (successful backtests).
-- **Code Status**: Plot generation code verified and working correctly - handles both successful and failed results, correctly processes `results_by_timepoint` structure
 
 ### Report Sections
 - **Status**: ✅ All report sections correctly reference tables/plots with proper LaTeX labels and cross-references
 - Report accurately reflects current experimental state (ARIMA excluded, backtest results noted as failed)
 - Report structure finalized (methodology title fixed, results hierarchy corrected)
 - All DDFM improvements documented across relevant sections (deeper encoder, tanh activation, weight decay, gradient clipping, Huber loss, weight initialization, factor order, mult_epoch_pretrain, batch_size optimization)
+- **Current Iteration**: Enhanced DDFM metrics documentation - Added `calculate_relative_skill_assessment()` and `calculate_near_linear_collapse_detection()` documentation to `2_methodology.tex`, `3_results_forecasting.tex`, and `6_discussion.tex`
 - **Regeneration**: Tables/plots will need regeneration after new experiments are run to reflect updated results. Code is ready and verified.
 
 ## Next Steps
 
-### Priority 1 (Critical - Required)
-1. **Re-run backtesting** - Models exist (trained Dec 9 02:35-02:47), verify CUDA tensor conversion fixes work
+### Priority 0 (CRITICAL - Blocking All Experiments)
+1. **Train models** - `checkpoint/` directory is EMPTY, models must be trained first
+   - Action: Step 1 should run `bash agent_execute.sh train` to train all 12 models (3 targets × 4 models)
+   - Verification: After training, check `checkpoint/` contains 12 model.pkl files
+   - Blocking: All forecasting and backtesting experiments are blocked until models are trained
+   - KOEQUIPTE DDFM settings (will be auto-applied during training): encoder [64, 32, 16], tanh activation, weight_decay=1e-4, 150 epochs, mult_epoch_pretrain=2, batch_size=64
+
+### Priority 1 (After Training - Critical)
+2. **Re-run backtesting** - After models are trained, verify CUDA tensor conversion fixes work
    - Action: Step 1 should run `bash agent_execute.sh backtest` to re-run backtest experiments
-   - Verification: Check `checkpoint/` contains 12 model.pkl files (already verified)
+   - Verification: Check `checkpoint/` contains 12 model.pkl files (after training)
    - If fix works: All 6 DFM/DDFM backtest results should show "status": "completed" instead of "failed"
    - If fix works: Regenerate tables/plots with fixed results
 
-### Priority 2 (High - Verify Results)
-2. **Re-run forecasting** - Models exist, verify results reflect latest code improvements
+### Priority 2 (After Training - High - Verify Results)
+3. **Re-run forecasting** - After models are trained, verify results reflect latest code improvements
    - Action: Step 1 should run `bash agent_execute.sh forecast` to generate new forecasting results
    - Action: Check if KOEQUIPTE DDFM performance improves with deeper encoder (target: sMAE < 1.03 from baseline 1.14)
    - Action: Compare new results with baseline to verify improvements were applied
@@ -200,9 +206,10 @@ This project compares 4 forecasting models (ARIMA, VAR, DFM, DDFM) on 3 Korean m
 
 ## Known Issues
 
-1. **CRITICAL: All DFM/DDFM backtest results failed** - CUDA tensor conversion errors (code fixed, models exist, needs re-run to verify)
-2. **ARIMA produces no valid results** - n_valid=0 for all targets/horizons (requires investigation)
-3. **Forecasting results may be from before latest improvements** - Results exist but may not reflect latest code improvements, need to re-run to verify
+1. **CRITICAL: Models NOT trained** - `checkpoint/` directory is EMPTY. All experiments are blocked until models are trained. Previous status files incorrectly claimed models were trained.
+2. **CRITICAL: All DFM/DDFM backtest results failed** - CUDA tensor conversion errors (code fixed, but cannot verify until models are trained)
+3. **ARIMA produces no valid results** - n_valid=0 for all targets/horizons (requires investigation)
+4. **Forecasting results may be from before latest improvements** - Results exist but cannot determine when they were generated or if they reflect latest code improvements, need to train models and re-run to verify
 
 See ISSUES.md for detailed issue tracking and research plans.
 
