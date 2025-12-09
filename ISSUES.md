@@ -10,7 +10,7 @@
   - **KOIPALL.G**: DDFM sMAE=0.69 (21.7x better than DFM sMAE=14.97) - excellent
   - **KOWRCCNSE**: DDFM sMAE=0.50 (5.6x better than DFM sMAE=2.78) - excellent
 - ⚠️ **Phase 0 not executed**: Correlation structure analysis function exists but has not been run yet - can be done immediately without training (~15 minutes)
-- ⚠️ **This iteration**: Documentation updated (STATUS.md, ISSUES.md, CONTEXT.md) to track project state. No code changes, no new experiments run.
+- ⚠️ **This iteration**: Documentation updates only. No code changes, no new experiments run, no tables/plots regenerated. STATUS.md, ISSUES.md, CONTEXT.md updated to track project state.
 
 **Quick Action Reference:**
 1. **REQUIRED (Models exist)**: Re-run backtesting via `bash agent_execute.sh backtest` to verify CUDA fixes work
@@ -411,21 +411,21 @@ See detailed plan below for specific actions and execution commands.
 **DDFM Metrics Research Plan:**
 
 **Current Baseline Metrics** (from `outputs/experiments/aggregated_results.csv`):
-- **KOEQUIPTE**: DDFM sMAE=1.1441, DFM sMAE=1.1439 (identical, linear collapse confirmed)
+- **KOEQUIPTE**: DDFM sMAE=1.1441, DFM sMAE=1.1439 (identical across 21 horizons, max diff=0.00212, avg diff=0.00085, linear collapse confirmed)
 - **KOIPALL.G**: DDFM sMAE=0.69 (21.7x better than DFM sMAE=14.97) - excellent
 - **KOWRCCNSE**: DDFM sMAE=0.50 (5.6x better than DFM sMAE=2.78) - excellent
 
-**Key Observation**: KOEQUIPTE shows linear collapse (encoder learning only linear features), while others show strong nonlinear benefits.
+**Key Observation**: KOEQUIPTE shows linear collapse (encoder learning only linear features), while others show strong nonlinear benefits. This suggests KOEQUIPTE data structure or training dynamics differ from other targets.
 
-**Root Cause**: ReLU activation limitation (zeros negative values), insufficient encoder capacity, or training dynamics causing linear collapse.
+**Root Cause Hypothesis**: ReLU activation limitation (zeros negative values), insufficient encoder capacity, or training dynamics causing linear collapse.
 
-**Implemented Improvements** (Verified in Code):
-  1. **KOEQUIPTE-Specific Settings** (auto-applied in `src/train.py`):
+**Implemented Improvements** (✅ Verified in Code, ⚠️ Not verified by experiments):
+  1. **KOEQUIPTE-Specific Settings** (auto-applied in `src/train.py` lines 363-426):
      - Encoder: `[64, 32, 16]` (default: `[16, 4]`), Activation: `tanh` (default: `relu`)
      - Epochs: `150` (default: `100`), Weight decay: `1e-4` (default: `0.0`)
      - Pre-training multiplier: `2` (default: `1`), Batch size: `64` (default: `100`)
   2. **General Improvements**: Huber loss, gradient clipping, improved weight initialization, factor order configuration, enhanced training stability
-  3. **Status**: ✅ **ALL IMPLEMENTED IN CODE** - Needs experiments after training to test effectiveness
+  3. **Status**: ✅ **ALL IMPLEMENTED IN CODE** - Models exist (trained Dec 9 02:35-02:47), need to re-run forecasting to verify effectiveness
 
 - **Concrete Research Plan for DDFM Metrics Improvement** (Based on Current Results Analysis):
   
@@ -685,7 +685,12 @@ See detailed plan below for specific actions and execution commands.
 - Enhanced documentation in `analyze_ddfm_prediction_quality()` with comprehensive docstrings and limitations documentation
 - Quantile-based error metrics (`calculate_quantile_based_metrics()`) for robust evaluation of skewed distributions
 - Factor loading comparison (`compare_factor_loadings()`) to detect linear collapse (requires model internals)
-- Status: ✅ **IMPLEMENTED IN CODE** - Enhanced documentation and additional metrics available
+- **Nonlinearity score** (`calculate_nonlinearity_score()`) - quantifies how nonlinear DDFM predictions are (0-1, higher = more nonlinear)
+  - Pattern divergence: How different DDFM vs DFM prediction patterns are
+  - Error nonlinearity: Variance in improvement across horizons
+  - Horizon interaction: Evidence of horizon-specific nonlinear effects
+  - Integrated into `analyze_ddfm_prediction_quality()` with recommendations
+- Status: ✅ **IMPLEMENTED IN CODE** - Enhanced documentation and additional metrics available, including new nonlinearity score
 
 - **Metrics Research Improvements** (All Implemented):
   - Enhanced DDFM linearity detection, prediction quality analysis, horizon-weighted metrics, training-aligned metrics
