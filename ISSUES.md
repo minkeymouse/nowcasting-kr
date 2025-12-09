@@ -259,8 +259,50 @@ See detailed plan below for specific actions and execution commands.
 
 **Current Baseline Metrics** (from `outputs/experiments/aggregated_results.csv`):
 - **KOEQUIPTE**: DDFM sMAE=1.1441, DFM sMAE=1.1439 (identical across 21 horizons, max diff=0.00212, avg diff=0.00085, linear collapse confirmed)
+  - All 21 horizons show near-identical performance (differences < 0.01 absolute, < 0.1% relative)
+  - Horizon 22: n_valid=0 (validation failure)
+  - Volatile horizons (7-8, 13-14) show same pattern: DFM and DDFM both have high errors (sMAE ~2.33-3.28)
 - **KOIPALL.G**: DDFM sMAE=0.69 (21.7x better than DFM sMAE=14.97) - excellent
 - **KOWRCCNSE**: DDFM sMAE=0.50 (5.6x better than DFM sMAE=2.78) - excellent
+
+**Research Gap Analysis:**
+Based on current metrics and analysis functions, the following research directions can help diagnose and improve KOEQUIPTE DDFM performance:
+
+1. **Factor Loading Analysis (Gap: Not yet implemented for model comparison)**
+   - Current: `compare_factor_loadings()` function exists but requires model internals access
+   - Research need: Extract and compare DFM vs DDFM factor loadings from trained models to quantify linear collapse
+   - Action: Implement factor loading extraction from checkpoint models, calculate cosine similarity/correlation between DFM PCA loadings and DDFM encoder weights
+   - Expected insight: If cosine similarity > 0.95, encoder is learning linear PCA-like features
+
+2. **Training Dynamics Analysis (Gap: No training history metrics)**
+   - Current: Only final prediction metrics available, no training loss/validation curves
+   - Research need: Track training loss, validation loss, encoder gradient norms, factor dynamics during training
+   - Action: Add training history logging to `src/train.py`, save loss curves, gradient norms, factor stability metrics
+   - Expected insight: Identify if encoder collapses early in training or gradually, whether gradient norms indicate vanishing gradients
+
+3. **Encoder Feature Space Analysis (Gap: No direct feature visualization)**
+   - Current: Only indirect metrics (error patterns, linearity scores) infer encoder behavior
+   - Research need: Direct analysis of encoder output features (factor space) to see if they're linear
+   - Action: Extract encoder outputs for sample inputs, compare with PCA factors, calculate feature space dimensionality
+   - Expected insight: If encoder outputs are highly correlated with PCA factors, encoder is redundant
+
+4. **Data Structure Analysis (Gap: Phase 0 not executed)**
+   - Current: `analyze_correlation_structure()` exists but not executed
+   - Research need: Understand why KOEQUIPTE shows linear collapse while others don't
+   - Action: Execute Phase 0 correlation analysis for all 3 targets, compare correlation patterns
+   - Expected insight: If KOEQUIPTE has different correlation structure (e.g., fewer negative correlations, weaker signal), this explains linear collapse
+
+5. **Hyperparameter Sensitivity Analysis (Gap: No systematic hyperparameter search)**
+   - Current: KOEQUIPTE-specific settings implemented but not systematically tested
+   - Research need: Understand which hyperparameters (encoder depth, activation, weight_decay, batch_size) most affect linear collapse
+   - Action: Design hyperparameter grid search for KOEQUIPTE, measure linearity score and improvement ratio for each combination
+   - Expected insight: Identify optimal hyperparameter combination that minimizes linear collapse risk
+
+6. **Early Stopping and Regularization Analysis (Gap: No regularization ablation)**
+   - Current: Weight decay implemented but not tested with different values
+   - Research need: Test different regularization strategies (L1, L2, dropout, early stopping) to prevent linear collapse
+   - Action: Train KOEQUIPTE DDFM with different regularization settings, compare linearity scores
+   - Expected insight: Find regularization strategy that prevents encoder from learning linear features
 
 **CONCRETE ACTION PLAN FOR DDFM METRICS IMPROVEMENT:**
 
