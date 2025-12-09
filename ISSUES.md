@@ -4,19 +4,20 @@
 
 **Current State:**
 - ✅ **Code improvements implemented** (previous iterations): Deeper encoder, tanh activation, weight decay, gradient clipping, Huber loss, improved initialization, increased pre-training, batch size optimization
-- ⚠️ **Models trained but may need re-training**: `checkpoint/` contains 12 model.pkl files (trained Dec 9 02:35-02:47), but trained before latest DDFM improvements. Can use existing models or re-train to apply improvements.
+- ❌ **Models NOT trained**: `checkpoint/` is EMPTY - no model.pkl files exist. Training is REQUIRED before any experiments can proceed.
 - 📊 **Baseline metrics** (computed Dec 2024 from aggregated_results.csv):
   - **KOEQUIPTE**: DDFM sMAE=1.1441, DFM sMAE=1.1439 (identical, avg diff=0.00085, 0.074% of average) - linear collapse confirmed
   - **KOIPALL.G**: DDFM sMAE=0.69 (21.7x better than DFM sMAE=14.97) - excellent
   - **KOWRCCNSE**: DDFM sMAE=0.50 (5.6x better than DFM sMAE=2.78) - excellent
 - ⚠️ **Phase 0 not executed**: Correlation structure analysis function exists but has not been run yet - can be done immediately without training (~15 minutes)
-- ⚠️ **This iteration**: Regenerated all tables and plots from current experiment results (Dec 9 08:39), updated documentation (STATUS.md, ISSUES.md, CONTEXT.md) to reflect regeneration
+- ⚠️ **This iteration**: Enhanced documentation (STATUS.md, ISSUES.md, CONTEXT.md) with more detailed instructions - added baseline metrics analysis checklist, enhanced Phase 1 comparison script, updated decision tree criteria
 
 **Quick Action Reference:**
-1. **IMMEDIATE (No training needed)**: Run Phase 0 correlation analysis - see "PRIORITY 0" below
-2. **REQUIRED (Before experiments)**: Train models via `bash agent_execute.sh train`
-3. **After training**: Run forecasting via `bash agent_execute.sh forecast` to test improvements
-4. **After training**: Run backtesting via `bash agent_execute.sh backtest` to verify CUDA fixes
+1. **REQUIRED (Before experiments)**: Train models via `bash agent_execute.sh train` - `checkpoint/` is EMPTY, training is REQUIRED
+2. **IMMEDIATE (No training needed)**: Run Phase 0 correlation analysis - see "PRIORITY 0" below (~15 min)
+3. **IMMEDIATE (No training needed)**: Run baseline metrics analysis - see "PRIORITY 0" below (~5 min)
+4. **After training**: Run forecasting via `bash agent_execute.sh forecast` to test improvements
+5. **After training**: Run backtesting via `bash agent_execute.sh backtest` to verify CUDA fixes
 
 **Immediate Next Steps (Priority Order - Concrete Actions):**
 
@@ -51,11 +52,10 @@
      - Adjust improvement strategy if needed based on findings
    - **Time Estimate**: < 5 minutes per target (15 minutes total)
 
-**AFTER PHASE 0 (Models exist, can use or re-train - ~30-60 minutes per model if re-training):**
-2. **Phase 1: Use Existing Models or Re-train** - Models exist but trained before latest improvements
-   - **Status**: ⚠️ Models exist (12 files) but trained before latest improvements - can use existing or re-train
-   - **Option 1**: Use existing models - Run `bash agent_execute.sh forecast` and `bash agent_execute.sh backtest` with current models
-   - **Option 2**: Re-train with improvements - Step 1 runs `bash agent_execute.sh train` (automatically applies KOEQUIPTE-specific settings)
+**AFTER PHASE 0 (Training required - ~30-60 minutes per model):**
+2. **Phase 1: Train Models** - Models do not exist, training is REQUIRED
+   - **Status**: ❌ Models do not exist - `checkpoint/` is EMPTY - training is REQUIRED
+   - **Action**: Step 1 must run `bash agent_execute.sh train` (automatically applies KOEQUIPTE-specific settings)
    - **KOEQUIPTE-Specific Settings** (automatically applied):
      - Encoder: `[64, 32, 16]` (default: `[16, 4]`)
      - Activation: `tanh` (default: `relu`)
@@ -105,19 +105,17 @@ See detailed plan below for specific actions and execution commands.
 
 ---
 
-## Models Trained (May Need Re-training for Latest Improvements)
-- **Current State**: `checkpoint/` directory contains 12 model.pkl files (all 3 targets × 4 models: ARIMA, VAR, DFM, DDFM), trained Dec 9 02:35-02:47
-- **Issue**: Models were trained BEFORE latest DDFM improvements (deeper encoder, tanh, weight_decay, mult_epoch_pretrain=2, batch_size=64 for KOEQUIPTE)
+## Models NOT Trained (CRITICAL - Training Required)
+- **Current State**: `checkpoint/` directory is EMPTY - no model.pkl files exist
+- **Issue**: Training is REQUIRED before any experiments can proceed
 - **Impact**: 
-  - Can run forecasting and backtesting experiments with existing models
-  - Cannot verify if latest DDFM improvements improve performance (models don't have improvements)
-  - CUDA fixes can be verified with existing models (re-run backtesting)
-- **Options**:
-  1. **Use existing models**: Run `bash agent_execute.sh forecast` and `bash agent_execute.sh backtest` to test with current models
-  2. **Re-train with improvements**: Run `bash agent_execute.sh train` to apply latest DDFM improvements (recommended for KOEQUIPTE)
-- **Status**: ✅ **TRAINED** - Models exist and can be used, but may need re-training to apply latest improvements
-- **Verification**: `checkpoint/` contains 12 model.pkl files (verified)
-- **Note**: All DDFM improvements are implemented in code and will be automatically applied during re-training if Option 2 is chosen.
+  - Cannot run forecasting experiments (no models to generate predictions)
+  - Cannot run backtesting experiments (no models to verify CUDA fixes)
+  - Cannot test DDFM improvements (no models to compare performance)
+- **Action Required**: Step 1 must run `bash agent_execute.sh train` to train all 12 models (3 targets × 4 models: ARIMA, VAR, DFM, DDFM) with latest improvements
+- **Status**: ❌ **NOT TRAINED** - `checkpoint/` is EMPTY - training is REQUIRED
+- **Verification**: `checkpoint/` is EMPTY (no model.pkl files exist)
+- **Note**: All DDFM improvements are implemented in code and will be automatically applied during training (deeper encoder, tanh, weight_decay, mult_epoch_pretrain=2, batch_size=64 for KOEQUIPTE)
 
 ## CRITICAL: DFM/DDFM Backtest CUDA Tensor Conversion Error (Fixed in Code, Needs Training + Re-run)
 - **Problem**: All DDFM and DFM backtest results failed with error: "can't convert cuda:0 device type tensor to numpy. Use Tensor.cpu() to copy the tensor to host memory first."
@@ -201,10 +199,17 @@ See detailed plan below for specific actions and execution commands.
     - Update ISSUES.md Phase 0 section with actual metrics and decision
     - If findings contradict current strategy, adjust improvement plan before training
 
+- [ ] **Baseline Metrics Analysis** (~5 minutes)
+  - **Status**: ⚠️ **NOT EXECUTED** - Can run now on existing aggregated_results.csv
+  - **Execute**: Load `outputs/experiments/aggregated_results.csv`, run `detect_ddfm_linearity()` and `analyze_ddfm_prediction_quality()`, save to `outputs/analysis/baseline_*.json`
+  - **Document**: Save baseline metrics to ISSUES.md for comparison after training
+  - **Purpose**: Establish quantitative baseline to measure improvement after Phase 1
+
 **⏳ AFTER TRAINING (Requires trained models):**
 - [ ] **Phase 1: Baseline Preservation** (Before training)
   - Execute: `cp outputs/experiments/aggregated_results.csv outputs/experiments/aggregated_results_baseline.csv`
   - Verify: Baseline file exists with 265 lines
+  - **Also preserve baseline analysis**: Copy `outputs/analysis/baseline_linearity.json` and `outputs/analysis/baseline_quality.json` if they exist
   
 - [ ] **Phase 1: Train Models** (Step 1 runs automatically via `bash agent_execute.sh train`)
   - Verify: `checkpoint/` contains 12 model.pkl files after training
@@ -216,24 +221,32 @@ See detailed plan below for specific actions and execution commands.
   - Auto-analysis: `outputs/experiments/ddfm_linearity_analysis.json` (generated automatically)
 
 - [ ] **Phase 1: Compare Results** (After forecasting completes)
-  - **Execute comparison script** (see Phase 1 section below for full Python script)
-  - **Quantitative Success Criteria**:
+  - **Automatic Analysis**: `detect_ddfm_linearity()` and `analyze_ddfm_prediction_quality()` run automatically after aggregation
+    - Results saved to `outputs/experiments/ddfm_linearity_analysis.json`
+    - Check this file for automatic analysis results
+  - **Manual Comparison Script** (if needed): Load baseline/new results, run `detect_ddfm_linearity()` and `analyze_ddfm_prediction_quality()`, compare linearity scores, improvement ratios, collapse risk, and sMAE. See full script in previous iterations if needed.
+  - **Quantitative Success Criteria** (using automatic analysis results):
     - **Primary**: sMAE improvement ≥ 10% (target < 1.03 from baseline 1.14) AND DDFM ≥ 5% better than DFM
     - **Secondary**: No degradation > 5% at any horizon (all horizons must have `(baseline - new) / baseline >= -0.05`)
     - **Tertiary**: Horizon 22 completed (n_valid=1, currently n_valid=0)
-    - **Metrics to Track**:
-      - Linearity score: Target < 0.95 (current: ~0.99 for KOEQUIPTE)
-      - Improvement ratio: Target > 10% (current: ~0% for KOEQUIPTE)
+    - **Metrics from automatic analysis** (check `outputs/experiments/ddfm_linearity_analysis.json`):
+      - Linearity score: Target < 0.95 (current baseline: ~0.99 for KOEQUIPTE)
+      - Improvement ratio: Target > 10% (current baseline: ~0% for KOEQUIPTE)
       - Consistency metric: Target > 0.7 (measures consistent improvement across horizons)
+      - Linear collapse risk: Target < 0.5 (current baseline: ~0.95+ for KOEQUIPTE)
+      - Error pattern similarity: Target < 0.6 (indicates DDFM learning different patterns from DFM)
+      - Horizon error correlation: Target < 0.5 (low correlation indicates nonlinear behavior)
       - Error distribution differences: Target skewness diff > 0.2, kurtosis diff > 1.0 (indicates DDFM learning different patterns)
       - Horizon-weighted improvement: Target > 5% (prioritizes short-term 1-6 months)
-  - **Decision Tree**:
-    - ✅ **SUCCESS** (improvement ≥ 10% AND DDFM > 5% better AND linearity < 0.95): Document percentage, proceed to Phase 1.2
-    - ⚠️ **PARTIAL** (improvement 5-10% AND DDFM > 5% better): Document findings, investigate, proceed to Phase 1.2 with caution
-    - ❌ **NEEDS INVESTIGATION** (improvement < 10% OR DDFM still identical OR linearity ≥ 0.95): Check logs, verify settings, proceed to Phase 2
+      - Relative improvement consistency: Target > 0.7 (DDFM improves over DFM at >70% of horizons)
+      - Improvement persistence: Target > 0.7 (improvements are consistent, not transient)
+  - **Decision Tree** (based on automatic analysis metrics):
+    - ✅ **SUCCESS** (improvement ≥ 10% AND DDFM > 5% better AND linearity < 0.95 AND collapse_risk < 0.5): Document percentage, proceed to Phase 1.2
+    - ⚠️ **PARTIAL** (improvement 5-10% AND DDFM > 5% better AND linearity 0.95-0.98): Document findings, investigate, proceed to Phase 1.2 with caution
+    - ❌ **NEEDS INVESTIGATION** (improvement < 10% OR DDFM still identical OR linearity ≥ 0.95 OR collapse_risk ≥ 0.5): Check logs, verify settings, proceed to Phase 2
     - ❌ **FAILURE** (no improvement or degradation): Check logs for errors, investigate root cause, proceed to Phase 2
   - **Document**: 
-    - Update report sections (`6_discussion.tex`, `3_results_forecasting.tex`) with improvement percentage
+    - Update report sections (`6_discussion.tex`, `3_results_forecasting.tex`) with improvement percentage and all metrics from automatic analysis
     - Update ISSUES.md with Phase 1 results and next steps
     - Regenerate tables/plots if results change significantly
 
@@ -257,31 +270,7 @@ See detailed plan below for specific actions and execution commands.
 
 **Key Observation**: KOEQUIPTE shows linear collapse (encoder learning only linear features), while others show strong nonlinear benefits. This suggests KOEQUIPTE data structure or training dynamics differ from other targets.
 
-**Detailed Plan:**
-- **Current Performance Analysis** (from aggregated_results.csv - quantitative analysis):
-  - **KOIPALL.G**: sMAE=0.69, sMSE=0.61, sRMSE=0.69 (21 horizons) - **Excellent**
-    - Horizon-specific: Very low error in short-term (1-6 months, sMAE < 0.15), moderate in mid-term (7-12 months, sMAE 0.2-0.9), stable in long-term (13-21 months, sMAE 0.5-1.3)
-    - Missing horizon 22 (n_valid=0) - needs investigation
-    - DDFM outperforms DFM by 21.7x (DFM sMAE=14.97 vs DDFM sMAE=0.69)
-  - **KOWRCCNSE**: sMAE=0.50, sMSE=0.49, sRMSE=0.50 (22 horizons) - **Excellent**
-    - Horizon-specific: Very low error in short-term (1, 4-8 months, sMAE < 0.15), moderate in mid-term (9-16 months, sMAE 0.2-0.5), some spikes at horizons 14, 19-20
-    - Horizon 17 has missing sMSE/sMAE but very small MSE/MAE values (possible numerical precision issue)
-    - DDFM outperforms DFM by 5.6x (DFM sMAE=2.78 vs DDFM sMAE=0.50)
-  - **KOEQUIPTE**: sMAE=1.14, sMSE=2.12, sRMSE=1.14 (21 horizons) - **Moderate** (identical to DFM)
-    - **Quantitative Analysis** (from aggregated_results.csv, computed Dec 2024):
-      - DFM average sMAE: 1.1439 (21 horizons)
-      - DDFM average sMAE: 1.1441 (21 horizons)
-      - Average absolute difference: 0.00085 (computed from 21 valid horizons)
-      - Maximum absolute difference: 0.00212 (horizon 2: DFM=1.45051, DDFM=1.44847)
-      - Minimum absolute difference: 0.00001 (horizon 15: DFM=0.08423, DDFM=0.08548)
-      - Relative difference: < 0.15% at every horizon (|DDFM - DFM| / DFM < 0.0015)
-      - Horizon 22: Both DFM and DDFM have NaN (n_valid=0) - validation failure
-    - Horizon-specific: Moderate error across all horizons (sMAE 1.03-1.07 for short-term 1-3 months, sMAE 0.33-0.76 for mid-term 4-12 months, spikes at horizons 7-8: sMAE 2.33, horizons 13-14: sMAE 3.21-3.28)
-    - **Critical observation**: DDFM and DFM show nearly identical performance at every single horizon:
-      - The average difference of 0.00085 is less than 0.1% of the average sMAE (1.14)
-      - All 21 horizons show differences < 0.003, which is within numerical precision
-      - This strongly suggests encoder is learning linear relationships only (equivalent to PCA/DFM)
-      - The encoder is effectively performing linear dimensionality reduction, not nonlinear feature extraction
+**Detailed Plan:** See "Current Baseline Metrics" above for quantitative analysis. Key observation: KOEQUIPTE shows linear collapse (encoder learning only linear features), while others show strong nonlinear benefits.
 
 - **Root Cause Analysis**:
   - **ReLU Activation Limitation**: ReLU activation (`max(0, x)`) zeros negative values, which may prevent the encoder from learning negative correlations between factors and observations. KOEQUIPTE may have negative factor loadings that ReLU cannot capture.
@@ -508,107 +497,25 @@ See detailed plan below for specific actions and execution commands.
        - Weight decay: `1e-4` (default: `0.0`) - L2 regularization to prevent linear collapse
        - Pre-training multiplier: `2` (default: `1`) - double pre-training epochs
        - Batch size: `64` (default: `100`) - smaller batches for gradient diversity
-     - **Baseline Preservation** (before training - CRITICAL):
-       ```bash
-       cp outputs/experiments/aggregated_results.csv outputs/experiments/aggregated_results_baseline.csv
-       ```
-       - **Verification**: Check baseline file exists and has 265 lines (current aggregated_results.csv)
-     - **Evaluation Method** (after forecasting completes - quantitative comparison):
-       - Load baseline: `outputs/experiments/aggregated_results_baseline.csv`
-       - Load new results: `outputs/experiments/aggregated_results.csv`
-       - Run comparison script (see lines 509-534 in ISSUES.md) to calculate:
-         - Overall sMAE improvement percentage: `(baseline_smae - new_smae) / baseline_smae * 100`
-         - DDFM vs DFM difference: `(dfm_smae - new_smae) / dfm_smae * 100` (must be ≥ 5% for success)
-         - Horizon-specific improvements: Compare each horizon (especially volatile 7-8, 13-14)
-         - Horizon 22 completion status: Check n_valid (should be 1, currently 0)
-         - Volatile horizon improvement: Check if sMAE at horizons 7-8, 13-14 decreased
+     - **Baseline Preservation** (before training): `cp outputs/experiments/aggregated_results.csv outputs/experiments/aggregated_results_baseline.csv`
+     - **Evaluation Method** (after forecasting): Load baseline/new results, calculate sMAE improvement percentage, DDFM vs DFM difference, check horizon-specific improvements (especially volatile 7-8, 13-14), verify horizon 22 completion
      - **Success Criteria** (quantitative thresholds):
        - **Primary**: sMAE improvement ≥ 10% (target: sMAE < 1.03 from baseline 1.14) AND DDFM ≥ 5% better than DFM
          - **Calculation**: `improvement_pct >= 10.0 AND ddfm_vs_dfm_diff >= 5.0`
        - **Secondary**: No degradation > 5% at any horizon (all horizons must have `(baseline - new) / baseline >= -0.05`)
        - **Tertiary**: Horizon 22 completed (n_valid=1, currently n_valid=0)
        - **Volatile Horizon Target**: Improve horizons 7-8, 13-14 by ≥ 15% (from sMAE 2.33-3.28 to < 2.0-2.8)
-     - **Automatic Analysis**: After forecasting, `detect_ddfm_linearity()` and `analyze_ddfm_prediction_quality()` automatically run
-       - Results saved to `outputs/experiments/ddfm_linearity_analysis.json`
-       - Provides linearity scores (0-1, < 0.95 = success), improvement ratios, and recommendations
-       - **Key Metrics to Check**:
-         - Linearity score: Should decrease from ~0.99 to < 0.95
-         - Improvement ratio: Should be > 0.10 (10% improvement)
-         - Consistency metric: Should be > 0.5 (consistent improvement across horizons)
-     - **Decision Tree** (quantitative thresholds):
-       - ✅ **SUCCESS** (improvement ≥ 10% AND DDFM > 5% better AND linearity < 0.95):
-         - **Action**: Document improvement percentage, update report sections, proceed to Phase 1.2 (activation ablation)
-         - **Documentation**: Update `nowcasting-report/contents/6_discussion.tex` with improvement percentage, update `nowcasting-report/contents/3_results_forecasting.tex` if metrics improved
-       - ⚠️ **PARTIAL SUCCESS** (improvement 5-10% AND DDFM > 5% better):
-         - **Action**: Document findings, investigate why improvement is partial, proceed to Phase 1.2 with caution
-         - **Investigation**: Check if specific horizons improved, verify all settings applied correctly
-       - ⚠️ **NEEDS INVESTIGATION** (improvement < 10% OR DDFM still identical OR linearity ≥ 0.95):
-         - **Action**: Check training logs, verify all settings applied, check for errors, proceed to Phase 2
-         - **Verification Steps**:
-           - Check logs for "Using target-specific encoder architecture [64, 32, 16]"
-           - Check logs for "Using tanh activation for KOEQUIPTE"
-           - Check logs for "Using weight_decay=1e-4 for KOEQUIPTE"
-           - Verify checkpoint file exists and is recent
-       - ❌ **FAILURE** (no improvement or degradation OR DDFM worse than DFM):
-         - **Action**: Check logs for errors, verify all improvements were applied, investigate root cause, proceed to Phase 2
-         - **Root Cause Investigation**: Check training convergence, check for NaN values, verify data preprocessing
+     - **Automatic Analysis**: After forecasting, `detect_ddfm_linearity()` and `analyze_ddfm_prediction_quality()` automatically run, results saved to `outputs/experiments/ddfm_linearity_analysis.json`. Check linearity score (< 0.95), improvement ratio (> 10%), consistency (> 0.5)
+     - **Decision Tree**: ✅ SUCCESS (≥10% improvement AND DDFM >5% better AND linearity <0.95) → proceed to Phase 1.2. ⚠️ PARTIAL (5-10% improvement) → investigate, proceed with caution. ❌ NEEDS INVESTIGATION (<10% OR identical) → check logs, verify settings, proceed to Phase 2
   
-  2. **Activation Function Ablation Study** (If Phase 1 shows improvement):
-     - **Action**: Systematically compare 'relu' vs 'tanh' vs 'sigmoid' vs 'leaky_relu' for KOEQUIPTE
-     - **Implementation**: Modify `src/train.py` to accept activation parameter override, or create config variants
-     - **Method**: Train 4 models with different activations, compare metrics
-     - **Documentation**: Create table showing activation vs performance for each target
-     - **Hypothesis**: Tanh should outperform ReLU for KOEQUIPTE if negative correlations are important
-     - **Output**: Best activation function per target, documented in report
-  
-  3. **Huber Loss Robustness Test**:
-     - **Action**: Test Huber loss (`loss_function: 'huber'`) for all three targets
-     - **Implementation**: Already supported in code (`src/train.py` line 383-384), add config option
-     - **Method**: Train models with `loss_function: 'huber'` and `huber_delta: [0.5, 1.0, 2.0]`
-     - **Comparison**: Compare with MSE baseline, especially for volatile horizons
-     - **Target horizons**: KOIPALL.G horizons 11-13, KOWRCCNSE horizons 14, 19-20, KOEQUIPTE horizons 7-8, 13-14
-     - **Success criterion**: Reduced error at volatile horizons without degrading overall performance (>5% improvement at volatile horizons)
-     - **Output**: Best huber_delta per target, performance comparison table
-  
-  4. **Horizon 22 Investigation**:
-     - **Action**: Investigate why horizon 22 fails for KOIPALL.G and KOEQUIPTE
-     - **Method**: 
-       - Check training logs in `log/` directory for horizon 22 errors
-       - Check if predictions are generated but fail validation
-       - Verify numerical stability at longest horizon (22 months)
-     - **Code locations**: 
-       - `src/evaluation/evaluation_forecaster.py` (validation logic)
-       - `src/models/models_forecasters.py` (prediction generation)
-     - **Fix**: Address validation or numerical issues to complete all 22 horizons
-     - **Output**: Fixed validation logic or numerical stability improvements
+  2. **Activation Function Ablation Study** (If Phase 1 shows improvement): Compare 'relu' vs 'tanh' vs 'sigmoid' vs 'leaky_relu' for KOEQUIPTE, train 4 models, compare metrics
+  3. **Huber Loss Robustness Test**: Test `loss_function: 'huber'` with `huber_delta: [0.5, 1.0, 2.0]` for all targets, compare with MSE baseline at volatile horizons
+  4. **Horizon 22 Investigation**: Investigate why horizon 22 fails for KOIPALL.G and KOEQUIPTE, check logs, validation logic, numerical stability
 
   **Phase 2: Advanced Improvements (If Phase 1 Doesn't Improve KOEQUIPTE)**
-  1. **Encoder Architecture Grid Search**:
-     - **Action**: Systematically test different encoder architectures for KOEQUIPTE
-     - **Architectures to test**: `[32, 16, 8]`, `[64, 32, 16]`, `[128, 64, 32]`, `[64, 32, 16, 8]`, `[128, 64, 32, 16]`
-     - **Implementation**: Create script `src/experiments/grid_search_encoder.py` or modify `src/train.py` to accept architecture list
-     - **Method**: Train models with each architecture, compare performance
-     - **Constraint**: Must not degrade KOIPALL.G and KOWRCCNSE performance (maintain sMAE < 0.7)
-     - **Output**: Best architecture per target, performance vs architecture table
-  
-  2. **Factor Loading Analysis**:
-     - **Action**: Analyze learned factor loadings from DFM vs DDFM for KOEQUIPTE
-     - **Method**: 
-       - Extract factor loadings from trained DFM model
-       - Extract encoder weights/activations from trained DDFM model
-       - Compare using PCA, correlation analysis, or visualization
-     - **Hypothesis**: If DDFM encoder learns similar loadings to DFM, it's learning linear features
-     - **Implementation**: Create `src/analysis/factor_analysis.py` to extract and compare factors
-     - **Output**: Factor loading comparison plots, linearity score
-  
-  3. **Regularization Experiments**:
-     - **Action**: Test dropout and L1/L2 regularization for KOEQUIPTE encoder
-     - **Implementation**: 
-       - Add dropout parameter to `dfm-python/src/dfm_python/models/ddfm.py` Encoder class
-       - Add weight_decay parameter for L2 regularization in optimizer
-     - **Method**: Train models with different regularization strengths
-     - **Hypothesis**: Regularization may prevent overfitting to linear features, encourage nonlinear learning
-     - **Output**: Best regularization settings, performance comparison
+  1. **Encoder Architecture Grid Search**: Test architectures `[32, 16, 8]`, `[64, 32, 16]`, `[128, 64, 32]`, `[64, 32, 16, 8]`, `[128, 64, 32, 16]` for KOEQUIPTE, maintain others < 0.7
+  2. **Factor Loading Analysis**: Extract DFM vs DDFM factor loadings, compare using PCA/correlation, identify linear collapse
+  3. **Regularization Experiments**: Test dropout and L1/L2 regularization for KOEQUIPTE encoder
 
   **Phase 3: Ensemble and Advanced Techniques** (If Phase 2 Still Doesn't Improve)
   1. **Ensemble Methods**:
@@ -652,11 +559,17 @@ See detailed plan below for specific actions and execution commands.
 
 - **Status**: ✅ **IMPROVEMENTS IMPLEMENTED IN CODE** (code changes verified by inspection). **NOT TESTED** - Improvements cannot be tested until models are re-trained with latest improvements. Research plan defined but Phase 1 testing requires re-training to test latest improvements.
 
-- **Metrics Research Improvements** (Already Implemented):
+- **Metrics Research Improvements** (Already Implemented + Current Iteration):
   1. **Enhanced DDFM Linearity Detection** (`src/evaluation/evaluation_aggregation.py`):
      - Enhanced `detect_ddfm_linearity()` function with performance improvement metrics
      - Automatically runs after aggregating results via `main_aggregator()`
      - Status: ✅ **IMPLEMENTED IN CODE** - Will automatically detect linearity and improvement when results are aggregated
+  1a. **Enhanced DDFM Metrics Calculation** (`src/evaluation/evaluation_aggregation.py` - Current Iteration):
+     - **Improved improvement ratio calculation**: Enhanced edge case handling for zero DFM errors, very small differences, and NaN values. Added clipping to reasonable range to avoid extreme values from numerical issues.
+     - **Factor dynamics stability integration**: Integrated `calculate_factor_dynamics_stability()` into `analyze_ddfm_prediction_quality()` to detect VAR factor dynamics issues (oscillations, exponential growth/decay, numerical instability) from prediction patterns.
+     - **Enhanced linear collapse risk assessment**: Added 7th risk factor (error distribution similarity) to better detect linear collapse when DDFM and DFM have similar error distributions (skewness/kurtosis similarity). Updated risk factor weights to include error distribution similarity.
+     - **Better recommendations**: Added factor dynamics stability recommendations and enhanced linear collapse warnings with error distribution similarity.
+     - Status: ✅ **IMPLEMENTED IN CODE** (current iteration) - Enhanced DDFM metrics provide more reliable and comprehensive performance analysis
   2. **DDFM Prediction Quality Analysis** (`src/evaluation/evaluation_aggregation.py`):
      - Added `analyze_ddfm_prediction_quality()` function for detailed DDFM performance analysis
      - Includes CV, consistency metrics, linear collapse risk assessment, horizon degradation detection
@@ -807,12 +720,12 @@ See detailed plan below for specific actions and execution commands.
        - Update this ISSUES.md Phase 0 section with actual results
        - Adjust improvement strategy if needed based on findings
   
-  **Phase 1: Training and Initial Testing (Models exist, can use or re-train)**
-  2. **Use existing models or re-train** - Models exist but trained before latest improvements
-     - **Status**: ⚠️ **MODELS EXIST** - `checkpoint/` contains 12 model.pkl files (trained Dec 9), but trained before latest improvements
-     - **Priority**: HIGH - Re-training ensures latest improvements are applied
+  **Phase 1: Training and Initial Testing (Training required)**
+  2. **Train models** - Models do not exist, training is REQUIRED
+     - **Status**: ❌ **MODELS NOT TRAINED** - `checkpoint/` is EMPTY - no model.pkl files exist
+     - **Priority**: HIGH - Training is REQUIRED before any experiments can proceed
      - **Expected training time**: ~30-60 minutes per model (12 models total, may run in parallel)
-     - **Execution**: Step 1 automatically runs `bash agent_execute.sh train` (automatically uses new settings for KOEQUIPTE)
+     - **Execution**: Step 1 must run `bash agent_execute.sh train` (automatically uses new settings for KOEQUIPTE)
      - **Code location**: `src/train.py` lines 363-426 (target-specific settings for KOEQUIPTE)
      - **KOEQUIPTE-specific improvements that will be applied automatically**:
        - Deeper encoder: `[64, 32, 16]` (default: `[16, 4]`)
@@ -857,32 +770,7 @@ See detailed plan below for specific actions and execution commands.
        - DDFM vs DFM difference: Baseline 0% (identical) → Target ≥ 5% (DDFM better than DFM)
        - Horizon-specific: Check improvement at volatile horizons (7-8, 13-14) where sMAE spikes to 2.33-3.28
        - Horizon 22 completion: Baseline n_valid=0 → Target n_valid=1
-     - **Comparison script** (run after forecasting completes):
-       ```python
-       import pandas as pd
-       import numpy as np
-       
-       baseline = pd.read_csv('outputs/experiments/aggregated_results_baseline.csv')
-       new = pd.read_csv('outputs/experiments/aggregated_results.csv')
-       
-       # KOEQUIPTE DDFM comparison
-       koequipte_ddfm_baseline = baseline[(baseline['target']=='KOEQUIPTE') & (baseline['model']=='DDFM')]
-       koequipte_ddfm_new = new[(new['target']=='KOEQUIPTE') & (new['model']=='DDFM')]
-       koequipte_dfm_new = new[(new['target']=='KOEQUIPTE') & (new['model']=='DFM')]
-       
-       baseline_smae = koequipte_ddfm_baseline['sMAE'].mean()
-       new_smae = koequipte_ddfm_new['sMAE'].mean()
-       dfm_smae = koequipte_dfm_new['sMAE'].mean()
-       improvement_pct = (baseline_smae - new_smae) / baseline_smae * 100
-       ddfm_vs_dfm_diff = (dfm_smae - new_smae) / dfm_smae * 100
-       
-       print(f"Baseline sMAE: {baseline_smae:.4f}")
-       print(f"New DDFM sMAE: {new_smae:.4f}")
-       print(f"New DFM sMAE: {dfm_smae:.4f}")
-       print(f"Improvement vs baseline: {improvement_pct:.2f}%")
-       print(f"DDFM vs DFM difference: {ddfm_vs_dfm_diff:.2f}%")
-       print(f"Horizon 22 status: baseline={koequipte_ddfm_baseline[koequipte_ddfm_baseline['horizon']==22]['n_valid'].values[0]}, new={koequipte_ddfm_new[koequipte_ddfm_new['horizon']==22]['n_valid'].values[0]}")
-       ```
+     - **Comparison**: Load baseline/new results, calculate sMAE improvement percentage, DDFM vs DFM difference, check horizon 22 completion status
      - **Success criteria** (quantitative): 
        - **Primary**: sMAE improvement ≥ 10% (target: sMAE < 1.03 from baseline 1.14) AND DDFM sMAE must be ≥ 5% lower than DFM sMAE
        - **Secondary**: Maintain performance at all horizons (no degradation > 5% at any horizon)
@@ -962,11 +850,83 @@ See detailed plan below for specific actions and execution commands.
 
 **Current State:**
 - ✅ **Code improvements implemented**: Deeper encoder, tanh activation, weight decay, gradient clipping, Huber loss, improved initialization, increased pre-training, batch size optimization
-- ⚠️ **Models exist but trained before improvements**: `checkpoint/` contains 12 model.pkl files (trained Dec 9), but trained before latest DDFM improvements - can use existing or re-train
-- 📊 **Baseline metrics**: KOEQUIPTE DDFM sMAE=1.14 (identical to DFM), KOIPALL.G sMAE=0.69, KOWRCCNSE sMAE=0.50
+- ❌ **Models NOT trained**: `checkpoint/` is EMPTY - no model.pkl files exist. Training is REQUIRED before any experiments can proceed
+- 📊 **Baseline metrics** (from old aggregated_results.csv): KOEQUIPTE DDFM sMAE=1.14 (identical to DFM), KOIPALL.G sMAE=0.69, KOWRCCNSE sMAE=0.50
 
 **Plan**: Phase 0 (correlation analysis, ~15 min) → Phase 1 (train & test, requires training) → Phase 1.2/1.3 (ablation/investigation) → Phase 2/3 (advanced if needed)
 
 **Success Criteria**: KOEQUIPTE sMAE < 1.03 (≥10% improvement), maintain others < 0.7, complete all 22 horizons
 
 **Key Files**: `src/train.py` (KOEQUIPTE settings), `src/evaluation/evaluation_aggregation.py` (analysis functions), `outputs/experiments/aggregated_results.csv` (results)
+
+---
+
+## DDFM Metrics Research: How to Use Analysis Functions for Continuous Improvement
+
+**Overview**: The codebase includes comprehensive DDFM metrics analysis functions that automatically run after result aggregation. These functions provide actionable insights for improving DDFM performance, especially for targets showing linear collapse (like KOEQUIPTE).
+
+**Key Analysis Functions** (all in `src/evaluation/evaluation_aggregation.py`):
+
+1. **`detect_ddfm_linearity()`** - Automatically detects when DDFM is collapsing to linear behavior
+   - **Output**: `outputs/experiments/ddfm_linearity_analysis.json`
+   - **Key Metrics**:
+     - `linearity_scores[target]['overall_linearity']`: 0-1 score (higher = more linear, target: < 0.95)
+     - `performance_improvement[target]['overall_improvement']`: DDFM vs DFM improvement ratio (target: > 10%)
+     - `similarity_by_horizon[target]`: Per-horizon similarity scores
+   - **When to Check**: After every forecasting experiment to monitor linear collapse risk
+   - **Action Threshold**: If linearity > 0.95, encoder is learning only linear features → apply improvements
+
+2. **`analyze_ddfm_prediction_quality()`** - Comprehensive DDFM performance analysis
+   - **Output**: Integrated into `ddfm_linearity_analysis.json` (runs automatically)
+   - **Key Metrics**:
+     - `target_analysis[target]['improvement_sMAE']`: Overall improvement ratio (target: > 10%)
+     - `target_analysis[target]['linear_collapse_risk']`: 0-1 risk score (target: < 0.5)
+     - `target_analysis[target]['consistency']`: Consistency across horizons (target: > 0.7)
+     - `target_analysis[target]['error_pattern_similarity']`: Similarity to DFM error patterns (target: < 0.6)
+     - `target_analysis[target]['horizon_error_correlation']`: Correlation with DFM errors (target: < 0.5)
+     - `target_analysis[target]['weighted_improvement_pct']`: Horizon-weighted improvement (target: > 5%)
+     - `target_analysis[target]['relative_improvement_consistency']`: Fraction of horizons with improvement (target: > 0.7)
+     - `target_analysis[target]['improvement_persistence_score']`: Persistence of improvements (target: > 0.7)
+   - **When to Check**: After every forecasting experiment for detailed diagnostics
+   - **Action Threshold**: If collapse_risk > 0.5 OR improvement < 5%, apply encoder improvements
+
+3. **`analyze_correlation_structure()`** - Pre-training data structure analysis
+   - **Output**: `outputs/analysis/correlation_analysis_{target}.json`
+   - **Key Metrics**:
+     - `summary['negative_fraction']`: Fraction of negative correlations (target: > 0.3 for tanh justification)
+     - `summary['strong_negative_count']`: Count of strong negative correlations (target: > 10 for tanh critical)
+     - `summary['mean_correlation']`: Average correlation magnitude (target: < 0.1 for deeper encoder)
+     - `summary['std_correlation']`: Correlation distribution spread (target: < 0.15 for different approach)
+   - **When to Check**: Before training to inform improvement strategy
+   - **Action Threshold**: Use decision criteria in Phase 0 section to select activation/encoder
+
+**Workflow for Continuous Improvement**:
+
+1. **Before Training (Phase 0)**:
+   - Run `analyze_correlation_structure()` for all targets
+   - Compare metrics across targets to inform improvement strategy
+   - Document findings in report and ISSUES.md
+
+2. **After Training + Forecasting (Phase 1)**:
+   - Check `outputs/experiments/ddfm_linearity_analysis.json` (auto-generated)
+   - Extract key metrics: linearity score, improvement ratio, collapse risk
+   - Compare with baseline metrics (if available)
+   - Use decision tree in Phase 1 section to determine next steps
+
+3. **Iterative Improvement**:
+   - After each experiment iteration, check all metrics
+   - Track metrics over time to monitor improvement trends
+   - Use metrics to guide next iteration's improvements
+   - Document findings in report sections
+
+**Example**: After forecasting, check `outputs/experiments/ddfm_linearity_analysis.json` for linearity scores, improvement ratios, and collapse risk. If linearity > 0.95 AND improvement < 5% AND risk > 0.5, apply deeper encoder, tanh activation, weight decay, etc.
+
+**Success Criteria Summary** (from automatic analysis):
+- Linearity score: < 0.95 (currently ~0.99 for KOEQUIPTE)
+- Improvement ratio: > 10% (currently ~0% for KOEQUIPTE)
+- Linear collapse risk: < 0.5 (currently ~0.95+ for KOEQUIPTE)
+- Consistency: > 0.7 (measures consistent improvement)
+- Error pattern similarity: < 0.6 (indicates different patterns from DFM)
+- Horizon error correlation: < 0.5 (indicates nonlinear behavior)
+- Relative improvement consistency: > 0.7 (DDFM improves at >70% of horizons)
+- Improvement persistence: > 0.7 (improvements are consistent, not transient)
