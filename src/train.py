@@ -1479,8 +1479,16 @@ def _load_checkpoint_forecaster(checkpoint_path: Path):
     import pickle
     with open(checkpoint_path, 'rb') as f:
         data = pickle.load(f)
-    forecaster = data.get('forecaster')
-    cfg_saved = data.get('config')
+    # Check multiple known formats:
+    # - {'forecaster': ..., 'config': ...} (expected by nowcast)
+    # - {'model': ..., 'metadata': ...} (saved by save_model_checkpoint)
+    # - direct model object (rare)
+    if isinstance(data, dict):
+        forecaster = data.get('forecaster') or data.get('model')
+        cfg_saved = data.get('config') or data.get('metadata')
+    else:
+        forecaster = data
+        cfg_saved = None
     return forecaster, cfg_saved
 
 
@@ -1532,6 +1540,8 @@ def nowcast(
     # Load and resample data
     data = pd.read_csv(data_path, index_col=0, parse_dates=True)
     monthly = data
+    # Drop non-numeric columns (e.g., string weekly dates) before resampling
+    monthly = monthly.select_dtypes(include=[np.number])
     if isinstance(monthly.index, pd.DatetimeIndex):
         monthly = monthly.sort_index()
     monthly = monthly[(monthly.index >= pd.Timestamp('1985-01-01'))]
