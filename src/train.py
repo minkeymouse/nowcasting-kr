@@ -1,24 +1,12 @@
 """Training module - sktime and DFM/DDFM model training.
 
-This module provides training functionality for:
-- sktime models: ARIMA, VAR (using sktime forecaster interface)
-- DFM/DDFM models: Dynamic Factor Models (using dfm-python)
-
-Preprocessing (resampling, imputation, scaling) is handled by src.preprocessing module.
-
-This module can be used:
-- As CLI: python src/train.py train --config-name experiment/investment_koequipte_report
-- As API: from src.train import train_model, compare_models_by_config
-
-Functions exported for programmatic use:
-- train_model: Train a single model
-- compare_models_by_config: Compare multiple models from experiment config
+Supports ARIMA, VAR, DFM, DDFM models using sktime forecaster interface.
+Preprocessing is handled by src.preprocessing module.
 """
 
 from pathlib import Path
 import sys
 import os
-import argparse
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -27,30 +15,21 @@ import numpy as np
 import pandas as pd
 import torch
 
-# Set up paths BEFORE importing from src
-# Minimal path setup to allow importing setup_cli_environment
-script_dir = Path(__file__).parent.resolve()
-project_root = script_dir.parent.resolve()
-
+# Path setup
+project_root = Path(__file__).parent.parent.resolve()
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
-if str(script_dir) not in sys.path:
-    sys.path.insert(0, str(script_dir))
 
-# Now we can import from src
-from src.utils import setup_cli_environment
-setup_cli_environment()  # This sets up all paths properly
+# Add dfm-python to path
+dfm_python_path = project_root / "dfm-python" / "src"
+if dfm_python_path.exists() and str(dfm_python_path) not in sys.path:
+    sys.path.insert(0, str(dfm_python_path))
 
 # Now use absolute imports
 from src.utils import (
-    get_project_root,
-    parse_experiment_config,
     extract_experiment_params,
     validate_experiment_config,
-    ValidationError,
-    DEFAULT_DDFM_ENCODER_LAYERS,
-    DEFAULT_DDFM_NUM_FACTORS,
-    DEFAULT_DDFM_EPOCHS
+    ValidationError
 )
 
 try:
@@ -59,147 +38,171 @@ try:
 except ImportError as e:
     raise ImportError(f"Required dependencies not available: {e}")
 
-from src.models import DFM, DDFM  # For type hints
+# DFM and DDFM are imported from dfm_python when needed
 
 # Set up logging (centralized configuration)
 from src.utils import setup_logging
+# Log directory will be set in main() function
 setup_logging()
 
 # Set up logger
 logger = logging.getLogger(__name__)
 
+# Import dfm-python config classes
+try:
+    from dfm_python.config import DFMConfig, SeriesConfig
+except ImportError:
+    DFMConfig = None
+    SeriesConfig = None
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
 
-def _extract_target_series(cfg: DictConfig) -> Optional[str]:
-    """Extract target series from config."""
-    source_cfg = cfg.experiment if 'experiment' in cfg else cfg
-    return source_cfg.get('target_series') if hasattr(source_cfg, 'get') else getattr(source_cfg, 'target_series', None)
+def _get_experiment_cfg(cfg: DictConfig) -> DictConfig:
+    """Extract experiment config section from Hydra config.
+    
+    Handles both cases where config is wrapped in 'experiment' key or is the config itself.
+    
+    Parameters
+    ----------
+    cfg : DictConfig
+        Hydra configuration object
+        
+    Returns
+    -------
+    DictConfig
+        Experiment configuration section
+    """
+    return cfg.experiment if 'experiment' in cfg else cfg
 
 
-def _extract_horizons(cfg: DictConfig, default_horizons: Optional[List[int]] = None) -> List[int]:
-    """Extract forecast horizons from config."""
-    if default_horizons is None:
-        default_horizons = list(range(1, 23))  # 22 monthly horizons: 2024-01 to 2025-10
+def _get_cfg_value(cfg: DictConfig, key: str, default=None):
+    """Get value from config (handles both DictConfig and dict).
     
-    source_cfg = cfg.experiment if 'experiment' in cfg else cfg
-    horizons_raw = None
-    
+    Note: For extracting multiple values, prefer using extract_experiment_params() from src.utils.
+    """
+    source_cfg = _get_experiment_cfg(cfg)
     if hasattr(source_cfg, 'get'):
-        horizons_raw = source_cfg.get('forecast_horizons')
-    else:
-        horizons_raw = getattr(source_cfg, 'forecast_horizons', None)
-    
-    if horizons_raw is None:
-        return default_horizons
-    
-    horizons_raw = OmegaConf.to_container(horizons_raw, resolve=True)
-    if isinstance(horizons_raw, list):
-        return [int(str(h)) for h in horizons_raw]
-    else:
-        return [int(str(horizons_raw))]
+        return source_cfg.get(key, default)
+    return getattr(source_cfg, key, default)
 
 
-def _load_series_configs(cfg: DictConfig, config_path: str) -> List[dict]:
-    """Load series configurations from config files."""
-    import yaml
+def _convert_experiment_to_dfm_config_fallback(
+    cfg: DictConfig,
+    available_series_list: List[str],
+    model_cfg_dict: dict,
+    config_path: str,
+    clock: str = 'w',
+    mixed_freq: bool = True
+) -> Any:
+    """Convert experiment config to dfm-python DFMConfig format.
     
-    source_cfg = cfg.experiment if 'experiment' in cfg else cfg
-    series_ids_raw = None
+    This function creates a minimal config dict and uses DFMConfig.from_hydra()
+    to handle series loading from individual config files when series are specified as strings.
     
-    if hasattr(source_cfg, 'get'):
-        series_ids_raw = source_cfg.get('series')
-    else:
-        series_ids_raw = getattr(source_cfg, 'series', None)
+    Parameters
+    ----------
+    cfg : DictConfig
+        Experiment configuration
+    available_series_list : List[str]
+        List of series IDs that are actually in the data after filtering
+    model_cfg_dict : dict
+        Model configuration dictionary with series and blocks
+    config_path : str
+        Path to config directory (for loading series configs)
+    clock : str, default 'w'
+        Clock frequency for DFM
+    mixed_freq : bool, default True
+        Whether to use mixed frequency mode (unused, kept for compatibility)
+        
+    Returns
+    -------
+    DFMConfig
+        dfm-python DFMConfig object ready for use
+    """
+    if DFMConfig is None:
+        raise ImportError("dfm-python package not available. Install with: pip install dfm-python")
     
-    if not series_ids_raw:
-        return []
-    
-    series_ids = OmegaConf.to_container(series_ids_raw, resolve=True)
+    # Get series list from cfg (Hydra already composed it)
+    source_cfg = _get_experiment_cfg(cfg)
+    series_ids_raw = source_cfg.get('series', [])
+    # Convert ListConfig to regular list
+    series_ids = OmegaConf.to_container(series_ids_raw, resolve=True) if series_ids_raw else []
     if not isinstance(series_ids, list):
-        return []
+        series_ids = []
     
-    # Get series overrides
-    series_overrides = {}
-    if hasattr(source_cfg, 'get'):
-        series_overrides_raw = source_cfg.get('series_overrides')
-    else:
-        series_overrides_raw = getattr(source_cfg, 'series_overrides', None)
+    # Filter to only available series
+    available_series_set = set(available_series_list)
+    filtered_series_ids = [s for s in series_ids if s in available_series_set]
     
-    if series_overrides_raw:
-        try:
-            series_overrides = OmegaConf.to_container(series_overrides_raw, resolve=True) or {}
-            if not isinstance(series_overrides, dict):
-                series_overrides = {}
-        except (ValueError, TypeError):
-            series_overrides = {}
+    if not filtered_series_ids:
+        raise ValidationError(
+            f"No series found in available_series_list. "
+            f"Available: {available_series_list[:10]}..."
+        )
     
-    # Load each series config
-    series_list = []
-    config_path_obj = Path(config_path)
-    series_dir = config_path_obj / "series"
+    # Create config dict for DFMConfig.from_hydra()
+    # series as list of strings will be loaded by _parse_series_list using config_path
+    config_dict = {
+        'series': filtered_series_ids,
+        'clock': clock,
+        'max_iter': model_cfg_dict.get('max_iter', 5000),
+        'threshold': model_cfg_dict.get('threshold', 1e-5),
+        'nan_method': model_cfg_dict.get('nan_method', 2),
+        'nan_k': model_cfg_dict.get('nan_k', 3),
+        'scaler': model_cfg_dict.get('scaler', 'robust')
+    }
     
-    for series_id in series_ids:
-        # Normalize series_id: replace dots with underscores to match filename
-        # e.g., "KOIPALL.G" -> "KOIPALL_G.yaml"
-        series_id_normalized = str(series_id).replace('.', '_')
-        series_config_path = series_dir / f"{series_id_normalized}.yaml"
-        
-        # Default series config
-        dfm_series = {
-            'series_id': series_id,
-            'frequency': 'm',
-            'transformation': 'lin',  # Default fallback if not specified in config
-            '_block_names': None
+    # Get blocks from model_cfg_dict or create default
+    blocks_dict = model_cfg_dict.get('blocks', {})
+    if not blocks_dict:
+        blocks_dict = {
+            'block1': {
+                'factors': 3,
+                'ar_lag': 1,
+                'clock': clock,
+                'series': []
+            }
         }
-        
-        # Load from file if exists
-        if series_config_path.exists():
-            try:
-                with open(series_config_path, 'r') as f:
-                    series_cfg = yaml.safe_load(f) or {}
-                
-                # Use transformation from series config file
-                dfm_series.update({
-                    'series_id': series_cfg.get('series_id', series_id),
-                    'frequency': series_cfg.get('frequency', 'm'),
-                    'transformation': series_cfg.get('transformation', 'lin'),  # Use config value or default to 'lin'
-                })
-                
-                # Handle blocks/block field
-                if 'blocks' in series_cfg and series_cfg['blocks'] is not None:
-                    dfm_series['_block_names'] = series_cfg['blocks']
-                elif 'block' in series_cfg and series_cfg['block'] is not None:
-                    dfm_series['_block_names'] = series_cfg['block']
-            except Exception as e:
-                logger.warning(f"Failed to load series config {series_id}: {e}")
-        
-        # Apply overrides
-        if series_id in series_overrides:
-            override = series_overrides[series_id]
-            if isinstance(override, dict):
-                if 'frequency' in override:
-                    dfm_series['frequency'] = override['frequency']
-                if 'transformation' in override:
-                    dfm_series['transformation'] = override['transformation']
-                if 'blocks' in override and override['blocks'] is not None:
-                    dfm_series['_block_names'] = override['blocks']
-                elif 'block' in override and override['block'] is not None:
-                    dfm_series['_block_names'] = override['block']
-        
-        series_list.append(dfm_series)
+    config_dict['blocks'] = blocks_dict
     
-    return series_list
+    # Use from_hydra with config_path (required when series is a list of strings)
+    return DFMConfig.from_hydra(config_dict, config_path=config_path)
 
 
-def _extract_data_path(cfg: DictConfig) -> Optional[str]:
-    """Extract data path from config."""
-    source_cfg = cfg.experiment if 'experiment' in cfg else cfg
-    if hasattr(source_cfg, 'get'):
-        return source_cfg.get('data_path')
+def _create_time_index_from_data(data: pd.DataFrame) -> Any:
+    """Create dfm-python TimeIndex from DataFrame.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Preprocessed data with DatetimeIndex or date column
+        
+    Returns
+    -------
+    TimeIndex
+        dfm-python TimeIndex object
+    """
+    try:
+        from dfm_python.utils.time import TimeIndex, parse_timestamp
+    except ImportError:
+        raise ImportError("dfm-python package not available. Install with: pip install dfm-python")
+    
+    # Extract dates from index or date column
+    if isinstance(data.index, pd.DatetimeIndex):
+        dates = data.index
+    elif 'date' in data.columns:
+        dates = pd.to_datetime(data['date'])
     else:
-        return getattr(source_cfg, 'data_path', None)
+        # Create weekly dates starting from a default date
+        n_periods = len(data)
+        start_date = pd.Timestamp('1985-01-01')
+        dates = pd.date_range(start=start_date, periods=n_periods, freq='W')
+    
+    # Convert to TimeIndex format
+    time_list = [parse_timestamp(d.strftime('%Y-%m-%d')) for d in dates]
+    return TimeIndex(time_list)
 
 
 # Target-specific preprocessing (supports optional quantile clipping)
@@ -234,45 +237,14 @@ from src.preprocessing import (
 )
 
 
-def _detect_model_type_from_name(model_name: str) -> str:
-    """Detect model type from model name (e.g., 'KOEQUIPTE_arima' -> 'arima')."""
+def _detect_model_type(model_name: str) -> Optional[str]:
+    """Detect model type from model name."""
     valid_types = ['arima', 'var', 'dfm', 'ddfm']
     parts = model_name.lower().split('_')
-    
-    # Check last part first (most common: TARGET_MODEL)
-    if parts[-1] in valid_types:
-        return parts[-1]
-    
-    # Check first part (MODEL_TARGET format)
-    if parts[0] in valid_types:
-        return parts[0]
-    
-    # Search all parts
     for part in parts:
         if part in valid_types:
             return part
-    
-    return None  # Not found in name
-
-
-def _detect_model_type_from_config(cfg: DictConfig) -> str:
-    """Detect model type from Hydra config."""
-    defaults = cfg.get('defaults', [])
-    for default in defaults:
-        if isinstance(default, dict) and default.get('override') == '/model':
-            model_override = default.get('_target_', '')
-            if 'ddfm' in model_override.lower():
-                return "ddfm"
-    
-    model_type = cfg.get('model_type', '').lower()
-    if model_type in ('ddfm', 'deep'):
-        return "ddfm"
-    
-    ddfm_params = ['encoder_layers', 'epochs', 'learning_rate', 'batch_size']
-    if any(key in cfg for key in ddfm_params):
-        return "ddfm"
-    
-    return "dfm"
+    return None
 
 
 def _train_forecaster(
@@ -285,12 +257,11 @@ def _train_forecaster(
     outputs_dir: Path,
     model_cfg_dict: Optional[dict] = None
 ) -> Dict[str, Any]:
-    """Train any model using sktime forecaster interface."""
+    """Train model using sktime forecaster interface."""
     try:
         from sktime.forecasting.arima import ARIMA as SktimeARIMA
         from sktime.forecasting.var import VAR as SktimeVAR
         from sktime.transformations.series.impute import Imputer
-        from src.models import DFMForecaster, DDFMForecaster
     except ImportError as e:
         raise ImportError(f"sktime is required for {model_type} models. Install with: pip install sktime[forecasting]") from e
     
@@ -304,11 +275,13 @@ def _train_forecaster(
         raise ValidationError(f"No data available in training period (1985-2019). Data range: {data.index.min()} to {data.index.max()}")
     
     logger.info(f"Training data period: {data.index.min()} to {data.index.max()} (1985-2019 enforced)")
-    logger.info(f"Original data frequency: Weekly ({len(data)} points)")
-    logger.info(f"All models will use monthly frequency (window-averaged from weekly data)")
+    logger.info(f"Data frequency: Weekly ({len(data)} points)")
+    logger.info(f"All models will use weekly frequency (clock='w')")
     
-    source_cfg = cfg.experiment if 'experiment' in cfg else cfg
-    target_series = _extract_target_series(cfg)
+    source_cfg = _get_experiment_cfg(cfg)
+    # Use extract_experiment_params for consistent config extraction
+    exp_params = extract_experiment_params(cfg)
+    target_series = exp_params.get('target_series')
     
     if not target_series or target_series not in data.columns:
         raise ValidationError(f"target_series '{target_series}' not found in data. Available columns: {list(data.columns)}")
@@ -329,25 +302,139 @@ def _train_forecaster(
         max_iter = model_params.get('max_iter', 5000)
         threshold = model_params.get('threshold', 1e-5)
         mixed_freq = model_params.get('mixed_freq', False)
+        clock = model_params.get('clock', 'w')  # Default to 'w' for weekly
         config_dict = model_cfg_dict if model_cfg_dict else {}
         if not config_dict or 'series' not in config_dict:
             raise ValidationError(f"No series found in config. Config: {config_name}")
         
-        forecaster = DFMForecaster(
-            config_dict=config_dict,
-            max_iter=max_iter,
-            threshold=threshold,
-            mixed_freq=mixed_freq
-        )
+        # Add clock to config_dict if provided (for prepare_multivariate_data to check)
+        if clock is not None:
+            config_dict['clock'] = clock
         
-        target_series = _extract_target_series(cfg)
-        # Preprocess multivariate data for DFM (resample to monthly, set frequency)
-        # Note: DFM uses internal preprocessing pipeline (imputation + scaling), so we only do resampling and frequency setting here
-        y_train = prepare_multivariate_data(data, config_dict, cfg, target_series, model_type='dfm')
+        exp_params = extract_experiment_params(cfg)
+        target_series = exp_params.get('target_series')
+        # Preprocess multivariate data for DFM (weekly if clock='w', monthly otherwise)
+        y_train, available_series_list = prepare_multivariate_data(data, config_dict, cfg, target_series, model_type='dfm')
         clip_quantiles = model_params.get('clip_quantiles') if isinstance(model_params, dict) else None
         y_train = _apply_target_specific_preprocessing(y_train, target_series, clip_quantiles)
         y_train = set_dataframe_frequency(y_train)
         logger.info(f"Max iterations: {max_iter}, Threshold: {threshold}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
+        
+        # Use @hydra.main injected cfg directly (Hydra already composed config with defaults)
+        # Convert to dfm-python DFMConfig format
+        try:
+            from dfm_python.config import DFMConfig
+            # Extract model_overrides.dfm section and merge with base config
+            source_cfg = _get_experiment_cfg(cfg)
+            model_overrides_raw = source_cfg.get('model_overrides', {})
+            model_overrides = OmegaConf.to_container(model_overrides_raw, resolve=True) if model_overrides_raw else {}
+            if not isinstance(model_overrides, dict):
+                model_overrides = {}
+            dfm_overrides = model_overrides.get('dfm', {}) or {}
+            
+            # Use DFMConfig.from_hydra() directly with Hydra DictConfig
+            # from_hydra() accepts DictConfig and handles conversion internally
+            # Extract only experiment config (not the full Hydra cfg which includes 'experiment' key)
+            source_cfg = _get_experiment_cfg(cfg)
+            
+            # Merge dfm_overrides into source_cfg
+            if dfm_overrides:
+                # Convert to dict, merge, then convert back to DictConfig
+                source_dict = OmegaConf.to_container(source_cfg, resolve=True)
+                source_dict.update(dfm_overrides)
+                source_cfg = OmegaConf.create(source_dict)
+            
+            # Convert using DFMConfig.from_hydra() - accepts DictConfig directly
+            # This will handle series: [strings] via _parse_series_list with config_path
+            dfm_config = DFMConfig.from_hydra(
+                source_cfg,  # Pass DictConfig directly
+                config_path=str(project_root / "config")
+            )
+        except Exception as e:
+            raise ValidationError(f"Failed to create DFMConfig: {e}") from e
+        
+        # Filter series to only available ones (after conversion)
+        available_series_set = set(available_series_list)
+        filtered_series = [
+            s for s in dfm_config.series 
+            if s.series_id in available_series_set
+        ]
+        if len(filtered_series) != len(dfm_config.series):
+            # Create new config with filtered series
+            dfm_config = type(dfm_config)(
+                series=filtered_series,
+                blocks=dfm_config.blocks,
+                clock=clock,
+                max_iter=dfm_config.max_iter if hasattr(dfm_config, 'max_iter') else max_iter,
+                threshold=dfm_config.threshold if hasattr(dfm_config, 'threshold') else threshold,
+                nan_method=dfm_config.nan_method if hasattr(dfm_config, 'nan_method') else 2,
+                nan_k=dfm_config.nan_k if hasattr(dfm_config, 'nan_k') else 3,
+                scaler=dfm_config.scaler if hasattr(dfm_config, 'scaler') else model_cfg_dict.get('scaler', 'robust')
+            )
+        
+        # Create time index
+        time_index = _create_time_index_from_data(y_train)
+        
+        # Use dfm-python standard pattern
+        try:
+            from dfm_python import DFM, DFMDataModule, DFMTrainer
+        except ImportError as e:
+            raise ImportError(f"dfm-python package not available: {e}") from e
+        
+        # Create model with config
+        # Note: We convert experiment config to dfm-python format because:
+        # 1. Experiment config has different structure (experiment/ wrapper, series in separate files)
+        # 2. dfm-python expects dfm-python config format (series list, blocks dict)
+        # 3. We need to filter series based on available data
+        # Alternative: Could use model.load_config(hydra=cfg) but would still need conversion
+        model = DFM(
+            config=dfm_config,
+            mixed_freq=mixed_freq,
+            max_iter=max_iter,
+            threshold=threshold
+        )
+        
+        # Create preprocessing pipeline with scaler (for Mx/Wx extraction and inverse transform)
+        from src.models.models_forecasters import _create_preprocessing_pipeline
+        # Get scaler type from config (default: 'robust')
+        scaler_type = model_cfg_dict.get('scaler', 'robust') if model_cfg_dict else 'robust'
+        preprocessing_pipeline = _create_preprocessing_pipeline(model, scaler_type=scaler_type)
+        
+        # Create DataModule with pipeline (for scaler statistics extraction)
+        # Data is already preprocessed, but pipeline is needed for Mx/Wx extraction
+        data_module = DFMDataModule(
+            config=dfm_config,
+            pipeline=preprocessing_pipeline,
+            data=y_train.values,
+            time_index=time_index
+        )
+        data_module.setup()
+        
+        # Use trainer.fit() - now safe because training_step uses torch.no_grad() for EM algorithm
+        # This is the proper way to use PyTorch Lightning while avoiding memory issues
+        # Root cause fix: training_step now wraps self.em() in torch.no_grad() to prevent
+        # PyTorch from creating gradient graphs even when automatic_optimization=False
+        trainer = DFMTrainer(max_epochs=max_iter)
+        trainer.fit(model, data_module)
+        
+        # Extract scaler from pipeline and store in model for inverse transform
+        # This enables predict() to use scaler.inverse_transform() for unstandardization
+        try:
+            from dfm_python.lightning.data_module import _get_scaler
+            scaler = _get_scaler(preprocessing_pipeline)
+            if scaler is not None:
+                model.scaler = scaler
+                logger.debug(f"Stored scaler ({type(scaler).__name__}) in DFM model for inverse transform")
+        except Exception as e:
+            logger.warning(f"Could not extract scaler from pipeline for DFM model: {e}")
+        
+        # Use model directly as forecaster (DFM model has predict method)
+        forecaster = model
+        # Add compatibility attributes for evaluation code
+        if not hasattr(forecaster, 'is_fitted'):
+            forecaster.is_fitted = True
+        if not hasattr(forecaster, '_y'):
+            forecaster._y = y_train
         
     elif model_type == 'ddfm':
         epochs = model_params.get('epochs', 100)
@@ -359,7 +446,8 @@ def _train_forecaster(
         # Target-specific encoder architecture improvements
         # KOEQUIPTE shows identical performance to DFM, suggesting encoder needs more capacity
         # Use larger/deeper encoder for targets that may benefit from more nonlinear capacity
-        target_series = _extract_target_series(cfg)
+        exp_params = extract_experiment_params(cfg)
+        target_series = exp_params.get('target_series')
         activation = model_params.get('activation', 'relu')  # Default activation function
         
         if target_series == 'KOEQUIPTE':
@@ -431,8 +519,40 @@ def _train_forecaster(
         if not config_dict or 'series' not in config_dict:
             raise ValidationError(f"No series found in config. Config: {config_name}")
         
-        forecaster = DDFMForecaster(
-            config_dict=config_dict,
+        exp_params = extract_experiment_params(cfg)
+        target_series = exp_params.get('target_series')
+        # Preprocess multivariate data for DDFM (resample to monthly, set frequency)
+        y_train, available_series_list = prepare_multivariate_data(data, config_dict, cfg, target_series, model_type='ddfm')
+        clip_quantiles = model_params.get('clip_quantiles') if isinstance(model_params, dict) else None
+        y_train = _apply_target_specific_preprocessing(y_train, target_series, clip_quantiles)
+        y_train = set_dataframe_frequency(y_train)
+        logger.info(f"Epochs: {epochs}, Encoder layers: {encoder_layers}, Activation: {activation}, Factors: {num_factors}, Loss: {loss_function}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
+        
+        # Convert experiment config to dfm-python DFMConfig (DDFM uses same config structure)
+        config_path = str(project_root / "config")
+        clock = model_params.get('clock', 'w')  # Default to weekly, but should come from Hydra config
+        mixed_freq = model_params.get('mixed_freq', False)
+        dfm_config = _convert_experiment_to_dfm_config_fallback(
+            cfg=cfg,
+            available_series_list=available_series_list,
+            model_cfg_dict=config_dict,
+            config_path=config_path,
+            clock=clock,
+            mixed_freq=mixed_freq
+        )
+        
+        # Create time index
+        time_index = _create_time_index_from_data(y_train)
+        
+        # Use dfm-python standard pattern
+        try:
+            from dfm_python import DDFM, DFMDataModule, DDFMTrainer
+        except ImportError as e:
+            raise ImportError(f"dfm-python package not available: {e}") from e
+        
+        # Create DDFM model
+        ddfm_model = DDFM(
+            config=dfm_config,
             encoder_layers=encoder_layers,
             num_factors=num_factors,
             epochs=epochs,
@@ -447,110 +567,102 @@ def _train_forecaster(
             mult_epoch_pretrain=mult_epoch_pretrain
         )
         
-        target_series = _extract_target_series(cfg)
-        # Preprocess multivariate data for DDFM (resample to monthly, set frequency)
-        # Note: DDFM uses internal preprocessing pipeline (imputation + scaling), so we only do resampling and frequency setting here
-        y_train = prepare_multivariate_data(data, config_dict, cfg, target_series, model_type='ddfm')
-        clip_quantiles = model_params.get('clip_quantiles') if isinstance(model_params, dict) else None
-        y_train = _apply_target_specific_preprocessing(y_train, target_series, clip_quantiles)
-        y_train = set_dataframe_frequency(y_train)
-        logger.info(f"Epochs: {epochs}, Encoder layers: {encoder_layers}, Activation: {activation}, Factors: {num_factors}, Loss: {loss_function}, Series: {y_train.shape[1]} (filtered from config, target_series included)")
+        # Create preprocessing pipeline with scaler (for Mx/Wx extraction and inverse transform)
+        from src.models.models_forecasters import _create_preprocessing_pipeline
+        # Get scaler type from config (default: 'robust')
+        scaler_type = model_cfg_dict.get('scaler', 'robust') if model_cfg_dict else 'robust'
+        preprocessing_pipeline = _create_preprocessing_pipeline(ddfm_model, scaler_type=scaler_type)
+        
+        # Create DataModule with pipeline (for scaler statistics extraction)
+        # Data is already preprocessed, but pipeline is needed for Mx/Wx extraction
+        data_module = DFMDataModule(
+            config=dfm_config,
+            pipeline=preprocessing_pipeline,
+            data=y_train.values,
+            time_index=time_index
+        )
+        data_module.setup()
+        
+        # Create trainer and fit
+        trainer = DDFMTrainer(max_epochs=epochs)
+        trainer.fit(ddfm_model, data_module)
+        
+        # Extract scaler from pipeline and store in model for inverse transform
+        # This enables predict() to use scaler.inverse_transform() for unstandardization
+        try:
+            from dfm_python.lightning.data_module import _get_scaler
+            scaler = _get_scaler(preprocessing_pipeline)
+            if scaler is not None:
+                ddfm_model.scaler = scaler
+                logger.debug(f"Stored scaler ({type(scaler).__name__}) in DDFM model for inverse transform")
+        except Exception as e:
+            logger.warning(f"Could not extract scaler from pipeline for DDFM model: {e}")
+        
+        # Use model directly as forecaster (DDFM model has predict method)
+        forecaster = ddfm_model
+        # Add compatibility attributes for evaluation code
+        if not hasattr(forecaster, 'is_fitted'):
+            forecaster.is_fitted = True
+        if not hasattr(forecaster, '_y'):
+            forecaster._y = y_train
         
     elif model_type == 'arima':
-        if not target_series:
-            raise ValidationError(f"target_series required for ARIMA. Config: {config_name}")
+        # Use models/arima module
+        from src.models import train_arima
         
-        # Preprocess univariate data for ARIMA (resample to monthly, set frequency)
-        y_train = prepare_univariate_data(data, target_series)
-        if len(y_train) == 0:
-            raise ValidationError(f"No valid monthly data for target series '{target_series}' after resampling")
+        checkpoint_dir_temp = outputs_dir / "temp_arima"
+        checkpoint_dir_temp.mkdir(parents=True, exist_ok=True)
         
-        logger.info(f"Target series: {target_series} (resampled to monthly)")
-        order = model_params.get('order', [1, 1, 1])
-        auto_arima = model_params.get('auto_arima', {})
+        forecaster, _ = train_arima(
+            data=data,
+            target_series=target_series,
+            config=model_params,
+            checkpoint_dir=checkpoint_dir_temp
+        )
         
-        # Create base forecaster
-        if auto_arima and auto_arima.get('enabled', False):
-            from sktime.forecasting.arima import AutoARIMA
-            base_forecaster = AutoARIMA(
-                max_p=auto_arima.get('max_p', 5),
-                max_d=auto_arima.get('max_d', 2),
-                max_q=auto_arima.get('max_q', 5),
-                information_criterion=auto_arima.get('information_criterion', 'aic')
-            )
-        else:
-            base_forecaster = SktimeARIMA(order=tuple(order) if isinstance(order, list) else order)
-        
-        # Use ForecastingPipeline with Imputer for ARIMA (sktime handles this automatically)
-        from sktime.forecasting.compose import ForecastingPipeline
-        from sktime.forecasting.naive import NaiveForecaster
-        
-        # Multi-stage imputation: ffill -> bfill -> forecaster
-        imputer_ffill = Imputer(method="ffill")
-        imputer_bfill = Imputer(method="bfill")
-        imputer_forecaster = Imputer(method="forecaster", forecaster=NaiveForecaster(strategy="last"))
-        
-        # Create pipeline: imputation -> forecaster
-        # Note: sktime's ForecastingPipeline applies transformers before forecaster.fit()
-        forecaster = ForecastingPipeline([
-            ('imputer_ffill', imputer_ffill),
-            ('imputer_bfill', imputer_bfill),
-            ('imputer_forecaster', imputer_forecaster),
-            ('forecaster', base_forecaster)
-        ])
-        
-        logger.info(f"Order: {order}")
+        # Remove temp checkpoint (will save properly later)
+        import shutil
+        if checkpoint_dir_temp.exists():
+            shutil.rmtree(checkpoint_dir_temp)
         
     elif model_type == 'var':
-        lag_order = model_params.get('lag_order')
-        auto_lag = model_params.get('auto_lag', {})
-        trend = model_params.get('trend', 'c')
-        if trend is None:
-            trend = 'c'
+        # Use models/var module
+        from src.models import train_var
         
-        # Preprocess multivariate data for VAR (resample to monthly, set frequency, impute)
-        y_train = prepare_multivariate_data(data, None, cfg, target_series, model_type='var')
-        y_train = set_dataframe_frequency(y_train)
-        # VAR cannot handle missing data - must impute before fitting
-        # Note: VAR (statsmodels) doesn't support NaNs, so we must pre-impute
-        # This is different from ARIMA which can use ForecastingPipeline
-        y_train = impute_missing_values(y_train, model_type='var')
+        checkpoint_dir_temp = outputs_dir / "temp_var"
+        checkpoint_dir_temp.mkdir(parents=True, exist_ok=True)
         
-        if len(y_train) == 0:
-            raise ValidationError(f"VAR: No valid data after imputation.")
+        forecaster, _ = train_var(
+            data=data,
+            target_series=target_series,
+            config=model_params,
+            cfg=cfg,
+            checkpoint_dir=checkpoint_dir_temp
+        )
         
-        if y_train.shape[1] < 2:
-            raise ValidationError(f"VAR requires at least 2 series. Found {y_train.shape[1]} series.")
-        
-        if y_train.isnull().any().any():
-            nan_count = y_train.isnull().sum().sum()
-            raise ValidationError(f"VAR cannot handle missing data. Found {nan_count} NaN values after all imputation attempts.")
-        
-        if lag_order is None and auto_lag and auto_lag.get('enabled', False):
-            maxlags = auto_lag.get('maxlags', 12)
-            if maxlags is None:
-                maxlags = 12
-            ic = auto_lag.get('ic', 'aic')
-            if ic is None:
-                ic = 'aic'
-            forecaster = SktimeVAR(maxlags=int(maxlags), trend=str(trend), ic=str(ic))
-        else:
-            maxlags = lag_order if lag_order is not None else 1
-            if maxlags is None:
-                maxlags = 1
-            forecaster = SktimeVAR(maxlags=int(maxlags), trend=str(trend))
-        logger.info(f"Max lags: {maxlags}, Trend: {trend}, Series: {y_train.shape[1]}")
-        # NOTE: VAR models can become numerically unstable for long forecasting horizons (>7 months)
-        # This is a known limitation of VAR models. The evaluation code (evaluation.py) automatically
-        # filters extreme values (>1e10) and marks them as NaN. This is expected behavior.
-        # For monthly data, VAR should be limited to horizon <= 7 months to prevent instability.
+        # Remove temp checkpoint (will save properly later)
+        import shutil
+        if checkpoint_dir_temp.exists():
+            shutil.rmtree(checkpoint_dir_temp)
     
     # Extract horizons from config if not provided
     if horizons is None:
-        horizons = _extract_horizons(cfg)
+        exp_params = extract_experiment_params(cfg)
+        horizons = exp_params.get('horizons', list(range(1, 23)))
     
-    # Train once on full training data (no evaluation split to avoid double training)
-    forecaster.fit(y_train)
+    # For ARIMA/VAR, models are already trained by train_arima/train_var
+    # For DFM/DDFM, forecaster is already fitted
+    # Only fit if forecaster is not fitted yet
+    if not hasattr(forecaster, 'is_fitted') or not forecaster.is_fitted:
+        # Get y_train for fitting (needed for DFM/DDFM which create forecaster wrapper)
+        if model_type in ['dfm', 'ddfm']:
+            # y_train already prepared in DFM/DDFM blocks above
+            if 'y_train' in locals():
+                forecaster.fit(y_train)
+        else:
+            # For ARIMA/VAR, should not reach here as they're already fitted
+            logger.warning(f"Forecaster for {model_type} not fitted, but should be already fitted")
+    
     logger.info(f"{'='*70}\n")
     
     # No evaluation metrics (trained on full data, no held-out test set)
@@ -611,13 +723,12 @@ def _train_forecaster(
     result = None
     metadata = {}
     if model_type in ['dfm', 'ddfm']:
-        underlying_model = getattr(forecaster, '_dfm_model', None) or getattr(forecaster, '_ddfm_model', None)
-        if underlying_model:
-            try:
-                result = underlying_model.get_result()
-                metadata = underlying_model.get_metadata()
-            except (AttributeError, RuntimeError):
-                pass
+        # For DFM/DDFM, forecaster is the model itself
+        try:
+            result = forecaster.get_result()
+            metadata = forecaster.get_metadata()
+        except (AttributeError, RuntimeError):
+            pass
     
     # Build metrics dict
     base_metrics = {
@@ -671,11 +782,9 @@ def _train_forecaster(
 # ============================================================================
 
 def train(
-    config_name: str,
-    config_path: Optional[str] = None,
-    data_path: Optional[str] = None,
+    cfg: DictConfig,
     model_name: Optional[str] = None,
-    config_overrides: Optional[list] = None,
+    checkpoint_dir: Optional[str] = None,
     horizons: Optional[List[int]] = None
 ) -> Dict[str, Any]:
     """Train a single forecasting model using Hydra configuration.
@@ -683,20 +792,32 @@ def train(
     This function provides a unified interface for training all model types
     (ARIMA, VAR, DFM, DDFM) using sktime forecaster interface. The model is
     trained, evaluated on specified horizons, and saved to checkpoint/.
+    
+    Parameters
+    ----------
+    cfg : DictConfig
+        Hydra config (can be injected by @hydra.main or passed directly)
+    model_name : Optional[str]
+        Model name to train (e.g., arima, var, dfm, ddfm)
+    checkpoint_dir : Optional[str]
+        Directory to save checkpoint
+    horizons : Optional[List[int]]
+        Forecast horizons (if not specified, uses config value)
     """
-    config_path = config_path or str(project_root / "config")
+    # Extract parameters from cfg (Hydra automatically loads experiment config)
+    source_cfg = _get_experiment_cfg(cfg)
+    config_name = getattr(cfg, '_name_', None) or cfg.get('_name_', 'experiment/consumption_kowrccnse_report')
+    checkpoint_model_name = cfg.get('checkpoint_model_name')
     
-    checkpoint_dir = None
-    checkpoint_model_name = None
-    if config_overrides:
-        for override in config_overrides:
-            if override.startswith('checkpoint_dir=') or override.startswith('+checkpoint_dir='):
-                checkpoint_dir = override.split('=', 1)[1]
-            elif override.startswith('checkpoint_model_name=') or override.startswith('+checkpoint_model_name='):
-                checkpoint_model_name = override.split('=', 1)[1]
+    # Get model_name from cfg if not provided as parameter
+    if not model_name:
+        model_name = cfg.get('model')
     
+    # Get checkpoint_dir from cfg if not provided as parameter
     if not checkpoint_dir:
-        raise ValueError("checkpoint_dir must be specified. Use --checkpoint-dir argument.")
+        checkpoint_dir = cfg.get('checkpoint_dir', 'checkpoint')
+    if not checkpoint_dir:
+        raise ValueError("checkpoint_dir must be specified in config or via override.")
     outputs_dir = Path(checkpoint_dir)
     if checkpoint_model_name:
         outputs_dir = outputs_dir / checkpoint_model_name
@@ -711,176 +832,72 @@ def train(
     except (OSError, PermissionError) as e:
         raise ValidationError(f"Cannot create or write to checkpoint directory {outputs_dir}: {e}") from e
     
-    with hydra.initialize_config_dir(config_dir=config_path, version_base="1.3"):
-        cfg = hydra.compose(config_name=config_name, overrides=config_overrides or [])
-        if OmegaConf.is_struct(cfg):
-            OmegaConf.set_struct(cfg, False)
-        if 'experiment' in cfg and OmegaConf.is_struct(cfg.experiment):
-            OmegaConf.set_struct(cfg.experiment, False)
-        
-        # Detect model type from model_name or config
-        if model_name:
-            detected_type = _detect_model_type_from_name(model_name)
-            model_type = detected_type if detected_type else _detect_model_type_from_config(cfg)
-        else:
-            model_type = _detect_model_type_from_config(cfg)
-        
-        # Load series configs
-        series_list = _load_series_configs(cfg, config_path)
-        
-        model_cfg_dict = {}
-        config_path_obj = Path(config_path)
-        model_config_path = config_path_obj / "model" / f"{model_type}.yaml"
-        
-        block_names_order = []
-        if model_config_path.exists():
-            import yaml
-            with open(model_config_path, 'r') as f:
-                model_yaml = yaml.safe_load(f) or {}
-            if 'blocks' in model_yaml and isinstance(model_yaml['blocks'], dict):
-                block_names_order = list(model_yaml['blocks'].keys())
-            excluded_keys = ['models', 'series', 'target_series', 'data_path', 'start_date', 'end_date', 
-                            'forecast_horizons', 'evaluation_metrics', 'test_size', 'output_path', 
-                            'name', 'description', 'defaults']
-            model_yaml = {k: v for k, v in model_yaml.items() if k not in excluded_keys}
-            model_cfg_dict = {**model_yaml, **model_cfg_dict}
-        
-        experiment_model_overrides = {}
-        source_cfg = cfg.experiment if 'experiment' in cfg else cfg
-        
-        if 'model_overrides' in source_cfg:
-            model_overrides_dict = OmegaConf.to_container(source_cfg.model_overrides, resolve=True)
-            if isinstance(model_overrides_dict, dict) and model_type in model_overrides_dict:
-                model_specific_overrides = model_overrides_dict[model_type]
-                if isinstance(model_specific_overrides, dict):
-                    experiment_model_overrides = model_specific_overrides
-        
-        if experiment_model_overrides:
-            model_cfg_dict = {**model_cfg_dict, **experiment_model_overrides}
-        
-        if not block_names_order and model_type == 'ddfm':
-            dfm_config_path = config_path_obj / "model" / "dfm.yaml"
-            if dfm_config_path.exists():
-                import yaml
-                with open(dfm_config_path, 'r') as f:
-                    dfm_yaml = yaml.safe_load(f) or {}
-                if 'blocks' in dfm_yaml and isinstance(dfm_yaml['blocks'], dict):
-                    block_names_order = list(dfm_yaml['blocks'].keys())
-                    if 'blocks' not in model_cfg_dict:
-                        model_cfg_dict['blocks'] = dfm_yaml['blocks']
-        
-        block_clocks = {}
-        if 'blocks' in model_cfg_dict and isinstance(model_cfg_dict['blocks'], dict):
-            for block_name, block_cfg in model_cfg_dict['blocks'].items():
-                if isinstance(block_cfg, dict) and 'clock' in block_cfg:
-                    block_clocks[block_name] = block_cfg['clock']
-        
-        freq_hierarchy = {'d': 1, 'w': 2, 'm': 3, 'q': 4, 'sa': 5, 'a': 6}
-        
-        filtered_series_list = []
-        if block_names_order and series_list:
-            for series_item in series_list:
-                series_freq = series_item.get('frequency', 'm').lower()
-                series_freq_level = freq_hierarchy.get(series_freq, 3)
-                
-                if '_block_names' in series_item:
-                    block_names = series_item.pop('_block_names')
-                    if block_names is None:
-                        if block_names_order:
-                            first_block_name = block_names_order[0]
-                            first_block_clock = block_clocks.get(first_block_name, 'm')
-                            first_block_clock_level = freq_hierarchy.get(first_block_clock.lower(), 3)
-                            if series_freq_level >= first_block_clock_level:
-                                series_item['blocks'] = [1] + [0] * (len(block_names_order) - 1) if len(block_names_order) > 1 else [1]
-                                filtered_series_list.append(series_item)
-                            else:
-                                logger.warning(f"Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with first block clock '{first_block_clock}'. Skipping.")
-                        else:
-                            filtered_series_list.append(series_item)
-                        continue
-                    compatible_blocks = []
-                    for block_spec in block_names:
-                        block_name = None
-                        if isinstance(block_spec, str):
-                            block_name = block_spec
-                        elif isinstance(block_spec, int) and 0 <= block_spec < len(block_names_order):
-                            block_name = block_names_order[block_spec]
-                        
-                        if block_name:
-                            block_clock = block_clocks.get(block_name, 'm')
-                            block_clock_level = freq_hierarchy.get(block_clock.lower(), 3)
-                            if series_freq_level >= block_clock_level:
-                                compatible_blocks.append(block_spec)
-                    
-                    if compatible_blocks:
-                        block_vector = [0] * len(block_names_order)
-                        for block_spec in compatible_blocks:
-                            if isinstance(block_spec, str):
-                                if block_spec in block_names_order:
-                                    block_idx = block_names_order.index(block_spec)
-                                    block_vector[block_idx] = 1
-                            elif isinstance(block_spec, int):
-                                block_idx = block_spec - 1 if block_spec > 0 else block_spec
-                                if 0 <= block_idx < len(block_names_order):
-                                    block_vector[block_idx] = 1
-                        series_item['blocks'] = block_vector
-                        filtered_series_list.append(series_item)
-                    else:
-                        logger.warning(f"Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with block clocks. Skipping.")
-                else:
-                    if block_names_order:
-                        first_block_name = block_names_order[0]
-                        first_block_clock = block_clocks.get(first_block_name, 'm')
-                        first_block_clock_level = freq_hierarchy.get(first_block_clock.lower(), 3)
-                        if series_freq_level >= first_block_clock_level:
-                            series_item['blocks'] = [1] + [0] * (len(block_names_order) - 1) if len(block_names_order) > 1 else [1]
-                            filtered_series_list.append(series_item)
-                        else:
-                            logger.warning(f"Series {series_item.get('series_id', 'unknown')} with frequency '{series_freq}' is incompatible with first block clock '{first_block_clock}'. Skipping.")
-                    else:
-                        filtered_series_list.append(series_item)
-        else:
-            filtered_series_list = series_list
-        
-        if filtered_series_list:
-            model_cfg_dict['series'] = filtered_series_list
-        else:
-            raise ValidationError(f"No compatible series found after filtering by block clock frequencies. Check series frequencies against block clocks.")
-        
-        excluded_keys = ['models', 'target_series', 'data_path', 'start_date', 'end_date', 
-                        'forecast_horizons', 'evaluation_metrics', 'test_size', 'output_path', 
-                        'name', 'description', 'defaults']
-        model_cfg_dict = {k: v for k, v in model_cfg_dict.items() if k not in excluded_keys}
-        
-        # Extract data path from config or use provided
-        data_file = data_path or _extract_data_path(cfg)
-        if not data_file:
-            raise ValidationError(f"data_path required. Config: {config_name}")
-        
-        return _train_forecaster(
-            model_type=model_type,
-            config_name=config_name,
-            cfg=cfg,
-            data_file=data_file,
-            model_name=model_name,
-            horizons=horizons,
-            outputs_dir=outputs_dir,
-            model_cfg_dict=model_cfg_dict
-        )
+    # Config is already loaded by @hydra.main, no need for hydra.compose()
+    # cfg already contains the composed config with defaults resolved
+    if OmegaConf.is_struct(cfg):
+        OmegaConf.set_struct(cfg, False)
+    if 'experiment' in cfg and OmegaConf.is_struct(cfg.experiment):
+        OmegaConf.set_struct(cfg.experiment, False)
+    
+    config_path = str(project_root / "config")
+    
+    # Detect model type from model_name
+    if model_name:
+        model_type = _detect_model_type(model_name)
+        if not model_type:
+            raise ValueError(f"Cannot detect model type from name: {model_name}")
+    else:
+        raise ValueError("model_name is required (set via parameter or cfg.model)")
+    
+    # Extract model config from Hydra-composed cfg
+    # Hydra already merged defaults (e.g., /model: dfm) with experiment config
+    source_cfg = _get_experiment_cfg(cfg)
+    model_overrides_raw = source_cfg.get('model_overrides', {})
+    model_overrides = OmegaConf.to_container(model_overrides_raw, resolve=True) if model_overrides_raw else {}
+    if not isinstance(model_overrides, dict):
+        model_overrides = {}
+    
+    # Get model-specific overrides
+    model_specific_overrides = model_overrides.get(model_type, {}) or {}
+    
+    # Build model_cfg_dict from overrides (Hydra already composed defaults)
+    # Include series from experiment config (needed for DFM/DDFM)
+    model_cfg_dict = model_specific_overrides.copy()
+    # Add series from experiment config (required for DFM/DDFM)
+    # Convert ListConfig to regular list using OmegaConf.to_container
+    if 'series' in source_cfg:
+        series_raw = source_cfg.get('series', [])
+        model_cfg_dict['series'] = OmegaConf.to_container(series_raw, resolve=True) if series_raw else []
+    
+    # Extract data path from config
+    data_file = source_cfg.get('data_path')
+    if not data_file:
+        raise ValidationError(f"data_path required. Config: {config_name}")
+    
+    return _train_forecaster(
+        model_type=model_type,
+        config_name=config_name,
+        cfg=cfg,
+        data_file=data_file,
+        model_name=model_name,
+        horizons=horizons,
+        outputs_dir=outputs_dir,
+        model_cfg_dict=model_cfg_dict
+    )
 
 
 def compare_models(
     target_series: str,
     models: List[str],
-    horizons: List[int] = list(range(1, 23)),  # 22 monthly horizons: relative positions in test period (2024-01 to 2025-10)
+    horizons: List[int] = list(range(1, 25)),  # 24 monthly horizons: 1 horizon = 1 month (4 weeks), 24 months = 2 years
     data_path: Optional[str] = None,
     config_dir: Optional[str] = None,
     config_name: Optional[str] = None,
-    config_overrides: Optional[List[str]] = None
+    config_overrides: Optional[List[str]] = None,
+    checkpoint_dir: Optional[str] = None
 ) -> Dict[str, Any]:
     """Train multiple models and compare their performance."""
-    from src.utils import get_project_root
-    project_root = get_project_root()
+    project_root = Path(__file__).parent.parent.resolve()
     config_dir = config_dir or str(project_root / "config")
     if data_path is None:
         data_path = str(project_root / "data" / "data.csv")
@@ -909,10 +926,15 @@ def compare_models(
         config_name = report_map.get(target_series, f"experiment/{target_series.lower().replace('...', '').replace('.', '')}_report")
     
     if horizons is None or len(horizons) == 0:
-        cfg = parse_experiment_config(config_name, config_dir)
-        params = extract_experiment_params(cfg)
-        horizons = params.get('horizons', list(range(1, 23)))
-        logger.info(f"Extracted horizons from config: {len(horizons)} horizons (1-22)")
+        # Use Hydra to load config
+        import hydra
+        with hydra.initialize_config_dir(config_dir=config_dir, version_base="1.3"):
+            cfg = hydra.compose(config_name=config_name, overrides=config_overrides or [])
+            if OmegaConf.is_struct(cfg):
+                OmegaConf.set_struct(cfg, False)
+            source_cfg = _get_experiment_cfg(cfg)
+            horizons = source_cfg.get('forecast_horizons', list(range(1, 25)))  # Default: 24 months (2024-01 to 2025-12)
+        logger.info(f"Extracted horizons from config: {len(horizons)} horizons ({min(horizons)}-{max(horizons)})")
     
     for i, model_name in enumerate(models, 1):
         logger.info(f"[{i}/{len(models)}] {model_name.upper()}...")
@@ -921,16 +943,21 @@ def compare_models(
             config_overrides = []
         
         try:
-            checkpoint_dir = None
-            if config_overrides:
+            # Get checkpoint_dir from parameter or config_overrides
+            checkpoint_dir_local = checkpoint_dir
+            if checkpoint_dir_local is None and config_overrides:
                 for override in config_overrides:
                     if override.startswith('checkpoint_dir=') or override.startswith('+checkpoint_dir='):
-                        checkpoint_dir = override.split('=', 1)[1]
+                        checkpoint_dir_local = override.split('=', 1)[1]
                         break
             
+            # Default to 'checkpoints' if not specified
+            if checkpoint_dir_local is None:
+                checkpoint_dir_local = 'checkpoints'
+            
             checkpoint_path = None
-            if checkpoint_dir:
-                checkpoint_path = Path(checkpoint_dir) / f"{target_series}_{model_name}" / "model.pkl"
+            if checkpoint_dir_local:
+                checkpoint_path = Path(checkpoint_dir_local) / f"{target_series}_{model_name}" / "model.pkl"
             
             if checkpoint_path and checkpoint_path.exists():
                 logger.info(f"Loading model from checkpoint: {checkpoint_path}")
@@ -983,8 +1010,6 @@ def compare_models(
                     logger.info(f"Evaluating {model_name.upper()} model on {len(horizons)} horizons")
                     actual_data_path = data_path
                     if not actual_data_path or not Path(actual_data_path).exists():
-                        from src.utils import get_project_root
-                        project_root = get_project_root()
                         actual_data_path = str(project_root / "data" / "data.csv")
                         if not Path(actual_data_path).exists():
                             actual_data_path = str(project_root / "data" / "sample_data.csv")
@@ -999,8 +1024,9 @@ def compare_models(
                     train_data = resample_to_monthly(train_data)
                     
                     # Test period: 2024-2025 (actual future data, not split from training)
+                    # 2024-01 to 2025-10 = 22 months, but we predict 24 months for extended forecast
                     test_start = pd.Timestamp('2024-01-01')
-                    test_end = pd.Timestamp('2025-10-31')
+                    test_end = pd.Timestamp('2025-10-31')  # Actual data available until here
                     test_data = full_data[(full_data.index >= test_start) & (full_data.index <= test_end)]
                     test_data = resample_to_monthly(test_data)
                     
@@ -1015,63 +1041,211 @@ def compare_models(
                     logger.info(f"Train period: {train_data.index.min()} to {train_data.index.max()} ({len(train_data)} points)")
                     logger.info(f"Test period: {test_data.index.min()} to {test_data.index.max()} ({len(test_data)} points)")
                     
-                    # VAR cannot handle missing data - must impute before evaluation
+                    # VAR: no automatic imputation (was masking signal). Drop rows with NaN.
                     if model_name.lower() == 'var':
-                        from src.preprocessing import impute_missing_values
-                        train_data = impute_missing_values(train_data, model_type='var')
-                        test_data = impute_missing_values(test_data, model_type='var')
-                        if train_data.isnull().any().any():
-                            nan_count = train_data.isnull().sum().sum()
-                            logger.warning(f"VAR: {nan_count} NaN values remain in training data after imputation. Dropping rows with NaN...")
+                        train_nan = train_data.isnull().sum().sum()
+                        test_nan = test_data.isnull().sum().sum()
+                        if train_nan > 0:
+                            logger.warning(f"VAR: Dropping {train_nan} missing values from training data (row-wise dropna).")
                             train_data = train_data.dropna()
-                        if test_data.isnull().any().any():
-                            nan_count = test_data.isnull().sum().sum()
-                            logger.warning(f"VAR: {nan_count} NaN values remain in test data after imputation. Dropping rows with NaN...")
+                        if test_nan > 0:
+                            logger.warning(f"VAR: Dropping {test_nan} missing values from test data (row-wise dropna).")
                             test_data = test_data.dropna()
                         if len(train_data) == 0:
-                            raise ValidationError(f"VAR: All training data was dropped after imputation. Cannot evaluate.")
+                            raise ValidationError("VAR: Training data empty after dropna; cannot evaluate.")
                         if len(test_data) == 0:
-                            raise ValidationError(f"VAR: All test data was dropped after imputation. Cannot evaluate.")
+                            raise ValidationError("VAR: Test data empty after dropna; cannot evaluate.")
                     
-                    y_train_eval = train_data
+                    # For ARIMA/VAR: These models are not state-based, so they only need
+                    # the last few periods (model specification: ARIMA(p,d,q) needs p+d lags,
+                    # VAR(p) needs p lags) before the forecast start point.
+                    # Recursive forecasting is handled automatically by sktime.
+                    # No bridge data needed - gaps in timeline are not a problem.
+                    if model_name.lower() in ['arima', 'var']:
+                        y_train_eval = train_data
+                        logger.info(f"{model_name.upper()} will use recursive forecasting from training data end ({train_data.index.max()}) to test period start ({test_start})")
+                    else:
+                        y_train_eval = train_data
+                    
                     y_test_eval = test_data
                     
                     # For DFM/DDFM, extract recent data (2020-2023) for factor state update
                     # This period is between training (1985-2019) and test (2024-2025)
+                    # Use window=None (history=None) to include full period for state update
+                    # IMPORTANT: Apply the same preprocessing pipeline as training
                     y_recent_eval = None
                     if model_name.lower() in ['dfm', 'ddfm']:
                         recent_start = pd.Timestamp('2020-01-01')
                         recent_end = pd.Timestamp('2023-12-31')
                         recent_data = full_data[(full_data.index >= recent_start) & (full_data.index <= recent_end)]
                         if len(recent_data) > 0:
-                            recent_data_monthly = resample_to_monthly(recent_data)
-                            # Align columns with training data
-                            if isinstance(y_train_eval, pd.DataFrame):
-                                available_cols = [col for col in y_train_eval.columns if col in recent_data_monthly.columns]
-                                if len(available_cols) > 0:
-                                    y_recent_eval = recent_data_monthly[available_cols].copy()
-                                    # Reorder to match training data column order
-                                    y_recent_eval = y_recent_eval[y_train_eval.columns]
-                                    logger.info(f"Extracted {len(y_recent_eval)} recent periods ({recent_start} to {recent_end}) for {model_name.upper()} update")
+                            # Get the actual DFM/DDFM model to access its config
+                            dfm_model = forecaster
+                            if hasattr(forecaster, '_dfm_model'):
+                                dfm_model = forecaster._dfm_model
+                            elif hasattr(forecaster, '_ddfm_model'):
+                                dfm_model = forecaster._ddfm_model
+                            
+                            # Get model config to determine which series and preprocessing were used
+                            if hasattr(dfm_model, 'config') and hasattr(dfm_model.config, 'series'):
+                                # Get series IDs that the model was trained on
+                                trained_series_ids = [s.series_id for s in dfm_model.config.series]
+                                
+                                # Get clock frequency from model config
+                                clock = getattr(dfm_model.config, 'clock', 'm')
+                                should_resample = (clock != 'w')
+                                
+                                # Filter to trained series only
+                                available_series = [s for s in trained_series_ids if s in recent_data.columns]
+                                if target_series and target_series in recent_data.columns and target_series not in available_series:
+                                    available_series.append(target_series)
+                                
+                                if len(available_series) > 0:
+                                    selected_data = recent_data[available_series].dropna(how='all')
+                                    
+                                    # Apply transformations from series config files (same as training)
+                                    from src.preprocessing import apply_transformations
+                                    # Use project_root from outer scope or get it
+                                    if 'project_root' not in locals() and 'project_root' not in globals():
+                                        project_root = Path(__file__).parent.parent.resolve()
+                                    config_path = str(project_root / "config")
+                                    selected_data = apply_transformations(selected_data, config_path=config_path, series_ids=available_series)
+                                    
+                                    # Resample if needed (same logic as training)
+                                    # For clock='w' with monthly series (mixed_freq=True):
+                                    # Monthly data needs to be converted to weekly frequency
+                                    # with monthly values placed at appropriate weekly positions
+                                    if should_resample:
+                                        processed_data = resample_to_monthly(selected_data)
+                                    else:
+                                        # clock='w' but series are monthly - need to convert to weekly
+                                        # Check if data is monthly and needs conversion
+                                        if hasattr(dfm_model, 'mixed_freq') and dfm_model.mixed_freq:
+                                            # Check if series are monthly
+                                            monthly_series = [s.series_id for s in dfm_model.config.series 
+                                                            if hasattr(s, 'frequency') and s.frequency == 'm']
+                                            if len(monthly_series) > 0 and clock == 'w':
+                                                # Convert monthly data to weekly frequency
+                                                from src.preprocessing import resample_to_weekly
+                                                processed_data = resample_to_weekly(selected_data)
+                                                logger.info(f"Converted monthly data to weekly frequency for {len(monthly_series)} monthly series")
+                                            else:
+                                                processed_data = selected_data
+                                        else:
+                                            processed_data = selected_data
+                                    
+                                    # Apply target-specific preprocessing (same as training)
+                                    # Load config if not already loaded (use cached version if available)
+                                    if 'cfg' not in locals():
+                                        try:
+                                            import hydra
+                                            from hydra.core.global_hydra import GlobalHydra
+                                            # Clear existing Hydra instance if needed
+                                            if GlobalHydra.instance().is_initialized():
+                                                GlobalHydra.instance().clear()
+                                            with hydra.initialize_config_dir(config_dir=config_dir, version_base="1.3"):
+                                                cfg = hydra.compose(config_name=config_name, overrides=config_overrides or [])
+                                                if OmegaConf.is_struct(cfg):
+                                                    OmegaConf.set_struct(cfg, False)
+                                        except Exception as e:
+                                            logger.warning(f"Failed to load config for preprocessing: {e}, using defaults")
+                                            cfg = None
+                                    
+                                    if cfg is not None:
+                                        source_cfg = _get_experiment_cfg(cfg)
+                                    else:
+                                        source_cfg = None
+                                    
+                                    if source_cfg is not None:
+                                        model_overrides = OmegaConf.to_container(source_cfg.get('model_overrides', {}), resolve=True) if source_cfg else {}
+                                        dfm_overrides = model_overrides.get(model_name.lower(), {}) or {}
+                                        clip_quantiles = dfm_overrides.get('clip_quantiles')
+                                    else:
+                                        clip_quantiles = None
+                                    processed_data = _apply_target_specific_preprocessing(processed_data, target_series, clip_quantiles)
+                                    
+                                    # Ensure column order matches model config series order
+                                    # Model expects series in the same order as config.series
+                                    final_series_order = []
+                                    for s in dfm_model.config.series:
+                                        if s.series_id in processed_data.columns:
+                                            final_series_order.append(s.series_id)
+                                    # Add any remaining columns (e.g., target_series if not in config)
+                                    for col in processed_data.columns:
+                                        if col not in final_series_order:
+                                            final_series_order.append(col)
+                                    
+                                    y_recent_eval = processed_data[final_series_order].copy()
+                                    y_recent_eval = set_dataframe_frequency(y_recent_eval)
+                                    
+                                    logger.info(f"Extracted {len(y_recent_eval)} recent periods ({recent_start} to {recent_end}) for {model_name.upper()} state update")
+                                    logger.info(f"  Applied same preprocessing as training: {len(available_series)} series, clock={clock}, transformations applied")
                                 else:
-                                    logger.warning(f"No matching columns for recent data, skipping update for {model_name.upper()}")
+                                    logger.warning(f"No matching series found in recent data for {model_name.upper()}. Trained series: {trained_series_ids[:5]}...")
                             else:
-                                y_recent_eval = recent_data_monthly
+                                # Fallback: Use simple resampling and column matching (old behavior)
+                                logger.warning(f"{model_name.upper()} model missing config, using fallback preprocessing")
+                                recent_data_monthly = resample_to_monthly(recent_data)
+                                if isinstance(y_train_eval, pd.DataFrame):
+                                    available_cols = [col for col in y_train_eval.columns if col in recent_data_monthly.columns]
+                                    if len(available_cols) > 0:
+                                        y_recent_eval = recent_data_monthly[available_cols].copy()
+                                        y_recent_eval = y_recent_eval[y_train_eval.columns]
                         else:
                             logger.warning(f"No recent data available ({recent_start} to {recent_end}) for {model_name.upper()} update")
                     
-                    logger.info(f"Evaluation data: train={len(y_train_eval)} points ({train_start} to {train_end}), test={len(y_test_eval)} points ({test_start} to {test_end})")
+                    logger.info(f"Evaluation data: train={len(y_train_eval)} points ({y_train_eval.index.min()} to {y_train_eval.index.max()}), test={len(y_test_eval)} points ({test_start} to {test_end})")
                     if y_recent_eval is not None:
-                        logger.info(f"Recent data for update: {len(y_recent_eval)} points (2020-01-01 to 2023-12-31)")
+                        logger.info(f"Recent data for update: {len(y_recent_eval)} points (2020-01-01 to 2023-12-31, window=None)")
                     
-                    from src.evaluation import evaluate_forecaster
+                    # For DFM/DDFM: Update model state with recent data (2020-2023) before forecasting
+                    # Training period (2019) and forecast period (2024-2025) are disconnected,
+                    # so we need to update the factor state using the gap period data
+                    if model_name.lower() in ['dfm', 'ddfm'] and y_recent_eval is not None:
+                        try:
+                            # Get the actual DFM/DDFM model (forecaster might be a wrapper)
+                            dfm_model = forecaster
+                            if hasattr(forecaster, '_dfm_model'):
+                                dfm_model = forecaster._dfm_model
+                            elif hasattr(forecaster, '_ddfm_model'):
+                                dfm_model = forecaster._ddfm_model
+                            
+                            # Check if model has update() method (dfm-python models have this)
+                            if hasattr(dfm_model, 'update'):
+                                # Standardize recent data using Mx/Wx from model result
+                                if hasattr(dfm_model, 'result') and hasattr(dfm_model.result, 'Mx') and hasattr(dfm_model.result, 'Wx'):
+                                    import numpy as np
+                                    Mx = np.asarray(dfm_model.result.Mx)
+                                    Wx = np.asarray(dfm_model.result.Wx)
+                                    y_recent_array = y_recent_eval.values if isinstance(y_recent_eval, pd.DataFrame) else y_recent_eval
+                                    
+                                    # Handle shape mismatch
+                                    if y_recent_array.ndim == 2:
+                                        Mx_use = Mx[:y_recent_array.shape[1]] if len(Mx) >= y_recent_array.shape[1] else Mx
+                                        Wx_use = Wx[:y_recent_array.shape[1]] if len(Wx) >= y_recent_array.shape[1] else Wx
+                                        Wx_use = np.where(Wx_use == 0, 1.0, Wx_use)
+                                        y_recent_std = (y_recent_array - Mx_use) / Wx_use
+                                    else:
+                                        y_recent_std = y_recent_array
+                                    
+                                    # Update model state with recent data (history=None to use full period)
+                                    dfm_model.update(y_recent_std, history=None)
+                                    logger.info(f"Updated {model_name.upper()} state with {len(y_recent_array)} periods (2020-2023) using update() method")
+                                else:
+                                    logger.warning(f"{model_name.upper()} model missing Mx/Wx, cannot standardize recent data for update()")
+                            else:
+                                logger.warning(f"{model_name.upper()} model does not have update() method")
+                        except Exception as e:
+                            logger.warning(f"Failed to update {model_name.upper()} state with recent data: {e}")
+                    
+                    from src.evaluate import evaluate_forecaster
                     try:
                         # evaluate_forecaster will call fit() internally, but since forecaster is already fitted,
                         # it should use the existing fitted state. However, to be safe, we check if it's fitted first.
-                        # For DFM/DDFM, pass y_recent_eval to update factor state before prediction
+                        # For DFM/DDFM, state is already updated above, so y_recent is not needed here
                         forecast_metrics_raw = evaluate_forecaster(
                             forecaster, y_train_eval, y_test_eval, horizons, 
-                            target_series=target_series, y_recent=y_recent_eval
+                            target_series=target_series, y_recent=None  # Already updated above
                         )
                         forecast_metrics = {str(k): v for k, v in forecast_metrics_raw.items()}
                         result['metrics'] = {'forecast_metrics': forecast_metrics}
@@ -1085,7 +1259,7 @@ def compare_models(
                         continue
             else:
                 # Checkpoint not found - skip this model
-                checkpoint_msg = f"checkpoint/{target_series}_{model_name}/model.pkl" if checkpoint_dir else "checkpoint"
+                checkpoint_msg = f"{checkpoint_dir_local}/{target_series}_{model_name}/model.pkl" if checkpoint_dir_local else "checkpoint"
                 logger.warning(f"Skipping: Checkpoint not found ({checkpoint_msg})")
                 logger.warning(f"  Run 'bash run_train.sh' to train this model first")
                 result = {
@@ -1123,12 +1297,15 @@ def compare_models(
         comparison = _compare_results(model_results, horizons, target_series)
         
         if comparison and comparison.get('metrics_table') is not None:
-            from src.evaluation import generate_comparison_table
-            
-            if generate_comparison_table:
-                table_path = output_dir / "comparison_table.csv"
-                generate_comparison_table(comparison, output_path=str(table_path))
-                logger.info(f"Table: {table_path}")
+            # Save comparison table if available
+            table_path = output_dir / "comparison_table.csv"
+            metrics_table = comparison.get('metrics_table')
+            if metrics_table is not None:
+                try:
+                    metrics_table.to_csv(table_path, index=False)
+                    logger.info(f"Table: {table_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to save comparison table: {e}")
     
     comparison_data = {
         'target_series': target_series,
@@ -1180,7 +1357,7 @@ def _compare_results(
     target_series: str
 ) -> Dict[str, Any]:
     """Compare results from multiple models."""
-    from src.evaluation import compare_multiple_models
+    from src.evaluate import compare_multiple_models
     
     successful_results = {
         name: result for name, result in results.items()
@@ -1206,22 +1383,25 @@ def _compare_results(
 # ============================================================================
 
 def train_model(
-    config_name: str,
-    config_dir: Optional[str] = None,
+    cfg: DictConfig,
     model_name: Optional[str] = None,
-    overrides: Optional[List[str]] = None,
     checkpoint_dir: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Train a single model (programmatic API)."""
-    if config_dir is None:
-        config_dir = str(get_project_root() / "config")
+    """Train a single model using Hydra config (injected by @hydra.main).
     
-    cfg = parse_experiment_config(config_name, config_dir, overrides)
-    validate_experiment_config(cfg, require_target=False, require_models=True)
-    
-    params = extract_experiment_params(cfg)
-    models = params['models']
-    target_series = params.get('target_series')
+    Parameters
+    ----------
+    cfg : DictConfig
+        Hydra config injected by @hydra.main decorator (already composed with defaults)
+    model_name : Optional[str]
+        Model name to train (e.g., arima, var, dfm, ddfm). If not specified, uses first model from config.
+    checkpoint_dir : Optional[str]
+        Directory to save checkpoint (e.g., checkpoint)
+    """
+    # Extract params from cfg (Hydra already composed config)
+    source_cfg = _get_experiment_cfg(cfg)
+    models = source_cfg.get('models', [])
+    target_series = source_cfg.get('target_series')
     
     if model_name is None:
         model_name = models[0] if models else None
@@ -1229,23 +1409,18 @@ def train_model(
             logger.warning(f"Config specifies {len(models)} models, training only first: {model_name}")
     
     if not model_name:
-        raise ValueError(f"Config {config_name} must specify at least one model in 'models' list")
+        raise ValueError(f"Config must specify at least one model in 'models' list")
     
     if checkpoint_dir and target_series:
         checkpoint_model_name = f"{target_series}_{model_name}"
     else:
         checkpoint_model_name = model_name
     
-    final_overrides = list(overrides) if overrides else []
-    if checkpoint_dir:
-        final_overrides.append(f"+checkpoint_dir={checkpoint_dir}")
-        final_overrides.append(f"+checkpoint_model_name={checkpoint_model_name}")
-    
+    # Use train() function with cfg directly (no need for config_name/config_path)
     result = train(
-        config_name=config_name,
-        config_path=config_dir,
+        cfg=cfg,
         model_name=checkpoint_model_name,
-        config_overrides=final_overrides
+        checkpoint_dir=checkpoint_dir
     )
     
     if checkpoint_dir and 'model_dir' in result:
@@ -1255,34 +1430,41 @@ def train_model(
 
 
 def compare_models_by_config(
-    config_name: str,
-    config_dir: Optional[str] = None,
-    overrides: Optional[List[str]] = None,
+    cfg: DictConfig,
     models_filter: Optional[List[str]] = None
 ) -> Dict[str, Any]:
-    """Compare multiple models from experiment config (programmatic API)."""
-    if config_dir is None:
-        config_dir = str(get_project_root() / "config")
+    """Compare multiple models from Hydra config (injected by @hydra.main).
     
-    cfg = parse_experiment_config(config_name, config_dir, overrides)
-    validate_experiment_config(cfg, require_target=True, require_models=True)
+    Parameters
+    ----------
+    cfg : DictConfig
+        Hydra config injected by @hydra.main decorator (already composed with defaults)
+    models_filter : Optional[List[str]]
+        Filter models to run (e.g., ['arima', 'var']). If not specified, runs all models from config.
+    """
+    # Extract params from cfg (Hydra already composed config)
+    source_cfg = _get_experiment_cfg(cfg)
+    config_name = getattr(cfg, '_name_', None) or cfg.get('_name_', 'experiment/consumption_kowrccnse_report')
+    config_dir = str(project_root / "config")
     
-    params = extract_experiment_params(cfg)
-    
-    models_to_run = params['models']
+    models_to_run = source_cfg.get('models', [])
     if models_filter:
         models_to_run = [m for m in models_to_run if m.lower() in [mf.lower() for mf in models_filter]]
         if not models_to_run:
-            raise ValueError(f"No models match filter {models_filter}. Available models: {params['models']}")
+            raise ValueError(f"No models match filter {models_filter}. Available models: {source_cfg.get('models', [])}")
+    
+    # Get checkpoint_dir from config
+    checkpoint_dir = source_cfg.get('checkpoint_dir', 'checkpoints')
     
     result = compare_models(
-        target_series=params['target_series'],
+        target_series=source_cfg.get('target_series'),
         models=models_to_run,
-        horizons=params['horizons'],
-        data_path=params['data_path'],
+        horizons=source_cfg.get('forecast_horizons', []),
+        data_path=source_cfg.get('data_path'),
         config_dir=config_dir,
         config_name=config_name,
-        config_overrides=overrides
+        config_overrides=None,  # Already handled by Hydra
+        checkpoint_dir=checkpoint_dir
     )
     
     return result
@@ -1327,21 +1509,21 @@ def nowcast(
     output_dir: str = "outputs/backtest",
     weeks_before: Optional[List[int]] = None
 ) -> Dict[str, Any]:
-    """Generate simple nowcasts using checkpointed DFM/DDFM models.
+    """Generate nowcasts using checkpointed DFM/DDFM models.
     
-    This uses an update() -> predict(horizon=1) pattern per nowcast month,
-    reloading the model for each month to avoid state accumulation. Data for
-    the target month is held out (only data up to previous month is used to
-    update state), approximating a release mask.
-    
-    Results are structured by timepoint (weeks_before) to match expected format
-    for table/plot generation code.
+    Uses update() -> predict(horizon=1) pattern per month, reloading model
+    for each month to avoid state accumulation.
     """
-    config_dir = config_dir or str(get_project_root() / "config")
-    cfg = parse_experiment_config(config_name, config_dir)
-    params = extract_experiment_params(cfg)
-    target_series = params.get('target_series')
-    data_path = params.get('data_path') or str(get_project_root() / "data" / "data.csv")
+    config_dir = config_dir or str(project_root / "config")
+    # Use Hydra to load config
+    import hydra
+    with hydra.initialize_config_dir(config_dir=config_dir, version_base="1.3"):
+        cfg = hydra.compose(config_name=config_name)
+        if OmegaConf.is_struct(cfg):
+            OmegaConf.set_struct(cfg, False)
+        source_cfg = _get_experiment_cfg(cfg)
+        target_series = source_cfg.get('target_series')
+        data_path = source_cfg.get('data_path') or str(project_root / "data" / "data.csv")
     if not target_series:
         raise ValueError("target_series required for nowcast")
     # Default timepoints: 4 weeks and 1 week before
@@ -1517,67 +1699,75 @@ def nowcast(
 # CLI Entry Point
 # ============================================================================
 
-def main():
-    """Main CLI entry point for training."""
-    parser = argparse.ArgumentParser(description="Train models using Hydra config")
-    subparsers = parser.add_subparsers(dest='command', required=True)
+@hydra.main(config_path=str(project_root / "config"), config_name="experiment/consumption_kowrccnse_report", version_base="1.3")
+def main(cfg: DictConfig) -> None:
+    """CLI entry point for training using Hydra decorator.
     
-    train_parser = subparsers.add_parser('train', help='Train single model (requires experiment config)')
-    train_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/investment_koequipte_report)")
-    train_parser.add_argument("--model", help="Model name to train (e.g., arima, var, dfm, ddfm). If not specified, uses first model from config.")
-    train_parser.add_argument("--checkpoint-dir", required=True, help="Directory to save checkpoint (e.g., checkpoint)")
-    train_parser.add_argument("--override", action="append", help="Hydra config override (e.g., model_overrides.dfm.max_iter=10)")
+    Uses @hydra.main to automatically load experiment config with defaults.
+    Config is automatically injected by Hydra.
     
-    compare_parser = subparsers.add_parser('compare', help='Compare multiple models (requires experiment config)')
-    compare_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/investment_koequipte_report)")
-    compare_parser.add_argument("--override", action="append", help="Hydra config override")
-    compare_parser.add_argument("--models", nargs="+", help="Filter models to run (e.g., --models arima var). If not specified, runs all models from config.")
-
-    nowcast_parser = subparsers.add_parser('nowcast', help='Run nowcasting using checkpointed DFM/DDFM models')
-    nowcast_parser.add_argument("--config-name", required=True, help="Experiment config name (e.g., experiment/investment_koequipte_report)")
-    nowcast_parser.add_argument("--model", required=True, help="Model name (dfm or ddfm)")
-    nowcast_parser.add_argument("--checkpoint-dir", default="checkpoint", help="Checkpoint directory (default: checkpoint)")
-    nowcast_parser.add_argument("--nowcast-start", required=True, help="Nowcast start date (YYYY-MM-DD)")
-    nowcast_parser.add_argument("--nowcast-end", required=True, help="Nowcast end date (YYYY-MM-DD)")
-    nowcast_parser.add_argument("--output-dir", default="outputs/backtest", help="Output directory for backtest JSON")
-    nowcast_parser.add_argument("--weeks-before", nargs="*", type=int, help="Optional weeks-before releases (default: [4, 1] if not specified)")
+    Usage:
+        python train.py experiment/consumption_kowrccnse_report model=dfm checkpoint_dir=checkpoints
+        python train.py experiment/investment_koequipte_report model=ddfm checkpoint_dir=checkpoints
+        python train.py experiment/consumption_kowrccnse_report command=compare
+        python train.py experiment/consumption_kowrccnse_report command=nowcast model=dfm nowcast_start=2024-01-01 nowcast_end=2024-12-01
+    """
+    # Setup logging to file (log directory)
+    # Use experiment.log_dir if provided, otherwise default to project_root / "log"
+    exp_cfg = cfg.experiment if 'experiment' in cfg else cfg
+    log_dir = exp_cfg.get('log_dir', None)
+    if log_dir:
+        log_dir = project_root / log_dir if isinstance(log_dir, str) else Path(log_dir)
+    else:
+        log_dir = project_root / "log"
+    setup_logging(log_dir=log_dir, force=True)
     
-    args = parser.parse_args()
+    # Extract command from cfg (Hydra automatically handles config_name override)
+    # Hydra loads experiment configs under 'experiment' key
+    exp_cfg = cfg.experiment if 'experiment' in cfg else cfg
+    command = exp_cfg.get('command', 'train')
+    model_name = exp_cfg.get('model')
+    checkpoint_dir = exp_cfg.get('checkpoint_dir')
+    models_filter = exp_cfg.get('models')
+    nowcast_start = exp_cfg.get('nowcast_start')
+    nowcast_end = exp_cfg.get('nowcast_end')
+    output_dir = exp_cfg.get('output_dir', 'outputs/backtest')
+    weeks_before = exp_cfg.get('weeks_before')
     
-    config_path = str(get_project_root() / "config")
+    # Get config_name from Hydra metadata (automatically set by @hydra.main)
+    config_name = getattr(cfg, '_name_', None) or cfg.get('_name_', 'experiment/consumption_kowrccnse_report')
+    config_path = str(project_root / "config")
     
-    if args.command == 'train':
+    if command == 'train':
+        if not checkpoint_dir:
+            raise ValueError("checkpoint_dir must be specified in config or via override.")
         result = train_model(
-            config_name=args.config_name,
-            config_dir=config_path,
-            model_name=args.model,
-            checkpoint_dir=args.checkpoint_dir,
-            overrides=args.override
+            cfg=cfg,  # Pass cfg directly (Hydra already composed it)
+            model_name=model_name,
+            checkpoint_dir=checkpoint_dir
         )
         print(f"\n✓ Model saved to: {result['model_dir']}")
         
-    elif args.command == 'compare':
-        overrides = list(args.override) if args.override else []
-        
+    elif command == 'compare':
         result = compare_models_by_config(
-            config_name=args.config_name,
-            config_dir=config_path,
-            overrides=overrides,
-            models_filter=args.models
+            cfg=cfg,  # Pass cfg directly (Hydra already composed it)
+            models_filter=models_filter
         )
         print(f"\n✓ Comparison saved to: {result['output_dir']}")
         if result.get('failed_models'):
             print(f"  Failed: {', '.join(result['failed_models'])}")
-    elif args.command == 'nowcast':
+    elif command == 'nowcast':
+        if not model_name:
+            raise ValueError("model is required for nowcast command.")
         result = nowcast(
-            config_name=args.config_name,
+            config_name=config_name,
             config_dir=config_path,
-            checkpoint_dir=args.checkpoint_dir,
-            model_name=args.model,
-            nowcast_start=args.nowcast_start,
-            nowcast_end=args.nowcast_end,
-            output_dir=args.output_dir,
-            weeks_before=args.weeks_before
+            checkpoint_dir=checkpoint_dir or 'checkpoint',
+            model_name=model_name,
+            nowcast_start=nowcast_start,
+            nowcast_end=nowcast_end,
+            output_dir=output_dir,
+            weeks_before=weeks_before
         )
         print(f"\n✓ Nowcast saved to: {result['output']}")
         failed = [r for r in result['results'] if r.get('status') != 'ok']

@@ -44,3 +44,7 @@ lightning_logs/
 
 config/
 config/series/
+
+outputs/
+lightning_logs/
+log/

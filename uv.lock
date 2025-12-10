@@ -1096,6 +1096,7 @@ dependencies = [
     { name = "omegaconf" },
     { name = "pandas" },
     { name = "pillow" },
+    { name = "pmdarima" },
     { name = "polars" },
     { name = "pydantic" },
     { name = "pytest" },
@@ -1106,6 +1107,7 @@ dependencies = [
     { name = "scipy" },
     { name = "seaborn" },
     { name = "sktime", extra = ["forecasting"] },
+    { name = "statsmodels" },
     { name = "websockets" },
 ]
 
@@ -1121,6 +1123,7 @@ requires-dist = [
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pillow", specifier = ">=10.0.0" },
+    { name = "pmdarima", specifier = ">=2.1.1" },
     { name = "polars", specifier = ">=1.35.2" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pytest", specifier = ">=9.0.1" },
@@ -1131,6 +1134,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.10.0" },
     { name = "seaborn", specifier = ">=0.12.0" },
     { name = "sktime", extras = ["forecasting"], specifier = ">=0.40.1" },
+    { name = "statsmodels", specifier = ">=0.14.6" },
     { name = "websockets", specifier = ">=12.0" },
 ]
 

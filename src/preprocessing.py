@@ -1,1053 +1,581 @@
-"""Data preprocessing module - sktime-based preprocessing for time series.
+"""Data preprocessing module - simplified and focused on core functionality.
 
-This module provides:
-1. **DFM/DDFM preprocessing**: Transformation functions and transformer creation from config
-   - Transformation functions (log, difference, percent change, etc.)
-   - Transformer pipeline creation (ColumnEnsembleTransformer + StandardScaler)
-   
-2. **sktime-based preprocessing**: Data preparation for training
-   - Resampling (weekly to monthly)
-   - Missing data imputation (using sktime Imputer)
-   - Frequency alignment
-   - Data preparation for different model types (ARIMA, VAR, DFM, DDFM)
-
-All preprocessing uses sktime transformers for consistency and compatibility.
+This module provides essential preprocessing functions for time series models:
+- Data preparation for different model types (ARIMA, VAR, DFM, DDFM)
+- Resampling (weekly to monthly)
+- Missing data imputation
+- Transformer creation from config
 """
 
-import warnings
 import logging
-from pathlib import Path
-from typing import List, Optional, Tuple, Union, Any, Callable
-from datetime import datetime
-
+from typing import Optional, Tuple, Any, Dict
 import numpy as np
 import pandas as pd
-import polars as pl
 
-# Path setup is handled in entry points (train.py, infer.py)
+from src.utils import ValidationError
 
-# Import custom exceptions for error handling
-from src.utils import ValidationError, ConfigError
-
-# Module-level logger
 _logger = logging.getLogger(__name__)
 
 # ============================================================================
-# Sktime Optional Dependency Handling
+# Sktime Imports
 # ============================================================================
 
 try:
-    # sktime 0.40+ uses ColumnEnsembleTransformer instead of ColumnTransformer
-    from sktime.transformations.compose import (
-        TransformerPipeline,
-        ColumnwiseTransformer,
-        ColumnEnsembleTransformer
-    )
-    from sktime.transformations.base import BaseTransformer
-    
-    from sktime.transformations.series.log import LogTransformer
-    from sktime.transformations.series.difference import Differencer
-    from sktime.transformations.series.func_transform import FunctionTransformer
-    from sklearn.preprocessing import StandardScaler
-    HAS_SKTIME = True
-except ImportError:
-    HAS_SKTIME = False
-    ColumnEnsembleTransformer = None
-    BaseTransformer = None
-    TransformerPipeline = None
-    ColumnwiseTransformer = None
-    LogTransformer = None
-    Differencer = None
-    FunctionTransformer = None
-    StandardScaler = None
-
-
-def check_sktime_available():
-    """Check if sktime is available and raise ImportError if not.
-    
-    Raises
-    ------
-    ImportError
-        If sktime is not installed, with helpful installation message.
-    """
-    # Re-check at runtime in case import failed due to missing components
-    try:
-        import sktime
-        # Check if essential components are available
-        from sktime.transformations.compose import TransformerPipeline
-        from sktime.transformations.series.func_transform import FunctionTransformer
-        from sktime.transformations.series.difference import Differencer
-        # If we get here, sktime is available
-        return
-    except ImportError as e:
-        raise ImportError(
-            f"sktime is required for sktime transformers. "
-            f"Install it with: pip install sktime. "
-            f"Original error: {e}"
-        )
-
-
-# ============================================================================
-# Validation Constants
-# ============================================================================
-
-VALID_TRANSFORMATION_TYPES = ['lin', 'log', 'chg', 'ch1', 'cha', 'pch', 'pc1', 'pca']
-"""Valid transformation types for time series preprocessing."""
-
-VALID_FREQUENCY_CODES = ['m', 'q', 'sa', 'a', 'd', 'w']
-"""Valid frequency codes for time series data.
-- 'm': monthly
-- 'q': quarterly
-- 'sa': semi-annual
-- 'a': annual
-- 'd': daily
-- 'w': weekly
-"""
-
-
-# ============================================================================
-# Validation Helper Functions
-# ============================================================================
-
-def validate_transformation_type(trans: str, series_id: str) -> None:
-    """Validate transformation type.
-    
-    Parameters
-    ----------
-    trans : str
-        Transformation type to validate
-    series_id : str
-        Series ID (for error messages)
-        
-    Raises
-    ------
-    ValidationError
-        If transformation type is invalid
-    """
-    if trans not in VALID_TRANSFORMATION_TYPES:
-        valid_str = ', '.join(VALID_TRANSFORMATION_TYPES)
-        raise ValidationError(
-            f"Invalid transformation type '{trans}' for series '{series_id}'. "
-            f"Valid values: {valid_str}"
-        )
-
-
-def validate_frequency_code(freq: str, series_id: str) -> None:
-    """Validate frequency code.
-    
-    Parameters
-    ----------
-    freq : str
-        Frequency code to validate
-    series_id : str
-        Series ID (for error messages)
-        
-    Raises
-    ------
-    ValidationError
-        If frequency code is invalid
-    """
-    if freq not in VALID_FREQUENCY_CODES:
-        valid_str = ', '.join(VALID_FREQUENCY_CODES)
-        raise ValidationError(
-            f"Invalid frequency code '{freq}' for series '{series_id}'. "
-            f"Valid values: {valid_str}"
-        )
-
-
-def validate_series_ids_unique(series_ids: List[str]) -> None:
-    """Validate that series IDs are unique.
-    
-    Parameters
-    ----------
-    series_ids : List[str]
-        List of series IDs to validate
-        
-    Raises
-    ------
-    ValidationError
-        If duplicate series IDs are found
-    """
-    seen = set()
-    duplicates = []
-    for idx, series_id in enumerate(series_ids):
-        if series_id in seen:
-            duplicates.append((idx, series_id))
-        seen.add(series_id)
-    
-    if duplicates:
-        dup_str = ', '.join(f"index {idx} ('{sid}')" for idx, sid in duplicates)
-        raise ValidationError(
-            f"Duplicate series IDs found: {dup_str}. "
-            f"Each series must have a unique identifier."
-        )
-
-
-# ============================================================================
-# Data Reading Functions
-# ============================================================================
-
-def parse_timestamp(date_str: str) -> datetime:
-    """Parse timestamp string to datetime.
-    
-    Parameters
-    ----------
-    date_str : str
-        Date string in various formats
-        
-    Returns
-    -------
-    datetime
-        Parsed datetime object
-    """
-    # Try common formats
-    formats = [
-        "%Y-%m-%d",
-        "%Y/%m/%d",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y/%m/%d %H:%M:%S",
-    ]
-    
-    for fmt in formats:
-        try:
-            return datetime.strptime(date_str, fmt)
-        except ValueError:
-            continue
-    
-    # If all formats fail, try pandas parsing
-    try:
-        import pandas as pd
-        return pd.to_datetime(date_str).to_pydatetime()
-    except (ValueError, TypeError) as e:
-        # Pandas parsing failed with expected exceptions
-        raise ValidationError(f"Could not parse date string: {date_str}: {e}")
-    except Exception as e:
-        # Catch any other unexpected exceptions from pandas
-        raise ValidationError(f"Unexpected error parsing date string: {date_str}: {e}")
-
-
-class TimeIndex:
-    """Time index for time series data."""
-    
-    def __init__(self, dates: Union[List[datetime], pl.Series]):
-        """Initialize TimeIndex.
-        
-        Parameters
-        ----------
-        dates : list of datetime or polars Series
-            List of datetime objects
-        """
-        if isinstance(dates, pl.Series):
-            self.dates = dates.to_list()
-        else:
-            self.dates = list(dates)
-    
-    def filter(self, mask: np.ndarray) -> 'TimeIndex':
-        """Filter time index by boolean mask.
-        
-        Parameters
-        ----------
-        mask : np.ndarray
-            Boolean mask
-            
-        Returns
-        -------
-        TimeIndex
-            Filtered time index
-        """
-        if isinstance(mask, pl.Series):
-            mask = mask.to_numpy()
-        filtered_dates = [d for i, d in enumerate(self.dates) if mask[i]]
-        return TimeIndex(filtered_dates)
-    
-    def __len__(self) -> int:
-        return len(self.dates)
-    
-    def __getitem__(self, idx):
-        return self.dates[idx]
-    
-    def __iter__(self):
-        return iter(self.dates)
-
-
-def read_data(datafile: Union[str, Path]) -> Tuple[np.ndarray, TimeIndex, List[str]]:
-    """Read time series data from file.
-    
-    Supports tabular data formats with dates and series values.
-    Automatically detects date column and handles various data layouts.
-    
-    Expected format:
-    - First column: Date (YYYY-MM-DD format or datetime-parseable)
-    - Subsequent columns: Series data (one column per series)
-    - Header row: Series IDs
-    
-    Alternative format (long format):
-    - Metadata columns: series_id, series_name, etc.
-    - Date columns: Starting from first date column
-    - One row per series, dates as columns
-    
-    Parameters
-    ----------
-    datafile : str or Path
-        Path to data file
-        
-    Returns
-    -------
-    Z : np.ndarray
-        Data matrix (T x N) with T time periods and N series
-    Time : TimeIndex
-        Time index for the data
-    mnemonics : List[str]
-        Series identifiers (column names)
-    """
-    from src.utils import validate_data_file
-    datafile = Path(datafile)
-    validate_data_file(datafile)
-    
-    # Read data file
-    try:
-        # Use infer_schema_length=None to infer all rows, and try_parse_dates=False
-        # to avoid parsing issues with mixed numeric/string columns
-        df = pl.read_csv(datafile, infer_schema_length=None, try_parse_dates=False)
-    except Exception as e:
-        raise ValidationError(f"Failed to read data file {datafile}: {e}")
-    
-    # Check if first column is a date column or metadata
-    first_col = df.columns[0]
-    
-    # Try to parse first column as date
-    try:
-        first_val = df[first_col][0]
-        if first_val is None:
-            is_date_first = False
-        else:
-            parse_timestamp(str(first_val))
-            is_date_first = True
-    except (ValueError, TypeError, IndexError):
-        is_date_first = False
-    
-    # If first column is not a date, check if data is in "long" format (one row per series)
-    # Skip this check if first column is integer (likely date_id) - treat as standard format
-    if not is_date_first:
-        first_col_type = df[first_col].dtype
-        is_integer_id = first_col_type in [pl.Int64, pl.Int32, pl.Int16, pl.Int8, pl.UInt64, pl.UInt32, pl.UInt16, pl.UInt8]
-        
-        # Only check for long format if first column is not an integer ID
-        if not is_integer_id:
-            # Look for date columns (starting from a certain column)
-            date_cols = []
-            for col in df.columns:
-                try:
-                    parse_timestamp(str(df[col][0]))
-                    date_cols.append(col)
-                except (ValueError, TypeError):
-                    pass
-            
-            if len(date_cols) > 0:
-                # Long format: transpose and use first date column as index
-                first_date_col = date_cols[0]
-                date_col_idx = df.columns.index(first_date_col)
-                date_cols_all = df.columns[date_col_idx:]
-                
-                # Extract dates from column names (they are dates in long format)
-                dates = []
-                for col in date_cols_all:
-                    try:
-                        dates.append(parse_timestamp(col))
-                    except (ValueError, TypeError):
-                        # Skip invalid date columns
-                        pass
-                
-                # Transpose: rows become series, columns become time
-                # Select date columns and transpose
-                date_data = df.select(date_cols_all)
-                Z = date_data.to_numpy().T.astype(float)
-                Time = TimeIndex(dates)
-                mnemonics = df[first_col].to_list() if first_col in df.columns else [f"series_{i}" for i in range(len(df))]
-                
-                return Z, Time, mnemonics
-    
-    # Standard format: first column is date, rest are series
-    # Handle integer date_id columns (treat as sequential time index)
-    try:
-        # Check if first column is integer (date_id format)
-        first_col_type = df[first_col].dtype
-        if first_col_type in [pl.Int64, pl.Int32, pl.Int16, pl.Int8, pl.UInt64, pl.UInt32, pl.UInt16, pl.UInt8]:
-            # Integer date_id: use as sequential index, generate synthetic dates
-            n_periods = len(df)
-            from datetime import timedelta
-            # Start from a default date and increment by day
-            start_date = datetime(2000, 1, 1)
-            dates = [start_date + timedelta(days=int(df[first_col][i])) for i in range(n_periods)]
-            Time = TimeIndex(dates)
-        else:
-            # Try to parse as date
-            time_series = df[first_col].cast(pl.Utf8).str.strptime(pl.Datetime, "%Y-%m-%d", strict=False)
-            # If that fails, try other formats
-            if time_series.null_count() > 0:
-                # Try parsing as string first
-                time_series = df[first_col].str.strptime(pl.Datetime, strict=False)
-            dates = [parse_timestamp(str(d)) for d in time_series]
-            Time = TimeIndex(dates)
-    except (ValueError, TypeError) as e:
-        # If date parsing fails, treat first column as integer date_id
-        try:
-            first_col_type = df[first_col].dtype
-            if first_col_type in [pl.Int64, pl.Int32, pl.Int16, pl.Int8, pl.UInt64, pl.UInt32, pl.UInt16, pl.UInt8]:
-                n_periods = len(df)
-                from datetime import timedelta
-                start_date = datetime(2000, 1, 1)
-                dates = [start_date + timedelta(days=int(df[first_col][i])) for i in range(n_periods)]
-                Time = TimeIndex(dates)
-            else:
-                raise ValidationError(f"Failed to parse date column '{first_col}': {e}")
-        except (ValueError, TypeError) as e2:
-            # Integer date_id parsing failed with expected exceptions
-            raise ValidationError(f"Failed to parse date column '{first_col}' as integer date_id: {e2}")
-        except Exception as e2:
-            # Catch any other unexpected exceptions
-            raise ValidationError(f"Unexpected error parsing date column '{first_col}': {e2}")
-    
-    # Extract series data (all columns except first)
-    series_cols = [col for col in df.columns if col != first_col]
-    series_data = df.select(series_cols)
-    Z = series_data.to_numpy().astype(float)
-    mnemonics = series_cols
-    
-    return Z, Time, mnemonics
-
-
-# ============================================================================
-# Transformation Functions
-# ============================================================================
-# These functions provide custom transformations for time series data.
-# They are implemented as pickleable functions for use with sktime's FunctionTransformer.
-
-# Frequency → lag mappings for transformation functions
-FREQ_TO_LAG_YOY = {'m': 12, 'q': 4, 'sa': 2, 'a': 1, 'd': 365, 'w': 52}
-FREQ_TO_LAG_STEP = {'m': 1, 'q': 3, 'sa': 6, 'a': 12, 'd': 1, 'w': 1}
-
-
-def get_periods_per_year(frequency: str) -> int:
-    """Get number of periods per year for a given frequency.
-    
-    Parameters
-    ----------
-    frequency : str
-        Frequency code ('d', 'w', 'm', 'q', 'sa', 'a')
-        
-    Returns
-    -------
-    int
-        Number of periods per year
-    """
-    freq_map = {
-        'd': 365,
-        'w': 52,
-        'm': 12,
-        'q': 4,
-        'sa': 2,
-        'a': 1
-    }
-    return freq_map.get(frequency.lower(), 12)
-
-
-def get_annual_factor(frequency: str, step: int = 1) -> float:
-    """Get annualization factor for a given frequency and step.
-    
-    Parameters
-    ----------
-    frequency : str
-        Frequency code ('d', 'w', 'm', 'q', 'sa', 'a')
-    step : int, default 1
-        Number of periods to difference
-        
-    Returns
-    -------
-    float
-        Annualization factor (periods_per_year / step)
-    """
-    periods_per_year = get_periods_per_year(frequency)
-    return periods_per_year / step
-
-
-# ============================================================================
-# Transformation Functions (consolidated from transformations.py)
-# ============================================================================
-
-def pch_transform(X, step: int = 1) -> np.ndarray:
-    """Percent change transformation.
-    
-    Parameters
-    ----------
-    X : array-like
-        Input time series (1D or 2D)
-    step : int, default 1
-        Number of periods to difference
-        
-    Returns
-    -------
-    np.ndarray
-        Transformed series (percent change)
-    """
-    X = np.asarray(X).flatten()
-    T = len(X)
-    result = np.full(T, np.nan)
-    if T > step:
-        result[step:] = 100.0 * (X[step:] - X[:-step]) / np.abs(X[:-step] + 1e-10)
-    return result
-
-
-def pc1_transform(X, year_step: int = 12) -> np.ndarray:
-    """Year-over-year percent change transformation.
-    
-    Parameters
-    ----------
-    X : array-like
-        Input time series (1D or 2D)
-    year_step : int, default 12
-        Number of periods for year-over-year (12 for monthly, 4 for quarterly)
-        
-    Returns
-    -------
-    np.ndarray
-        Transformed series (year-over-year percent change)
-    """
-    X = np.asarray(X).flatten()
-    T = len(X)
-    result = np.full(T, np.nan)
-    if T > year_step:
-        result[year_step:] = 100.0 * (X[year_step:] - X[:-year_step]) / np.abs(X[:-year_step] + 1e-10)
-    return result
-
-
-def pca_transform(X, step: int = 1, annual_factor: float = 12.0) -> np.ndarray:
-    """Percent change annualized transformation.
-    
-    Parameters
-    ----------
-    X : array-like
-        Input time series (1D or 2D)
-    step : int, default 1
-        Number of periods to difference
-    annual_factor : float, default 12.0
-        Annualization factor (periods_per_year / step)
-        
-    Returns
-    -------
-    np.ndarray
-        Transformed series (percent change annualized)
-    """
-    X = np.asarray(X).flatten()
-    T = len(X)
-    result = np.full(T, np.nan)
-    if T > step:
-        result[step:] = annual_factor * 100.0 * (X[step:] - X[:-step]) / np.abs(X[:-step] + 1e-10)
-    return result
-
-
-def cch_transform(X, step: int = 1) -> np.ndarray:
-    """Continuously compounded rate of change transformation.
-    
-    Parameters
-    ----------
-    X : array-like
-        Input time series (1D or 2D)
-    step : int, default 1
-        Number of periods to difference
-        
-    Returns
-    -------
-    np.ndarray
-        Transformed series (continuously compounded rate)
-    """
-    X = np.asarray(X).flatten()
-    T = len(X)
-    result = np.full(T, np.nan)
-    if T > step:
-        result[step:] = 100.0 * (
-            np.log(np.abs(X[step:]) + 1e-10) - 
-            np.log(np.abs(X[:-step]) + 1e-10)
-        )
-    return result
-
-
-def cca_transform(X, step: int = 1, annual_factor: float = 12.0) -> np.ndarray:
-    """Continuously compounded annual rate of change transformation.
-    
-    Parameters
-    ----------
-    X : array-like
-        Input time series (1D or 2D)
-    step : int, default 1
-        Number of periods to difference
-    annual_factor : float, default 12.0
-        Annualization factor (periods_per_year / step)
-        
-    Returns
-    -------
-    np.ndarray
-        Transformed series (continuously compounded annual rate)
-    """
-    X = np.asarray(X).flatten()
-    T = len(X)
-    result = np.full(T, np.nan)
-    if T > step:
-        result[step:] = annual_factor * 100.0 * (
-            np.log(np.abs(X[step:]) + 1e-10) - 
-            np.log(np.abs(X[:-step]) + 1e-10)
-        )
-    return result
-
-
-def log_transform(X) -> np.ndarray:
-    """Log transformation (with absolute value + epsilon).
-    
-    Parameters
-    ----------
-    X : array-like
-        Input time series (1D or 2D)
-        
-    Returns
-    -------
-    np.ndarray
-        Transformed series (log of absolute value)
-    """
-    X = np.asarray(X).flatten()
-    return np.log(np.abs(X) + 1e-10)
-
-
-def identity_transform(X) -> np.ndarray:
-    """Identity transformation (no-op).
-    
-    Parameters
-    ----------
-    X : array-like
-        Input time series (1D or 2D)
-        
-    Returns
-    -------
-    np.ndarray
-        Unchanged input
-    """
-    return np.asarray(X).flatten()
-
-
-def identity_with_index(X):
-    """Identity transformation preserving pandas index (for FunctionTransformer).
-    
-    This is a module-level function to avoid pickle errors when saving transformers.
-    
-    Parameters
-    ----------
-    X : pd.Series or array-like
-        Input data
-        
-    Returns
-    -------
-    pd.Series or np.ndarray
-        Same as input, preserving index if Series
-    """
-    import pandas as pd
-    if isinstance(X, pd.Series):
-        result_values = identity_transform(X.values)
-        return pd.Series(result_values, index=X.index, name=X.name)
-    else:
-        return identity_transform(X)
-
-
-def log_with_index(X):
-    """Log transformation preserving pandas index (for FunctionTransformer).
-    
-    This is a module-level function to avoid pickle errors when saving transformers.
-    
-    Parameters
-    ----------
-    X : pd.Series or array-like
-        Input data
-        
-    Returns
-    -------
-    pd.Series or np.ndarray
-        Log-transformed data, preserving index if Series
-    """
-    import pandas as pd
-    if isinstance(X, pd.Series):
-        result_values = log_transform(X.values)
-        return pd.Series(result_values, index=X.index, name=X.name)
-    else:
-        return log_transform(X)
-
-
-def cha_with_index(X, step: int = 1, annual_factor: float = 12.0):
-    """Change annual rate transformation preserving pandas index (for FunctionTransformer).
-    
-    This is a module-level function to avoid pickle errors when saving transformers.
-    
-    Parameters
-    ----------
-    X : pd.Series or array-like
-        Input data
-    step : int, default 1
-        Number of periods to difference
-    annual_factor : float, default 12.0
-        Annualization factor (periods_per_year / step)
-        
-    Returns
-    -------
-    pd.Series or np.ndarray
-        Change annual rate transformed data, preserving index if Series
-    """
-    import pandas as pd
-    import numpy as np
-    if isinstance(X, pd.Series):
-        # cha_transform_func returns 2D array, flatten to 1D
-        result_2d = cha_transform_func(X.values, step=step, annual_factor=annual_factor)
-        result_values = result_2d.flatten()
-        return pd.Series(result_values, index=X.index, name=X.name)
-    else:
-        return cha_transform_func(X, step=step, annual_factor=annual_factor)
-
-
-def cha_transform_func(X, step: int = 1, annual_factor: float = 12.0) -> np.ndarray:
-    """Change annual rate transformation.
-    
-    Parameters
-    ----------
-    X : array-like
-        Input time series (1D or 2D)
-    step : int, default 1
-        Number of periods to difference
-    annual_factor : float, default 12.0
-        Annualization factor (periods_per_year / step)
-        
-    Returns
-    -------
-    np.ndarray
-        Transformed series (change annual rate) as 2D array (T, 1)
-    """
-    X = np.asarray(X)
-    # Ensure 2D input for transformer compatibility
-    if X.ndim == 1:
-        X = X.reshape(-1, 1)
-    X_flat = X.flatten()
-    T = len(X_flat)
-    result = np.full((T, 1), np.nan)
-    if T > step:
-        # Annualized change: (X[t] / X[t-step])^(1/n) - 1
-        ratio = X_flat[step:] / (np.abs(X_flat[:-step]) + 1e-10)
-        result[step:, 0] = 100.0 * (np.power(ratio, 1.0 / annual_factor) - 1.0)
-    return result
-
-
-# Factory functions (pickleable closures)
-
-def _get_function_transformer():
-    """Get FunctionTransformer from sktime, raising ImportError if unavailable."""
-    try:
-        from sktime.transformations.series.func_transform import FunctionTransformer
-        return FunctionTransformer
-    except ImportError:
-        raise ImportError(
-            "sktime is required for FunctionTransformer. "
-            "Install it with: pip install sktime"
-        )
-
-
-# Helper function to create index-preserving transformer wrapper
-def _make_index_preserving_transformer(transform_func, **kwargs):
-    """Create index-preserving transformer wrapper (reduces code duplication)."""
-    FunctionTransformer = _get_function_transformer()
-    def wrapper(X):
-        import pandas as pd
-        if isinstance(X, pd.Series):
-            result_values = transform_func(X.values, **kwargs)
-            if isinstance(result_values, np.ndarray) and result_values.ndim > 1:
-                result_values = result_values.flatten()
-            return pd.Series(result_values, index=X.index, name=X.name)
-        else:
-            return transform_func(X, **kwargs)
-    return FunctionTransformer(func=wrapper)
-
-
-def make_pch_transformer(step: int):
-    """Create pch transformer with step parameter."""
-    return _make_index_preserving_transformer(pch_transform, step=step)
-
-
-def make_pc1_transformer(year_step: int):
-    """Create pc1 transformer with year_step parameter."""
-    return _make_index_preserving_transformer(pc1_transform, year_step=year_step)
-
-
-def make_pca_transformer(step: int, annual_factor: float):
-    """Create pca transformer with step and annual_factor parameters."""
-    return _make_index_preserving_transformer(pca_transform, step=step, annual_factor=annual_factor)
-
-
-def make_cch_transformer(step: int):
-    """Create cch transformer with step parameter."""
-    return _make_index_preserving_transformer(cch_transform, step=step)
-
-
-def make_cca_transformer(step: int, annual_factor: float):
-    """Create cca transformer with step and annual_factor parameters."""
-    return _make_index_preserving_transformer(cca_transform, step=step, annual_factor=annual_factor)
-
-
-def make_cha_transformer(step: int, annual_factor: float):
-    """Create cha transformer with step and annual_factor parameters."""
-    FunctionTransformer = _get_function_transformer()
-    def wrapper(X):
-        import pandas as pd
-        if isinstance(X, pd.Series):
-            result_2d = cha_transform_func(X.values, step=step, annual_factor=annual_factor)
-            result_values = result_2d.flatten()
-            return pd.Series(result_values, index=X.index, name=X.name)
-        else:
-            return cha_transform_func(X, step=step, annual_factor=annual_factor)
-    return FunctionTransformer(func=wrapper)
-
-
-# Index-Preserving Column Ensemble Transformer
-
-if HAS_SKTIME:
-    class IndexPreservingColumnEnsembleTransformer(BaseTransformer):
-        """Wrapper for ColumnEnsembleTransformer that preserves index type.
-        
-        ColumnEnsembleTransformer uses pd.concat internally, which can convert
-        DatetimeIndex to base Index when concatenating Series with different index types.
-        This wrapper ensures the output always has a compatible index type
-        (DatetimeIndex, PeriodIndex, or RangeIndex).
-        """
-        
-        _tags = {
-            "scitype:transform-input": "Series",
-            "scitype:transform-output": "Series",
-            "scitype:instancewise": False,
-            "X_inner_mtype": "pd.DataFrame",
-            "y_inner_mtype": "pd.DataFrame",
-            "univariate-only": False,
-            "requires-y": False,
-            "enforce_index_type": None,
-            "fit_is_empty": False,  # Must be False to call _fit
-            "transform-returns-same-time-index": True,
-        }
-        
-        def __init__(self, transformers, remainder="drop", feature_names_out="auto"):
-            """Initialize IndexPreservingColumnEnsembleTransformer.
-            
-            Parameters
-            ----------
-            transformers : list of tuples
-                Same as ColumnEnsembleTransformer.transformers
-            remainder : str or estimator, default "drop"
-                Same as ColumnEnsembleTransformer.remainder
-            feature_names_out : str, default "auto"
-                Same as ColumnEnsembleTransformer.feature_names_out
-            """
-            super().__init__()
-            self.transformers = transformers
-            self.remainder = remainder
-            self.feature_names_out = feature_names_out
-            self._column_transformer = ColumnEnsembleTransformer(
-                transformers=transformers,
-                remainder=remainder,
-                feature_names_out=feature_names_out
-            )
-        
-        def _fit(self, X: "pd.DataFrame", y: Optional["pd.DataFrame"] = None):
-            """Fit the transformer."""
-            # Store original index type for transform (before fitting)
-            if isinstance(X.index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)):
-                self._original_index_type = type(X.index)
-                self._original_index = X.index.copy()
-            else:
-                # Try to convert to DatetimeIndex
-                try:
-                    self._original_index = pd.to_datetime(X.index)
-                    self._original_index_type = pd.DatetimeIndex
-                except (ValueError, TypeError):
-                    # Fallback to RangeIndex
-                    self._original_index = pd.RangeIndex(start=0, stop=len(X))
-                    self._original_index_type = pd.RangeIndex
-            
-            # Fit the underlying transformer
-            self._column_transformer.fit(X, y)
-            return self
-        
-        def _transform(self, X: "pd.DataFrame", y: Optional["pd.DataFrame"] = None) -> "pd.DataFrame":
-            """Transform X and ensure output has compatible index.
-            
-            This method intercepts the transform call and ensures each transformer's
-            output has the same index type before concatenation, preventing pd.concat
-            from creating a base Index.
-            """
-            # Get transformers and transform each column separately
-            # This allows us to ensure each output has compatible index before concat
-            Xts = []
-            keys = []
-            
-            # Get fitted transformers
-            # ColumnEnsembleTransformer stores fitted transformers in transformers_ attribute
-            fitted_transformers = getattr(self._column_transformer, 'transformers_', [])
-            
-            for name, est, index in fitted_transformers:
-                # Transform this column
-                Xt_col = est.transform(X.loc[:, index], y)
-                
-                # Ensure output has compatible index (same as input X.index)
-                # Always use input X.index to ensure all outputs have same index
-                if isinstance(Xt_col, pd.Series):
-                    # Use input index if length matches, otherwise align
-                    if len(Xt_col) == len(X.index):
-                        Xt_col.index = X.index
-                    else:
-                        # Length mismatch - try to align or use RangeIndex
-                        if len(Xt_col) <= len(X.index):
-                            Xt_col.index = X.index[:len(Xt_col)]
-                        else:
-                            # Output longer than input - use RangeIndex
-                            Xt_col.index = pd.RangeIndex(start=0, stop=len(Xt_col))
-                    Xts.append(Xt_col)
-                elif isinstance(Xt_col, pd.DataFrame):
-                    # Use input index if length matches
-                    if len(Xt_col) == len(X.index):
-                        Xt_col.index = X.index
-                    else:
-                        if len(Xt_col) <= len(X.index):
-                            Xt_col.index = X.index[:len(Xt_col)]
-                        else:
-                            Xt_col.index = pd.RangeIndex(start=0, stop=len(Xt_col))
-                    Xts.append(Xt_col)
-                else:
-                    # Convert numpy array to Series/DataFrame with input index
-                    Xt_col = np.asarray(Xt_col)
-                    if len(Xt_col) == len(X.index):
-                        if Xt_col.ndim == 1:
-                            Xt_col = pd.Series(Xt_col, index=X.index)
-                        else:
-                            col_names = [f'{name}_{i}' for i in range(Xt_col.shape[1])]
-                            Xt_col = pd.DataFrame(Xt_col, index=X.index, columns=col_names)
-                    else:
-                        # Length mismatch - use RangeIndex
-                        if Xt_col.ndim == 1:
-                            Xt_col = pd.Series(Xt_col, index=pd.RangeIndex(start=0, stop=len(Xt_col)))
-                        else:
-                            col_names = [f'{name}_{i}' for i in range(Xt_col.shape[1])]
-                            Xt_col = pd.DataFrame(Xt_col, index=pd.RangeIndex(start=0, stop=len(Xt_col)), columns=col_names)
-                    Xts.append(Xt_col)
-                
-                keys.append(name)
-            
-            # Concatenate with compatible indices (all should have same index now)
-            if Xts:
-                # Ensure all have same index before concat
-                # Use the first transformer's index (or input index) as reference
-                reference_index = X.index if isinstance(X.index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)) else pd.RangeIndex(start=0, stop=len(X))
-                
-                # Align all outputs to reference index
-                aligned_Xts = []
-                for i, Xt_col in enumerate(Xts):
-                    if len(Xt_col) == len(reference_index):
-                        if isinstance(Xt_col, pd.Series):
-                            Xt_col.index = reference_index
-                        elif isinstance(Xt_col, pd.DataFrame):
-                            Xt_col.index = reference_index
-                    aligned_Xts.append(Xt_col)
-                
-                Xt = pd.concat(aligned_Xts, axis=1, keys=keys)
-                
-                # Final check: ensure output index is compatible and sorted
-                if not isinstance(Xt.index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)):
-                    Xt.index = reference_index
-                elif not Xt.index.is_monotonic_increasing:
-                    # Index is not sorted - reindex to sorted version
-                    if isinstance(Xt.index, pd.DatetimeIndex):
-                        Xt = Xt.sort_index()
-                    else:
-                        # For non-DatetimeIndex, use reference index
-                        Xt.index = reference_index
-            else:
-                # No transformers - return empty DataFrame with compatible index
-                Xt = pd.DataFrame(index=X.index if isinstance(X.index, (pd.DatetimeIndex, pd.PeriodIndex, pd.RangeIndex)) else pd.RangeIndex(start=0, stop=len(X)))
-            
-            return Xt
-else:
-    # Fallback when sktime is not available
-    IndexPreservingColumnEnsembleTransformer = None
-
-
-# ============================================================================
-# Transformer Factory from Config
-# ============================================================================
-
-def create_transformer_from_config(config: Any) -> Any:
-    """Create sktime ColumnEnsembleTransformer from DFMConfig.
-    
-    This function creates a ColumnEnsembleTransformer that applies per-series
-    transformations based on the DFMConfig, followed by standardization.
-    The transformer is wrapped in a TransformerPipeline with StandardScaler.
-    
-    Parameters
-    ----------
-    config : DFMConfig
-        DFM configuration object containing series configurations
-        
-    Returns
-    -------
-    TransformerPipeline
-        Transformer pipeline with ColumnEnsembleTransformer and StandardScaler.
-        Supports Polars output via set_output(transform="polars").
-        
-    Raises
-    ------
-    ImportError
-        If sktime is not installed
-    ValidationError
-        If config is invalid, missing required fields, or contains invalid
-        transformation types, frequency codes, or duplicate series IDs
-    """
-    # Check sktime availability
-    check_sktime_available()  # Keep public API for preprocess module
-    
-    # Import components, handling version differences
-    try:
-        from sktime.transformations.compose import (
-            TransformerPipeline,
-            ColumnEnsembleTransformer
-        )
-    except ImportError:
-        raise ImportError("TransformerPipeline or ColumnEnsembleTransformer not available in sktime")
-    
+    from sktime.transformations.compose import TransformerPipeline, ColumnEnsembleTransformer
     from sktime.transformations.series.func_transform import FunctionTransformer
     from sktime.transformations.series.difference import Differencer
     from sktime.transformations.series.impute import Imputer
     from sktime.forecasting.naive import NaiveForecaster
-    from sklearn.preprocessing import StandardScaler
+    from sklearn.preprocessing import StandardScaler, RobustScaler
     
-    # Validate config
-    if config is None:
-        raise ValidationError("config cannot be None")
-    if not hasattr(config, 'series') or not config.series:
+    # Try to import LogTransformer (location may vary by sktime version)
+    try:
+        from sktime.transformations.series.log import LogTransformer
+    except ImportError:
+        try:
+            from sktime.transformations.series import LogTransformer
+        except ImportError:
+            LogTransformer = None  # Will use FunctionTransformer as fallback
+    
+    HAS_SKTIME = True
+except ImportError:
+    HAS_SKTIME = False
+    raise ImportError("sktime is required. Install with: pip install sktime[forecasting]")
+
+# ============================================================================
+# Core Preprocessing Functions
+# ============================================================================
+
+def resample_to_monthly(data: pd.DataFrame) -> pd.DataFrame:
+    """Resample weekly data to monthly using window averaging."""
+    if not isinstance(data.index, pd.DatetimeIndex):
+        return data
+    
+    # Select only numeric columns for resampling (exclude object/string columns)
+    numeric_cols = data.select_dtypes(include=[np.number]).columns
+    if len(numeric_cols) == 0:
+        _logger.warning("No numeric columns found for resampling")
+        return data
+    
+    # Resample only numeric columns
+    try:
+        resampled = data[numeric_cols].resample('ME').mean()
+    except ValueError:
+        resampled = data[numeric_cols].resample('M').mean()
+    
+    return resampled
+
+
+def resample_to_weekly(data: pd.DataFrame) -> pd.DataFrame:
+    """Resample monthly data to weekly frequency for mixed-frequency DFM.
+    
+    When clock='w' and series are monthly (frequency='m'), we need to convert
+    monthly data to weekly frequency. For mixed_freq=True with tent kernel,
+    monthly data should be placed at weekly intervals with NaN values between.
+    
+    This function:
+    1. Creates a weekly index covering the data period
+    2. Places monthly values at appropriate weekly positions (typically end of month)
+    3. Fills remaining weeks with NaN (for tent kernel processing)
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Monthly data with DatetimeIndex
+        
+    Returns
+    -------
+    pd.DataFrame
+        Weekly data with monthly values placed at appropriate positions
+    """
+    if not isinstance(data.index, pd.DatetimeIndex):
+        return data
+    
+    # Select only numeric columns
+    numeric_cols = data.select_dtypes(include=[np.number]).columns
+    if len(numeric_cols) == 0:
+        _logger.warning("No numeric columns found for resampling")
+        return data
+    
+    # Create weekly index covering the data period
+    # Start from first data point, end at last data point
+    start_date = data.index.min()
+    end_date = data.index.max()
+    
+    # Create weekly index (end of week, typically Sunday)
+    try:
+        weekly_index = pd.date_range(start=start_date, end=end_date, freq='W')
+    except ValueError:
+        # Fallback to 'W-SUN' if 'W' fails
+        weekly_index = pd.date_range(start=start_date, end=end_date, freq='W-SUN')
+    
+    # Create weekly DataFrame with NaN
+    weekly_data = pd.DataFrame(index=weekly_index, columns=numeric_cols)
+    weekly_data[:] = np.nan
+    
+    # For each monthly observation, find the closest weekly date (typically end of month)
+    # and place the value there
+    for date in data.index:
+        # Find the weekly date that is closest to this monthly date
+        # Typically, monthly data is at end of month, so find the last week of that month
+        month_end = date + pd.offsets.MonthEnd(0)
+        
+        # Find the closest weekly date (within the same month)
+        closest_week_idx = weekly_index[weekly_index <= month_end]
+        if len(closest_week_idx) > 0:
+            # Use the last week of the month
+            target_week = closest_week_idx[-1]
+            if target_week in weekly_data.index:
+                weekly_data.loc[target_week, numeric_cols] = data.loc[date, numeric_cols].values
+    
+    return weekly_data
+
+
+def set_dataframe_frequency(y_train: pd.DataFrame) -> pd.DataFrame:
+    """Set frequency on DataFrame index if DatetimeIndex."""
+    if not isinstance(y_train.index, pd.DatetimeIndex):
+        return y_train
+    
+    if y_train.index.freq is not None:
+        return y_train
+    
+    inferred_freq = pd.infer_freq(y_train.index)
+    if inferred_freq:
+        try:
+            y_train = y_train.asfreq(inferred_freq, method='ffill')
+        except (TypeError, ValueError):
+            y_train = y_train.asfreq(inferred_freq)
+            y_train = y_train.ffill()
+    
+    return y_train
+
+
+def apply_scaling(y_train: pd.DataFrame, scaler_type: str = 'robust') -> Tuple[pd.DataFrame, Any]:
+    """Apply scaling to data.
+    
+    Parameters
+    ----------
+    y_train : pd.DataFrame
+        Data to scale
+    scaler_type : str
+        Type of scaler ('robust', 'standard', or None for no scaling)
+        
+    Returns
+    -------
+    Tuple[pd.DataFrame, Any]
+        (scaled_data, scaler) tuple
+    """
+    if scaler_type is None or scaler_type == 'null':
+        return y_train, None
+    
+    scaler_type_lower = scaler_type.lower() if scaler_type else 'robust'
+    
+    if scaler_type_lower == 'robust':
+        scaler = RobustScaler()
+    elif scaler_type_lower == 'standard':
+        scaler = StandardScaler()
+    else:
+        _logger.warning(f"Unknown scaler type '{scaler_type}', using RobustScaler")
+        scaler = RobustScaler()
+    
+    # Fit and transform
+    scaled_values = scaler.fit_transform(y_train.values)
+    scaled_df = pd.DataFrame(
+        scaled_values,
+        index=y_train.index,
+        columns=y_train.columns
+    )
+    
+    return scaled_df, scaler
+
+
+def impute_missing_values(y_train: pd.DataFrame, model_type: str = "var") -> pd.DataFrame:
+    """Impute missing values using forward-fill, backward-fill, and forecaster."""
+    if y_train.isnull().sum().sum() == 0:
+        return y_train
+    
+    _logger.warning(f"{model_type.upper()} data contains NaN values. Applying imputation...")
+    
+    imputer_ffill = Imputer(method="ffill")
+    imputer_bfill = Imputer(method="bfill")
+    imputer_forecaster = Imputer(method="forecaster", forecaster=NaiveForecaster(strategy="last"))
+    
+    for col in y_train.columns:
+        col_series = y_train[[col]]
+        col_imputed = imputer_ffill.fit_transform(col_series)
+        
+        if isinstance(col_imputed, pd.DataFrame) and col_imputed.isnull().sum().sum() > 0:
+            col_imputed = imputer_bfill.fit_transform(col_imputed)
+        
+        if isinstance(col_imputed, pd.DataFrame) and col_imputed.isnull().sum().sum() > 0:
+            try:
+                col_imputed = imputer_forecaster.fit_transform(col_imputed)
+            except Exception as e:
+                _logger.warning(f"Forecaster imputation failed for {col}: {e}")
+        
+        if isinstance(col_imputed, pd.DataFrame):
+            y_train[col] = col_imputed[col]
+    
+    # Drop remaining NaN rows
+    nan_count = int(y_train.isnull().sum().sum())
+    if nan_count > 0:
+        nan_rows = int(y_train.isnull().any(axis=1).sum())
+        _logger.warning(f"Dropping {nan_rows} rows with remaining NaN values...")
+        y_train = y_train.dropna()
+        if len(y_train) == 0:
+            raise ValidationError(f"{model_type.upper()}: All data was dropped after imputation.")
+    
+    return y_train
+
+
+def apply_transformations(data: pd.DataFrame, config_path: Optional[str] = None, series_ids: Optional[list] = None) -> pd.DataFrame:
+    """Apply transformations based on series config files (config/series/{series_id}.yaml).
+    
+    This function reads transformation information from Hydra series config files,
+    maintaining consistency with the Hydra config system.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Data to transform
+    config_path : Optional[str]
+        Path to config directory (default: config/ relative to project root)
+    series_ids : Optional[list]
+        List of series IDs to process. If None, uses all columns in data.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Transformed data
+    """
+    import yaml
+    from pathlib import Path
+    
+    # Get config path
+    if config_path is None:
+        project_root = Path(__file__).parent.parent
+        config_path = str(project_root / "config")
+    
+    config_dir = Path(config_path)
+    series_dir = config_dir / "series"
+    
+    # Get series IDs to process
+    if series_ids is None:
+        series_ids = list(data.columns)
+    
+    # Create transformation mapping from series config files
+    trans_map = {}
+    freq_map = {}
+    
+    for series_id in series_ids:
+        if series_id not in data.columns:
+            continue
+        
+        # Try to load from series config file
+        series_config_file = series_dir / f"{series_id}.yaml"
+        if series_config_file.exists():
+            try:
+                with open(series_config_file, 'r') as f:
+                    series_config = yaml.safe_load(f) or {}
+                
+                trans = series_config.get('transformation', 'lin')
+                freq = series_config.get('frequency', 'm')
+                trans_map[series_id] = str(trans).lower() if trans else 'lin'
+                freq_map[series_id] = str(freq).lower() if freq else 'm'
+                _logger.debug(f"Loaded transformation for {series_id} from {series_config_file}: {trans_map[series_id]}")
+            except Exception as e:
+                _logger.warning(f"Failed to load series config for {series_id} from {series_config_file}: {e}. Using defaults.")
+                trans_map[series_id] = 'lin'
+                freq_map[series_id] = 'm'
+        else:
+            # Fallback: try metadata.csv if series config not found
+            _logger.debug(f"Series config not found for {series_id} at {series_config_file}. Trying metadata.csv fallback...")
+            metadata_path = Path(__file__).parent.parent / "data" / "metadata.csv"
+            if metadata_path.exists():
+                try:
+                    metadata = pd.read_csv(metadata_path)
+                    meta_row = metadata[metadata['SeriesID'] == series_id]
+                    if len(meta_row) > 0:
+                        trans = meta_row.iloc[0].get('Transformation', 'lin')
+                        freq = meta_row.iloc[0].get('Frequency', 'm')
+                        trans_map[series_id] = str(trans).lower() if pd.notna(trans) else 'lin'
+                        freq_map[series_id] = str(freq).lower() if pd.notna(freq) else 'm'
+                        _logger.debug(f"Loaded transformation for {series_id} from metadata.csv: {trans_map[series_id]}")
+                    else:
+                        trans_map[series_id] = 'lin'
+                        freq_map[series_id] = 'm'
+                except Exception as e:
+                    _logger.warning(f"Failed to load metadata for {series_id}: {e}. Using default (lin).")
+                    trans_map[series_id] = 'lin'
+                    freq_map[series_id] = 'm'
+            else:
+                # No config found, use default
+                trans_map[series_id] = 'lin'
+                freq_map[series_id] = 'm'
+    
+    # Apply transformations
+    result_data = data.copy()
+    
+    for col in data.columns:
+        if col not in trans_map:
+            continue
+        
+        trans = trans_map[col]
+        freq = freq_map.get(col, 'm')
+        
+        if trans == 'chg':
+            # Difference transformation
+            # Applied at original series frequency, not clock frequency
+            # For weekly: lag=1, for monthly: lag=1, for quarterly: lag=1
+            lag = 1  # Period-over-period difference at series frequency
+            
+            series = result_data[col].dropna()
+            if len(series) > lag:
+                # Calculate difference at series frequency
+                diff_values = series.diff(periods=lag)
+                result_data[col] = diff_values
+                _logger.debug(f"Applied chg transformation to {col} (series freq={freq}, lag={lag})")
+        
+        elif trans == 'ch1':
+            # Year-over-year change
+            # Applied at original series frequency
+            # For weekly: lag=52 (52 weeks = 1 year)
+            # For monthly: lag=12 (12 months = 1 year)
+            # For quarterly: lag=4 (4 quarters = 1 year)
+            lag = 52 if freq == 'w' else (12 if freq == 'm' else (4 if freq == 'q' else 1))
+            series = result_data[col].dropna()
+            if len(series) > lag:
+                diff_values = series.diff(periods=lag)
+                result_data[col] = diff_values
+                _logger.debug(f"Applied ch1 transformation to {col} (series freq={freq}, lag={lag})")
+        
+        elif trans == 'log':
+            # Log transformation
+            series = result_data[col].dropna()
+            if len(series) > 0 and (series > 0).all():
+                result_data[col] = np.log(series)
+                _logger.debug(f"Applied log transformation to {col}")
+            else:
+                _logger.warning(f"Cannot apply log transformation to {col}: non-positive values")
+        
+        elif trans == 'pch':
+            # Percent change
+            # Applied at original series frequency
+            lag = 1  # Period-over-period change at series frequency
+            series = result_data[col].dropna()
+            if len(series) > lag:
+                pct_change = series.pct_change(periods=lag) * 100
+                result_data[col] = pct_change
+                _logger.debug(f"Applied pch transformation to {col} (series freq={freq}, lag={lag})")
+        
+        # 'lin' (linear/no transformation) - no change needed
+    
+    return result_data
+
+
+def prepare_multivariate_data(
+    data: pd.DataFrame,
+    config_dict: Optional[dict],
+    cfg: Any,
+    target_series: Optional[str],
+    model_type: str
+) -> Tuple[pd.DataFrame, list[str]]:
+    """Prepare multivariate training data for DFM/DDFM/VAR models."""
+    from omegaconf import OmegaConf
+    from pathlib import Path
+    
+    # Get config path for series config files
+    project_root = Path(__file__).parent.parent
+    config_path = str(project_root / "config")
+    
+    # Check if model uses weekly frequency (clock='w')
+    # For DFM: weekly clock means no resampling (keep weekly data)
+    # For DDFM: weekly clock means no resampling (keep weekly data), monthly clock means resample to monthly
+    should_resample = True
+    if config_dict and config_dict.get('clock') == 'w':
+        should_resample = False
+
+    # ------------------------------------------------------------------
+    # Normalize index to avoid duplicate labels:
+    # - Weekly clock ('w'): use date_w if available (unique weekly dates)
+    # - Monthly clock: use first column (date); drop duplicate dates
+    # ------------------------------------------------------------------
+    data = data.copy()
+    if not should_resample and 'date_w' in data.columns:
+        idx = pd.to_datetime(data['date_w'], errors='coerce')
+    else:
+        idx = pd.to_datetime(data.iloc[:, 0], errors='coerce')
+    data.index = idx
+    data = data[~data.index.isna()]
+    if data.index.has_duplicates:
+        data = data[~data.index.duplicated(keep='last')]
+    # Remove date columns from features
+    for col in ['date', 'date_w']:
+        if col in data.columns:
+            data = data.drop(columns=[col])
+    
+    # Get series list from config
+    series_ids = []
+    if config_dict and 'series' in config_dict:
+        series_ids = [
+            s.get('series_id', s) if isinstance(s, dict) else s 
+            for s in config_dict['series']
+        ]
+    elif hasattr(cfg, 'experiment') and 'series' in cfg.experiment:
+        series_ids = OmegaConf.to_container(cfg.experiment.series, resolve=True)
+        if not isinstance(series_ids, list):
+            series_ids = []
+    
+    # Filter to available series
+    if series_ids:
+        available_series = [s for s in series_ids if s in data.columns]
+        if target_series and target_series in data.columns and target_series not in available_series:
+            available_series.append(target_series)
+        
+        if not available_series:
+            raise ValidationError(
+                f"{model_type.upper()}: No series found in data. "
+                f"Config series: {series_ids[:5]}..., Data columns: {list(data.columns)[:5]}..."
+            )
+        
+        selected_data = data[available_series].dropna(how='all')
+        
+        # Apply transformations from series config files (at original series frequency)
+        selected_data = apply_transformations(selected_data, config_path=config_path, series_ids=available_series)
+        
+        if should_resample:
+            processed_data = resample_to_monthly(selected_data)
+        else:
+            processed_data = selected_data
+        return processed_data, available_series
+    else:
+        # Use all numeric columns
+        y_train = data.select_dtypes(include=[np.number])
+        if target_series and target_series in data.columns and target_series not in y_train.columns:
+            y_train[target_series] = data[target_series]
+        
+        y_train = y_train.dropna(how='all')
+        
+        # Apply transformations from series config files (at original series frequency)
+        y_train = apply_transformations(y_train, config_path=config_path, series_ids=list(y_train.columns))
+        
+        if should_resample:
+            processed_data = resample_to_monthly(y_train)
+        else:
+            processed_data = y_train
+        available_series = list(processed_data.columns)
+        return processed_data, available_series
+
+
+def prepare_univariate_data(data: pd.DataFrame, target_series: str, config_path: Optional[str] = None) -> pd.Series:
+    """Prepare univariate training data for ARIMA models."""
+    from pathlib import Path
+    
+    if target_series not in data.columns:
+        raise ValidationError(f"Target series '{target_series}' not found in data columns")
+    
+    # Get config path for series config files
+    if config_path is None:
+        project_root = Path(__file__).parent.parent
+        config_path = str(project_root / "config")
+    
+    y_train = data[[target_series]]
+    
+    # Apply transformations from series config files (at original series frequency)
+    y_train = apply_transformations(y_train, config_path=config_path, series_ids=[target_series])
+    
+    y_train_monthly = resample_to_monthly(y_train)
+    y_train_monthly = set_dataframe_frequency(y_train_monthly)
+    
+    return y_train_monthly.iloc[:, 0]
+
+
+# ============================================================================
+# Transformation Functions (Index-preserving for sktime)
+# ============================================================================
+
+def _identity_transform(X):
+    """Identity transformation preserving pandas index."""
+    if isinstance(X, pd.Series):
+        return X
+    return np.asarray(X)
+
+
+def _pch_transform(X, step: int = 1):
+    """Percent change transformation preserving index."""
+    if isinstance(X, pd.Series):
+        X_vals = X.values
+        index = X.index
+        name = X.name
+    else:
+        X_vals = np.asarray(X).flatten()
+        index = None
+        name = None
+    
+    T = len(X_vals)
+    result = np.full(T, np.nan)
+    if T > step:
+        result[step:] = 100.0 * (X_vals[step:] - X_vals[:-step]) / (np.abs(X_vals[:-step]) + 1e-10)
+    
+    if index is not None:
+        return pd.Series(result, index=index, name=name)
+    return result
+
+
+def _cha_transform(X, step: int = 1, annual_factor: float = 12.0):
+    """Change annualized transformation preserving index.
+    
+    Annualized change: (X[t] / X[t-step])^(1/annual_factor) - 1
+    """
+    if isinstance(X, pd.Series):
+        X_vals = X.values
+        index = X.index
+        name = X.name
+    else:
+        X_vals = np.asarray(X).flatten()
+        index = None
+        name = None
+    
+    T = len(X_vals)
+    result = np.full(T, np.nan)
+    if T > step:
+        ratio = X_vals[step:] / (np.abs(X_vals[:-step]) + 1e-10)
+        result[step:] = 100.0 * (np.power(ratio, 1.0 / annual_factor) - 1.0)
+    
+    if index is not None:
+        return pd.Series(result, index=index, name=name)
+    return result
+
+
+def _get_periods_per_year(frequency: str) -> int:
+    """Get number of periods per year for a given frequency."""
+    freq_map = {'d': 365, 'w': 52, 'm': 12, 'q': 4, 'sa': 2, 'a': 1}
+    return freq_map.get(frequency.lower(), 12)
+
+
+def _get_annual_factor(frequency: str, step: int = 1) -> float:
+    """Get annualization factor for a given frequency and step."""
+    periods_per_year = _get_periods_per_year(frequency)
+    return periods_per_year / step
+
+
+def create_transformer_from_config(config: Any) -> Any:
+    """Create sktime transformer pipeline from DFMConfig."""
+    if config is None or not hasattr(config, 'series') or not config.series:
         raise ValidationError("config must have a non-empty 'series' attribute")
     
-    # Frequency → lag mappings
+    # Frequency to lag mappings
     FREQ_TO_LAG_YOY = {'m': 12, 'q': 4, 'sa': 2, 'a': 1, 'd': 365, 'w': 52}
     FREQ_TO_LAG_STEP = {'m': 1, 'q': 3, 'sa': 6, 'a': 12, 'd': 1, 'w': 1}
     
-    # Get series IDs from config
+    # Get series IDs
     try:
         series_ids = config.get_series_ids()
     except AttributeError:
-        # Fallback: generate series IDs from series list
         series_ids = [s.series_id if hasattr(s, 'series_id') and s.series_id else f"series_{i}" 
                      for i, s in enumerate(config.series)]
     
-    # Validate series IDs are unique
-    validate_series_ids_unique(series_ids)
-    
-    # Get global imputation method (fallback if series-specific is null)
+    # Get global imputation method
     global_impute = None
     if hasattr(config, 'preprocess') and hasattr(config.preprocess, 'global_preprocessing'):
         global_preproc = config.preprocess.global_preprocessing
@@ -1061,125 +589,116 @@ def create_transformer_from_config(config: Any) -> Any:
         freq = series_config.frequency.lower() if hasattr(series_config, 'frequency') else 'm'
         series_id = series_ids[i] if i < len(series_ids) else f"series_{i}"
         
-        # Get series-specific imputation method
+        # Get imputation method
         series_impute = None
-        try:
-            # Check if series_config has impute attribute
-            if hasattr(series_config, 'impute'):
-                series_impute = series_config.impute
-            # Also check if it's a dict-like object
-            elif isinstance(series_config, dict) and 'impute' in series_config:
-                series_impute = series_config['impute']
-        except (AttributeError, TypeError):
-            pass
+        if hasattr(series_config, 'impute'):
+            series_impute = series_config.impute
+        elif isinstance(series_config, dict) and 'impute' in series_config:
+            series_impute = series_config['impute']
         
-        # Use global or default if series-specific is null/None
-        if series_impute is None or series_impute == 'null' or series_impute == '':
-            if global_impute:
-                series_impute = global_impute
-            else:
-                # Default: ffill_bfill (use ffill then bfill)
-                series_impute = 'ffill_bfill'
+        if not series_impute or series_impute in ('null', ''):
+            series_impute = global_impute or 'ffill_bfill'
         
-        # Create imputation transformer(s) for this series
+        # Create imputation steps
         imputation_steps = []
-        if series_impute:
-            if series_impute == 'ffill_bfill':
-                # Use both ffill and bfill
-                imputation_steps.append(Imputer(method="ffill"))
-                imputation_steps.append(Imputer(method="bfill"))
-            elif series_impute == 'ffill':
-                imputation_steps.append(Imputer(method="ffill"))
-            elif series_impute == 'bfill':
-                imputation_steps.append(Imputer(method="bfill"))
-            elif series_impute == 'naive' or series_impute == 'forecaster':
-                # Use naive forecaster for imputation
-                imputation_steps.append(Imputer(
-                    method="forecaster",
-                    forecaster=NaiveForecaster(strategy="last")
-                ))
-                # Add bfill as safety net
-                imputation_steps.append(Imputer(method="bfill"))
-            else:
-                # Unknown method, use default ffill_bfill
-                imputation_steps.append(Imputer(method="ffill"))
-                imputation_steps.append(Imputer(method="bfill"))
+        if series_impute == 'ffill_bfill':
+            imputation_steps = [Imputer(method="ffill"), Imputer(method="bfill")]
+        elif series_impute == 'ffill':
+            imputation_steps = [Imputer(method="ffill")]
+        elif series_impute == 'bfill':
+            imputation_steps = [Imputer(method="bfill")]
+        elif series_impute in ('naive', 'forecaster'):
+            imputation_steps = [
+                Imputer(method="forecaster", forecaster=NaiveForecaster(strategy="last")),
+                Imputer(method="bfill")
+            ]
+        else:
+            imputation_steps = [Imputer(method="ffill"), Imputer(method="bfill")]
         
-        # Validate transformation type and frequency code
-        validate_transformation_type(trans, series_id)
-        validate_frequency_code(freq, series_id)
-        
-        # Create transformer based on transformation type
+        # Create transformation using sktime transformers
         if trans == 'lin':
-            # Identity transformation (no-op) - preserve index
-            # Direct reference to module-level function for proper pickle serialization
-            # Use globals() to get the function from current module namespace
-            transformer = FunctionTransformer(func=globals()['identity_with_index'])
+            # Identity transformation - no change
+            transformer = FunctionTransformer(func=_identity_transform)
+        
         elif trans == 'log':
-            # Log transformation - preserve index
-            # Direct reference to module-level function for proper pickle serialization
-            # Use globals() to get the function from current module namespace
-            transformer = FunctionTransformer(func=globals()['log_with_index'])
+            # Log transformation - use LogTransformer if available, otherwise FunctionTransformer
+            if LogTransformer is not None:
+                transformer = LogTransformer()
+            else:
+                # Fallback: use FunctionTransformer with log function
+                def _log_func(X):
+                    if isinstance(X, pd.Series):
+                        return pd.Series(
+                            np.log(np.abs(X.values) + 1e-10), 
+                            index=X.index, 
+                            name=X.name
+                        )
+                    return np.log(np.abs(X) + 1e-10)
+                transformer = FunctionTransformer(func=_log_func)
+        
         elif trans == 'chg':
-            # Change (difference)
+            # Change (difference) - use Differencer
             lag = FREQ_TO_LAG_STEP.get(freq, 1)
-            transformer = Differencer(lags=lag)  # Differencer accepts int, not list
+            transformer = Differencer(lags=lag)
+        
         elif trans == 'ch1':
-            # Year over year change
+            # Year-over-year change - use Differencer
             lag = FREQ_TO_LAG_YOY.get(freq, 12)
-            transformer = Differencer(lags=lag)  # Differencer accepts int, not list
-        elif trans == 'cha':
-            # Change (annual rate) - custom function transformer
-            step = FREQ_TO_LAG_STEP.get(freq, 1)
-            annual_factor = get_annual_factor(freq, step)
-            transformer = make_cha_transformer(step, annual_factor)
+            transformer = Differencer(lags=lag)
+        
         elif trans == 'pch':
-            # Percent change
+            # Percent change - custom function transformer
             step = FREQ_TO_LAG_STEP.get(freq, 1)
-            transformer = make_pch_transformer(step)
+            transformer = FunctionTransformer(
+                func=lambda X: _pch_transform(X, step=step),
+                inverse_func=None
+            )
+        
         elif trans == 'pc1':
-            # Year over year percent change
+            # Year-over-year percent change
             year_step = FREQ_TO_LAG_YOY.get(freq, 12)
-            transformer = make_pc1_transformer(year_step)
+            transformer = FunctionTransformer(
+                func=lambda X: _pch_transform(X, step=year_step),
+                inverse_func=None
+            )
+        
+        elif trans == 'cha':
+            # Change annualized - custom function transformer
+            step = FREQ_TO_LAG_STEP.get(freq, 1)
+            annual_factor = _get_annual_factor(freq, step)
+            transformer = FunctionTransformer(
+                func=lambda X: _cha_transform(X, step=step, annual_factor=annual_factor),
+                inverse_func=None
+            )
+        
         elif trans == 'pca':
             # Percent change annualized
             step = FREQ_TO_LAG_STEP.get(freq, 1)
-            annual_factor = get_annual_factor(freq, step)
-            transformer = make_pca_transformer(step, annual_factor)
-        else:
-            # This should never happen due to validation above, but keep as safety check
-            # If we reach here, it means validation was bypassed somehow
-            raise ValidationError(
-                f"Unknown transformation '{trans}' for series '{series_id}'. "
-                f"This should have been caught by validation. "
-                f"Valid values: {', '.join(VALID_TRANSFORMATION_TYPES)}"
+            annual_factor = _get_annual_factor(freq, step)
+            # pca = pch * annual_factor
+            transformer = FunctionTransformer(
+                func=lambda X: _pch_transform(X, step=step) * annual_factor,
+                inverse_func=None
             )
         
-        # Combine imputation and transformation into a pipeline for this series
-        if imputation_steps:
-            # Create a pipeline: imputation → transformation
-            series_pipeline_steps = []
-            for j, impute_step in enumerate(imputation_steps):
-                series_pipeline_steps.append((f"impute_{j}", impute_step))
-            series_pipeline_steps.append(("transform", transformer))
-            series_transformer = TransformerPipeline(series_pipeline_steps)
         else:
-            # No imputation, just transformation
+            raise ValidationError(
+                f"Unknown transformation '{trans}' for series '{series_id}'. "
+                f"Valid transformations: lin, log, chg, ch1, cha, pch, pc1, pca"
+            )
+        
+        # Combine imputation and transformation
+        if imputation_steps:
+            steps: list = [(f"impute_{j}", step) for j, step in enumerate(imputation_steps)]
+            steps.append(("transform", transformer))
+            series_transformer = TransformerPipeline(steps)
+        else:
             series_transformer = transformer
         
-        # Add to transformers list: (name, transformer, column_index)
-        # ColumnEnsembleTransformer accepts column index (int) or column name (str/list)
         transformers.append((series_id, series_transformer, i))
     
-    # Create ColumnEnsembleTransformer with index preservation wrapper
-    # ColumnEnsembleTransformer uses pd.concat internally, which can convert
-    # DatetimeIndex to base Index when concatenating Series with different index types.
-    # We wrap it to ensure output always has compatible index (DatetimeIndex, PeriodIndex, or RangeIndex).
-    try:
-        column_transformer = IndexPreservingColumnEnsembleTransformer(transformers=transformers)
-    except (NameError, TypeError):
-        # Fallback to standard ColumnEnsembleTransformer if wrapper not available
-        column_transformer = ColumnEnsembleTransformer(transformers=transformers)
+    # Create ColumnEnsembleTransformer
+    column_transformer = ColumnEnsembleTransformer(transformers=transformers)
     
     # Create full pipeline: ColumnEnsembleTransformer → StandardScaler
     pipeline = TransformerPipeline([
@@ -1187,267 +706,4 @@ def create_transformer_from_config(config: Any) -> Any:
         ("scaler", StandardScaler())
     ])
     
-    # Set pandas output (required for sktime mtype compatibility)
-    # pandas output ensures index is preserved (DatetimeIndex, PeriodIndex, or RangeIndex)
-    try:
-        pipeline.set_output(transform="pandas")
-    except AttributeError:
-        # Older sktime versions might not support set_output
-        # This is okay - DFMDataModule will handle it
-        pass
-    
     return pipeline
-
-
-# ============================================================================
-# Data Preprocessing for Training (sktime-based)
-# ============================================================================
-
-def resample_to_monthly(data: pd.DataFrame) -> pd.DataFrame:
-    """Resample weekly data to monthly using window averaging.
-    
-    This ensures all models (ARIMA, VAR, DFM, DDFM) use the same monthly frequency
-    for fair comparison. Weekly data is averaged within each month.
-    
-    Parameters
-    ----------
-    data : pd.DataFrame
-        Time series data with DatetimeIndex
-        
-    Returns
-    -------
-    pd.DataFrame
-        Resampled data at monthly frequency
-    """
-    if not isinstance(data.index, pd.DatetimeIndex):
-        return data
-    
-    try:
-        try:
-            monthly_data = data.resample('ME').mean()
-        except ValueError:
-            monthly_data = data.resample('M').mean()
-    except Exception:
-        monthly_data = data.resample('ME', label='right', closed='right').mean()
-    
-    return monthly_data
-
-
-def set_dataframe_frequency(y_train: pd.DataFrame) -> pd.DataFrame:
-    """Set frequency on DataFrame index if DatetimeIndex.
-    
-    Parameters
-    ----------
-    y_train : pd.DataFrame
-        Time series data
-        
-    Returns
-    -------
-    pd.DataFrame
-        Data with frequency set on index
-    """
-    if not isinstance(y_train.index, pd.DatetimeIndex):
-        return y_train
-    
-    if y_train.index.freq is not None:
-        return y_train
-    
-    inferred_freq = pd.infer_freq(y_train.index)
-    if inferred_freq:
-        try:
-            y_train = y_train.asfreq(inferred_freq, method='ffill')
-        except (TypeError, ValueError):
-            try:
-                y_train = y_train.asfreq(inferred_freq, fill_method='ffill')
-            except (TypeError, ValueError):
-                y_train = y_train.asfreq(inferred_freq)
-                y_train = y_train.ffill()
-    
-    return y_train
-
-
-def impute_missing_values(y_train: pd.DataFrame, model_type: str = "var") -> pd.DataFrame:
-    """Impute missing values in training data using sktime Imputer.
-    
-    Uses a multi-stage approach:
-    1. Forward-fill (ffill)
-    2. Backward-fill (bfill) for any remaining NaNs
-    3. Forecaster-based imputation (NaiveForecaster) as final fallback
-    4. Drop rows if still NaNs remain (last resort)
-    
-    Parameters
-    ----------
-    y_train : pd.DataFrame
-        Time series data with potential missing values
-    model_type : str, default="var"
-        Model type (for logging purposes)
-        
-    Returns
-    -------
-    pd.DataFrame
-        Data with missing values imputed
-        
-    Raises
-    ------
-    ValidationError
-        If all data is dropped after imputation
-    """
-    if not y_train.isnull().any().any():
-        return y_train
-    
-    _logger.warning(f"{model_type.upper()} data contains NaN values. Applying imputation...")
-    check_sktime_available()
-    
-    from sktime.transformations.series.impute import Imputer
-    from sktime.forecasting.naive import NaiveForecaster
-    
-    imputer_ffill = Imputer(method="ffill")
-    imputer_bfill = Imputer(method="bfill")
-    imputer_forecaster = Imputer(method="forecaster", forecaster=NaiveForecaster(strategy="last"))
-    
-    for col in y_train.columns:
-        col_series = y_train[[col]]
-        
-        # Stage 1: Forward-fill
-        col_imputed = imputer_ffill.fit_transform(col_series)
-        
-        # Stage 2: Backward-fill for any remaining NaNs
-        if col_imputed.isnull().any().any():
-            col_imputed = imputer_bfill.fit_transform(col_imputed)
-        
-        # Stage 3: Forecaster-based imputation as fallback
-        if col_imputed.isnull().any().any():
-            try:
-                col_imputed = imputer_forecaster.fit_transform(col_imputed)
-            except Exception as e:
-                # If forecaster imputation fails, log warning but continue
-                _logger.warning(f"Forecaster imputation failed for {col}: {e}")
-        
-        y_train[col] = col_imputed[col]
-    
-    # Final check: if NaNs still remain, drop those rows (last resort)
-    if y_train.isnull().any().any():
-        nan_count_before = y_train.isnull().sum().sum()
-        nan_rows = y_train.isnull().any(axis=1).sum()
-        _logger.warning(f"{nan_count_before} NaN values remain after all imputation attempts ({nan_rows} rows). Dropping rows with NaN...")
-        y_train = y_train.dropna()
-        if len(y_train) == 0:
-            raise ValidationError(f"{model_type.upper()}: All data was dropped after imputation. Check data quality.")
-    
-    return y_train
-
-
-def prepare_multivariate_data(
-    data: pd.DataFrame,
-    config_dict: Optional[dict],
-    cfg: Any,
-    target_series: Optional[str],
-    model_type: str
-) -> pd.DataFrame:
-    """Prepare multivariate training data for DFM/DDFM/VAR models.
-    
-    All models use monthly frequency for consistency. Weekly data is resampled
-    to monthly using window averaging.
-    
-    Parameters
-    ----------
-    data : pd.DataFrame
-        Raw time series data
-    config_dict : dict, optional
-        DFM/DDFM configuration dictionary with series list
-    cfg : DictConfig or dict
-        Experiment configuration
-    target_series : str, optional
-        Target series name
-    model_type : str
-        Model type ('dfm', 'ddfm', 'var')
-        
-    Returns
-    -------
-    pd.DataFrame
-        Prepared multivariate data at monthly frequency
-        
-    Raises
-    ------
-    ValidationError
-        If no valid series are found
-    """
-    from omegaconf import OmegaConf
-    
-    filtered_series_ids = []
-    if config_dict and 'series' in config_dict:
-        filtered_series_ids = [
-            s.get('series_id', s) if isinstance(s, dict) else s 
-            for s in config_dict['series']
-        ]
-    
-    if filtered_series_ids:
-        available_series = [s for s in filtered_series_ids if s in data.columns]
-        if target_series and target_series in data.columns and target_series not in available_series:
-            available_series.append(target_series)
-        if len(available_series) > 0:
-            selected_data = data[available_series]
-            # Note: dropna() is called here to remove rows with all NaN, but imputation will handle missing values later
-            # For VAR, impute_missing_values() will be called after this function
-            # For DFM/DDFM, missing values are handled by the preprocessing pipeline
-            selected_data = selected_data.dropna(how='all')  # Only drop rows where ALL values are NaN
-            return resample_to_monthly(selected_data)
-        else:
-            raise ValidationError(
-                f"{model_type.upper()}: No filtered series found in data columns. "
-                f"Filtered series IDs: {filtered_series_ids[:5]}..., "
-                f"Data columns: {list(data.columns)[:5]}..."
-            )
-    elif hasattr(cfg, 'experiment') and 'series' in cfg.experiment:
-        series_ids = OmegaConf.to_container(cfg.experiment.series, resolve=True)
-        if isinstance(series_ids, list):
-            available_series = [s for s in series_ids if s in data.columns]
-            if target_series and target_series in data.columns and target_series not in available_series:
-                available_series.append(target_series)
-            if len(available_series) > 0:
-                selected_data = data[available_series]
-                # Note: dropna(how='all') only removes rows where ALL values are NaN
-                # Missing values will be handled by imputation later (VAR) or preprocessing pipeline (DFM/DDFM)
-                selected_data = selected_data.dropna(how='all')
-                return resample_to_monthly(selected_data)
-            else:
-                all_numeric = data.select_dtypes(include=[np.number])
-                all_numeric = all_numeric.dropna(how='all')
-                return resample_to_monthly(all_numeric)
-    else:
-        y_train = data.select_dtypes(include=[np.number])
-        if target_series and target_series in data.columns and target_series not in y_train.columns:
-            y_train[target_series] = data[target_series]
-        # Note: dropna(how='all') only removes rows where ALL values are NaN
-        # Missing values will be handled by imputation later (VAR) or preprocessing pipeline (DFM/DDFM)
-        y_train = y_train.dropna(how='all')
-        return resample_to_monthly(y_train)
-
-
-def prepare_univariate_data(
-    data: pd.DataFrame,
-    target_series: str
-) -> pd.Series:
-    """Prepare univariate training data for ARIMA models.
-    
-    Parameters
-    ----------
-    data : pd.DataFrame
-        Raw time series data
-    target_series : str
-        Target series name
-        
-    Returns
-    -------
-    pd.Series
-        Prepared univariate data at monthly frequency
-    """
-    if target_series not in data.columns:
-        raise ValidationError(f"Target series '{target_series}' not found in data columns")
-    
-    y_train = data[target_series]
-    y_train_monthly = resample_to_monthly(y_train.to_frame()).iloc[:, 0]
-    y_train_monthly = set_dataframe_frequency(y_train_monthly.to_frame()).iloc[:, 0]
-    
-    return y_train_monthly
-

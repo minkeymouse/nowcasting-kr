@@ -43,7 +43,8 @@ _logging_configured = False
 def setup_logging(
     level: int = logging.INFO,
     format_string: Optional[str] = None,
-    force: bool = False
+    force: bool = False,
+    log_dir: Optional[Path] = None
 ) -> None:
     """Centralized logging configuration for the entire project.
     
@@ -67,6 +68,8 @@ def setup_logging(
         Custom format string. If None, uses default format.
     force : bool, default False
         Force reconfiguration even if already configured. Use with caution.
+    log_dir : Path, optional
+        Directory to save log files. If None, only logs to stdout.
         
     Notes
     -----
@@ -100,11 +103,28 @@ def setup_logging(
     
     # Add handler to src logger if not already present
     if not src_logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(
+        # Console handler (always add)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(
             logging.Formatter(format_string, datefmt='%Y-%m-%d %H:%M:%S')
         )
-        src_logger.addHandler(handler)
+        src_logger.addHandler(console_handler)
+        
+        # File handler (if log_dir is specified)
+        if log_dir is not None:
+            log_dir = Path(log_dir)
+            log_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create log file with timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            log_file = log_dir / f'train_{timestamp}.log'
+            
+            file_handler = logging.FileHandler(log_file, encoding='utf-8')
+            file_handler.setFormatter(
+                logging.Formatter(format_string, datefmt='%Y-%m-%d %H:%M:%S')
+            )
+            src_logger.addHandler(file_handler)
     
     _logging_configured = True
 
@@ -380,7 +400,7 @@ def extract_experiment_params(cfg: DictConfig) -> Dict[str, Any]:
             models = [models_container]
     
     # Extract horizons
-    horizons = list(range(1, 23))  # Default: horizons 1-22 (monthly: 2024-01 to 2025-10)
+    horizons = list(range(1, 25))  # Default: horizons 1-24 (monthly: 1 horizon = 1 month = 4 weeks)
     horizons_raw = exp_cfg.get('forecast_horizons')
     if horizons_raw:
         horizons_container = OmegaConf.to_container(horizons_raw, resolve=True)
