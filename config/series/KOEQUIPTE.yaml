@@ -1,0 +1,8 @@
+series_id: KOEQUIPTE
+series_name: Investment, Equipment, Estimation, SA
+frequency: m
+transformation: chg
+units: Index
+category: Investment
+release: 30
+scaler: robust

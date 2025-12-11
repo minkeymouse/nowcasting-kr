@@ -1,0 +1,8 @@
+series_id: KOBSIBNMR
+series_name: FKI, Business Conditions, Non-Manufacturing, Actual
+frequency: m
+transformation: chg
+units: Index
+category: Survey, Bsnss
+release: -5
+scaler: robust

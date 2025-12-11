@@ -1,0 +1,9 @@
+series_id: KOPPSRM.F
+series_name: Producer Price Index Raw Materials, Index, 2020 = 100
+frequency: m
+transformation: lin
+units: Index
+category: Price
+release: 20
+scaler: robust
+impute: null

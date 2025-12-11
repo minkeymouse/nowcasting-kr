@@ -1,0 +1,8 @@
+series_id: KOMPCONGG
+series_name: Production, Consumer Goods, SA
+frequency: m
+transformation: chg
+units: Index
+category: Production
+release: 30
+scaler: robust

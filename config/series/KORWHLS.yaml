@@ -1,0 +1,8 @@
+series_id: KORWHLS
+series_name: KOSPI Distribution
+frequency: w
+transformation: chg
+units: index
+category: Finance
+release: 1
+scaler: robust

@@ -1,0 +1,8 @@
+series_id: KOWRCCNSE
+series_name: Retail Sales, Total, SA
+frequency: m
+transformation: chg
+units: Index
+category: Consumption
+release: 28
+scaler: robust

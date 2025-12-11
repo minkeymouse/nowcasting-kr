@@ -1,0 +1,8 @@
+series_id: KOIMPCONA
+series_name: Imports, Consumer Goods, $
+frequency: m
+transformation: chg
+units: $, Millions
+category: Int. trade
+release: 14
+scaler: robust

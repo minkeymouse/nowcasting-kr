@@ -1,0 +1,8 @@
+series_id: KOUN%TOTQ
+series_name: Unemployed, Rate, Total, SA
+frequency: m
+transformation: chg
+units: Percent
+category: Labor
+release: 11
+scaler: robust

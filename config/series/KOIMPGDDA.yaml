@@ -1,0 +1,8 @@
+series_id: KOIMPGDDA
+series_name: Imports, Capital Goods, $
+frequency: m
+transformation: chg
+units: $, Millions
+category: Int. trade
+release: 14
+scaler: robust

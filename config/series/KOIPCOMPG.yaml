@@ -1,0 +1,8 @@
+series_id: KOIPCOMPG
+series_name: Production, Electrical Components, Computer, Radio
+frequency: m
+transformation: chg
+units: Index
+category: Production
+release: 30
+scaler: robust

@@ -1,0 +1,9 @@
+series_id: KO3YEARC
+series_name: Corporate 3YR, AA-, Spread
+frequency: m
+transformation: lin
+release: 1
+scaler: robust
+impute: null
+units: Percent, Annual
+category: Finance

@@ -1,0 +1,8 @@
+series_id: KOEMPCONF
+series_name: Employment, Construction
+frequency: m
+transformation: chg
+units: Thousands of Persons
+category: Labor
+release: 11
+scaler: robust

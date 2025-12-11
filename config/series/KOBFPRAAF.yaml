@@ -1,0 +1,8 @@
+series_id: KOBFPRAAF
+series_name: FKI, Profitability, All Industries, Actual
+frequency: m
+transformation: chg
+units: Index
+category: Survey, Bsnss
+release: -5
+scaler: robust

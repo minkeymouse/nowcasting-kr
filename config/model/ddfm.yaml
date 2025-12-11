@@ -1,0 +1,41 @@
+ar_clip_max: 0.99
+ar_clip_min: -0.99
+ar_lag: 1
+augment_idio: true
+augment_idio_slow: true
+blocks:
+  Block_Global:
+    ar_lag: 1
+    clock: w
+    factors: 3
+# Removed additional blocks (Block_Consumption, Block_Investment, Block_Export, Block_Nominal, Block_Labor)
+# All experiments now use only the global block with 3 factors for consistency and numerical stability
+clip_ar_coefficients: true
+clock: w
+idio_min_var: 1.0e-08
+idio_rho0: 0.1
+max_iter: 5000
+nan_k: 3
+nan_method: 2
+regularization_scale: 1.0e-05
+threshold: 1.0e-05
+use_regularization: true
+encoder_layers:
+- 16
+- 4
+# Updated to match original DDFM default (16, 4) instead of (64, 32)
+# Original default provides ~611 parameters vs ~4,291 for (64, 32)
+# With ~336 training observations, (16, 4) gives ~17.6 samples per parameter
+# which meets the recommended 10-20 samples per parameter guideline
+num_factors: 3  # Updated to match DFM: 3 factors for all experiments
+dropout: 0.1
+activation: relu  # Matches original DDFM default
+learning_rate: 0.005  # Matches original DDFM default
+batch_size: 100  # Matches original DDFM default
+epochs: 100  # Matches original DDFM default
+decay_learning_rate: true  # Exponential decay scheduler (gamma=0.96, matches original)
+min_obs_pretrain: 50  # Minimum observations for pre-training without interpolation (matches original)
+mult_epoch_pretrain: 1  # Multiplier for pre-training epochs (matches original)
+factor_order: 2  # Updated to match original DDFM default (was: 1)
+# Note: Original DDFM uses factor_oder=2 (typo in original code, but 2 is the default)
+scaler: ${experiment.scaler}

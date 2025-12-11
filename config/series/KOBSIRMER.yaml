@@ -1,0 +1,8 @@
+series_id: KOBSIRMER
+series_name: BoK, BSI, Operation Rate, Manufacturing, Forecast
+frequency: m
+transformation: chg
+units: Index
+category: Survey, Bsnss
+release: -35
+scaler: robust

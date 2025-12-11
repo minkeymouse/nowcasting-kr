@@ -1,0 +1,8 @@
+series_id: KOPROPRCF
+series_name: Producer Prices, All Items
+frequency: m
+transformation: chg
+units: Index
+category: Price
+release: 20
+scaler: robust

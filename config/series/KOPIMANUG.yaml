@@ -1,0 +1,8 @@
+series_id: KOPIMANUG
+series_name: Inventories, Manufacturing, SA, Index
+frequency: m
+transformation: chg
+units: Index
+category: Production
+release: 30
+scaler: robust

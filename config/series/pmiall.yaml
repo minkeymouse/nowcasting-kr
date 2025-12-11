@@ -1,0 +1,8 @@
+series_id: pmiall
+series_name: PMI
+frequency: m
+transformation: chg
+units: Index
+category: Survey, Bsnss
+release: 3
+scaler: robust

@@ -1,0 +1,8 @@
+series_id: KOCPEXFEF
+series_name: CPI ex Food and Energy
+frequency: m
+transformation: chg
+units: Index
+category: Price
+release: 3
+scaler: robust

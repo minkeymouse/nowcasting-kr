@@ -1,0 +1,8 @@
+series_id: KOCOBUSIR
+series_name: BoK, BSI, Business Conditions, Composite Business Sentiment Index, KRW
+frequency: m
+transformation: chg
+units: Index
+category: Survey, Bsnss
+release: -5
+scaler: robust

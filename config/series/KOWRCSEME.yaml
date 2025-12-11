@@ -1,0 +1,8 @@
+series_id: KOWRCSEME
+series_name: Wholesale and Retail, Semi-Durable Goods, SA
+frequency: m
+transformation: chg
+units: Index
+category: Consumption
+release: 28
+scaler: robust

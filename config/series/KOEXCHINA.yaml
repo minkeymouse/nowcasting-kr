@@ -1,0 +1,8 @@
+series_id: KOEXCHINA
+series_name: Exports, China, USD
+frequency: m
+transformation: chg
+units: $, Millions
+category: Int. trade
+release: 1
+scaler: robust

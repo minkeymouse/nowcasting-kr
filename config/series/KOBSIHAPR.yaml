@@ -1,0 +1,8 @@
+series_id: KOBSIHAPR
+series_name: BoK, BSI, Employment Conditions, All Industries, Actual
+frequency: m
+transformation: chg
+units: Index
+category: Survey, Bsnss
+release: -5
+scaler: robust

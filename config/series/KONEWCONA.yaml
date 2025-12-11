@@ -1,0 +1,8 @@
+series_id: KONEWCONA
+series_name: New Orders, Construction, Total, Value, KRW
+frequency: m
+transformation: chg
+units: Index
+category: Investment
+release: 30
+scaler: robust

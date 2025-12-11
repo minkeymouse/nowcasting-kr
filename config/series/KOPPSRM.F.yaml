@@ -1,0 +1,8 @@
+series_id: KOPPSRM.F
+series_name: Producer Price Index Raw Materials, Index
+frequency: m
+transformation: chg
+units: Index
+category: Price
+release: 20
+scaler: robust

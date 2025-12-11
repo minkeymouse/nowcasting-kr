@@ -1,0 +1,8 @@
+series_id: KOCSEMEMR
+series_name: CSI, Expectations of Employment Situation, Total
+frequency: m
+transformation: chg
+units: Index
+category: Survey, Cnsmr
+release: -5
+scaler: robust

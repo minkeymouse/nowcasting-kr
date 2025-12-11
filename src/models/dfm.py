@@ -5,13 +5,12 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 import pandas as pd
 import numpy as np
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from src.utils import ValidationError
-from src.preprocessing import (
+from src.train.preprocess import (
     prepare_multivariate_data,
-    set_dataframe_frequency,
-    create_transformer_from_config
+    set_dataframe_frequency
 )
 from .base import save_model_checkpoint, load_model_checkpoint
 
@@ -47,8 +46,11 @@ def train_dfm(
     """
     from dfm_python.config import DFMConfig
     from dfm_python import DFM, DFMDataModule, DFMTrainer
-    from src.models.models_forecasters import _create_preprocessing_pipeline
-    from src.train import _convert_experiment_to_dfm_config_fallback, _create_time_index_from_data
+    from src.train.train_dfm_python import (
+        _create_preprocessing_pipeline,
+        _build_dfm_config,
+        _create_time_index_from_data
+    )
     
     # Get model parameters
     max_iter = config.get('max_iter', 5000)
@@ -59,7 +61,7 @@ def train_dfm(
     # Prepare data
     config_dict = config.copy()
     config_dict['clock'] = clock
-    y_train, available_series_list = prepare_multivariate_data(
+    y_train, available_series = prepare_multivariate_data(
         data, config_dict, cfg, target_series, model_type='dfm'
     )
     y_train = set_dataframe_frequency(y_train)
@@ -68,13 +70,13 @@ def train_dfm(
     logger.info(f"Max iterations: {max_iter}, Threshold: {threshold}, Clock: {clock}")
     
     # Convert to DFMConfig
-    project_root = Path(__file__).parent.parent.parent
-    config_path = str(project_root / "config")
+    from src.utils import get_project_root
+    config_path = str(get_project_root() / "config")
     
-    dfm_config = _convert_experiment_to_dfm_config_fallback(
+    dfm_config = _build_dfm_config(
         cfg=cfg,
-        available_series_list=available_series_list,
-        model_cfg_dict=config_dict,
+        available_series=available_series,
+        model_config=config_dict,
         config_path=config_path,
         clock=clock,
         mixed_freq=mixed_freq
@@ -130,49 +132,120 @@ def train_dfm(
 def forecast_dfm(
     model: Any,
     horizon: int,
-    last_date: Optional[pd.Timestamp] = None
+    last_date: Optional[pd.Timestamp] = None,
+    y_recent: Optional[pd.DataFrame] = None
 ) -> pd.DataFrame:
     """Generate DFM forecasts.
+    
+    This function uses the update().predict() pattern which is the strength of DFM.
+    If y_recent is provided, the model state is updated with latest data before forecasting.
     
     Parameters
     ----------
     model : Any
         Trained DFM model
     horizon : int
-        Forecast horizon
+        Forecast horizon (in model's clock frequency: weeks if clock='w', months if clock='m')
     last_date : Optional[pd.Timestamp]
         Last date in training data
+    y_recent : Optional[pd.DataFrame]
+        Recent data for state update. Should be original data (before transformations).
+        update() will handle transformations and standardization internally.
         
     Returns
     -------
     pd.DataFrame
-        Forecasted values with DatetimeIndex
+        Forecasted values with DatetimeIndex (weekly if clock='w', monthly if clock='m')
     """
+    # Get clock frequency from model config
+    clock = getattr(model.config, 'clock', 'w') if hasattr(model, 'config') else 'w'
+    
+    # Update model state with recent data if provided
+    # Updated to use original data (not standardized) - update() now handles preprocessing internally
+    if y_recent is not None:
+        try:
+            # Pass original data to update() - it will handle transformations and standardization internally
+            if isinstance(y_recent, pd.DataFrame):
+                # Use DataFrame directly (update() accepts DataFrame)
+                model.update(y_recent, history=None)
+                logger.info(f"Updated DFM state with {len(y_recent)} periods (original data) before forecasting")
+            else:
+                # Convert to DataFrame if numpy array
+                y_recent_df = pd.DataFrame(y_recent)
+                model.update(y_recent_df, history=None)
+                logger.info(f"Updated DFM state with {len(y_recent_df)} periods (original data) before forecasting")
+        except Exception as e:
+            logger.warning(f"Failed to update DFM with recent data: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+    
     # Generate forecasts
-    X_forecast, Z_forecast = model.predict(horizon=horizon, return_series=True, return_factors=True)
+    result = model.predict(horizon=horizon, return_series=True, return_factors=True)
+    
+    # Handle return value - could be tuple or single array
+    if isinstance(result, tuple):
+        X_forecast, Z_forecast = result
+    else:
+        X_forecast = result
+        Z_forecast = None
     
     # Convert to DataFrame
     if isinstance(X_forecast, np.ndarray):
+        # Ensure X_forecast is 2D (horizon x n_series)
+        if X_forecast.ndim == 1:
+            # Reshape to (horizon, 1) if single series
+            X_forecast = X_forecast.reshape(-1, 1)
+        elif X_forecast.ndim == 0:
+            # Scalar case - reshape to (1, 1)
+            X_forecast = np.array([[X_forecast.item()]])
+        
         # Get series names from model config if available
         try:
             series_names = [s.series_id for s in model.config.series]
         except:
-            series_names = [f"series_{i}" for i in range(X_forecast.shape[1])]
+            n_series = X_forecast.shape[1] if X_forecast.ndim > 1 else 1
+            series_names = [f"series_{i}" for i in range(n_series)]
         
+        # Ensure series_names matches X_forecast shape
+        n_series = X_forecast.shape[1] if X_forecast.ndim > 1 else 1
         forecast_df = pd.DataFrame(
             X_forecast,
-            columns=series_names[:X_forecast.shape[1]]
+            columns=series_names[:n_series]
         )
     else:
         forecast_df = pd.DataFrame(X_forecast)
     
-    # Create index
+    # Create index based on clock frequency
+    # Always create DatetimeIndex for proper aggregation
     if last_date is not None:
-        forecast_df.index = pd.date_range(
-            start=last_date + pd.DateOffset(months=1),
-            periods=horizon,
-            freq='MS'
-        )
+        if clock == 'w':
+            # Weekly frequency
+            forecast_df.index = pd.date_range(
+                start=last_date + pd.DateOffset(weeks=1),
+                periods=horizon,
+                freq='W'
+            )
+        else:
+            # Monthly frequency (default)
+            forecast_df.index = pd.date_range(
+                start=last_date + pd.DateOffset(months=1),
+                periods=horizon,
+                freq='MS'
+            )
+    else:
+        # If last_date is None, create weekly index from current date (for weekly models)
+        # This ensures DatetimeIndex exists for aggregation
+        if clock == 'w':
+            from datetime import datetime
+            start_date = datetime.now()
+            forecast_df.index = pd.date_range(
+                start=start_date,
+                periods=horizon,
+                freq='W'
+            )
+        else:
+            # For monthly, use RangeIndex if no date available
+            forecast_df.index = pd.RangeIndex(start=0, stop=horizon)
     
     return forecast_df
 

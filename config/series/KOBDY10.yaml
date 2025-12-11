@@ -1,0 +1,8 @@
+series_id: KOBDY10
+series_name: KTB 10Y
+frequency: w
+transformation: chg
+units: index
+category: Finance
+release: 1
+scaler: robust

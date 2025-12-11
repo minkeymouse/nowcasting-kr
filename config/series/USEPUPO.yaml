@@ -1,0 +1,8 @@
+series_id: USEPUPO
+series_name: US Economic Policy Uncertainty Index
+frequency: w
+transformation: chg
+units: index
+category: Survey
+release: 5
+scaler: robust

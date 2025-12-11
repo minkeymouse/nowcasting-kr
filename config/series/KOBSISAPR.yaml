@@ -1,0 +1,8 @@
+series_id: KOBSISAPR
+series_name: BoK, BSI, Sales Growth, All Industries, Actual
+frequency: m
+transformation: chg
+units: Index
+category: Survey, Bsnss
+release: -5
+scaler: robust

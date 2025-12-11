@@ -1,0 +1,11 @@
+# VAR (Vector Autoregression) Model Configuration
+lag_order: 1
+trend: c
+enforce_stationarity: false
+
+# Optional: Auto-lag selection
+auto_lag:
+  enabled: false
+  maxlags: 12
+  ic: aic
+

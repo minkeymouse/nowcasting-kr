@@ -1,0 +1,67 @@
+{
+  "model_type": "lstm",
+  "forecast_horizon_weeks": 88,
+  "forecast_period": {
+    "start": "2024-01-01",
+    "end": "2025-09-01"
+  },
+  "targets": {
+    "KOIPALL.G": {
+      "units": [
+        50,
+        50
+      ],
+      "epochs": 50,
+      "batch_size": 32,
+      "learning_rate": 0.001,
+      "input_size": 96,
+      "scaler_type": "robust",
+      "training_data_length": 88,
+      "num_covariates": 121,
+      "training_time_seconds": null,
+      "training_time_minutes": null,
+      "checkpoint_path": "checkpoints/KOIPALL.G_lstm/model.pkl",
+      "log_file": "log/KOIPALL.G_lstm_forecast_20251211_140951.log"
+    },
+    "KOEQUIPTE": {
+      "units": [
+        50,
+        50
+      ],
+      "epochs": 50,
+      "batch_size": 32,
+      "learning_rate": 0.001,
+      "input_size": 96,
+      "scaler_type": "robust",
+      "training_data_length": 88,
+      "num_covariates": 121,
+      "training_time_seconds": null,
+      "training_time_minutes": null,
+      "checkpoint_path": "checkpoints/KOEQUIPTE_lstm/model.pkl",
+      "log_file": "log/KOEQUIPTE_lstm_forecast_20251211_140959.log"
+    },
+    "KOWRCCNSE": {
+      "units": [
+        50,
+        50
+      ],
+      "epochs": 50,
+      "batch_size": 32,
+      "learning_rate": 0.001,
+      "input_size": 96,
+      "scaler_type": "robust",
+      "training_data_length": 88,
+      "num_covariates": 121,
+      "training_time_seconds": null,
+      "training_time_minutes": null,
+      "checkpoint_path": "checkpoints/KOWRCCNSE_lstm/model.pkl",
+      "log_file": "log/KOWRCCNSE_lstm_forecast_20251211_141006.log"
+    }
+  },
+  "summary": {
+    "total_targets": 3,
+    "average_training_time_seconds": null,
+    "total_training_time_seconds": null
+  },
+  "generated_at": "2025-12-11 14:10:15"
+}

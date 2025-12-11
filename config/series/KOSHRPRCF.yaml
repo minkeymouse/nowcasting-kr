@@ -1,0 +1,9 @@
+series_id: KOSHRPRCF
+series_name: KOSPI, End of Period
+frequency: m
+transformation: lin
+units: index
+category: Finance
+release: 1
+scaler: robust
+impute: null

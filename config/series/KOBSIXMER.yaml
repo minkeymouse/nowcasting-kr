@@ -1,0 +1,8 @@
+series_id: KOBSIXMER
+series_name: BoK, BSI, Export Sales Growth, Manufacturing, Forecast
+frequency: m
+transformation: chg
+units: Index
+category: Survey, Bsnss
+release: -35
+scaler: robust

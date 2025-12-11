@@ -1,0 +1,8 @@
+series_id: pmioir
+series_name: Orders to Inventories Ratio
+frequency: m
+transformation: chg
+units: Index
+category: Survey, Bsnss
+release: 3
+scaler: robust

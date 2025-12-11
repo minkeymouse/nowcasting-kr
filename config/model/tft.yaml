@@ -1,0 +1,19 @@
+# TFT (Temporal Fusion Transformer) model configuration
+
+# Model architecture
+input_size: 96          # Lookback window (weeks) = 2 years
+hidden_size: 64         # Hidden dimension
+n_head: 4               # Number of attention heads
+dropout: 0.1            # Dropout rate
+
+# Training
+learning_rate: 0.001
+max_epochs: 10          # Maximum training epochs (reduced for faster training)
+batch_size: 256         # Increased batch size for faster training (GPU has 32GB memory)
+num_workers: 4          # Number of data loading workers (increased to reduce CPU bottleneck)
+
+# Forecasting
+horizon: 24             # Forecast horizon (weeks) = 24 weeks per chunk for recursive prediction
+
+# Data preprocessing
+scaler: robust          # robust, standard, or null

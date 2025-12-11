@@ -1,0 +1,8 @@
+series_id: KOCSMTTOA
+series_name: Cyber Shopping Mall, Transaction Total
+frequency: m
+transformation: chg
+units: Index
+category: Consumption
+release: 32
+scaler: robust

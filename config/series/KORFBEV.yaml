@@ -1,0 +1,8 @@
+series_id: KORFBEV
+series_name: KOSPI Food and Beverages
+frequency: w
+transformation: chg
+units: index
+category: Finance
+release: 1
+scaler: robust

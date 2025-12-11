@@ -1,0 +1,43 @@
+{
+  "model_type": "dfm",
+  "forecast_horizon_weeks": 88,
+  "forecast_period": {
+    "start": "2024-01-01",
+    "end": "2025-10-31"
+  },
+  "targets": {
+    "KOIPALL.G": {
+      "model_name": "dfm",
+      "scaler_type": "robust",
+      "training_data_length": null,
+      "training_time_seconds": null,
+      "training_time_minutes": null,
+      "checkpoint_path": "checkpoints/KOIPALL.G_dfm/KOIPALL.G_dfm/model.pkl",
+      "log_file": null
+    },
+    "KOEQUIPTE": {
+      "model_name": "dfm",
+      "scaler_type": "robust",
+      "training_data_length": null,
+      "training_time_seconds": null,
+      "training_time_minutes": null,
+      "checkpoint_path": "checkpoints/KOEQUIPTE_dfm/KOEQUIPTE_dfm/model.pkl",
+      "log_file": "log/KOEQUIPTE_dfm_forecast_20251211_145159.log"
+    },
+    "KOWRCCNSE": {
+      "model_name": "dfm",
+      "scaler_type": "robust",
+      "training_data_length": null,
+      "training_time_seconds": null,
+      "training_time_minutes": null,
+      "checkpoint_path": "checkpoints/KOWRCCNSE_dfm/KOWRCCNSE_dfm/model.pkl",
+      "log_file": "log/KOWRCCNSE_dfm_forecast_20251211_145209.log"
+    }
+  },
+  "summary": {
+    "total_targets": 3,
+    "average_training_time_seconds": null,
+    "total_training_time_seconds": null
+  },
+  "generated_at": "2025-12-11 14:52:57"
+}

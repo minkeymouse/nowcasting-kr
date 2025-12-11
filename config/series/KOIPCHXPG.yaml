@@ -1,0 +1,8 @@
+series_id: KOIPCHXPG
+series_name: Production, Chemicals and Chemical Products (Except Pharmaceuticals)
+frequency: m
+transformation: chg
+units: Index
+category: Production
+release: 30
+scaler: robust

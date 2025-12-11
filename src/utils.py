@@ -9,8 +9,10 @@ This module combines:
 
 import sys
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
+import pandas as pd
+import numpy as np
 
 try:
     import hydra
@@ -44,7 +46,8 @@ def setup_logging(
     level: int = logging.INFO,
     format_string: Optional[str] = None,
     force: bool = False,
-    log_dir: Optional[Path] = None
+    log_dir: Optional[Path] = None,
+    log_file: Optional[Path] = None
 ) -> None:
     """Centralized logging configuration for the entire project.
     
@@ -70,6 +73,9 @@ def setup_logging(
         Force reconfiguration even if already configured. Use with caution.
     log_dir : Path, optional
         Directory to save log files. If None, only logs to stdout.
+    log_file : Path, optional
+        Specific log file path. If provided, uses this instead of creating train_{timestamp}.log.
+        Pattern should match: {TARGET}_{MODEL}_{TIMESTAMP}.log for consistency with DFM/DDFM.
         
     Notes
     -----
@@ -110,23 +116,108 @@ def setup_logging(
         )
         src_logger.addHandler(console_handler)
         
-        # File handler (if log_dir is specified)
-        if log_dir is not None:
-            log_dir = Path(log_dir)
-            log_dir.mkdir(parents=True, exist_ok=True)
+        # File handler (if log_dir or log_file is specified)
+        if log_dir is not None or log_file is not None:
+            if log_file is not None:
+                # Use provided log file path
+                log_file_path = Path(log_file)
+                log_file_path.parent.mkdir(parents=True, exist_ok=True)
+                # Extract model name from log file for cleanup
+                import re
+                match = re.match(r'^(.+?)_(.+?)_(\d{8}_\d{6})\.log$', log_file_path.name)
+                if match:
+                    model_name_for_cleanup = match.group(2)  # Extract model name
+                    _cleanup_old_logs(log_file_path.parent, model_name=model_name_for_cleanup, keep_count=2)
+            else:
+                # Use log_dir with default train_{timestamp}.log pattern
+                log_dir = Path(log_dir)
+                log_dir.mkdir(parents=True, exist_ok=True)
+                # Clean up old logs before creating new one
+                _cleanup_old_logs(log_dir, model_name='train', keep_count=2)
+                # Create log file with timestamp
+                from datetime import datetime
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                log_file_path = log_dir / f'train_{timestamp}.log'
             
-            # Create log file with timestamp
-            from datetime import datetime
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            log_file = log_dir / f'train_{timestamp}.log'
-            
-            file_handler = logging.FileHandler(log_file, encoding='utf-8')
+            file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
             file_handler.setFormatter(
                 logging.Formatter(format_string, datefmt='%Y-%m-%d %H:%M:%S')
             )
             src_logger.addHandler(file_handler)
     
     _logging_configured = True
+
+
+def _cleanup_old_logs(log_dir: Path, model_name: Optional[str] = None, keep_count: int = 2) -> None:
+    """Clean up old log files, keeping only the latest N files per model.
+    
+    Parameters
+    ----------
+    log_dir : Path
+        Directory containing log files
+    model_name : str, optional
+        If provided, only clean logs for this model. Otherwise, clean all models.
+    keep_count : int, default 2
+        Number of latest log files to keep per model
+    """
+    if not log_dir.exists():
+        return
+    
+    import re
+    from collections import defaultdict
+    _logger = logging.getLogger(__name__)
+    
+    # Pattern: {target}_{model}_{timestamp}.log or {number}_{model}_{timestamp}.log or train_{timestamp}.log or {target}_compare_{timestamp}.log
+    # Note: Numbered logs like 0_tft_20251211_115212.log should be grouped by model name (tft)
+    log_pattern = re.compile(r'^(.+?)_(.+?)_(\d{8}_\d{6})\.log$|^train_(\d{8}_\d{6})\.log$')
+    
+    # Group logs by model
+    logs_by_model = defaultdict(list)
+    
+    for log_file in log_dir.glob('*.log'):
+        match = log_pattern.match(log_file.name)
+        if match:
+            if match.group(4):  # train_{timestamp}.log pattern
+                model = 'train'
+                timestamp = match.group(4)
+            else:  # {target}_{model}_{timestamp}.log or {number}_{model}_{timestamp}.log
+                # Extract model name (could be 'compare' or actual model name)
+                # For numbered logs (0_tft, 1_tft), group(2) extracts the model name
+                model = match.group(2)  # Extract model name
+                timestamp = match.group(3)
+            
+            # Filter by model_name if provided
+            if model_name is not None and model != model_name:
+                continue
+            
+            logs_by_model[model].append((log_file, timestamp))
+    
+    # Keep only latest keep_count files per model
+    for model, log_files in logs_by_model.items():
+        if len(log_files) > keep_count:
+            # Sort by timestamp (newest first)
+            log_files.sort(key=lambda x: x[1], reverse=True)
+            
+            # Delete older files
+            for log_file, _ in log_files[keep_count:]:
+                try:
+                    log_file.unlink()
+                    _logger.debug(f"Deleted old log file: {log_file.name}")
+                except Exception as e:
+                    _logger.warning(f"Failed to delete log file {log_file.name}: {e}")
+
+
+def cleanup_logs(log_dir: Path, keep_count: int = 2) -> None:
+    """Public function to clean up old log files.
+    
+    Parameters
+    ----------
+    log_dir : Path
+        Directory containing log files
+    keep_count : int, default 2
+        Number of latest log files to keep per model
+    """
+    _cleanup_old_logs(log_dir, model_name=None, keep_count=keep_count)
 
 
 # ============================================================================
@@ -451,4 +542,259 @@ def validate_experiment_config(cfg: DictConfig, require_target: bool = True, req
         if len(params['models']) == 0:
             config_name = cfg.get('_config_name_', 'unknown')
             raise ValueError(f"Config {config_name} must specify at least one model in 'models' list")
+
+
+# ============================================================================
+# Config Helper Functions
+# ============================================================================
+
+def get_experiment_cfg(cfg: DictConfig) -> DictConfig:
+    """Extract experiment config section from Hydra config."""
+    return cfg.experiment if 'experiment' in cfg else cfg
+
+
+def get_config_path() -> Path:
+    """Get path to config directory.
+    
+    Returns
+    -------
+    Path
+        Path to config directory
+    """
+    return get_project_root() / "config"
+
+
+def detect_model_type(model_name: str) -> Optional[str]:
+    """Detect model type from model name."""
+    valid_types = ['arima', 'var', 'dfm', 'ddfm', 'tft', 'lstm', 'chronos']
+    parts = model_name.lower().split('_')
+    for part in parts:
+        if part in valid_types:
+            return part
+    return None
+
+
+def disable_omegaconf_struct(cfg: DictConfig) -> None:
+    """Disable OmegaConf struct mode to allow modifications."""
+    if OmegaConf.is_struct(cfg):
+        OmegaConf.set_struct(cfg, False)
+    if 'experiment' in cfg and OmegaConf.is_struct(cfg.experiment):
+        OmegaConf.set_struct(cfg.experiment, False)
+
+
+def resolve_data_path(data_path: Optional[str] = None) -> Path:
+    """Resolve data file path with fallback to defaults.
+    
+    Parameters
+    ----------
+    data_path : Optional[str]
+        Provided data path
+        
+    Returns
+    -------
+    Path
+        Resolved data file path
+        
+    Raises
+    ------
+    ValidationError
+        If no data file can be found
+    """
+    project_root = get_project_root()
+    
+    if data_path and Path(data_path).exists():
+        return Path(data_path)
+    
+    # Try default locations
+    for filename in ['data.csv', 'sample_data.csv']:
+        default_path = project_root / "data" / filename
+        if default_path.exists():
+            return default_path
+    
+    raise ValidationError(f"Data file not found. Tried: {data_path}, data/data.csv, data/sample_data.csv")
+
+
+def get_checkpoint_path(
+    target_series: str,
+    model_name: str,
+    checkpoint_dir: Optional[str] = None,
+    config_overrides: Optional[List[str]] = None
+) -> Path:
+    """Get checkpoint path for a model.
+    
+    Parameters
+    ----------
+    target_series : str
+        Target series name
+    model_name : str
+        Model name
+    checkpoint_dir : Optional[str]
+        Checkpoint directory
+    config_overrides : Optional[List[str]]
+        Config overrides to extract checkpoint_dir from
+        
+    Returns
+    -------
+    Path
+        Path to model checkpoint file
+    """
+    if checkpoint_dir is None and config_overrides:
+        for override in config_overrides:
+            if override.startswith('checkpoint_dir=') or override.startswith('+checkpoint_dir='):
+                checkpoint_dir = override.split('=', 1)[1]
+                break
+    
+    if checkpoint_dir is None:
+        checkpoint_dir = 'checkpoints'
+    
+    return Path(checkpoint_dir) / f"{target_series}_{model_name}" / "model.pkl"
+
+
+def load_and_filter_data(
+    data_path: Path,
+    start_date: pd.Timestamp,
+    end_date: pd.Timestamp,
+    resample_freq: Optional[str] = None
+) -> pd.DataFrame:
+    """Load data file and filter by date range.
+    
+    Parameters
+    ----------
+    data_path : Path
+        Path to data file
+    start_date : pd.Timestamp
+        Start date (inclusive)
+    end_date : pd.Timestamp
+        End date (inclusive)
+    resample_freq : Optional[str]
+        Resampling frequency (e.g., 'ME' for monthly end)
+        
+    Returns
+    -------
+    pd.DataFrame
+        Filtered data
+    """
+    data = pd.read_csv(data_path, index_col=0, parse_dates=True)
+    data = data[(data.index >= start_date) & (data.index <= end_date)]
+    
+    if resample_freq:
+        from src.train.preprocess import resample_to_monthly
+        if resample_freq == 'ME':
+            data = resample_to_monthly(data)
+    
+    return data
+
+
+def set_forecaster_attributes(forecaster: Any, y_train: pd.DataFrame) -> None:
+    """Set common forecaster attributes for compatibility."""
+    if not hasattr(forecaster, 'is_fitted'):
+        forecaster.is_fitted = True
+    if not hasattr(forecaster, '_y'):
+        forecaster._y = y_train
+
+
+def extract_model_metrics(forecaster: Any) -> Dict[str, Any]:
+    """Extract metrics from trained forecaster.
+    
+    Returns
+    -------
+    Dict[str, Any]
+        Metrics dictionary with converged, num_iter, loglik
+    """
+    try:
+        result = forecaster.get_result()
+    except (AttributeError, RuntimeError):
+        result = None
+    
+    return {
+        'converged': result.get('converged', True) if isinstance(result, dict) else getattr(result, 'converged', True) if result else True,
+        'num_iter': result.get('num_iter', 0) if isinstance(result, dict) else getattr(result, 'num_iter', 0) if result else 0,
+        'loglik': result.get('loglik', np.nan) if isinstance(result, dict) else getattr(result, 'loglik', np.nan) if result else np.nan
+    }
+
+
+# ============================================================================
+# Constants
+# ============================================================================
+
+# Date constants
+TRAIN_START = pd.Timestamp('1985-01-01')
+TRAIN_END = pd.Timestamp('2019-12-31')
+RECENT_START = pd.Timestamp('2020-01-01')
+RECENT_END = pd.Timestamp('2023-12-31')
+TEST_START = pd.Timestamp('2024-01-01')
+TEST_END = pd.Timestamp('2025-10-31')
+
+# Frequency constants
+FREQ_WEEKLY = 'w'
+FREQ_MONTHLY = 'm'
+
+# Scaler constants
+SCALER_ROBUST = 'robust'
+SCALER_STANDARD = 'standard'
+
+# Model type constants
+MODEL_ARIMA = 'arima'
+MODEL_VAR = 'var'
+MODEL_DFM = 'dfm'
+MODEL_DDFM = 'ddfm'
+MODEL_TFT = 'tft'
+MODEL_LSTM = 'lstm'
+MODEL_CHRONOS = 'chronos'
+
+
+# ============================================================================
+# Weekly to Monthly Aggregation Utilities
+# ============================================================================
+
+def aggregate_weekly_to_monthly(
+    weekly_forecast: Union[pd.Series, pd.DataFrame],
+    weeks_per_month: int = 4
+) -> Union[pd.Series, pd.DataFrame]:
+    """Aggregate weekly forecasts to monthly by averaging.
+    
+    Parameters
+    ----------
+    weekly_forecast : pd.Series or pd.DataFrame
+        Weekly forecast data with DatetimeIndex (weekly frequency)
+    weeks_per_month : int, default 4
+        Number of weeks per month for aggregation
+        
+    Returns
+    -------
+    pd.Series or pd.DataFrame
+        Monthly aggregated forecast with DatetimeIndex (monthly frequency)
+    """
+    if not isinstance(weekly_forecast.index, pd.DatetimeIndex):
+        raise ValueError("weekly_forecast must have DatetimeIndex")
+    
+    # Resample weekly to monthly using mean aggregation
+    if isinstance(weekly_forecast, pd.Series):
+        monthly_forecast = weekly_forecast.resample('ME').mean()
+    else:
+        monthly_forecast = weekly_forecast.resample('ME').mean()
+    
+    # Use module-level logger
+    _logger = logging.getLogger(__name__)
+    _logger.debug(f"Aggregated {len(weekly_forecast)} weekly forecasts to {len(monthly_forecast)} monthly forecasts")
+    
+    return monthly_forecast
+
+
+def convert_horizon_months_to_weeks(horizon_months: int, weeks_per_month: int = 4) -> int:
+    """Convert forecast horizon from months to weeks.
+    
+    Parameters
+    ----------
+    horizon_months : int
+        Forecast horizon in months
+    weeks_per_month : int, default 4
+        Number of weeks per month
+        
+    Returns
+    -------
+    int
+        Forecast horizon in weeks
+    """
+    return horizon_months * weeks_per_month
 
