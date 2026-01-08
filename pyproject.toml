@@ -33,4 +33,8 @@ dependencies = [
     "neuralforecast>=3.1.2",
     "accelerate>=1.12.0",
     "dill>=0.4.0",
+    "pyhwp>=0.1b15",
+    "six>=1.17.0",
+    "lxml>=6.0.2",
+    "python-docx>=1.2.0",
 ]

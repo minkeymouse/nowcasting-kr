@@ -1,0 +1,3 @@
+# kb
+
+Use Neo4j knowledge base mcp for fetching the information regarding the project. Knowledge base provides various theoretical and practical information related to the theorerical and practical background. You can search the knowledge base or you can edit the relationships between entities and chunks. You can also create section node or paper node if they are not specified properly and staying as placeholders. Mind that you don't add too many unnecessary entities or relationship that might corrupt the knowledgebase.

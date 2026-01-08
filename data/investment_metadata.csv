@@ -1,0 +1,41 @@
+Model,SeriesID,SeriesName,Frequency,Block-Global,Block-Consumption,Block-Invstestment,Block-Exprtort,Block-Nominal,Block-Labor,Block-riskapp,Transformation,Units,Category,Release,note,Model Production,Model Investment,Model Consumption,구분,데이터이름
+1,KORCOMP,KOSPI,w,1,0,0,0,0,0,1,chg,index,Finance,1,,1,1,1,금융,
+1,KOBDY10,KTB 10Y,w,1,0,0,0,0,0,1,chg,index,Finance,1,,1,1,1,금융,
+1,KOCBNG3,"Corporate 3YR, AA-",w,1,0,0,0,0,0,1,chg,index,Finance,1,,1,1,1,금융,
+1,USSKORW,USD/KRW,w,1,0,0,0,0,0,1,chg,index,Finance,1,,1,1,1,금융,
+1,GSCITOT,GSCI Commodity Price,w,1,0,0,0,0,0,1,chg,index,Finance,1,,0,1,0,금융,
+1,A001,News Sentiment,w,1,0,0,0,0,0,1,chg,index,Survey,7,,1,1,1,기업경기,
+1,KORCNST,KOSPI Construction,w,1,0,0,0,0,0,1,chg,index,Finance,1,KOSPI Sector,0,1,0,금융,코스피 건설업
+1,KORMACH,KOSPI Machinery,w,1,0,0,0,0,0,1,chg,index,Finance,1,,0,1,0,금융,코스피 기계업
+1,KOEMPMANF,"Employment, Mining and Manufacturing",m,1,0,0,0,0,1,0,chg,Thousands of Persons,Labor,11,NSA,0,1,0,고용/노동,취업자 수(광공업)
+1,KOEMPCONF,"Employment, Construction",m,1,0,1,0,0,1,0,chg,Thousands of Persons,Labor,11,NSA,0,1,0,고용/노동,취업자 수(건설업)
+1,KOIMPGDDA,"Imports, Capital Goods, $",m,1,0,1,0,1,0,0,chg,"$, Millions",Int. trade,14,Nom,0,1,0,수출입,"수입(자본재, 달러)"
+1,KOPROPRCF,"Producer Prices, All Items",m,1,0,0,0,1,0,0,chg,Index,Price,20,,1,1,0,물가,생산자물가지수(전체)
+1,KOPPSRM.F,"Producer Price Index Raw Materials, Index",m,1,0,0,0,1,0,0,chg,Index,Price,20,,0,1,0,물가,생산자물가지수(원재료)
+1,KOEQUIPTE,"Investment, Equipment, Estimation, SA",m,1,0,1,0,0,0,0,chg,Index,Investment,30,,1,1,0,설비투자,설비투자지수(계절조정)
+1,KOEQUIMAE,"Investment, Machinery, SA, Index",m,1,0,1,0,0,0,0,chg,Index,Investment,30,,0,1,0,설비투자,"설비투자(기계류, 계절조정 지수)"
+1,KOEQUITTE,"Investment, Transportation Equipment, SA, Index",m,1,0,1,0,0,0,0,chg,Index,Investment,30,,0,1,0,설비투자,"설비투자(운송장비, 계절조정 지수)"
+1,KONEWCONA,"New Orders, Construction, Total, Value, KRW",m,1,0,1,0,1,0,0,chg,Index,Investment,30,Nom,0,1,0,건설,"건설 수주액(총액, 원)"
+1,KOCONPMTH,"Building Permits, Floor Area",m,1,0,1,0,0,0,0,chg,Index,Investment,31,,0,1,0,건설,건축 인허가 면적
+1,KOCONSTRP,"Construction Started, Floor Area",m,1,0,1,0,0,0,0,chg,Index,Investment,31,,0,1,0,건설,건설 착공 면적
+1,KOVALCONA,"Construction Completed, Total, KRW",m,1,0,1,0,1,0,0,chg,Index,Investment,30,Nom,0,1,0,건설,"건설 준공액(총액, 원)"
+1,KOMSCAPGG,"Manufacturing Shipment - Capital Goods, SA",m,1,0,1,0,0,0,0,chg,Index,Production,30,,0,1,0,산업생산,"제조업 출하(자본재, 계절조정)"
+1,KOPICAPGG,"Producers Inventory - Capital Goods, SA, Index",m,1,0,1,0,0,0,0,chg,Index,Production,30,,0,1,0,산업생산,"제조업 재고(자본재, 계절조정)"
+1,KOSIARRLE,"Service Sector, Real Estate and Renting and Leasing",m,1,0,0,0,0,0,0,chg,Index,Production,30,,0,1,0,산업생산,서비스업(부동산·임대업)
+1,KOSSBFMBE,"Service Sector, Business Facilities Management and Business Support Services",m,1,0,0,0,0,0,0,chg,Index,Production,30,,0,1,0,산업생산,서비스업(사업시설·사업지원)
+1,KOIPMIMAG,"Production, Mining and Manufacturing, SA",m,1,0,0,0,0,0,0,chg,Index,Production,30,,1,1,0,산업생산,광공업생산지수(계절조정)
+1,KOMPRI30G,Production of Total Construction,m,1,0,1,0,0,0,0,chg,Index,Production,30,,1,1,0,산업생산,생산(건설업)
+1,KOMPCAPGG,"Production, Capital Goods, SA",m,1,0,1,0,0,0,0,chg,Index,Production,30,,0,1,0,산업생산,"생산(자본재, 계절조정)"
+1,KOMPCONDG,"Production, Consumer Durable Goods, SA",m,1,0,1,0,0,0,0,chg,Index,Production,30,,0,1,1,산업생산,"생산(내구재, 계절조정)"
+1,KOCYLEADR,"Leading Index, Index",m,1,0,0,0,0,0,0,chg,Index,Production,30,,1,1,0,산업생산,경기선행지수
+1,KOBSESI.R,"BoK, BSI, Economic Sentiment Index",m,1,0,0,0,0,0,0,chg,Index,"Survey, Bsnss",-5,,1,1,0,기업경기,기업경기실사지수(BSI) 종합
+1,KOCOBUSIR,"BoK, BSI, Business Conditions, Composite Business Sentiment Index, KRW",m,1,0,0,0,0,0,0,chg,Index,"Survey, Bsnss",-5,,1,1,0,기업경기,기업경기실사지수(BSI) 기업경기전망
+1,KOBSIIMPR,"BoK, BSI, Facility Investment, Manufacturing, Actual",m,1,0,1,0,0,0,0,chg,Index,"Survey, Bsnss",-5,,0,1,0,기업경기,설비투자(제조업 실적)
+1,KOBSIIMER,"BoK, BSI, Facility Investment, Manufacturing, Forecast",m,1,0,1,0,0,0,0,chg,Index,"Survey, Bsnss",-35,,0,1,0,기업경기,설비투자(제조업 전망)
+1,KOBSIBCOQ,"FKI, Business Conditions, All Industries, Actual, SA",m,1,0,0,0,0,0,0,chg,Index,"Survey, Bsnss",-5,,1,1,0,기업경기,"FKI 기업경기지수(전산업, 계절조정)"
+1,KOBFINAAF,"FKI, Investment, All Industries, Actual",m,1,0,1,0,0,0,0,chg,Index,"Survey, Bsnss",-5,,0,1,0,기업경기,투자 실적(전산업)
+1,KOBUSINVR,"FKI, Investment, All Industries, Prospects",m,1,0,1,0,0,0,0,chg,Index,"Survey, Bsnss",-35,,0,1,0,기업경기,투자 전망(전산업)
+1,KOCNFCONR,"CSI, Composite Consumer Sentiment Index, Total",m,1,1,0,0,0,0,0,chg,Index,"Survey, Cnsmr",-5,,1,1,1,소비자동향,소비자심리지수(종합)
+1,KOCSEMEMR,"CSI, Expectations of Employment Situation, Total",m,1,1,0,0,0,1,0,chg,Index,"Survey, Cnsmr",-5,,0,1,1,소비자동향,고용상황 전망
+1,KODBLNEQA,"South Korea, Loans With Combs and SBS, Equipment, KRW",m,1,0,1,0,1,0,0,chg,"￦, Billions",Finance,45,,0,1,0,금융,여신금융·상호금융 설비자금대출
+1,KOLRLTCO,"Lending Rates, Loans to Corporations (On New Lending), Average",m,1,0,1,0,0,0,1,chg,"Percent, Annual",Finance,30,,0,1,0,금융,기업대출금리(신규취급분)

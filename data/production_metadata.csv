@@ -1,0 +1,43 @@
+Model,SeriesID,SeriesName,Frequency,Block-Global,Block-Consumption,Block-Invstestment,Block-Exprtort,Block-Nominal,Block-Labor,Block-riskapp,Transformation,Units,Category,Release,note,Model Production,Model Investment,Model Consumption,구분,데이터이름
+1,KORCOMP,KOSPI,w,1,0,0,0,0,0,1,chg,index,Finance,1,,1,1,1,금융,
+1,KOBDY10,KTB 10Y,w,1,0,0,0,0,0,1,chg,index,Finance,1,,1,1,1,금융,
+1,KOCBNG3,"Corporate 3YR, AA-",w,1,0,0,0,0,0,1,chg,index,Finance,1,,1,1,1,금융,
+1,USSKORW,USD/KRW,w,1,0,0,0,0,0,1,chg,index,Finance,1,,1,1,1,금융,
+1,A001,News Sentiment,w,1,0,0,0,0,0,1,chg,index,Survey,7,,1,1,1,기업경기,
+1,KORELEC,KOSPI Electrical and Electronics Equity,w,1,0,0,0,0,0,1,chg,index,Finance,1,,1,0,0,금융,코스피 전기·전자업
+1,KOUN%TOTQ,"Unemployed, Rate, Total, SA",m,1,0,0,0,0,1,0,chg,Percent,Labor,11,,1,0,1,고용/노동,"실업률(전체, 계절조정)"
+1,KOEMPTOTO,"Employment, Total, SA",m,1,0,0,0,0,1,0,chg,Thousands of Persons,Labor,11,,1,0,1,고용/노동,"취업자 수(전체, 계절조정)"
+1,KOPOPACTE,"Economic Active Population, Total, SA",m,1,0,0,0,0,1,0,chg,Thousands of Persons,Labor,11,,1,0,1,고용/노동,"경제활동인구(전체, 계절조정)"
+1,KOHWRWEMP,"Hours Worked, Average Per Week, All Employees",m,1,0,0,0,0,1,0,chg,hours,Labor,11,,1,0,1,고용/노동,근로자 주당 평균 노동시간
+1,KOEXPGDSA,"Exports, Free on Board, USD",m,1,0,0,1,1,0,0,chg,"$, Millions",Int. trade,1,Nom,1,0,0,수출입,"수출(FOB, 달러)"
+1,KOEXCHINA,"Exports, China, USD",m,1,0,0,1,1,0,0,chg,"$, Millions",Int. trade,1,Nom,1,0,0,수출입,대중국 수출(달러)
+1,KOEXPSCOH,"Exports, Semi-Conductors, Volume",m,1,0,0,1,0,0,0,chg,Index,Int. trade,28,,1,0,0,수출입,수출 물량(반도체)
+1,KOEXPMOVH,"Exports, Motor Vehicles, Volume",m,1,0,0,1,0,0,0,chg,Index,Int. trade,28,,1,0,0,수출입,수출 물량(자동차)
+1,KOIMPGDSA,"Imports Cost Insurance Freight (Customs Basis, $)",m,1,0,0,0,1,0,0,chg,"$, Millions",Int. trade,1,Nom,1,0,0,수출입,"수입(CIF, 관세기준, 달러)"
+1,KONETTRDF,"Terms of Trade, Net Barter",m,1,0,0,1,1,0,0,chg,Index,Int. trade,14,,1,0,0,수출입,순상품교역조건
+1,KOWRCCNSE,"Retail Sales, Total, SA",m,1,1,0,0,0,0,0,chg,Index,Consumption,28,,1,0,1,소비/지출,소매판매액지수(계절조정)
+1,KOCONPRCF,"Consumer Prices, Total",m,1,0,0,0,1,0,0,chg,Index,Price,3,,1,0,1,물가,소비자물가지수(전체)
+1,KOPROPRCF,"Producer Prices, All Items",m,1,0,0,0,1,0,0,chg,Index,Price,20,,1,1,0,물가,생산자물가지수(전체)
+1,KOCPEXFEF,CPI ex Food and Energy,m,1,0,0,0,1,0,0,chg,Index,Price,3,,1,0,1,물가,소비자물가(식료품·에너지 제외)
+1,KOEQUIPTE,"Investment, Equipment, Estimation, SA",m,1,0,1,0,0,0,0,chg,Index,Investment,30,,1,1,0,설비투자,설비투자지수(계절조정)
+1,KOPSMANUG,"Shipments, Manufacturing, SA, Index",m,1,0,0,0,0,0,0,chg,Index,Production,30,,1,0,0,산업생산,제조업 출하지수(계절조정)
+1,KOPIMANUG,"Inventories, Manufacturing, SA, Index",m,1,0,0,0,0,0,0,chg,Index,Production,30,,1,0,0,산업생산,제조업 재고지수(계절조정)
+1,KOSIAI..E,"Service Sector Index, Total, SA, Index",m,1,1,0,0,0,0,0,chg,Index,Production,30,,1,0,1,산업생산,"서비스업 활동지수(전체, 계절조정)"
+1,KOIPALL.G,"Production, All Industry Production",m,1,0,0,0,0,0,0,chg,Index,Production,30,,1,0,0,산업생산,전산업생산지수
+1,KOIPMIMAG,"Production, Mining and Manufacturing, SA",m,1,0,0,0,0,0,0,chg,Index,Production,30,,1,1,0,산업생산,광공업생산지수(계절조정)
+1,KOIPCHXPG,"Production, Chemicals and Chemical Products (Except Pharmaceuticals)",m,1,0,0,0,0,0,0,chg,Index,Production,30,,1,0,0,산업생산,"생산(화학제품, 의약 제외)"
+1,KOIPCOMPG,"Production, Electrical Components, Computer, Radio",m,1,0,0,0,0,0,0,chg,Index,Production,30,,1,0,0,산업생산,생산(전자부품·컴퓨터·영상·통신)
+1,KOIPVECHG,"Production, Motor Vehicles, Trailers and Semi Trailers",m,1,0,0,0,0,0,0,chg,Index,Production,30,,1,0,0,산업생산,생산(자동차 및 트레일러)
+1,KOIPXBSBG,"Production, Other Transport Equipment, Building of Ships and Boats",m,1,0,0,0,0,0,0,chg,Index,Production,30,,1,0,0,산업생산,생산(기타 운송장비·조선)
+1,KOMPRI30G,Production of Total Construction,m,1,0,1,0,0,0,0,chg,Index,Production,30,,1,1,0,산업생산,생산(건설업)
+1,KOCYLEADR,"Leading Index, Index",m,1,0,0,0,0,0,0,chg,Index,Production,30,,1,1,0,산업생산,경기선행지수
+1,KOROCOINF,"Coincident Index, Index",m,1,0,0,0,0,0,0,chg,Index,Production,30,,1,0,0,산업생산,경기동행지수
+1,KOBSESI.R,"BoK, BSI, Economic Sentiment Index",m,1,0,0,0,0,0,0,chg,Index,"Survey, Bsnss",-5,,1,1,0,기업경기,기업경기실사지수(BSI) 종합
+1,KOCOBUSIR,"BoK, BSI, Business Conditions, Composite Business Sentiment Index, KRW",m,1,0,0,0,0,0,0,chg,Index,"Survey, Bsnss",-5,,1,1,0,기업경기,기업경기실사지수(BSI) 기업경기전망
+1,KOBSIBAPR,"BoK, BSI, Business Conditions, All Industries, Actual",m,1,0,0,0,0,0,0,chg,Index,"Survey, Bsnss",-5,,1,0,0,기업경기,경기실적(전산업)
+1,KOCNFBUSR,"BoK, BSI, Business Conditions, All Industries, Forecast",m,1,0,0,0,0,0,0,chg,Index,"Survey, Bsnss",-35,,1,0,0,기업경기,경기전망(전산업)
+1,KOBSIBCOQ,"FKI, Business Conditions, All Industries, Actual, SA",m,1,0,0,0,0,0,0,chg,Index,"Survey, Bsnss",-5,,1,1,0,기업경기,"FKI 기업경기지수(전산업, 계절조정)"
+1,KOBFDSAAF,"FKI, Domestic Demand, All Industries, Actual",m,1,0,0,0,0,0,0,chg,Index,"Survey, Bsnss",-5,,1,0,0,기업경기,내수 실적(전산업)
+1,KOBSIBCEQ,"FKI, Business Conditions, All Industries, Prospects, SA",m,1,0,0,0,0,0,0,chg,Index,"Survey, Bsnss",-35,,1,0,0,기업경기,"경기전망(전산업, 계절조정)"
+1,KOCNFCONR,"CSI, Composite Consumer Sentiment Index, Total",m,1,1,0,0,0,0,0,chg,Index,"Survey, Cnsmr",-5,,1,1,1,소비자동향,소비자심리지수(종합)
+1,KOCSECEMR,"CSI, Domestic Economic Situation, Next 6 Months",m,1,1,0,0,0,0,0,chg,Index,"Survey, Cnsmr",-5,,1,0,1,소비자동향,향후 경기전망

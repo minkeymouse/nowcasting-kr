@@ -1,0 +1,28 @@
+# TimeMixer Configuration for Korean Macroeconomic Nowcasting
+# Based on Korean economic indicators (KO* series)
+# Data: 122 series, mixed weekly/monthly/quarterly frequency
+# Clock: Weekly (w) - base frequency
+# Target: KOEQUIPTE, KOWRCCNSE, KOIPALL.G
+
+# Model identification
+name: timemixer
+
+# Model-specific horizon (weeks)
+horizon: 88
+
+# Target series for forecasting
+target_series:
+  - KOEQUIPTE  # Investment, Equipment
+  - KOWRCCNSE  # Consumption
+  - KOIPALL.G  # Production, All
+
+# Architecture Parameters
+prediction_length: 88  # Forecast horizon (should match horizon for direct prediction)
+context_length: 96  # Context window length (number of past time steps)
+n_layers: 2  # Number of TimeMixer layers (decomposition-mixing architecture)
+dropout: 0.1  # Dropout rate for regularization
+
+# Training Parameters
+batch_size: 32  # Batch size for training
+max_epochs: 10  # Maximum number of training epochs
+learning_rate: 0.001  # Learning rate for optimizer (Adam)
