@@ -1,8 +1,0 @@
-series_id: KOBSIBNPR
-series_name: BoK, BSI, Business Conditions, Non-Manufacturing, Actual
-frequency: m
-transformation: chg
-units: Index
-category: Survey, Bsnss
-release: -5
-scaler: robust

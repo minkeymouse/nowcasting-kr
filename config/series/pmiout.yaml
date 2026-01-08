@@ -1,8 +1,0 @@
-series_id: pmiout
-series_name: Output/Activity
-frequency: m
-transformation: chg
-units: Index
-category: Survey, Bsnss
-release: 3
-scaler: robust

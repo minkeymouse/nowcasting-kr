@@ -1,9 +1,0 @@
-series_id: KOCALL.
-series_name: Bank of Korea Base Rate
-frequency: m
-transformation: lin
-units: Percent, Annual
-category: Finance
-release: 1
-scaler: robust
-impute: null

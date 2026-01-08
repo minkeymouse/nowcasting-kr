@@ -1,8 +1,0 @@
-series_id: GSCITOT
-series_name: GSCI Commodity Price
-frequency: w
-transformation: chg
-units: index
-category: Finance
-release: 1
-scaler: robust

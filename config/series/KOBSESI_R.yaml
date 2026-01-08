@@ -1,9 +1,0 @@
-series_id: KOBSESI.R
-series_name: BoK, BSI, Economic Sentiment Index
-frequency: m
-transformation: lin
-units: Index
-category: Survey, Bsnss
-release: -5
-scaler: robust
-impute: null

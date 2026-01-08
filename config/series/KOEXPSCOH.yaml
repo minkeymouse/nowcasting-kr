@@ -1,8 +1,0 @@
-series_id: KOEXPSCOH
-series_name: Exports, Semi-Conductors, Volume
-frequency: m
-transformation: chg
-units: Index
-category: Int. trade
-release: 28
-scaler: robust

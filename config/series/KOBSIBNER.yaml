@@ -1,8 +1,0 @@
-series_id: KOBSIBNER
-series_name: BoK, BSI, Business Conditions, Non-Manufacturing, Forecast
-frequency: m
-transformation: chg
-units: Index
-category: Survey, Bsnss
-release: -35
-scaler: robust

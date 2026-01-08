@@ -1,8 +1,0 @@
-series_id: KODBLNSPA
-series_name: South Korea, Loans With Combs and SBS, Operation, KRW
-frequency: m
-transformation: chg
-units: "\uFFE6, Billions"
-category: Finance
-release: 45
-scaler: robust

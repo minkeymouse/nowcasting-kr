@@ -1,8 +1,0 @@
-series_id: KORMACH
-series_name: KOSPI Machinery
-frequency: w
-transformation: chg
-units: index
-category: Finance
-release: 1
-scaler: robust

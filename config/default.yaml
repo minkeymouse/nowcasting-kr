@@ -1,0 +1,10 @@
+defaults:
+  - _self_
+  - model: dfm/investment  # Use nested path for data-specific DFM configs
+  # Override via CLI: model=dfm/consumption, model=dfm/production, model=ddfm, etc.
+
+# Training and forecasting flags
+data: investment
+train: true
+forecast: true
+

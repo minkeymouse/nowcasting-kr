@@ -1,8 +1,0 @@
-series_id: KOWRCNODE
-series_name: Wholesale and Retail, Non-Durable Goods, SA
-frequency: m
-transformation: chg
-units: Index
-category: Consumption
-release: 28
-scaler: robust

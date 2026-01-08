@@ -1,8 +1,0 @@
-series_id: KOBSIYAPR
-series_name: BoK, BSI, Profitability, All Industries, Actual
-frequency: m
-transformation: chg
-units: Index
-category: Survey, Bsnss
-release: -5
-scaler: robust

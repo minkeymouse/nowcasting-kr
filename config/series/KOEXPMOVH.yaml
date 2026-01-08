@@ -1,8 +1,0 @@
-series_id: KOEXPMOVH
-series_name: Exports, Motor Vehicles, Volume
-frequency: m
-transformation: chg
-units: Index
-category: Int. trade
-release: 28
-scaler: robust

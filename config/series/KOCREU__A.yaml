@@ -1,9 +1,0 @@
-series_id: KOCREU..A
-series_name: 'Consumer Credit : Credit Card, KRW'
-frequency: m
-transformation: lin
-units: Index
-category: Consumption
-release: 85
-scaler: robust
-impute: null

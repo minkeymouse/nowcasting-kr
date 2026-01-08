@@ -1,8 +1,0 @@
-series_id: KOPICAPGG
-series_name: Producers Inventory - Capital Goods, SA, Index
-frequency: m
-transformation: chg
-units: Index
-category: Production
-release: 30
-scaler: robust

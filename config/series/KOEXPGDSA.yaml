@@ -1,8 +1,0 @@
-series_id: KOEXPGDSA
-series_name: Exports, Free on Board, USD
-frequency: m
-transformation: chg
-units: $, Millions
-category: Int. trade
-release: 1
-scaler: robust

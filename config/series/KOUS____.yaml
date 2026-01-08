@@ -1,9 +1,0 @@
-series_id: KOUS$...
-series_name: USD/KRW, avg
-frequency: m
-transformation: lin
-units: KRW per 1 USD
-category: Finance
-release: 1
-scaler: robust
-impute: null

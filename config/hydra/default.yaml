@@ -1,8 +1,0 @@
-# Hydra default configuration
-# Disable numbered output directories - we use our own log structure
-hydra:
-  run:
-    dir: .
-  output_subdir: null
-  job:
-    chdir: false

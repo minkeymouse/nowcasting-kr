@@ -1,8 +1,0 @@
-series_id: KOCONPMTH
-series_name: Building Permits, Floor Area
-frequency: m
-transformation: chg
-units: Index
-category: Investment
-release: 31
-scaler: robust

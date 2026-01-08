@@ -1,8 +1,0 @@
-series_id: KOEQUIMAE
-series_name: Investment, Machinery, SA, Index
-frequency: m
-transformation: chg
-units: Index
-category: Investment
-release: 30
-scaler: robust

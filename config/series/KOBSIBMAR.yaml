@@ -1,8 +1,0 @@
-series_id: KOBSIBMAR
-series_name: FKI, Business Conditions, Manufacturing, Actual
-frequency: m
-transformation: chg
-units: Index
-category: Survey, Bsnss
-release: -5
-scaler: robust

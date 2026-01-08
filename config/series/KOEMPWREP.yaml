@@ -1,8 +1,0 @@
-series_id: KOEMPWREP
-series_name: Employment, Wholesale and Retail Trade
-frequency: m
-transformation: chg
-units: Thousands of Persons
-category: Labor
-release: 11
-scaler: robust

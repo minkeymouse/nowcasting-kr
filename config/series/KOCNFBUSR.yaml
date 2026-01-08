@@ -1,8 +1,0 @@
-series_id: KOCNFBUSR
-series_name: BoK, BSI, Business Conditions, All Industries, Forecast
-frequency: m
-transformation: chg
-units: Index
-category: Survey, Bsnss
-release: -35
-scaler: robust

@@ -1,8 +1,0 @@
-series_id: KOLRLTCO
-series_name: Lending Rates, Loans to Corporations (On New Lending), Average
-frequency: m
-transformation: chg
-units: Percent, Annual
-category: Finance
-release: 30
-scaler: robust

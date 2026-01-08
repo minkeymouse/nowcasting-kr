@@ -1,8 +1,0 @@
-series_id: KOIPALL.G
-series_name: Production, All Industry Production
-frequency: m
-transformation: chg
-units: Index
-category: Production
-release: 30
-scaler: robust

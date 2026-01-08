@@ -1,8 +1,0 @@
-series_id: KOROCOINF
-series_name: Coincident Index, Index
-frequency: m
-transformation: chg
-units: Index
-category: Production
-release: 30
-scaler: robust

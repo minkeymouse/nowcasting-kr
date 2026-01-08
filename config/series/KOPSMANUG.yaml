@@ -1,8 +1,0 @@
-series_id: KOPSMANUG
-series_name: Shipments, Manufacturing, SA, Index
-frequency: m
-transformation: chg
-units: Index
-category: Production
-release: 30
-scaler: robust

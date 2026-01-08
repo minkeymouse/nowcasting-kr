@@ -16,12 +16,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Import preprocessing utilities
-from src.train.preprocess import apply_transformations, impute_missing_values, apply_scaling
-from src.utils import get_project_root, setup_paths, SCALER_ROBUST
-from sklearn.preprocessing import RobustScaler
-
-# Setup paths first
-setup_paths(include_dfm_python=True, include_src=True)
+from src.preprocess import NowcastingData
+from src.utils import get_project_root
 
 # Set style
 plt.style.use('seaborn-v0_8-paper')
@@ -51,13 +47,15 @@ TARGET_DISPLAY_NAMES = {
 }
 
 
-def _load_data() -> pd.DataFrame:
-    """Load full dataset."""
-    data_file = DATA_DIR / "data.csv"
-    if not data_file.exists():
-        raise FileNotFoundError(f"Data file not found: {data_file}")
-    data = pd.read_csv(data_file, index_col=0, parse_dates=True)
-    return data
+def _load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load preprocessed data using NowcastingData.
+    
+    Returns
+    -------
+    tuple of (original, processed, standardized) DataFrames
+    """
+    data = NowcastingData()
+    return data.original, data.processed, data.standardized
 
 
 def plot_preprocessed_targets(save_path: Optional[Path] = None):
@@ -71,56 +69,25 @@ def plot_preprocessed_targets(save_path: Optional[Path] = None):
         save_path = IMAGES_DIR / "preprocessed_targets.png"
     
     try:
-        from src.utils import get_config_path
+        # Load preprocessed data
+        original, processed, standardized = _load_data()
         
-        # Load raw data
-        data = _load_data()
-        
-        # Get target variables
-        available_targets = [t for t in TARGETS if t in data.columns]
+        # Get target variables (excluding 'date' column)
+        standardized_data = standardized.drop(columns=['date'], errors='ignore')
+        available_targets = [t for t in TARGETS if t in standardized_data.columns]
         
         if len(available_targets) == 0:
             print("Warning: No target variables found in data")
             return
         
-        # Get config path
-        config_path = str(get_config_path())
-        
-        # Prepare preprocessed data for each target
+        # Use standardized data for target series
         target_data = {}
         for target in available_targets:
-            # Extract target series
-            target_series = data[[target]].copy()
-            
-            # Apply transformations
-            try:
-                target_transformed = apply_transformations(
-                    target_series, 
-                    config_path=config_path, 
-                    series_ids=[target]
-                )
-            except Exception as e:
-                print(f"Warning: Transformation failed for {target}: {e}")
-                target_transformed = target_series.copy()
-            
-            # Impute missing values
-            try:
-                target_imputed = impute_missing_values(target_transformed, model_type="preprocessing")
-            except Exception as e:
-                print(f"Warning: Imputation failed for {target}: {e}")
-                target_imputed = target_transformed.fillna(method='ffill').fillna(method='bfill')
-            
-            # Scale data (RobustScaler)
-            try:
-                target_scaled, _ = apply_scaling(target_imputed, scaler_type=SCALER_ROBUST)
-            except Exception as e:
-                print(f"Warning: Scaling failed for {target}: {e}")
-                target_scaled = target_imputed.copy()
-            
-            target_data[target] = target_scaled
+            if target in standardized.columns:
+                target_data[target] = standardized[[target]].copy()
         
         # Calculate correlations for each target
-        # Use preprocessed target data and calculate correlation with other preprocessed variables
+        # Use standardized target data and calculate correlation with other standardized variables
         correlations = {}
         top_features = {}
         for target in available_targets:
@@ -129,26 +96,25 @@ def plot_preprocessed_targets(save_path: Optional[Path] = None):
                 top_features[target] = []
                 continue
             
-            # Get preprocessed target series
+            # Get standardized target series
             target_series = target_data[target][target]
             
-            # Calculate correlation with all other variables in original data
-            # We'll use simple correlation on numeric columns only
-            numeric_data = data.select_dtypes(include=[np.number])
+            # Calculate correlation with all other standardized variables (excluding 'date' column)
+            standardized_data = standardized.drop(columns=['date'], errors='ignore')
             
-            if target not in numeric_data.columns:
+            if target not in standardized_data.columns:
                 correlations[target] = pd.Series()
                 top_features[target] = []
                 continue
             
             # Align indices and calculate correlation
-            target_aligned = target_series.reindex(numeric_data.index)
-            numeric_aligned = numeric_data.reindex(target_aligned.index)
+            target_aligned = target_series
+            numeric_aligned = standardized_data.reindex(target_aligned.index)
             
             # Calculate pairwise correlation
             corr_series = numeric_aligned.corrwith(target_aligned)
             # Remove self-correlation and NaN values
-            corr_series = corr_series.drop(target)
+            corr_series = corr_series.drop(target, errors='ignore')
             corr_series = corr_series.dropna()
             # Sort by absolute value
             corr_series = corr_series.reindex(corr_series.abs().sort_values(ascending=False).index)
@@ -166,15 +132,15 @@ def plot_preprocessed_targets(save_path: Optional[Path] = None):
             
             # Get top features plus target
             features_for_matrix = [target] + top_features[target]
-            # Filter to features that exist in numeric data
-            features_for_matrix = [f for f in features_for_matrix if f in numeric_data.columns]
+            # Filter to features that exist in standardized data
+            features_for_matrix = [f for f in features_for_matrix if f in standardized_data.columns]
             
             if len(features_for_matrix) < 2:
                 correlation_matrices[target] = None
                 continue
             
             # Align all features
-            aligned_data = numeric_data[features_for_matrix].reindex(target_aligned.index)
+            aligned_data = standardized_data[features_for_matrix].reindex(target_aligned.index)
             # Drop rows with any NaN
             aligned_data = aligned_data.dropna()
             
@@ -203,16 +169,16 @@ def plot_preprocessed_targets(save_path: Optional[Path] = None):
                 ax_left.text(0.5, 0.5, f'No data for {target}', ha='center', va='center', transform=ax_left.transAxes)
                 ax_left.set_title(TARGET_DISPLAY_NAMES.get(target, target))
             else:
-                # Get preprocessed data
-                preprocessed = target_data[target]
+                # Get standardized data
+                standardized_series = target_data[target]
                 
                 # Plot
-                ax_left.plot(preprocessed.index, preprocessed[target].values, 
+                ax_left.plot(standardized_series.index, standardized_series[target].values, 
                            linewidth=1.5, alpha=0.8, color='#2ca02c')
                 
                 # Formatting
                 ax_left.set_xlabel('Date', fontsize=10)
-                ax_left.set_ylabel('Preprocessed Value', fontsize=10)
+                ax_left.set_ylabel('Standardized Value', fontsize=10)
                 ax_left.set_title(TARGET_DISPLAY_NAMES.get(target, target), fontsize=11, fontweight='bold')
                 ax_left.grid(alpha=0.3)
                 fig.autofmt_xdate()
@@ -284,49 +250,21 @@ def plot_data_quality_dashboard(save_path: Optional[Path] = None):
         save_path = IMAGES_DIR / "data_quality_dashboard.png"
     
     try:
-        from src.utils import get_config_path
-        
-        # Load raw data
-        data = _load_data()
+        # Load preprocessed data
+        original, processed, standardized = _load_data()
         
         # Get target variables
-        available_targets = [t for t in TARGETS if t in data.columns]
+        available_targets = [t for t in TARGETS if t in standardized.columns]
         
         if len(available_targets) == 0:
             print("Warning: No target variables found in data")
             return
         
-        # Get config path
-        config_path = str(get_config_path())
-        
-        # Prepare preprocessed data for each target
+        # Use standardized data for target series
         target_data = {}
         for target in available_targets:
-            target_series = data[[target]].copy()
-            
-            try:
-                target_transformed = apply_transformations(
-                    target_series, 
-                    config_path=config_path, 
-                    series_ids=[target]
-                )
-            except Exception as e:
-                print(f"Warning: Transformation failed for {target}: {e}")
-                target_transformed = target_series.copy()
-            
-            try:
-                target_imputed = impute_missing_values(target_transformed, model_type="preprocessing")
-            except Exception as e:
-                print(f"Warning: Imputation failed for {target}: {e}")
-                target_imputed = target_transformed.fillna(method='ffill').fillna(method='bfill')
-            
-            try:
-                target_scaled, _ = apply_scaling(target_imputed, scaler_type=SCALER_ROBUST)
-            except Exception as e:
-                print(f"Warning: Scaling failed for {target}: {e}")
-                target_scaled = target_imputed.copy()
-            
-            target_data[target] = target_scaled
+            if target in standardized.columns:
+                target_data[target] = standardized[[target]].copy()
         
         # Create figure with 2x2 grid
         fig, axes = plt.subplots(2, 2, figsize=(16, 12))

@@ -1,0 +1,380 @@
+# DFM Configuration - Shared Parameters
+# Base configuration for all DFM models (investment, consumption, production)
+# Data-type specific overrides are in investment.yaml, consumption.yaml, production.yaml
+
+# Model identification
+name: dfm
+
+# EM Algorithm Parameters
+ar_lag: 4  # Global AR lag order (factor lag 4 for inter-factor lagged correlation, as in documentation)
+ar_order: 4  # Alias for ar_lag
+threshold: 1.0e-05  # EM convergence threshold
+max_iter: 5000  # Maximum EM iterations
+
+# Numerical Stability Parameters
+clip_ar_coefficients: true
+ar_clip_min: -0.99
+ar_clip_max: 0.99
+use_regularization: true
+regularization_scale: 1.0e-05
+
+# Idiosyncratic Component Parameters
+augment_idio: false  # Disabled to reduce memory usage with weekly clock + monthly series
+augment_idio_slow: false
+idio_rho0: 0.1
+idio_min_var: 1.0e-08
+
+# Data Handling
+clock: w  # Weekly clock frequency (base frequency for latent factors)
+mixed_freq: true  # Enable mixed frequency support
+scaler: robust  # Scaler type (data is preprocessed, this is for reference)
+
+# Block Structure for Macroeconomic Data
+# Blocks organize series by economic theme
+# Series in blocks will be automatically filtered to match available data
+blocks:
+  Block_Global:
+    num_factors: 3  # Global factors capturing overall economic activity
+    series:
+      - A001
+      - GSCITOT
+      - KOBDY10
+      - KOBFDSAAF
+      - KOBFINAAF
+      - KOBFPRAAF
+      - KOBFXSAAF
+      - KOBSESI.R
+      - KOBSIBAPR
+      - KOBSIBCEQ
+      - KOBSIBCOQ
+      - KOBSIBMAR
+      - KOBSIBMPR
+      - KOBSIBNER
+      - KOBSIBNMR
+      - KOBSIBNPR
+      - KOBSIEMAR
+      - KOBSIFAPR
+      - KOBSIHAPR
+      - KOBSIIMER
+      - KOBSIIMPR
+      - KOBSIRMER
+      - KOBSISAPR
+      - KOBSIXMER
+      - KOBSIYAPR
+      - KOBUSINVR
+      - KOCBNG3
+      - KOCNFBUSR
+      - KOCNFCONR
+      - KOCOBUSIR
+      - KOCONPMTH
+      - KOCONPRCF
+      - KOCONSTRP
+      - KOCPCOREF
+      - KOCPEXFEF
+      - KOCREU..A
+      - KOCSECDMR
+      - KOCSECEMR
+      - KOCSEMEMR
+      - KOCSEOHDR
+      - KOCSEOHSR
+      - KOCSHHEMR
+      - KOCSHHLMR
+      - KOCSMTTOA
+      - KOCSPHIMR
+      - KOCSPSPMR
+      - KOCYLEADR
+      - KODBLNEQA
+      - KODBLNHSA
+      - KODBLNSPA
+      - KOEMPCONF
+      - KOEMPMANF
+      - KOEMPTOTO
+      - KOEMPWREP
+      - KOEQUIMAE
+      - KOEQUIPTE
+      - KOEQUITTE
+      - KOEXCHINA
+      - KOEXPGDSA
+      - KOEXPMOVH
+      - KOEXPPRCF
+      - KOEXPSCOH
+      - KOHWRWEMP
+      - KOIMPCONA
+      - KOIMPGDDA
+      - KOIMPGDSA
+      - KOIMPPRCF
+      - KOIPALL.G
+      - KOIPCHXPG
+      - KOIPCOMPG
+      - KOIPMIMAG
+      - KOIPVECHG
+      - KOIPXBSBG
+      - KOLRLTCO
+      - KOLRLTHH
+      - KOMPCAPGG
+      - KOMPCONDG
+      - KOMPCONGG
+      - KOMPCONNG
+      - KOMPRI30G
+      - KOMSCAPGG
+      - KOMSCONGG
+      - KONETTRDF
+      - KONEWCONA
+      - KOPICAPGG
+      - KOPICONGG
+      - KOPIMANUG
+      - KOPOPACTE
+      - KOPPSRM.F
+      - KOPROPRCF
+      - KOPSMANUG
+      - KORCNST
+      - KORCOMP
+      - KORELEC
+      - KORFBEV
+      - KORMACH
+      - KORMCMP
+      - KOROCOINF
+      - KORSERV
+      - KORWHLS
+      - KOSIAHOTE
+      - KOSIAI..E
+      - KOSIARRLE
+      - KOSIATRNE
+      - KOSIAWRTE
+      - KOSSBFMBE
+      - KOUN%TOTQ
+      - KOVALCONA
+      - KOWRCCNSE
+      - KOWRCDURE
+      - KOWRCNODE
+      - KOWRCSEME
+      - USSKORW
+
+  Block_Consumption:
+    num_factors: 2  # Consumption-specific factors
+    series:
+      - KOBSIBNMR
+      - KOBSIEMAR
+      - KOCNFBUSR
+      - KOCNFCONR
+      - KOCONPRCF
+      - KOCPCOREF
+      - KOCPEXFEF
+      - KOCREU..A
+      - KOCSECDMR
+      - KOCSECEMR
+      - KOCSEMEMR
+      - KOCSEOHDR
+      - KOCSEOHSR
+      - KOCSHHEMR
+      - KOCSHHLMR
+      - KOCSMTTOA
+      - KOCSPHIMR
+      - KOCSPSPMR
+      - KODBLNHSA
+      - KOEMPWREP
+      - KOIMPCONA
+      - KOMPCONGG
+      - KOMPCONNG
+      - KOPICONGG
+      - KOSIAHOTE
+      - KOSIAI..E
+      - KOSIAWRTE
+      - KOWRCCNSE
+      - KOWRCDURE
+      - KOWRCNODE
+      - KOWRCSEME
+
+  Block_Investment:
+    num_factors: 2  # Investment-specific factors
+    series:
+      - KOBFINAAF
+      - KOBSIIMER
+      - KOBSIIMPR
+      - KOBUSINVR
+      - KOCONPMTH
+      - KOCONSTRP
+      - KODBLNEQA
+      - KOEMPCONF
+      - KOEQUIMAE
+      - KOEQUIPTE
+      - KOEQUITTE
+      - KOIMPGDDA
+      - KOLRLTCO
+      - KOMPCAPGG
+      - KOMPCONDG
+      - KOMPRI30G
+      - KOMSCAPGG
+      - KONEWCONA
+      - KOPICAPGG
+      - KOVALCONA
+
+  Block_Export:
+    num_factors: 1  # Export-specific factors
+    series:
+      - KOBSIXMER
+      - KOEXCHINA
+      - KOEXPGDSA
+      - KOEXPMOVH
+      - KOEXPSCOH
+      - KONETTRDF
+
+  Block_Nominal:
+    num_factors: 1  # Nominal/price factors
+    series:
+      - KOEXPGDSA
+      - KOIMPGDSA
+      - KOIMPPRCF
+      - KODBLNHSA
+      - KODBLNEQA
+      - KODBLNSPA
+      - KOIMPCONA
+      - KOIMPGDDA
+      - KOLRLTHH
+      - KONEWCONA
+      - KOPPSRM.F
+      - KOPROPRCF
+      - KOVALCONA
+
+  Block_Labor:
+    num_factors: 1  # Labor market factors
+    series:
+      - KOBSIHAPR
+      - KOCSEMEMR
+      - KOEMPTOTO
+      - KOHWRWEMP
+      - KOPOPACTE
+      - KOUN%TOTQ
+
+  Block_RiskApp:
+    num_factors: 1  # Risk appetite factors
+    series:
+      - KOBDY10
+      - KOCBNG3
+      - KOLRLTHH
+      - KORCOMP
+      - USSKORW
+
+# Frequency mapping for mixed-frequency macro data
+# Clock is weekly (w), so monthly (m) series are slower frequency
+# Grouped format: frequencies are specified as lists grouped by frequency code
+# Series not listed here will default to clock frequency (w)
+frequency:
+  # Weekly series (same as clock frequency)
+  w:
+    - A001
+    - GSCITOT
+    - KOBDY10
+    - KOCBNG3
+    - KORCNST
+    - KORCOMP
+    - KORELEC
+    - KORFBEV
+    - KORMACH
+    - KORMCMP
+    - KORSERV
+    - KORWHLS
+    - USSKORW
+  
+  # Monthly series (slower than weekly clock)
+  m:
+    - KOBFDSAAF
+    - KOBFINAAF
+    - KOBFPRAAF
+    - KOBFXSAAF
+    - KOBSESI.R
+    - KOBSIBAPR
+    - KOBSIBCEQ
+    - KOBSIBCOQ
+    - KOBSIBMAR
+    - KOBSIBMPR
+    - KOBSIBNER
+    - KOBSIBNMR
+    - KOBSIBNPR
+    - KOBSIEMAR
+    - KOBSIFAPR
+    - KOBSIHAPR
+    - KOBSIIMER
+    - KOBSIIMPR
+    - KOBSIRMER
+    - KOBSISAPR
+    - KOBSIXMER
+    - KOBSIYAPR
+    - KOBUSINVR
+    - KOCNFBUSR
+    - KOCNFCONR
+    - KOCOBUSIR
+    - KOCONPMTH
+    - KOCONPRCF
+    - KOCONSTRP
+    - KOCPCOREF
+    - KOCPEXFEF
+    - KOCREU..A
+    - KOCSECDMR
+    - KOCSECEMR
+    - KOCSEMEMR
+    - KOCSEOHDR
+    - KOCSEOHSR
+    - KOCSHHEMR
+    - KOCSHHLMR
+    - KOCSMTTOA
+    - KOCSPHIMR
+    - KOCSPSPMR
+    - KOCYLEADR
+    - KODBLNEQA
+    - KODBLNHSA
+    - KODBLNSPA
+    - KOEMPCONF
+    - KOEMPMANF
+    - KOEMPTOTO
+    - KOEMPWREP
+    - KOEQUIMAE
+    - KOEQUIPTE
+    - KOEQUITTE
+    - KOEXCHINA
+    - KOEXPGDSA
+    - KOEXPMOVH
+    - KOEXPPRCF
+    - KOEXPSCOH
+    - KOHWRWEMP
+    - KOIMPCONA
+    - KOIMPGDDA
+    - KOIMPGDSA
+    - KOIMPPRCF
+    - KOIPALL.G
+    - KOIPCHXPG
+    - KOIPCOMPG
+    - KOIPMIMAG
+    - KOIPVECHG
+    - KOIPXBSBG
+    - KOLRLTCO
+    - KOLRLTHH
+    - KOMPCAPGG
+    - KOMPCONDG
+    - KOMPCONGG
+    - KOMPCONNG
+    - KOMPRI30G
+    - KOMSCAPGG
+    - KOMSCONGG
+    - KONETTRDF
+    - KONEWCONA
+    - KOPICAPGG
+    - KOPICONGG
+    - KOPIMANUG
+    - KOPOPACTE
+    - KOPPSRM.F
+    - KOPROPRCF
+    - KOPSMANUG
+    - KOROCOINF
+    - KOSIAHOTE
+    - KOSIAI..E
+    - KOSIARRLE
+    - KOSIATRNE
+    - KOSIAWRTE
+    - KOSSBFMBE
+    - KOUN%TOTQ
+    - KOVALCONA
+    - KOWRCCNSE
+    - KOWRCDURE
+    - KOWRCNODE
+    - KOWRCSEME

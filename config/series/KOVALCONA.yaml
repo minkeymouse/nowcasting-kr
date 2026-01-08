@@ -1,8 +1,0 @@
-series_id: KOVALCONA
-series_name: Construction Completed, Total, KRW
-frequency: m
-transformation: chg
-units: Index
-category: Investment
-release: 30
-scaler: robust

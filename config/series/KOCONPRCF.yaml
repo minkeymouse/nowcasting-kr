@@ -1,8 +1,0 @@
-series_id: KOCONPRCF
-series_name: Consumer Prices, Total
-frequency: m
-transformation: chg
-units: Index
-category: Price
-release: 3
-scaler: robust

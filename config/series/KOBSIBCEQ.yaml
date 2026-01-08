@@ -1,8 +1,0 @@
-series_id: KOBSIBCEQ
-series_name: FKI, Business Conditions, All Industries, Prospects, SA
-frequency: m
-transformation: chg
-units: Index
-category: Survey, Bsnss
-release: -35
-scaler: robust

@@ -1,8 +1,0 @@
-series_id: KOIPVECHG
-series_name: Production, Motor Vehicles, Trailers and Semi Trailers
-frequency: m
-transformation: chg
-units: Index
-category: Production
-release: 30
-scaler: robust

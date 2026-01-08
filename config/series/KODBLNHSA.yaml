@@ -1,8 +1,0 @@
-series_id: KODBLNHSA
-series_name: South Korea, Deposit Money Banks Housing Loans, KRW
-frequency: m
-transformation: chg
-units: "\uFFE6, Billions"
-category: Finance
-release: 45
-scaler: robust

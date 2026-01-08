@@ -1,8 +1,0 @@
-series_id: KOIMNGS.D
-series_name: Imports, Goods and Services
-frequency: q
-transformation: cha
-units: Chained W, Billions
-category: Macro
-release: 25
-scaler: robust

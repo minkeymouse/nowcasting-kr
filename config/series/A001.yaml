@@ -1,8 +1,0 @@
-series_id: A001
-series_name: News Sentiment
-frequency: w
-transformation: chg
-units: index
-category: Survey
-release: 7
-scaler: robust

@@ -1,8 +1,0 @@
-series_id: KOHWRWEMP
-series_name: Hours Worked, Average Per Week, All Employees
-frequency: m
-transformation: chg
-units: hours
-category: Labor
-release: 11
-scaler: robust

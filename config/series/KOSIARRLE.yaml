@@ -1,8 +1,0 @@
-series_id: KOSIARRLE
-series_name: Service Sector, Real Estate and Renting and Leasing
-frequency: m
-transformation: chg
-units: Index
-category: Production
-release: 30
-scaler: robust
