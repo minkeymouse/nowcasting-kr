@@ -42,3 +42,7 @@ lightning_logs/
 outputs/
 lightning_logs/
 log/
+
+clone/
+checkpoints/
+*.log
