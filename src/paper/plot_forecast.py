@@ -172,11 +172,11 @@ def plot_combined_attention_forecasts(
     experiment_type: str = "short_term",
     output_path: Optional[Path] = None
 ) -> None:
-    """Create combined forecast plot with production (top) and investment (bottom).
+    """Create combined forecast plot with production (left) and investment (right).
     
-    Creates a figure with 2x1 subplots (2 rows, 1 column):
-    - Top: Production data - Actual + all three models
-    - Bottom: Investment data - Actual + all three models
+    Creates a figure with 1x2 subplots (1 row, 2 columns):
+    - Left: Production data - Actual + all three models
+    - Right: Investment data - Actual + all three models
     
     Parameters
     ----------
@@ -204,8 +204,8 @@ def plot_combined_attention_forecasts(
         'investment': 'KOEQUIPTE'
     }
     
-    # Create figure with 2 rows, 1 column
-    fig, axes = plt.subplots(2, 1, figsize=(14, 10))
+    # Create figure with 1 row, 2 columns (side by side)
+    fig, axes = plt.subplots(1, 2, figsize=(20, 6))
     
     for idx, data_model in enumerate(data_models):
         ax = axes[idx]
@@ -271,16 +271,8 @@ def plot_combined_attention_forecasts(
         ax.xaxis.set_major_locator(mdates.MonthLocator(interval=interval))
         plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
     
-    # Add main title
-    fig.suptitle(
-        'Forecast Comparison: All Models (TFT, PatchTST, iTransformer)',
-        fontsize=15,
-        fontweight='bold',
-        y=0.995
-    )
-    
-    # Adjust layout
-    plt.tight_layout(rect=[0, 0, 1, 0.98])
+    # Adjust layout (no title)
+    plt.tight_layout()
     
     # Save or show
     if output_path:
