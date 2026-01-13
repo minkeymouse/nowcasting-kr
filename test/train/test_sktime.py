@@ -58,11 +58,9 @@ def test_train_tft_model():
         
         train_sktime_model(
             model_type='tft',
-            config_name='test',
             cfg=None,
             data=data,
             model_name='tft_test',
-            horizons=None,
             outputs_dir=outputs_dir,
             model_params=model_params
         )
@@ -109,11 +107,9 @@ def test_train_patchtst_model():
         
         train_sktime_model(
             model_type='patchtst',
-            config_name='test',
             cfg=None,
             data=data,
             model_name='patchtst_test',
-            horizons=None,
             outputs_dir=outputs_dir,
             model_params=model_params
         )
@@ -147,11 +143,9 @@ def test_train_timemixer_model():
         
         train_sktime_model(
             model_type='timemixer',
-            config_name='test',
             cfg=None,
             data=data,
             model_name='timemixer_test',
-            horizons=None,
             outputs_dir=outputs_dir,
             model_params=model_params
         )
@@ -186,11 +180,9 @@ def test_train_itransformer_model():
         
         train_sktime_model(
             model_type='itransformer',
-            config_name='test',
             cfg=None,
             data=data,
             model_name='itransformer_test',
-            horizons=None,
             outputs_dir=outputs_dir,
             model_params=model_params
         )
@@ -224,11 +216,9 @@ def test_target_series_defaults():
         
         train_sktime_model(
             model_type='tft',
-            config_name='test',
             cfg=None,
             data=data,
             model_name='tft_test_defaults',
-            horizons=None,
             outputs_dir=outputs_dir,
             model_params=model_params
         )
@@ -263,11 +253,9 @@ def test_target_series_filtering():
         
         train_sktime_model(
             model_type='tft',
-            config_name='test',
             cfg=None,
             data=data,
             model_name='tft_test_filter',
-            horizons=None,
             outputs_dir=outputs_dir,
             model_params=model_params
         )

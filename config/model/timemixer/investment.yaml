@@ -1,0 +1,11 @@
+name: timemixer
+horizon: 1  # Short-term: 1 week ahead. For long-term experiments, override with 40 (max horizon: 40 weeks)
+target_series:
+- KOEQUIPTE
+prediction_length: 1  # Short-term: 1 week ahead. For long-term experiments: override with 40 (max(horizons)). Model trained with max horizon can predict all shorter horizons (4w, 8w, ..., 40w)
+context_length: 96
+n_layers: 3
+dropout: 0.1
+batch_size: 128
+max_epochs: 50
+learning_rate: 0.001

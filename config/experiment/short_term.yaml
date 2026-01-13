@@ -1,0 +1,10 @@
+# Short-term experiment configuration
+# Recursive forecasting with weekly updates (1 week ahead)
+# 2024년 1월 1주 ~ 2025년 9월 4주 (2024-01-01 ~ 2025-09-26)
+
+start_date: "2024-01-01"
+end_date: "2025-09-26"
+update_frequency: "weekly"  # Update model every week with new data
+horizon: 1  # Forecast 1 week ahead
+update_params: false  # For deep learning models: only move cutoff forward (no retraining)
+                      # Set to true for full retraining (slower but potentially more accurate)

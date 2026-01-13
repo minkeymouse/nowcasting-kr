@@ -1,24 +1,12 @@
-# TimeMixer Configuration for Korean Macroeconomic Nowcasting
-
-# Model identification
 name: timemixer
-
-# Model-specific horizon (weeks)
-horizon: 88
-
-# Target series for forecasting
+horizon: 1  # Short-term: 1 week ahead. For long-term experiments, override with 40 (max horizon: 40 weeks)
 target_series:
-  - KOEQUIPTE  # Investment, Equipment
-  - KOWRCCNSE  # Consumption
-  - KOIPALL.G  # Production, All
-
-# Architecture Parameters
-prediction_length: 88  # Forecast horizon (should match horizon for direct prediction)
-context_length: 96  # Context window length (number of past time steps)
-n_layers: 2  # Number of TimeMixer layers (decomposition-mixing architecture)
-dropout: 0.1  # Dropout rate for regularization
-
-# Training Parameters
-batch_size: 32  # Batch size for training
-max_epochs: 10  # Maximum number of training epochs
-learning_rate: 0.001  # Learning rate for optimizer (Adam)
+- KOEQUIPTE
+- KOIPALL.G
+prediction_length: 1  # Short-term: 1 week ahead. For long-term experiments: override with 40 (max(horizons)). Model trained with max horizon can predict all shorter horizons (4w, 8w, ..., 40w)
+context_length: 96
+n_layers: 3
+dropout: 0.1
+batch_size: 32
+max_epochs: 1  # Minimal for testing - override with CLI: model.max_epochs=50 for full training
+learning_rate: 0.001

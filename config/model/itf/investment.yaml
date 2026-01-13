@@ -1,0 +1,16 @@
+name: itf
+horizon: 1  # Short-term: 1 week ahead. For long-term experiments, override with 40 (max horizon: 40 weeks)
+target_series:
+- KOEQUIPTE
+n_forecasts: 1  # Short-term: 1 week ahead. For long-term experiments: override with 40 (max(horizons)). Model trained with max horizon can predict all shorter horizons (4w, 8w, ..., 40w)
+n_lags: 96
+d_model: 512
+n_heads: 8
+e_layers: 3
+d_layers: 1
+d_ff: 2048
+dropout: 0.1
+activation: gelu
+batch_size: 128
+max_epochs: 50
+learning_rate: 0.001

@@ -42,11 +42,9 @@ def test_train_ddfm_with_single_target():
         
         train_dfm_python_model(
             model_type='ddfm',
-            config_name='test',
             cfg=None,
             data=data,
             model_name='ddfm_test',
-            horizons=None,
             outputs_dir=outputs_dir,
             model_cfg_dict=model_cfg_dict
         )
@@ -86,11 +84,9 @@ def test_train_ddfm_with_all_targets():
         
         train_dfm_python_model(
             model_type='ddfm',
-            config_name='test',
             cfg=None,
             data=data,
             model_name='ddfm_test_all',
-            horizons=None,
             outputs_dir=outputs_dir,
             model_cfg_dict=model_cfg_dict
         )
@@ -138,11 +134,9 @@ def test_train_ddfm_with_dictconfig():
         
         train_dfm_python_model(
             model_type='ddfm',
-            config_name='test',
             cfg=None,
             data=data,
             model_name='ddfm_test_dictconfig',
-            horizons=None,
             outputs_dir=outputs_dir,
             model_cfg_dict=dict_config  # Pass DictConfig directly
         )
@@ -184,11 +178,9 @@ def test_train_dfm_with_targets():
         
         train_dfm_python_model(
             model_type='dfm',
-            config_name='test',
             cfg=None,
             data=data,
             model_name='dfm_test',
-            horizons=None,
             outputs_dir=outputs_dir,
             model_cfg_dict=model_cfg_dict
         )
@@ -224,11 +216,9 @@ def test_target_series_filtering():
         
         train_dfm_python_model(
             model_type='ddfm',
-            config_name='test',
             cfg=None,
             data=data,
             model_name='ddfm_test_filter',
-            horizons=None,
             outputs_dir=outputs_dir,
             model_cfg_dict=model_cfg_dict
         )
@@ -260,11 +250,9 @@ def test_empty_target_series_falls_back_to_all():
         
         train_dfm_python_model(
             model_type='ddfm',
-            config_name='test',
             cfg=None,
             data=data,
             model_name='ddfm_test_empty',
-            horizons=None,
             outputs_dir=outputs_dir,
             model_cfg_dict=model_cfg_dict
         )

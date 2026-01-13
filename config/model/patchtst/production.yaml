@@ -1,0 +1,16 @@
+name: patchtst
+horizon: 1  # Short-term: 1 week ahead. For long-term experiments, override with 40 (max horizon: 40 weeks)
+target_series:
+- KOIPALL.G
+prediction_length: 1  # Short-term: 1 week ahead. For long-term experiments: override with 40 (max(horizons)). Model trained with max horizon can predict all shorter horizons (4w, 8w, ..., 40w)
+context_length: 96
+patch_len: 16
+stride: 8
+d_model: 256
+n_heads: 16
+num_layers: 4
+dropout: 0.1
+batch_size: 128
+max_epochs: 50
+learning_rate: 0.001
+validation_split: 0.2

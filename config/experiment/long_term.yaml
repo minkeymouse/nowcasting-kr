@@ -1,0 +1,11 @@
+# Long-term experiment configuration
+# Multi-horizon forecasting from fixed start point
+
+# Experiment design: Train ONE model with max horizon (40 weeks), use it to predict all horizons
+# The model should be trained with prediction_length >= max(horizons) = 40
+# The same trained model is used to forecast all horizons (4w, 8w, 12w, ..., 40w)
+# by extracting the appropriate time step from the full prediction output
+
+start_date: "2024-11-01"  # Fixed forecast start date (2024년 11월 첫째 주)
+end_date: "2025-09-26"    # End date for validation (unused in long-term, kept for consistency)
+horizons: [4, 8, 12, 16, 20, 24, 28, 32, 36, 40]  # Forecast horizons in weeks (4주, 8주, ..., 40주 = 최대 10개월)

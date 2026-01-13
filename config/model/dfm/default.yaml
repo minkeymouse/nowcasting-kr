@@ -1,6 +1,6 @@
 # DFM Configuration - Shared Parameters
-# Base configuration for all DFM models (investment, consumption, production)
-# Data-type specific overrides are in investment.yaml, consumption.yaml, production.yaml
+# Base configuration for all DFM models (investment, production)
+# Data-type specific overrides are in investment.yaml, production.yaml
 
 # Model identification
 name: dfm
@@ -9,7 +9,7 @@ name: dfm
 ar_lag: 4  # Global AR lag order (factor lag 4 for inter-factor lagged correlation, as in documentation)
 ar_order: 4  # Alias for ar_lag
 threshold: 1.0e-05  # EM convergence threshold
-max_iter: 5000  # Maximum EM iterations
+max_iter: 1  # Maximum EM iterations (minimal for testing - override with CLI: model.max_iter=50 for full training)
 
 # Numerical Stability Parameters
 clip_ar_coefficients: true
@@ -27,7 +27,11 @@ idio_min_var: 1.0e-08
 # Data Handling
 clock: w  # Weekly clock frequency (base frequency for latent factors)
 mixed_freq: true  # Enable mixed frequency support
-scaler: robust  # Scaler type (data is preprocessed, this is for reference)
+scaler: standard  # Scaler type (data is preprocessed, this is for reference)
+# Tent weights for mixed-frequency aggregation
+# 3-period tent kernel for monthly->weekly aggregation (default for testing)
+tent_weights:
+  m:w: [1, 2, 1]  # 3-period tent kernel for monthly->weekly aggregation
 
 # Block Structure for Macroeconomic Data
 # Blocks organize series by economic theme

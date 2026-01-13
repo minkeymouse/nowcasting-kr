@@ -23,7 +23,7 @@ n_mc_samples: 10  # Number of MC samples per MCMC iteration
 window_size: 100  # Time-step batch size for training
 
 # MCMC/Iterative Parameters
-max_epoch: 50  # Maximum MCMC iterations (epochs)
+max_epoch: 1  # Maximum MCMC iterations (epochs) (minimal for testing - override with CLI: model.max_epoch=50 for full training)
 tolerance: 0.0005  # Convergence tolerance
 disp: 10  # Display frequency for training progress
 seed: null  # Random seed (null uses default)
@@ -36,4 +36,4 @@ lags_input: 0  # Number of lags of inputs on encoder (default 0)
 # Data Handling
 # DDFM is a deep learning autoencoder - no frequency specification needed
 # All series are used for reconstruction in the autoencoder
-target_scaler: robust  # Robust scaler for target series
+target_scaler: standard  # Standard scaler for target series
