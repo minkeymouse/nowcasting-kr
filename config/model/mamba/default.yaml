@@ -1,0 +1,16 @@
+name: mamba
+horizon: 1  # Short-term: 1 week ahead. For long-term experiments, override with 40 (max horizon: 40 weeks)
+target_series:
+- KOEQUIPTE
+- KOIPALL.G
+prediction_length: 1  # Short-term: 1 week ahead. For long-term experiments: override with 40 (max(horizons)). Model trained with max horizon can predict all shorter horizons (4w, 8w, ..., 40w)
+context_length: 96
+d_model: 128
+n_layers: 4
+d_state: 64  # Mamba2 default
+d_conv: 4
+expand: 2
+dropout: 0.1
+batch_size: 32
+max_epochs: 1  # Minimal for testing - override with CLI: model.max_epochs=50 for full training
+learning_rate: 0.001

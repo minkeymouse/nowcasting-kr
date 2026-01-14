@@ -868,7 +868,10 @@ def extract_monthly_actuals(
         for series_idx, series_name in enumerate(target_series):
             series_values = month_data[series_name].dropna()
             if len(series_values) > 0:
-                actuals_for_month[series_idx] = series_values.iloc[-1]  # Last value in month
+                # Sort by index to ensure we get the chronologically last value
+                # When there are duplicate dates, this ensures we get the last occurrence
+                series_values_sorted = series_values.sort_index()
+                actuals_for_month[series_idx] = series_values_sorted.iloc[-1]  # Last value in month
                 has_data = True
             else:
                 actuals_for_month[series_idx] = np.nan

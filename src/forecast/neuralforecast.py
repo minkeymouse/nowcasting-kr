@@ -243,36 +243,33 @@ def run_recursive_forecast_neuralforecast(
 
 
 def _forecast_neuralforecast_models(checkpoint_path: Path, horizon: int, model_type: str) -> None:
-    """Forecast using NeuralForecast models (PatchTST, TFT, iTransformer, TimeMixer)."""
+    """Forecast using NeuralForecast models (PatchTST, TFT, iTransformer, TimeMixer).
+    
+    Note: NeuralForecast models require data (df) for prediction. This simple mode
+    logs that the model is ready for forecasting. Use experiment modes for actual forecasts.
+    """
     from src.utils import load_model_checkpoint
     
     logger.info(f"Loading {model_type.upper()} model...")
     nf_model = load_model_checkpoint(checkpoint_path)
     
-    logger.info(f"Generating forecasts with horizon={horizon}...")
+    logger.info(f"Model loaded successfully. Model is ready for forecasting with horizon={horizon}.")
+    logger.info("Note: NeuralForecast models require data (df) for prediction. "
+                "Use experiment modes (short_term/long_term) for actual forecasts with data.")
     
-    try:
-        if hasattr(nf_model, 'predict'):
-            predictions = nf_model.predict(horizon=horizon)
-            logger.info(f"Forecast completed")
-        else:
-            raise NotImplementedError(f"{model_type} predict() not implemented")
-        
-        # Save forecasts
-        output_dir = checkpoint_path.parent / "forecasts"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        if isinstance(predictions, pd.DataFrame):
-            predictions.to_csv(output_dir / "predictions.csv")
-        else:
-            import numpy as np
-            np.save(output_dir / "predictions.npy", predictions)
-        
-        logger.info(f"Forecasts saved to: {output_dir}")
-            
-    except Exception as e:
-        logger.error(f"Forecast generation failed: {e}", exc_info=True)
-        raise
+    # Save a placeholder to indicate forecast mode was run
+    output_dir = checkpoint_path.parent / "forecasts"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create a simple status file
+    status_file = output_dir / "forecast_status.txt"
+    with open(status_file, 'w') as f:
+        f.write(f"Model: {model_type}\n")
+        f.write(f"Horizon: {horizon}\n")
+        f.write(f"Status: Model loaded and ready for forecasting\n")
+        f.write(f"Note: Use experiment modes for actual forecasts with data\n")
+    
+    logger.info(f"Forecast status saved to: {output_dir}")
 
 
 def _run_multi_horizon_forecast_neuralforecast(

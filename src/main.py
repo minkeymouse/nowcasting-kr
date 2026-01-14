@@ -14,6 +14,7 @@ from src.train.itf import train_itf_model
 from src.train.dfm import train_dfm_model
 from src.train.ddfm import train_ddfm_model
 from src.train.timemixer import train_timemixer_model
+from src.train.mamba import train_mamba_model
 from src.utils import (
     load_test_data,
     get_monthly_series_from_metadata,
@@ -42,6 +43,11 @@ from src.forecast.neuralforecast import (
     run_multi_horizon_forecast as run_multi_horizon_forecast_neuralforecast,
     forecast as forecast_neuralforecast
 )
+from src.forecast.mamba import (
+    run_recursive_forecast as run_recursive_forecast_mamba,
+    run_multi_horizon_forecast as run_multi_horizon_forecast_mamba,
+    forecast as forecast_mamba
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +60,7 @@ TRAIN_FUNCTIONS = {
     'tft': train_tft_model,
     'itf': train_itf_model,
     'itransformer': train_itf_model,
+    'mamba': train_mamba_model,
 }
 
 def _create_recursive_forecast_wrapper(bound_model_type: str):
@@ -78,6 +85,7 @@ RECURSIVE_FORECAST_FUNCTIONS = {
     'itf': _create_recursive_forecast_wrapper('itf'),
     'itransformer': _create_recursive_forecast_wrapper('itf'),
     'timemixer': _create_recursive_forecast_wrapper('timemixer'),
+    'mamba': run_recursive_forecast_mamba,
 }
 
 def _create_multi_horizon_forecast_wrapper(bound_model_type: str):
@@ -102,6 +110,7 @@ MULTI_HORIZON_FORECAST_FUNCTIONS = {
     'itf': _create_multi_horizon_forecast_wrapper('itf'),
     'itransformer': _create_multi_horizon_forecast_wrapper('itf'),
     'timemixer': _create_multi_horizon_forecast_wrapper('timemixer'),
+    'mamba': run_multi_horizon_forecast_mamba,
 }
 
 
@@ -125,7 +134,7 @@ def _extract_model_config(model_config: Any) -> tuple[str, Any]:
         return model_config.name.lower(), model_config
     
     # Try nested structure with known model names
-    known_models = ['dfm', 'ddfm', 'itf', 'itransformer', 'patchtst', 'tft', 'timemixer']
+    known_models = ['dfm', 'ddfm', 'itf', 'itransformer', 'patchtst', 'tft', 'timemixer', 'mamba']
     for key in known_models:
         if hasattr(model_config, key):
             return key.lower(), getattr(model_config, key)
@@ -284,6 +293,7 @@ def main(cfg: DictConfig) -> None:
             'itf': lambda **kwargs: forecast_neuralforecast(**kwargs, model_type='itf'),
             'itransformer': lambda **kwargs: forecast_neuralforecast(**kwargs, model_type='itf'),
             'timemixer': lambda **kwargs: forecast_neuralforecast(**kwargs, model_type='timemixer'),
+            'mamba': forecast_mamba,
             'dfm': forecast_dfm,
             'ddfm': forecast_ddfm,
         }
@@ -451,7 +461,7 @@ def _extract_actuals_for_horizon(
     if not available_targets:
         return None, None
     
-    # For monthly series: aggregate weekly actuals in the month by averaging
+    # For monthly series: extract last non-NaN value in the month (consistent with short-term)
     if monthly_series:
         month_mask = (test_data.index.year == horizon_date.year) & \
                      (test_data.index.month == horizon_date.month)
@@ -461,8 +471,20 @@ def _extract_actuals_for_horizon(
             logger.warning(f"No test data found in month {horizon_date.year}-{horizon_date.month:02d} for horizon {horizon}w")
             return None, None
         
-        actuals_values = month_data.mean(axis=0)
-        actuals = pd.to_numeric(actuals_values, errors='coerce').values.reshape(1, -1)
+        # Extract last non-NaN value per series in the month (matching extract_monthly_actuals)
+        # Handle duplicate dates by sorting and taking the last non-NaN value
+        actuals_values = []
+        for series_name in available_targets:
+            series_values = month_data[series_name].dropna()
+            if len(series_values) > 0:
+                # Sort by index to ensure we get the chronologically last value
+                # When there are duplicate dates, this ensures we get the last occurrence
+                series_values_sorted = series_values.sort_index()
+                actuals_values.append(series_values_sorted.iloc[-1])  # Last value in month
+            else:
+                actuals_values.append(np.nan)
+        
+        actuals = np.array(actuals_values).reshape(1, -1)
         month_end = pd.Timestamp(year=horizon_date.year, month=horizon_date.month, day=1) + pd.offsets.MonthEnd(0)
         return actuals, month_end
     

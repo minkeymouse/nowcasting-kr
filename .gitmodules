@@ -6,3 +6,6 @@
 	path = nowcasting-report
 	url = https://github.com/minkeymouse/nowcasting-report.git
 
+[submodule "mamba"]
+	path = mamba
+	url = https://github.com/state-spaces/mamba.git

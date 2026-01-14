@@ -114,12 +114,21 @@ def train_ddfm_model(
     # Get original unscaled data to fit scaler for inverse transformation
     target_scaler = None
     if data_loader is not None:
-        # Get original (unscaled) processed data from data_loader
-        original_data = data_loader.processed  # This is processed but NOT scaled
+        # Use training_data which already excludes date columns and is ready for scaling
+        # training_data returns processed data without date columns
+        original_data = data_loader.training_data  # This excludes date columns automatically
+        
         if available_targets:
-            original_targets = original_data[available_targets]
+            # Filter to only available targets
+            original_targets = original_data[[col for col in available_targets if col in original_data.columns]]
         else:
             original_targets = original_data
+        
+        # Ensure only numeric columns (select_dtypes to be safe)
+        original_targets = original_targets.select_dtypes(include=[np.number])
+        
+        # Reset index to ensure no Timestamp index is included
+        original_targets = original_targets.reset_index(drop=True)
         
         # Fit scaler on original data for inverse transformation
         scaler_type = model_params.get('target_scaler', 'standard')
@@ -131,7 +140,9 @@ def train_ddfm_model(
             target_scaler = StandardScaler()
         
         # Fit on original (unscaled) data for proper inverse transformation
-        target_scaler.fit(original_targets.values)
+        # Use to_numpy() instead of .values to ensure clean conversion
+        target_values = original_targets.to_numpy(dtype=np.float64)
+        target_scaler.fit(target_values)
         logger.info(f"Target scaler fitted on original data for inverse transformation")
     
     # Pass target_scaler to DDFMDataset - it will be stored for prediction but we'll prevent double scaling
