@@ -3,9 +3,10 @@ horizon: 1  # Short-term: 1 week ahead. For long-term experiments, override with
 target_series:
 - KOIPALL.G
 prediction_length: 1  # Short-term: 1 week ahead. For long-term experiments: override with 40 (max(horizons)). Model trained with max horizon can predict all shorter horizons (4w, 8w, ..., 40w)
-context_length: 96
-n_layers: 3
+context_length: 192  # Keep at 192: longer context reduces training windows for sparse monthly data
+d_model: 320  # Moderate increase from 256: balances capacity with overfitting risk for sparse data
+n_layers: 3  # Keep at 3: more layers cause issues with future mixing given context_length=96 and downsampling structure
 dropout: 0.1
 batch_size: 128
-max_epochs: 50
-learning_rate: 0.001
+max_steps: 550  # ~50 epochs with batch_size=128 (~11 batches/epoch)
+learning_rate: 0.0005

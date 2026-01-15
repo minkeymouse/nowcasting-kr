@@ -5,6 +5,7 @@ import hydra
 import logging
 import pandas as pd
 import numpy as np
+import joblib
 
 from src.preprocess import InvestmentData, ProductionData
 from src.utils import setup_logging, get_project_root
@@ -19,7 +20,8 @@ from src.utils import (
     load_test_data,
     get_monthly_series_from_metadata,
     aggregate_weekly_to_monthly_tent_kernel,
-    extract_monthly_actuals
+    extract_monthly_actuals,
+    inverse_transform_predictions,
 )
 from src.metric import (
     compute_smse,
@@ -301,9 +303,15 @@ def main(cfg: DictConfig) -> None:
         if model_name not in FORECAST_FUNCTIONS:
             raise ValueError(f"Unknown model for forecasting: {model_name}")
         
-        FORECAST_FUNCTIONS[model_name](
-            checkpoint_path=checkpoint_path, horizon=horizon, model_type=model_name
-        )
+        # For neuralforecast models, model_type is already set in lambda, so don't pass it again
+        if model_name in ['patchtst', 'tft', 'itf', 'itransformer', 'timemixer']:
+            FORECAST_FUNCTIONS[model_name](
+                checkpoint_path=checkpoint_path, horizon=horizon
+            )
+        else:
+            FORECAST_FUNCTIONS[model_name](
+                checkpoint_path=checkpoint_path, horizon=horizon, model_type=model_name
+            )
 
 
 def run_short_term_experiment(
@@ -364,17 +372,98 @@ def run_short_term_experiment(
     if model_name in ['dfm', 'ddfm']:
         common_args['dataset_path'] = dataset_path
         predictions, actuals, dates = forecast_func(**common_args)
-        actual_target_series = target_series
+        # For factor models, try to get target_series from dataset if config doesn't have it
+        if target_series is None or len(target_series) == 0:
+            try:
+                import joblib
+                if dataset_path.exists():
+                    dataset = joblib.load(dataset_path)
+                    if hasattr(dataset, 'target_series') and dataset.target_series is not None:
+                        target_series = dataset.target_series if isinstance(dataset.target_series, list) else [dataset.target_series]
+                        logger.info(f"Using target_series from dataset: {len(target_series)} series")
+            except Exception as e:
+                logger.warning(f"Could not extract target_series from dataset: {e}")
+        # Fallback: infer from predictions shape if still None
+        if (target_series is None or len(target_series) == 0) and predictions is not None and len(predictions) > 0:
+            # Try to get from test_data columns
+            if test_data is not None:
+                target_series = [c for c in test_data.columns if c not in ['date', 'date_w']][:predictions.shape[1] if predictions.ndim > 1 else 1]
+                logger.warning(f"Inferred {len(target_series)} target series from test_data columns")
+        actual_target_series = target_series if target_series is not None else []
     else:
         common_args['update_params'] = update_params
         predictions, actuals, dates, actual_target_series = forecast_func(**common_args)
     
+    # ---------------------------------------------------------------------
+    # IMPORTANT: Ensure predictions are on the same scale as actuals
+    #
+    # - NeuralForecast models (TFT/PatchTST/iTransformer/TimeMixer) operate on
+    #   ORIGINAL (raw level) data and handle scaling internally.
+    # - DFM/DDFM are trained on transformed series (per metadata), so their
+    #   outputs are typically in the transformed space. Metrics in this project
+    #   are computed against raw-level actuals (after monthly aggregation when needed).
+    # - MAMBA is trained on PROCESSED/TRANSFORMED data (via get_processed_data_from_loader),
+    #   so predictions are in processed/transformed space. Actuals must also be in processed space.
+    #
+    # Therefore, we reverse per-series transformations (chg/logdiff/etc.) for
+    # DFM/DDFM predictions before aggregation + metric computation.
+    # MAMBA predictions and actuals are both in processed space, so no transformation needed.
+    # ---------------------------------------------------------------------
+    if model_name in ['dfm', 'ddfm'] and data_loader is not None:
+        try:
+            # IMPORTANT: DDFM.model.predict() already calls target_scaler.inverse_transform() internally,
+            # so predictions are already in TRANSFORMED space (chg/logdiff values), NOT standardized space.
+            # We should NOT apply scaler inverse_transform again here - that would be double-inverse.
+            # 
+            # We only need to reverse the metadata-based transformations (chg → level, logdiff → level)
+            # to bring predictions from transformed space to raw level space.
+            
+            # Skip scaler inverse_transform for DDFM - model.predict() already did it
+            if model_name == 'ddfm':
+                logger.info(f"Skipping scaler inverse_transform for {model_name} (already done by model.predict())")
+
+            # Reverse per-series preprocessing transformations (chg/logdiff/etc.) to raw scale.
+            if actual_target_series is not None and len(actual_target_series) > 0:
+                predictions_inv = np.zeros_like(predictions, dtype=float)
+                for i, d in enumerate(pd.DatetimeIndex(dates)):
+                    inv_pred = inverse_transform_predictions(
+                        predictions[i],
+                        actual_target_series,
+                        data_loader,
+                        reverse_transformations=True,
+                        test_data=test_data,     # use raw test data to fetch last known values
+                        cutoff_date=pd.Timestamp(d),
+                    )
+                    if inv_pred is not None:
+                        predictions_inv[i] = inv_pred
+                    else:
+                        predictions_inv[i] = predictions[i]  # Fallback if transformation fails
+                predictions = predictions_inv
+                logger.info(f"Applied inverse scaling + transformations to {model_name} predictions for metric computation.")
+            else:
+                logger.warning(f"actual_target_series is None or empty for {model_name}, skipping inverse transformations")
+        except Exception as e:
+            logger.warning(
+                f"Failed to inverse-transform predictions for {model_name}. "
+                f"Proceeding with raw model outputs. Error: {e}"
+            )
+    elif model_name == 'mamba':
+        # MAMBA is trained on PROCESSED/TRANSFORMED data (via get_processed_data_from_loader).
+        # Predictions are in processed space, so actuals must also be in processed space for evaluation.
+        # No inverse transformation needed - keep both predictions and actuals in processed space.
+        logger.info(f"MAMBA predictions are in processed/transformed space (trained on processed data), keeping actuals in processed space for evaluation.")
+
     # Identify monthly series for aggregation and metric normalization
     monthly_series = get_monthly_series_from_metadata(data_loader)
     
     # Compute test data standard deviation for consistent metric normalization
     # Aggregate monthly series to monthly before computing std (since evaluation is monthly)
-    test_data_std = compute_test_data_std(test_data, actual_target_series, monthly_series=monthly_series)
+    # IMPORTANT: Filter test_data to experiment period first to match actuals time range
+    test_data_for_std = test_data[
+        (test_data.index >= pd.Timestamp(start_date)) & 
+        (test_data.index <= pd.Timestamp(end_date))
+    ] if test_data is not None else None
+    test_data_std = compute_test_data_std(test_data_for_std, actual_target_series, monthly_series=monthly_series)
     
     # Aggregate weekly forecasts to monthly using tent kernel weights [0.1, 0.2, 0.3, 0.4]
     # Only aggregate monthly series; weekly series remain weekly
@@ -400,6 +489,12 @@ def run_short_term_experiment(
             
             predictions_aligned = predictions_monthly[pred_indices]
             actuals_aligned = actuals_monthly[actual_indices]
+            
+            # Use actuals std directly for more accurate normalization (actuals are already monthly aggregated)
+            actuals_std = np.std(actuals_aligned, axis=0, ddof=0) if actuals_aligned.size > 0 else None
+            if actuals_std is not None and len(actuals_std) == len(actual_target_series):
+                test_data_std = actuals_std
+                logger.info(f"Using actuals std for metric normalization: {test_data_std}")
             
             _save_monthly_metrics(
                 predictions_aligned, actuals_aligned, common_dates, actual_target_series,
@@ -594,6 +689,13 @@ def run_long_term_experiment(
     # Load test data
     test_data = load_test_data(data_model)
     
+    # For Mamba: use processed/transformed test_data (same space as training)
+    # This ensures actuals are in the same space as predictions for evaluation
+    if model_name == 'mamba':
+        from src.train._common import get_processed_data_from_loader
+        test_data = get_processed_data_from_loader(test_data, data_loader, "Mamba")
+        logger.info(f"Using processed test_data for Mamba (aligned with training space)")
+    
     # Get target series from model config
     target_series = extract_target_series_from_config(cfg)
     
@@ -658,13 +760,25 @@ def run_long_term_experiment(
             weekly_dates = forecast_data['dates']
             
             if len(weekly_forecasts) > 0:
+                # For multivariate models, weekly_forecasts contains all available_targets
+                # but we only want to evaluate on primary_target
+                # Use available_targets for aggregation if available, otherwise use actual_target_series
+                aggregation_targets = forecast_data.get('_available_targets', actual_target_series)
+                primary_target = forecast_data.get('_primary_target', actual_target_series[0] if actual_target_series else None)
+                
                 aggregated_forecasts, aggregated_dates = aggregate_weekly_to_monthly_tent_kernel(
-                    weekly_forecasts, weekly_dates, actual_target_series, 
+                    weekly_forecasts, weekly_dates, aggregation_targets, 
                     monthly_series=monthly_series
                 )
                 
                 if len(aggregated_forecasts) > 0:
-                    forecast_values = aggregated_forecasts[0]  # First (and should be only) month
+                    # Extract only the primary_target column from aggregated result
+                    if primary_target and primary_target in aggregation_targets:
+                        primary_idx = aggregation_targets.index(primary_target)
+                        forecast_values = aggregated_forecasts[0, primary_idx:primary_idx+1]  # Extract primary target only
+                    else:
+                        # Fallback: use first column
+                        forecast_values = aggregated_forecasts[0, 0:1]
                     horizon_date = aggregated_dates[0] if len(aggregated_dates) > 0 else horizon_date
                 else:
                     logger.warning(f"No aggregated forecasts for horizon {horizon}w")
@@ -681,11 +795,26 @@ def run_long_term_experiment(
         if actuals is not None:
             forecast_array = np.asarray(forecast_values).reshape(1, -1)
             actuals_array = np.asarray(actuals)
-            std_for_metrics = validate_std_for_metrics(test_data_std, len(actual_target_series))
-            smse = compute_smse(actuals_array, forecast_array, test_data_std=std_for_metrics)
-            smae = compute_smae(actuals_array, forecast_array, test_data_std=std_for_metrics)
-            metrics = {"smse": float(smse), "smae": float(smae)}
-            logger.info(f"Horizon {horizon}w: sMSE={smse:.6f}, sMAE={smae:.6f}")
+            
+            # Check if actuals are all NaN (no valid data for evaluation)
+            if np.isnan(actuals_array).all():
+                logger.warning(f"Horizon {horizon}w: All actuals are NaN, skipping metric computation")
+                metrics = None
+            else:
+                std_for_metrics = validate_std_for_metrics(test_data_std, len(actual_target_series))
+                smse = compute_smse(actuals_array, forecast_array, test_data_std=std_for_metrics)
+                smae = compute_smae(actuals_array, forecast_array, test_data_std=std_for_metrics)
+                
+                # Only save metrics if they are valid (not all NaN)
+                if not (np.isnan(smse) and np.isnan(smae)):
+                    metrics = {"smse": float(smse) if not np.isnan(smse) else None, 
+                              "smae": float(smae) if not np.isnan(smae) else None}
+                    smse_str = f"{smse:.6f}" if not np.isnan(smse) else "NaN"
+                    smae_str = f"{smae:.6f}" if not np.isnan(smae) else "NaN"
+                    logger.info(f"Horizon {horizon}w: sMSE={smse_str}, sMAE={smae_str}")
+                else:
+                    logger.warning(f"Horizon {horizon}w: All metrics are NaN (no valid data pairs), skipping metric save")
+                    metrics = None
         
         # Save results using actual target series
         save_experiment_results(

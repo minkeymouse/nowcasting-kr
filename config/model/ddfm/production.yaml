@@ -2,12 +2,12 @@ name: ddfm
 target_series:
 - KOIPALL.G
 encoder_layers:
-- 64
 - 32
-num_factors: 3
+- 16
+num_factors: 4
 activation: relu
 use_batch_norm: true
-learning_rate: 0.005
+learning_rate: 0.001
 n_mc_samples: 10
 window_size: 100
 max_epoch: 50
@@ -18,3 +18,6 @@ use_idiosyncratic: true
 min_obs_idio: 5
 lags_input: 0
 target_scaler: standard
+interpolation_method: spline
+interpolation_limit: 10
+interpolation_limit_direction: both

@@ -17,6 +17,136 @@ from src.utils import (
 
 logger = logging.getLogger(__name__)
 
+def _ensure_primary_target_in_list(
+    all_variables: List[str],
+    available_targets: List[str],
+    primary_target: Optional[str]
+) -> Tuple[List[str], Optional[str]]:
+    """Ensure primary target exists in available_targets for evaluation.
+
+    If primary_target is missing, replace the last entry to keep n_series count.
+    Falls back to the first available target if primary_target isn't in data.
+    """
+    if not primary_target:
+        return available_targets, None
+    if primary_target not in available_targets:
+        if primary_target in all_variables:
+            # Replace the last element to keep the expected n_series size.
+            available_targets = available_targets[:-1] + [primary_target]
+            logger.info(
+                f"Multivariate model: Added primary target {primary_target} to available_targets "
+                f"(replaced last element)"
+            )
+        else:
+            logger.warning(
+                f"Multivariate model: Config target_series {primary_target} not in test_data, "
+                f"using {available_targets[0]} for evaluation"
+            )
+            primary_target = available_targets[0] if available_targets else None
+    return available_targets, primary_target
+
+def _resolve_forecast_targets(
+    nf_model: Any,
+    test_data: pd.DataFrame,
+    target_series: Optional[List[str]],
+    hist_exog_list: Optional[List[str]],
+    is_multivariate: bool,
+    model_targets: Optional[List[str]] = None
+) -> Tuple[List[str], Optional[str]]:
+    """Resolve available targets and primary target for evaluation.
+
+    Keeps consistent logic across recursive and multi-horizon forecasting.
+    """
+    if is_multivariate:
+        date_cols = {'date', 'date_w', 'Date', 'Date_w'}
+        all_variables = [col for col in test_data.columns if col not in date_cols]
+        # Prefer the model's target ordering if available (ensures training/eval alignment)
+        if model_targets:
+            ordered_targets = [t for t in model_targets if t in all_variables]
+            if ordered_targets:
+                all_variables = ordered_targets
+        model = nf_model.models[0]
+        n_series = getattr(model, 'n_series', len(all_variables))
+        if n_series > len(all_variables):
+            logger.warning(
+                f"Model expects {n_series} series but test_data only has {len(all_variables)}. "
+                f"Using all available."
+            )
+        available_targets = all_variables[:n_series] if n_series <= len(all_variables) else all_variables
+        primary_target = target_series[0] if target_series else None
+        available_targets, primary_target = _ensure_primary_target_in_list(
+            all_variables, available_targets, primary_target
+        )
+        if primary_target:
+            logger.info(
+                f"Multivariate model: Using {len(available_targets)} variables for prediction, "
+                f"evaluating on {primary_target} (from config)"
+            )
+        else:
+            logger.warning(
+                "Multivariate model: No valid primary target found, evaluation may be skipped."
+            )
+        return available_targets, primary_target
+
+    # TFT or univariate: primary target + covariates
+    available_targets = get_target_series_from_model(nf_model, test_data, target_series)
+    primary_target = available_targets[0] if available_targets else None
+    if hist_exog_list:
+        logger.info(
+            f"TFT model: Primary target={available_targets}, "
+            f"Covariates={len(hist_exog_list)} variables"
+        )
+    return available_targets, primary_target
+
+
+def _extract_model_info(nf_model: Any) -> Tuple[List[str], Optional[List[str]], bool]:
+    """Extract target series and covariate information from NeuralForecast model.
+    
+    Parameters
+    ----------
+    nf_model : Any
+        NeuralForecast model instance
+    
+    Returns
+    -------
+    tuple
+        (all_target_series, hist_exog_list, is_multivariate)
+        - all_target_series: All series used by the model (targets + covariates for multivariate)
+        - hist_exog_list: List of historical exogenous variables (for TFT), None if not applicable
+        - is_multivariate: True if model uses multivariate forecasting (all as targets)
+    """
+    if not hasattr(nf_model, 'models') or len(nf_model.models) == 0:
+        return [], None, False
+    
+    model = nf_model.models[0]
+    
+    # Check for hist_exog_list (TFT uses covariates)
+    hist_exog_list = getattr(model, 'hist_exog_list', None)
+    hist_exog_size = getattr(model, 'hist_exog_size', 0)
+    
+    # Check n_series to determine if multivariate
+    n_series = getattr(model, 'n_series', 1)
+    is_multivariate = (n_series > 1) or (hist_exog_size == 0 and hasattr(model, 'n_series'))
+    
+    # Try to extract target series from model's _y attribute
+    all_target_series = []
+    if hasattr(nf_model, '_y') and nf_model._y is not None:
+        if isinstance(nf_model._y, pd.DataFrame):
+            all_target_series = list(nf_model._y.columns)
+        elif isinstance(nf_model._y, pd.Series):
+            all_target_series = [nf_model._y.name] if nf_model._y.name else ['target']
+    
+    # If TFT with covariates, we need to know which are targets vs covariates
+    # For multivariate models, all variables are targets
+    if hist_exog_list and len(hist_exog_list) > 0:
+        # TFT: primary target + covariates
+        is_multivariate = False
+    elif n_series > 1:
+        # Multivariate: all variables are targets
+        is_multivariate = True
+    
+    return all_target_series, hist_exog_list, is_multivariate
+
 
 def forecast(
     checkpoint_path: Path,
@@ -173,8 +303,13 @@ def run_recursive_forecast_neuralforecast(
     logger.info(f"Loading {model_type.upper()} model for recursive forecasting...")
     nf_model = load_model_checkpoint(checkpoint_path)
     
-    # Get available target series first (filter out series not in test_data)
-    available_targets = get_target_series_from_model(nf_model, test_data, target_series)
+    # Extract model information (targets, covariates, multivariate flag)
+    model_targets, hist_exog_list, is_multivariate = _extract_model_info(nf_model)
+    
+    # Resolve targets for evaluation
+    available_targets, primary_target = _resolve_forecast_targets(
+        nf_model, test_data, target_series, hist_exog_list, is_multivariate, model_targets
+    )
     
     # Convert dates to timestamps
     start_ts = pd.Timestamp(start_date) if start_date else test_data.index.min()
@@ -185,8 +320,19 @@ def run_recursive_forecast_neuralforecast(
         test_data, start_date, end_date, available_targets
     )
     
-    # Use full test_data with only target series for model updates
-    full_data_for_updates = test_data[available_targets].copy()
+    # Prepare data for model updates
+    if is_multivariate:
+        # Multivariate: use all variables
+        full_data_for_updates = test_data[available_targets].copy()
+    else:
+        # TFT: use primary target + covariates
+        if hist_exog_list:
+            # Include covariates
+            all_cols = available_targets + [col for col in hist_exog_list if col in test_data.columns]
+            full_data_for_updates = test_data[all_cols].copy()
+        else:
+            # Only primary target
+            full_data_for_updates = test_data[available_targets].copy()
     
     # Use actual weekly dates from filtered test data
     weekly_dates = test_data_for_forecasts.index[(test_data_for_forecasts.index >= start_ts) & 
@@ -214,32 +360,59 @@ def run_recursive_forecast_neuralforecast(
         train_data_up_to_cutoff = interpolate_missing_values(train_data_up_to_cutoff, data_loader)
         
         # Convert to NeuralForecast long format
-        nf_df = convert_to_neuralforecast_format(train_data_up_to_cutoff, available_targets)
+        if is_multivariate:
+            # Multivariate: all variables as targets
+            nf_df = convert_to_neuralforecast_format(train_data_up_to_cutoff, available_targets)
+        else:
+            # TFT: primary target + covariates
+            if hist_exog_list and len(hist_exog_list) > 0:
+                # Separate target and covariates
+                target_data = train_data_up_to_cutoff[available_targets].copy()
+                covariate_cols = [col for col in hist_exog_list if col in train_data_up_to_cutoff.columns]
+                covariate_data = train_data_up_to_cutoff[covariate_cols].copy() if covariate_cols else None
+                nf_df = convert_to_neuralforecast_format(
+                    target_data, available_targets,
+                    covariate_data=covariate_data,
+                    covariate_names=covariate_cols
+                )
+            else:
+                # Only primary target
+                nf_df = convert_to_neuralforecast_format(train_data_up_to_cutoff, available_targets)
         
         # Predict
         forecast_df = nf_model.predict(df=nf_df)
         
         # Extract 1-step-ahead forecasts
-        # NeuralForecast models handle scaling/transformation internally, so predictions
-        # are already in the correct scale (no inverse transformation needed)
-        forecast_values = extract_neuralforecast_forecasts(forecast_df, available_targets, horizon_idx=0)
-        predictions.append(forecast_values)
+        # For multivariate models, extract all targets but we only care about primary for evaluation
+        # For TFT, extract the primary target
+        # primary_target is already set above (from config for multivariate, from available_targets for TFT)
+        if primary_target:
+            # Extract forecast for primary target (from config for multivariate, first in available_targets for TFT)
+            # For multivariate, the model predicts all series, but we extract only primary
+            forecast_values = extract_neuralforecast_forecasts(forecast_df, [primary_target], horizon_idx=0)
+            predictions.append(forecast_values)
+        else:
+            logger.warning(f"No primary target found for {next_date.date()}")
+            predictions.append(np.array([np.nan]))
         
         forecast_dates.append(next_date)
         
-        # Get actual values
-        if next_date in test_data_for_forecasts.index:
-            actual_values = test_data_for_forecasts.loc[next_date, available_targets].values
+        # Get actual values (only for primary target)
+        if next_date in test_data_for_forecasts.index and primary_target:
+            actual_values = test_data_for_forecasts.loc[next_date, [primary_target]].values
             actuals.append(actual_values)
         else:
             logger.warning(f"No actual data for {next_date.date()}")
-            actuals.append(np.full(len(available_targets), np.nan))
+            actuals.append(np.full(1, np.nan))
     
     predictions = np.array(predictions)
     actuals = np.array(actuals)
     forecast_dates = pd.DatetimeIndex(forecast_dates)
     
-    return predictions, actuals, forecast_dates, available_targets
+    # Return primary target series (from config for multivariate, first in available_targets for TFT)
+    primary_target_list = [primary_target] if primary_target else []
+    
+    return predictions, actuals, forecast_dates, primary_target_list
 
 
 def _forecast_neuralforecast_models(checkpoint_path: Path, horizon: int, model_type: str) -> None:
@@ -295,22 +468,49 @@ def _run_multi_horizon_forecast_neuralforecast(
     logger.info(f"Loading {model_type.upper()} model for multi-horizon forecasting from {start_date}")
     model = load_model_checkpoint(checkpoint_path)
     
+    # Extract model information
+    model_targets, hist_exog_list, is_multivariate = _extract_model_info(model)
+    
     start_date_ts = pd.Timestamp(start_date)
     forecasts = {}
     
     # Get actual target series
-    available_targets = None
     if test_data is not None:
-        available_targets = get_target_series_from_model(model, test_data, target_series)
+        available_targets, primary_target = _resolve_forecast_targets(
+            model, test_data, target_series, hist_exog_list, is_multivariate, model_targets
+        )
+    else:
+        available_targets = None
+        primary_target = None
     
     # Rebuild dataset for each horizon and predict
     for horizon in horizons:
         if test_data is not None and available_targets:
-            train_data = test_data[test_data.index < start_date_ts][available_targets].copy()
-            train_data = interpolate_missing_values(train_data, data_loader)
+            # Prepare data based on model type
+            if is_multivariate:
+                # Multivariate: all variables
+                train_data = test_data[test_data.index < start_date_ts][available_targets].copy()
+                train_data = interpolate_missing_values(train_data, data_loader)
+                nf_df = convert_to_neuralforecast_format(train_data, available_targets)
+            else:
+                # TFT: primary target + covariates
+                if hist_exog_list and len(hist_exog_list) > 0:
+                    all_cols = available_targets + [col for col in hist_exog_list if col in test_data.columns]
+                    train_data_full = test_data[test_data.index < start_date_ts][all_cols].copy()
+                    train_data_full = interpolate_missing_values(train_data_full, data_loader)
+                    target_data = train_data_full[available_targets].copy()
+                    covariate_cols = [col for col in hist_exog_list if col in train_data_full.columns]
+                    covariate_data = train_data_full[covariate_cols].copy() if covariate_cols else None
+                    nf_df = convert_to_neuralforecast_format(
+                        target_data, available_targets,
+                        covariate_data=covariate_data,
+                        covariate_names=covariate_cols
+                    )
+                else:
+                    train_data = test_data[test_data.index < start_date_ts][available_targets].copy()
+                    train_data = interpolate_missing_values(train_data, data_loader)
+                    nf_df = convert_to_neuralforecast_format(train_data, available_targets)
             
-            # Convert to NeuralForecast long format and predict
-            nf_df = convert_to_neuralforecast_format(train_data, available_targets)
             forecast_df = model.predict(df=nf_df)
             
             if return_weekly_forecasts:
@@ -333,6 +533,7 @@ def _run_multi_horizon_forecast_neuralforecast(
                     weeks_from_start = (current_date - start_date_ts).days // 7
                     if 0 <= weeks_from_start < max(horizons):
                         # NeuralForecast models handle scaling internally, no inverse transform needed
+                        # Extract all targets for aggregation (needs all series for tent kernel)
                         forecast_val = extract_neuralforecast_forecasts(
                             forecast_df, available_targets, horizon_idx=weeks_from_start
                         )
@@ -348,18 +549,55 @@ def _run_multi_horizon_forecast_neuralforecast(
                         'dates': pd.DatetimeIndex(month_weekly_dates)
                     }
                 else:
-                    # Fallback: single forecast
-                    # NeuralForecast models handle scaling internally, no inverse transform needed
-                    forecast_values = extract_neuralforecast_forecasts(forecast_df, available_targets, horizon_idx=horizon - 1)
+                    # Fallback: single forecast (primary target only)
+                    # Use primary_target from config (set above) instead of available_targets[0]
+                    primary_target_list = [primary_target] if primary_target else ([available_targets[0]] if available_targets else [])
+                    forecast_values = extract_neuralforecast_forecasts(forecast_df, primary_target_list, horizon_idx=horizon - 1)
                     forecasts[horizon] = forecast_values
             else:
-                # Extract forecast (no inverse transform needed - models handle scaling internally)
-                forecast_values = extract_neuralforecast_forecasts(forecast_df, available_targets, horizon_idx=horizon - 1)
+                # Extract forecast (primary target only)
+                # Use primary_target from config (set above) instead of available_targets[0]
+                primary_target_list = [primary_target] if primary_target else ([available_targets[0]] if available_targets else [])
+                forecast_values = extract_neuralforecast_forecasts(forecast_df, primary_target_list, horizon_idx=horizon - 1)
                 forecasts[horizon] = forecast_values
         else:
             logger.warning(f"No test_data available for horizon {horizon}w")
             forecasts[horizon] = np.full(len(available_targets) if available_targets else 1, np.nan)
     
-    # Return forecasts and actual target series used
-    actual_targets = available_targets if available_targets else target_series
-    return forecasts, actual_targets if actual_targets else []
+    # Return forecasts and the series list that matches forecast output columns.
+    #
+    # IMPORTANT:
+    # - For multivariate models (PatchTST / iTransformer / TimeMixer), `weekly_forecasts` contains
+    #   predictions for ALL series in `available_targets` (shape: [n_weeks_in_month, n_series]).
+    #   Downstream aggregation (`aggregate_weekly_to_monthly_tent_kernel`) needs all series for
+    #   proper aggregation, so we need to return available_targets when weekly_forecasts are used.
+    # - For evaluation, we use primary_target (from config) instead of available_targets[0]
+    # - The return value should be: (forecasts_dict, [primary_target]) for evaluation
+    #   But weekly_forecasts dict internally contains all available_targets for aggregation
+    if is_multivariate:
+        # For multivariate, return primary_target for evaluation (from config)
+        # Note: When return_weekly_forecasts=True, the weekly_forecasts dict contains all
+        # available_targets, but we return [primary_target] for evaluation.
+        # The aggregation function will need to be called with available_targets, not primary_target.
+        if primary_target:
+            series_for_outputs = [primary_target]
+        else:
+            series_for_outputs = [available_targets[0]] if available_targets else []
+    else:
+        if available_targets:
+            series_for_outputs = [available_targets[0]]
+        elif target_series:
+            series_for_outputs = [target_series[0]] if isinstance(target_series, list) and len(target_series) > 0 else []
+        else:
+            series_for_outputs = []
+    
+    # Store available_targets in forecasts dict for aggregation (if weekly_forecasts are used)
+    # This allows main.py to access all series for aggregation while using primary_target for evaluation
+    if is_multivariate and any(isinstance(v, dict) and 'weekly_forecasts' in v for v in forecasts.values()):
+        # Add metadata to all forecast dicts so aggregation has consistent target mapping.
+        for horizon, forecast_data in forecasts.items():
+            if isinstance(forecast_data, dict) and 'weekly_forecasts' in forecast_data:
+                forecast_data['_available_targets'] = available_targets
+                forecast_data['_primary_target'] = primary_target
+    
+    return forecasts, series_for_outputs

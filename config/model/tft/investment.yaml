@@ -9,5 +9,5 @@ num_heads: 8
 dropout: 0.1
 max_covariates: 50
 batch_size: 128
-max_epochs: 50
+max_steps: 1100  # ~50 epochs for TFT after batch_size reduction to 64 (~22 batches/epoch)
 learning_rate: 0.001

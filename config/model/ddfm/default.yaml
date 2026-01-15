@@ -13,17 +13,17 @@ target_series: null  # null = use all series for reconstruction
 
 # Neural Network Architecture
 encoder_layers: [64, 32]  # Hidden layer dimensions for encoder [64, 32] -> latent factors
-num_factors: 3  # Number of latent factors
+num_factors: 5  # Number of latent factors
 activation: relu  # Activation function: 'tanh', 'relu', 'sigmoid'
 use_batch_norm: true  # Use batch normalization in encoder
 
 # Training Parameters
-learning_rate: 0.005  # Learning rate for Adam optimizer
+learning_rate: 0.001  # Learning rate for Adam optimizer
 n_mc_samples: 10  # Number of MC samples per MCMC iteration
 window_size: 100  # Time-step batch size for training
 
 # MCMC/Iterative Parameters
-max_epoch: 1  # Maximum MCMC iterations (epochs) (minimal for testing - override with CLI: model.max_epoch=50 for full training)
+max_epoch: 50  # Maximum MCMC iterations (epochs)
 tolerance: 0.0005  # Convergence tolerance
 disp: 10  # Display frequency for training progress
 seed: null  # Random seed (null uses default)
@@ -37,3 +37,8 @@ lags_input: 0  # Number of lags of inputs on encoder (default 0)
 # DDFM is a deep learning autoencoder - no frequency specification needed
 # All series are used for reconstruction in the autoencoder
 target_scaler: standard  # Standard scaler for target series
+
+# Interpolation Parameters (for handling missing values)
+interpolation_method: linear  # Interpolation method: 'linear', 'spline', 'cubic', etc. (default: 'linear' for stability)
+interpolation_limit: 10  # Maximum consecutive NaNs to interpolate (default: 10, prevents extreme extrapolation)
+interpolation_limit_direction: both  # Direction to fill: 'forward', 'backward', or 'both' (default: 'both')

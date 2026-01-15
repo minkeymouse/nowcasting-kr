@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import pandas as pd
 
 from neuralforecast import NeuralForecast
@@ -55,19 +55,51 @@ def train_tft_model(
     data = get_processed_data_from_loader(data, data_loader, "TFT")
     logger.info(f"Training data shape: {data.shape}")
     
-    # Prepare training data
-    target_data, available_targets = prepare_training_data(data, model_params, data_loader)
+    # Prepare training data (includes covariates)
+    target_data, covariate_data, available_targets, covariate_names = prepare_training_data(
+        data, model_params, data_loader, use_covariates=True
+    )
     
-    # Create model
-    model = _create_tft_model(model_params, len(available_targets))
+    # Create model with hist_exog_list if covariates are available
+    # Pass data size for proper max_steps calculation
+    n_samples = len(target_data)
+    model = _create_tft_model(model_params, len(available_targets), covariate_names, n_samples)
     
-    # Train model
-    train_neuralforecast_model(model, target_data, available_targets, outputs_dir)
+    # Train model with covariates
+    train_neuralforecast_model(
+        model, target_data, available_targets, outputs_dir,
+        covariate_data=covariate_data,
+        covariate_names=covariate_names
+    )
 
 
-def _create_tft_model(model_params: Dict[str, Any], n_series: int) -> NeuralForecast:
-    """Create TFT model instance."""
-    common_params = get_common_training_params(model_params)
+def _create_tft_model(
+    model_params: Dict[str, Any], 
+    n_series: int,
+    hist_exog_list: Optional[list[str]] = None,
+    n_samples: Optional[int] = None
+) -> NeuralForecast:
+    """Create TFT model instance.
+    
+    Parameters
+    ----------
+    model_params : dict
+        Model parameters dictionary
+    n_series : int
+        Number of target series
+    hist_exog_list : list[str], optional
+        List of historical exogenous variable names (covariates)
+    """
+    # Reduce batch size if using many covariates to avoid OOM (before calculating max_steps)
+    batch_size = model_params.get('batch_size', 32)
+    if hist_exog_list and len(hist_exog_list) > 30:
+        batch_size = min(batch_size, 64)
+        model_params = model_params.copy()  # Don't modify original
+        model_params['batch_size'] = batch_size
+        logger.info(f"Reduced batch_size to {batch_size} due to large number of covariates ({len(hist_exog_list)})")
+    
+    # Now calculate max_steps with correct batch_size
+    common_params = get_common_training_params(model_params, n_samples=n_samples)
     
     model_instance = TFT(
         **common_params,
@@ -80,6 +112,7 @@ def _create_tft_model(model_params: Dict[str, Any], n_series: int) -> NeuralFore
         rnn_type=model_params.get('rnn_type', 'lstm'),
         one_rnn_initial_state=model_params.get('one_rnn_initial_state', False),
         dropout=model_params.get('dropout', 0.1),
+        hist_exog_list=hist_exog_list,  # Pass covariates
     )
     
     # Use default local_scaler_type='standard' to let NeuralForecast handle scaling

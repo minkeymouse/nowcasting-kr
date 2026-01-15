@@ -181,12 +181,35 @@ def _run_recursive_forecast(
     model = DFM.load(checkpoint_path)
     dataset = joblib.load(dataset_path) if dataset_path.exists() else None
     
-    # Attach dataset to model if available (needed for predict() to find target_series)
-    if dataset is not None and hasattr(model, '_dataset'):
-        model._dataset = dataset
+    # Get target series from config first (this is what the model was trained with)
+    config_target_series = None
+    if hasattr(model, '_config') and model._config is not None:
+        config = model._config
+        if hasattr(config, 'target_series') and config.target_series:
+            config_target_series = config.target_series if isinstance(config.target_series, list) else [config.target_series]
+            logger.info(f"Found target_series in model config: {config_target_series}")
     
     # Get target series using helper (use full test_data before filtering)
     available_targets = get_target_series_from_dataset(dataset, test_data, target_series)
+    
+    # Prefer config target_series if available, otherwise use available_targets
+    if config_target_series:
+        # Verify config target_series are in test_data
+        config_targets_in_data = [t for t in config_target_series if t in test_data.columns]
+        if config_targets_in_data:
+            available_targets = config_targets_in_data
+            logger.info(f"Using target_series from model config: {available_targets}")
+        else:
+            logger.warning(f"Config target_series {config_target_series} not in test_data, using {available_targets}")
+    
+    # Set target_series on dataset (needed for predict() to resolve indices correctly)
+    if dataset is not None:
+        dataset.target_series = available_targets
+        logger.info(f"Set target_series on dataset: {available_targets}")
+    
+    # Attach dataset to model if available (needed for predict() to find target_series)
+    if dataset is not None and hasattr(model, '_dataset'):
+        model._dataset = dataset
     
     # Convert date strings to timestamps
     start_ts = pd.Timestamp(start_date) if start_date else test_data.index.min()
@@ -221,11 +244,15 @@ def _run_recursive_forecast(
         train_data_initial, data_loader, columns=None, impute_missing=False  # DFM handles NaNs
     )
     
+    # Track last update date for incremental updates
+    last_update_date = weekly_dates[0] if len(train_data_standardized) == 0 else pd.Timestamp(train_data_initial.index[-1])
+    
     # Update factors with initial training data
     # This updates the latent factors via Kalman filtering, keeping model parameters fixed
     if len(train_data_standardized) > 0:
         logger.info(f"Updating factors with initial data ({len(train_data_standardized)} rows)...")
         model.update(train_data_standardized)
+        last_update_date = pd.Timestamp(train_data_initial.index[-1])
     
     # Loop over weekly cutoffs
     for i in range(len(weekly_dates) - 1):
@@ -234,10 +261,13 @@ def _run_recursive_forecast(
         
         logger.info(f"Week {i+1}/{len(weekly_dates)-1}: Updating factors, then forecasting {next_date.date()}")
         
-        # Get new data since last update (use full test_data for factor updates)
+        # IMPORTANT: Synchronize with NeuralForecast models - get NEW data since last update,
+        # INCLUDING cutoff_date. This ensures we use the latest available data (cutoff_date)
+        # to update factors before predicting next_date, matching attention-based models.
+        # DFM's update() extends factors incrementally, so we only pass new data.
         new_data = test_data[
-            (test_data.index >= cutoff_date) & 
-            (test_data.index < next_date)
+            (test_data.index > last_update_date) & 
+            (test_data.index <= cutoff_date)
         ].copy()
         
         if len(new_data) > 0:
@@ -248,9 +278,10 @@ def _run_recursive_forecast(
             )
             
             # Update factors with new observations (Kalman filtering updates factor state)
-            # This is the key difference from attention models: we update latent factors
+            # This includes cutoff_date data, synchronized with attention-based models
             model.update(new_data_standardized)
-            logger.debug(f"Factors updated with {len(new_data_standardized)} new observations")
+            logger.debug(f"Factors updated with {len(new_data_standardized)} new observations (including {cutoff_date.date()})")
+            last_update_date = cutoff_date
         
         # Predict 1 step ahead from updated factors
         # Factor models are structural: factors evolve via AR dynamics, forecast is deterministic
@@ -311,9 +342,22 @@ def _run_multi_horizon_forecast(
     model = DFM.load(checkpoint_path)
     dataset = joblib.load(dataset_path) if dataset_path.exists() else None
     
-    if target_series is None and dataset is not None:
-        if hasattr(dataset, 'target_series'):
-            target_series = dataset.target_series
+    # Ensure target_series is set on dataset if provided
+    if dataset is not None:
+        if target_series is None:
+            if hasattr(dataset, 'target_series'):
+                target_series = dataset.target_series
+        else:
+            # Set target_series on dataset if it's missing or empty
+            if not hasattr(dataset, 'target_series') or dataset.target_series is None or len(dataset.target_series) == 0:
+                dataset.target_series = target_series
+                logger.info(f"Set target_series on dataset: {target_series}")
+        
+        # Attach dataset to model for predict() to access target_series
+        if hasattr(model, '_dataset'):
+            model._dataset = dataset
+        elif hasattr(model, 'dataset'):
+            model.dataset = dataset
     
     start_date_ts = pd.Timestamp(start_date)
     max_horizon = max(horizons) if horizons else 1

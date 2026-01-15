@@ -24,7 +24,15 @@ except ImportError:
 
 
 def load_mamba_model(checkpoint_path: Path, device: str = None):
-    """Load trained Mamba model from checkpoint."""
+    """Load trained Mamba model from checkpoint.
+    
+    Parameters
+    ----------
+    checkpoint_path : Path
+        Path to model checkpoint
+    device : str, optional
+        Device to load model on
+    """
     if not _HAS_MAMBA_SSM:
         raise ImportError("mamba-ssm not available. Please install: pip install mamba-ssm")
     
@@ -32,17 +40,11 @@ def load_mamba_model(checkpoint_path: Path, device: str = None):
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Model checkpoint not found: {checkpoint_path}")
     
-    # Load metadata
-    metadata_path = checkpoint_path.parent / "metadata.pkl"
-    if not metadata_path.exists():
-        raise FileNotFoundError(f"Metadata not found: {metadata_path}")
-    
-    metadata = joblib.load(metadata_path)
-    
-    # Load model first to get device
+    metadata = joblib.load(checkpoint_path.parent / "metadata.pkl")
     from src.train.mamba import MambaForecaster
     
     model_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    
     model = MambaForecaster(
         d_model=metadata['d_model'],
         n_layers=metadata['n_layers'],
@@ -56,32 +58,33 @@ def load_mamba_model(checkpoint_path: Path, device: str = None):
     )
     
     checkpoint = joblib.load(checkpoint_path)
-    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
+    if isinstance(checkpoint, dict):
+        state_dict = checkpoint.get('model_state_dict', checkpoint)
+        model.load_state_dict(state_dict)
+        model = model.to(model_device).eval()
+    elif hasattr(checkpoint, 'state_dict') and hasattr(checkpoint, 'load_state_dict'):
+        model = checkpoint.to(model_device).eval()
     else:
-        # Assume it's the model itself
-        model.load_state_dict(checkpoint.state_dict() if hasattr(checkpoint, 'state_dict') else checkpoint)
+        try:
+            model.load_state_dict(checkpoint)
+            model = model.to(model_device).eval()
+        except Exception:
+            model = checkpoint.to(model_device).eval()
     
-    # Move model to device
-    model = model.to(model_device)
-    model.eval()
-    
-    # Load input/output projections if exist and move to device
     input_proj = None
     output_proj = None
-    input_proj_path = checkpoint_path.parent / "input_proj.pkl"
-    if input_proj_path.exists():
-        input_proj = joblib.load(input_proj_path)
-        input_proj = input_proj.to(model_device)
-        logger.info("Loaded input projection layer")
+    if (checkpoint_path.parent / "input_proj.pkl").exists():
+        input_proj = joblib.load(checkpoint_path.parent / "input_proj.pkl").to(model_device)
+    if (checkpoint_path.parent / "output_proj.pkl").exists():
+        output_proj = joblib.load(checkpoint_path.parent / "output_proj.pkl").to(model_device)
     
-    output_proj_path = checkpoint_path.parent / "output_proj.pkl"
-    if output_proj_path.exists():
-        output_proj = joblib.load(output_proj_path)
-        output_proj = output_proj.to(model_device)
-        logger.info("Loaded output projection layer")
+    # Load per-series StandardScaler (Stage 1: Training scale preservation)
+    scaler = None
+    if (checkpoint_path.parent / "scaler.pkl").exists():
+        scaler = joblib.load(checkpoint_path.parent / "scaler.pkl")
+        logger.info(f"Loaded per-series StandardScaler from {checkpoint_path.parent / 'scaler.pkl'}")
     
-    return model, metadata, input_proj, output_proj
+    return model, metadata, input_proj, output_proj, scaler
 
 
 def run_recursive_forecast(
@@ -124,7 +127,7 @@ def run_recursive_forecast(
         raise ImportError("mamba-ssm not available. Please install: pip install mamba-ssm")
     
     # Load model, metadata, and projections
-    model, metadata, input_proj, output_proj = load_mamba_model(checkpoint_path)
+    model, metadata, input_proj, output_proj, scaler = load_mamba_model(checkpoint_path)
     device = model.device
     context_length = metadata['context_length']
     prediction_length = metadata['prediction_length']
@@ -136,12 +139,11 @@ def run_recursive_forecast(
     if not available_targets:
         raise ValueError("No target series found in test_data")
     
-    # Filter test data
     test_data_filtered, _, _ = filter_and_prepare_test_data(
         test_data, start_date, end_date, available_targets
     )
+    test_data_for_context = test_data[available_targets].copy() if available_targets else test_data.copy()
     
-    # Get weekly dates
     start_ts = pd.Timestamp(start_date)
     end_ts = pd.Timestamp(end_date)
     weekly_dates = test_data_filtered.index[
@@ -162,64 +164,51 @@ def run_recursive_forecast(
         cutoff_date = weekly_dates[i]
         next_date = weekly_dates[i + 1]
         
-        # Get data up to cutoff
-        train_data_up_to_cutoff = test_data_filtered[test_data_filtered.index <= cutoff_date][available_targets].copy()
-        
-        # Impute missing values
+        train_data_up_to_cutoff = test_data_for_context[test_data_for_context.index <= cutoff_date].copy()
         train_data_up_to_cutoff = interpolate_missing_values(train_data_up_to_cutoff, data_loader)
         
-        # Ensure we have enough data
         if len(train_data_up_to_cutoff) < context_length:
-            logger.warning(f"Not enough data at {cutoff_date.date()}. Need {context_length}, have {len(train_data_up_to_cutoff)}")
             if len(train_data_up_to_cutoff) == 0:
                 predictions.append(np.full(len(available_targets), np.nan))
                 actuals.append(np.full(len(available_targets), np.nan))
                 forecast_dates.append(next_date)
                 continue
-            
-            # Pad with last value
             padding_needed = context_length - len(train_data_up_to_cutoff)
             last_row = train_data_up_to_cutoff.iloc[-1:].copy()
             padding = pd.concat([last_row] * padding_needed, ignore_index=True)
-            padding.index = pd.date_range(
-                end=train_data_up_to_cutoff.index[-1],
-                periods=padding_needed + 1,
-                freq='W'
-            )[1:]
+            padding.index = pd.date_range(end=train_data_up_to_cutoff.index[-1], periods=padding_needed + 1, freq='W')[1:]
             train_data_up_to_cutoff = pd.concat([train_data_up_to_cutoff, padding])
         
-    # Get context window
-    context_data = train_data_up_to_cutoff.iloc[-context_length:].values.astype(np.float32)
-    
-    # Convert to tensor and move to device first
-    x = torch.FloatTensor(context_data).unsqueeze(0).to(device)  # (1, context_length, n_features)
-    
-    # Apply input projection if needed (after moving to device)
-    if input_proj is not None:
-        x = input_proj(x)  # (1, context_length, d_model)
-    
-    # Predict
-    with torch.no_grad():
-        pred = model(x)  # (1, prediction_length, d_model)
+        context_data = train_data_up_to_cutoff.iloc[-context_length:].values.astype(np.float32)
         
-        # Extract first prediction step (for recursive forecasting, we predict 1 step ahead)
-        pred_values = pred[0, 0, :].cpu().numpy()  # (d_model,)
+        # Stage 1: Apply per-series StandardScaler (training scale preservation)
+        if scaler is not None:
+            context_data_scaled = scaler.transform(context_data.reshape(-1, context_data.shape[1])).reshape(context_data.shape)
+        else:
+            context_data_scaled = context_data
         
-        # Project output back to original feature space if needed
-        if output_proj is not None:
-            pred_tensor = torch.FloatTensor(pred_values).unsqueeze(0).to(device)  # (1, d_model)
-            pred_values = output_proj(pred_tensor)[0].cpu().numpy()  # (n_features,)
-    
-    predictions.append(pred_values)
-    forecast_dates.append(next_date)
-    
-    # Get actual values
-    if next_date in test_data_filtered.index:
-        actual_values = test_data_filtered.loc[next_date, available_targets].values
-        actuals.append(actual_values)
-    else:
-        logger.warning(f"No actual data for {next_date.date()}")
-        actuals.append(np.full(len(available_targets), np.nan))
+        x = torch.FloatTensor(context_data_scaled).unsqueeze(0).to(device)
+        
+        if input_proj is not None:
+            x = input_proj(x)
+        
+        with torch.no_grad():
+            # Stage 2: RevIN handles context-based normalization internally
+            pred = model(x)[0, 0, :]
+            if output_proj is not None:
+                pred = output_proj(pred.unsqueeze(0))[0]
+            
+        # Keep predictions in processed/transformed space (same as training)
+        # Do NOT inverse transform - predictions stay in processed space for evaluation
+        pred = pred.cpu().numpy()
+        
+        predictions.append(pred)
+        forecast_dates.append(next_date)
+        actuals.append(
+            test_data_filtered.loc[next_date, available_targets].values
+            if next_date in test_data_filtered.index
+            else np.full(len(available_targets), np.nan)
+        )
     
     predictions = np.array(predictions)
     actuals = np.array(actuals)
@@ -270,7 +259,7 @@ def run_multi_horizon_forecast(
         raise ImportError("mamba-ssm not available. Please install: pip install mamba-ssm")
     
     # Load model, metadata, and projections
-    model, metadata, input_proj, output_proj = load_mamba_model(checkpoint_path)
+    model, metadata, input_proj, output_proj, scaler = load_mamba_model(checkpoint_path)
     device = model.device
     context_length = metadata['context_length']
     prediction_length = metadata['prediction_length']
@@ -291,81 +280,43 @@ def run_multi_horizon_forecast(
         train_data = interpolate_missing_values(train_data, data_loader)
         
         if len(train_data) < context_length:
-            logger.warning(f"Not enough data. Need {context_length}, have {len(train_data)}")
-            if len(train_data) > 0:
-                padding_needed = context_length - len(train_data)
-                last_row = train_data.iloc[-1:].copy()
-                padding = pd.concat([last_row] * padding_needed, ignore_index=True)
-                padding.index = pd.date_range(
-                    end=train_data.index[-1],
-                    periods=padding_needed + 1,
-                    freq='W'
-                )[1:]
-                train_data = pd.concat([train_data, padding])
-            else:
+            if len(train_data) == 0:
                 raise ValueError(f"No data available before {start_date}")
+            padding_needed = context_length - len(train_data)
+            last_row = train_data.iloc[-1:].copy()
+            padding = pd.concat([last_row] * padding_needed, ignore_index=True)
+            padding.index = pd.date_range(end=train_data.index[-1], periods=padding_needed + 1, freq='W')[1:]
+            train_data = pd.concat([train_data, padding])
     else:
         raise ValueError("test_data is required for multi-horizon forecasting")
     
-    # Get context window
     context_data = train_data.iloc[-context_length:].values.astype(np.float32)
-    x = torch.FloatTensor(context_data).unsqueeze(0).to(device)  # (1, context_length, n_features)
     
-    # Apply input projection if needed (after moving to device)
+    # Stage 1: Apply per-series StandardScaler (training scale preservation)
+    if scaler is not None:
+        context_data_scaled = scaler.transform(context_data.reshape(-1, context_data.shape[1])).reshape(context_data.shape)
+    else:
+        context_data_scaled = context_data
+    
+    x = torch.FloatTensor(context_data_scaled).unsqueeze(0).to(device)
+    
     if input_proj is not None:
-        x = input_proj(x)  # (1, context_length, d_model)
+        x = input_proj(x)
     
-    # Predict all horizons at once (model outputs prediction_length steps)
     with torch.no_grad():
-        pred_all = model(x)  # (1, prediction_length, d_model)
-        pred_all = pred_all[0].cpu().numpy()  # (prediction_length, d_model)
-        
-        # Project output back to original feature space if needed
+        # Stage 2: RevIN handles context-based normalization internally
+        pred_all = model(x)[0]
         if output_proj is not None:
-            pred_tensor = torch.FloatTensor(pred_all).to(device)  # (prediction_length, d_model)
-            # Ensure output_proj is on the same device
-            if next(output_proj.parameters()).device != device:
-                pred_tensor = pred_tensor.to(next(output_proj.parameters()).device)
-            pred_all = output_proj(pred_tensor).cpu().numpy()  # (prediction_length, n_features)
+            pred_all = output_proj(pred_all)
+        
+        # Keep predictions in processed/transformed space (same as training)
+        # Do NOT inverse transform - predictions stay in processed space for evaluation
+        pred_all = pred_all.cpu().numpy()
     
     # Extract forecasts for each horizon
     for horizon in horizons:
-        if horizon <= len(pred_all):
-            # Extract the horizon-th step (0-indexed, so horizon-1)
-            forecast_values = pred_all[horizon - 1, :]
-        else:
-            # If horizon exceeds model's prediction_length, use last step
-            logger.warning(f"Horizon {horizon}w exceeds model prediction_length {len(pred_all)}. Using last step.")
-            forecast_values = pred_all[-1, :]
-        
-        if return_weekly_forecasts:
-            # For monthly aggregation, return weekly forecasts in the month
-            horizon_date = start_date_ts + pd.Timedelta(weeks=horizon)
-            month_start = pd.Timestamp(year=horizon_date.year, month=horizon_date.month, day=1)
-            month_end = month_start + pd.offsets.MonthEnd(0)
-            
-            # Get all weeks in the month
-            weekly_dates = []
-            weekly_forecasts = []
-            current_date = month_start
-            while current_date <= month_end:
-                weeks_from_start = (current_date - start_date_ts).days // 7
-                if 0 <= weeks_from_start < len(pred_all):
-                    weekly_forecasts.append(pred_all[weeks_from_start, :])
-                    weekly_dates.append(current_date)
-                current_date += pd.Timedelta(weeks=1)
-                if weeks_from_start >= max(horizons):
-                    break
-            
-            if weekly_forecasts:
-                forecasts[horizon] = {
-                    'weekly_forecasts': np.array(weekly_forecasts),
-                    'dates': pd.DatetimeIndex(weekly_dates)
-                }
-            else:
-                forecasts[horizon] = forecast_values
-        else:
-            forecasts[horizon] = forecast_values
+        idx = min(horizon - 1, len(pred_all) - 1)
+        forecasts[horizon] = pred_all[idx, :]
     
     return forecasts, available_targets
 
@@ -378,67 +329,38 @@ def forecast(
     test_data: Optional[pd.DataFrame] = None,
     update_params: bool = False
 ) -> None:
-    """Load trained Mamba model and generate forecasts.
-    
-    Parameters
-    ----------
-    checkpoint_path : Path
-        Path to model checkpoint
-    horizon : int
-        Forecast horizon
-    model_type : str, default "mamba"
-        Model type ('mamba')
-    recursive : bool, default False
-        Whether to use recursive forecasting
-    test_data : pd.DataFrame, optional
-        Test data for recursive forecasting
-    update_params : bool, default False
-        Whether to update model parameters (not implemented yet)
-    """
-    checkpoint_path = Path(checkpoint_path)
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Model checkpoint not found: {checkpoint_path}")
-    
-    logger.info(f"Loading Mamba model from: {checkpoint_path}")
-    
-    if recursive and test_data is None:
-        raise ValueError("test_data is required when recursive=True")
-    
-    # For simple forecasting, we need test_data to get context
+    """Load trained Mamba model and generate forecasts."""
     if test_data is None:
-        logger.warning("No test_data provided. Cannot generate forecasts without context.")
-        return
+        raise ValueError("test_data is required for forecasting")
     
-    # Load model, metadata, and projections
-    model, metadata, input_proj, output_proj = load_mamba_model(checkpoint_path)
-    device = model.device
+    model, metadata, input_proj, output_proj, scaler = load_mamba_model(checkpoint_path)
     context_length = metadata['context_length']
     available_targets = metadata.get('available_targets', list(test_data.columns))
     
-    # Get context
     context_data = test_data[available_targets].iloc[-context_length:].values.astype(np.float32)
-    x = torch.FloatTensor(context_data).unsqueeze(0).to(device)  # (1, context_length, n_features)
     
-    # Apply input projection if needed (after moving to device)
+    # Stage 1: Apply per-series StandardScaler (training scale preservation)
+    if scaler is not None:
+        context_data_scaled = scaler.transform(context_data.reshape(-1, context_data.shape[1])).reshape(context_data.shape)
+    else:
+        context_data_scaled = context_data
+    
+    x = torch.FloatTensor(context_data_scaled).unsqueeze(0).to(model.device)
+    
     if input_proj is not None:
-        x = input_proj(x)  # (1, context_length, d_model)
+        x = input_proj(x)
     
-    # Predict
     with torch.no_grad():
-        pred = model(x)  # (1, prediction_length, d_model)
-        forecast_values = pred[0, 0, :].cpu().numpy()  # First step
-        
-        # Project output back to original feature space if needed
+        # Stage 2: RevIN handles context-based normalization internally
+        pred = model(x)[0, 0, :]
         if output_proj is not None:
-            pred_tensor = torch.FloatTensor(forecast_values).unsqueeze(0).to(device)  # (1, d_model)
-            forecast_values = output_proj(pred_tensor)[0].cpu().numpy()  # (n_features,)
+            pred = output_proj(pred.unsqueeze(0))[0]
+        
+        # Keep predictions in processed/transformed space (same as training)
+        # Do NOT inverse transform - predictions stay in processed space for evaluation
+        pred = pred.cpu().numpy()
     
-    logger.info(f"Forecast generated for horizon={horizon}")
-    logger.info(f"Forecast values: {forecast_values}")
-    
-    # Save forecasts
     output_dir = checkpoint_path.parent / "forecasts"
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    np.save(output_dir / "predictions.npy", forecast_values)
+    np.save(output_dir / "predictions.npy", pred)
     logger.info(f"Forecasts saved to: {output_dir}")

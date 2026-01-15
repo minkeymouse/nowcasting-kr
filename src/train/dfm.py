@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Union
 import pandas as pd
 import numpy as np
+import joblib
 
 from src.utils import get_project_root
 
@@ -31,7 +32,8 @@ def train_dfm_model(
     """Train DFM model.
     
     Note: DFM is a dynamic factor model that trains a single model capable of
-    forecasting any horizon.
+    forecasting any horizon. Unlike attention-based models, DFM doesn't use
+    prediction_length - the model structure defines forecast dynamics.
     
     Parameters
     ----------
@@ -85,6 +87,25 @@ def train_dfm_model(
         logger.warning("No target series found in data. Using all columns as targets.")
         available_targets = None
     
+    # Create scaler for target series (needed for inverse transformation during prediction)
+    # Similar to DDFM, we need to fit scaler on original (unstandardized) data
+    target_scaler = None
+    if data_loader is not None:
+        original_data = data_loader.training_data
+        original_targets = original_data[available_targets] if available_targets else original_data
+        original_targets = original_targets.select_dtypes(include=[np.number]).reset_index(drop=True)
+        
+        scaler_type = model_params.get('target_scaler', 'standard')
+        if scaler_type == 'robust':
+            from sklearn.preprocessing import RobustScaler
+            target_scaler = RobustScaler()
+        else:
+            from sklearn.preprocessing import StandardScaler
+            target_scaler = StandardScaler()
+        
+        target_scaler.fit(original_targets.to_numpy(dtype=np.float64))
+        logger.info(f"Fitted target_scaler ({scaler_type}) on {len(available_targets) if available_targets else 'all'} target series")
+    
     # Configure dfm_python logging first
     try:
         from dfm_python.logger import configure_logging
@@ -106,6 +127,11 @@ def train_dfm_model(
     # Create dataset
     try:
         dataset = DFMDataset(config=config, data=data, target_series=available_targets)
+        # Set target_scaler as attribute (DFMDataset.get_initialization_params() will pick it up)
+        if target_scaler is not None:
+            dataset.target_scaler = target_scaler
+            logger.info("Set target_scaler on DFMDataset for inverse transformation during prediction")
+        
         X = dataset.get_processed_data()
         missing_pct = data.isnull().sum().sum() / (data.shape[0] * data.shape[1]) * 100
         logger.info(f"Dataset ready: {X.shape}, missing: {missing_pct:.1f}%")
@@ -173,5 +199,6 @@ def train_dfm_model(
     dataset_path = outputs_dir / "dataset.pkl"
     try:
         joblib.dump(dataset, dataset_path)
+        logger.info(f"Dataset saved: {dataset_path}")
     except Exception as e:
         logger.warning(f"Failed to save dataset: {e}")

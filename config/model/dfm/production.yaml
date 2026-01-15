@@ -1,4 +1,7 @@
 name: dfm
+horizon: 1  # Short-term: 1 week ahead. For long-term experiments, override with 40 (max horizon: 40 weeks)
+# Note: DFM doesn't use prediction_length - model structure defines forecast dynamics
+# For long-term experiments, model can predict all horizons (4w-40w) from single trained model
 ar_lag: 4
 ar_order: 4
 threshold: 1.0e-05

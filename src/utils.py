@@ -192,7 +192,14 @@ def _reverse_transformation(
     predicted_processed = predicted_processed.reshape(-1, len(series_names)) if predicted_processed.ndim == 1 else predicted_processed
     result = np.zeros_like(predicted_processed)
     
+    if series_names is None or len(series_names) == 0:
+        logger.warning("_reverse_transformation: series_names is None or empty, returning predictions as-is")
+        return predicted_processed
+    
     for i, series_name in enumerate(series_names):
+        if series_name is None:
+            result[:, i] = predicted_processed[:, i]
+            continue
         meta_row = metadata[metadata[series_col] == series_name]
         if len(meta_row) == 0:
             result[:, i] = predicted_processed[:, i]
@@ -283,21 +290,27 @@ def inverse_transform_predictions(
 
 def convert_to_neuralforecast_format(
     data: pd.DataFrame,
-    target_series: List[str]
+    target_series: List[str],
+    covariate_data: Optional[pd.DataFrame] = None,
+    covariate_names: Optional[List[str]] = None
 ) -> pd.DataFrame:
     """Convert DataFrame to NeuralForecast long format.
     
     Parameters
     ----------
     data : pd.DataFrame
-        Wide format data with datetime index
+        Wide format data with datetime index (target series only)
     target_series : list
         List of target series column names
+    covariate_data : pd.DataFrame, optional
+        Covariate data (non-target variables) with same index as data
+    covariate_names : list, optional
+        List of covariate column names
     
     Returns
     -------
     pd.DataFrame
-        Long format DataFrame with columns: unique_id, ds, y
+        Long format DataFrame with columns: unique_id, ds, y, and covariate columns
     """
     nf_data_list = []
     for col in target_series:
@@ -306,6 +319,13 @@ def convert_to_neuralforecast_format(
             'ds': data.index,
             'y': data[col].values
         })
+        
+        # Add covariates if provided
+        if covariate_data is not None and covariate_names:
+            for cov_name in covariate_names:
+                if cov_name in covariate_data.columns:
+                    series_data[cov_name] = covariate_data[cov_name].values
+        
         nf_data_list.append(series_data)
     return pd.concat(nf_data_list, ignore_index=True)
 
@@ -628,9 +648,12 @@ def interpolate_missing_values(
 ) -> pd.DataFrame:
     """Interpolate missing values for attention-based models.
     
-    Monthly series: backward fill then forward fill.
-    Other series: forward fill then linear interpolation.
+    Monthly series: forward fill only (no backward fill to avoid temporal leakage).
+    Other series: forward fill only (no linear interpolation to avoid leakage).
     Remaining NaNs: fill with column mean (or 0 if all NaN).
+    
+    Note: For monthly series, we only use forward fill to prevent using future
+    monthly values to fill past weeks (e.g., April's value shouldn't fill March).
     
     Parameters
     ----------
@@ -660,10 +683,9 @@ def interpolate_missing_values(
         if n_missing > 0:
             logger.debug(f"Interpolating {n_missing} missing values in {col}")
         
-        if col in monthly_series:
-            interpolated_data[col] = interpolated_data[col].bfill().ffill()
-        else:
-            interpolated_data[col] = interpolated_data[col].ffill().interpolate(method='linear')
+        # Use forward fill only for all series to prevent temporal leakage.
+        # This keeps imputation causal for both monthly and weekly series.
+        interpolated_data[col] = interpolated_data[col].ffill()
         
         # Fill remaining NaNs with column mean (or 0 if all NaN)
         if interpolated_data[col].isna().any():
@@ -781,6 +803,8 @@ def aggregate_weekly_to_monthly_tent_kernel(
     logger = logging.getLogger(__name__)
     predictions = np.asarray(predictions)
     
+    if target_series is None or len(target_series) == 0:
+        raise ValueError("target_series cannot be None or empty for aggregation")
     monthly_mask = np.ones(len(target_series), dtype=bool) if monthly_series is None else np.array([s in monthly_series for s in target_series])
     
     # Group dates by year-month

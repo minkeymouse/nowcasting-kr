@@ -104,71 +104,41 @@ def train_ddfm_model(
     except Exception as e:
         logger.warning(f"Could not configure dfm_python logging: {e}")
     
-    # IMPORTANT: Data is already scaled in preprocessing (StandardScaler in preprocess.py).
-    # DDFMDataset will scale target_series AGAIN if target_scaler is provided, causing double scaling.
-    # 
-    # Solution: Fit target_scaler on ORIGINAL (unscaled) data for inverse transformation,
-    # but prevent DDFMDataset from scaling again. We'll modify DDFMDataset to skip scaling
-    # when data is already standardized (mean≈0, std≈1).
-    
-    # Get original unscaled data to fit scaler for inverse transformation
+    # Create scaler for inverse transformation during prediction
     target_scaler = None
     if data_loader is not None:
-        # Use training_data which already excludes date columns and is ready for scaling
-        # training_data returns processed data without date columns
-        original_data = data_loader.training_data  # This excludes date columns automatically
+        original_data = data_loader.training_data
+        original_targets = original_data[available_targets] if available_targets else original_data
+        original_targets = original_targets.select_dtypes(include=[np.number]).reset_index(drop=True)
         
-        if available_targets:
-            # Filter to only available targets
-            original_targets = original_data[[col for col in available_targets if col in original_data.columns]]
-        else:
-            original_targets = original_data
-        
-        # Ensure only numeric columns (select_dtypes to be safe)
-        original_targets = original_targets.select_dtypes(include=[np.number])
-        
-        # Reset index to ensure no Timestamp index is included
-        original_targets = original_targets.reset_index(drop=True)
-        
-        # Fit scaler on original data for inverse transformation
         scaler_type = model_params.get('target_scaler', 'standard')
         if scaler_type == 'robust':
             from sklearn.preprocessing import RobustScaler
             target_scaler = RobustScaler()
-        elif scaler_type == 'standard' or scaler_type:
+        else:
             from sklearn.preprocessing import StandardScaler
             target_scaler = StandardScaler()
+        from sklearn.preprocessing import StandardScaler as FeatureScaler
+        feature_scaler = FeatureScaler()
         
-        # Fit on original (unscaled) data for proper inverse transformation
-        # Use to_numpy() instead of .values to ensure clean conversion
-        target_values = original_targets.to_numpy(dtype=np.float64)
-        target_scaler.fit(target_values)
-        logger.info(f"Target scaler fitted on original data for inverse transformation")
+        target_scaler.fit(original_targets.to_numpy(dtype=np.float64))
     
-    # Pass target_scaler to DDFMDataset - it will be stored for prediction but we'll prevent double scaling
-    # by modifying DDFMDataset to check if data is already scaled
-    dataset = DDFMDataset(data=data, time_idx='index', target_series=available_targets, target_scaler=target_scaler)
-    
-    # Check if DDFMDataset scaled the data (double scaling check)
-    # If data is already standardized, target_scaler would scale it again
-    if target_scaler is not None:
-        # Check if target series have mean≈0, std≈1 (already standardized)
-        target_data = data[available_targets] if available_targets else data
-        data_mean = target_data.mean().abs().max()
-        data_std = (target_data.std() - 1.0).abs().max()
-        if data_mean < 0.1 and data_std < 0.1:
-            logger.warning(
-                f"WARNING: Data appears already standardized (mean≈{data_mean:.3f}, std≈{data_std:.3f}). "
-                f"DDFMDataset may have double-scaled target series. Check dataset.y statistics."
-            )
+    dataset = DDFMDataset(
+        data=data,
+        time_idx='index',
+        target_series=available_targets,
+        target_scaler=target_scaler,
+        feature_scaler=feature_scaler
+    )
     
     # Create DDFM model
     encoder_layers = model_params.get('encoder_layers', [64, 32])
+    decoder_type = model_params.get('decoder_type', 'linear')
     model = DDFM(
         dataset=dataset,
         config=config,
         encoder_size=tuple(encoder_layers) if isinstance(encoder_layers, list) else encoder_layers,
-        decoder_type="linear",
+        decoder_type=decoder_type,
         activation=model_params.get('activation', 'relu'),
         learning_rate=model_params.get('learning_rate', 0.005),
         optimizer='Adam',

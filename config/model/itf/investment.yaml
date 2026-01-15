@@ -12,5 +12,5 @@ d_ff: 2048
 dropout: 0.1
 activation: gelu
 batch_size: 128
-max_epochs: 50
+max_steps: 550  # ~50 epochs with batch_size=128 (~11 batches/epoch)
 learning_rate: 0.001

@@ -252,13 +252,17 @@ def compute_smse(
     # Standardized MSE per series: MSE / variance
     smse_per_series = mse_per_series / var_per_series
     
-    # Handle NaN (may occur if variance is zero or all values are NaN)
-    smse_per_series = np.nan_to_num(smse_per_series, nan=0.0, posinf=0.0, neginf=0.0)
+    # Handle inf (may occur if variance is zero), but keep NaN for missing data
+    smse_per_series = np.where(np.isinf(smse_per_series), 0.0, smse_per_series)
     
     if per_series:
         return smse_per_series
     else:
-        return float(np.mean(smse_per_series))
+        # Return NaN if all series have missing data, otherwise mean of valid values
+        if np.all(np.isnan(smse_per_series)):
+            return float(np.nan)
+        else:
+            return float(np.nanmean(smse_per_series))
 
 
 def compute_smae(
@@ -322,8 +326,8 @@ def compute_smae(
     for i in range(n_series):
         valid = valid_mask[:, i]
         if np.sum(valid) == 0:
-            # All NaN for this series - skip or set to 0
-            mae_per_series.append(0.0)
+            # All NaN for this series - return NaN to indicate missing data
+            mae_per_series.append(np.nan)
         else:
             mae_per_series.append(np.mean(np.abs(y_true[valid, i] - y_pred[valid, i])))
     
@@ -357,13 +361,17 @@ def compute_smae(
     # Standardized MAE per series: MAE / std
     smae_per_series = mae_per_series / std_per_series
     
-    # Handle NaN (may occur if std is zero or all values are NaN)
-    smae_per_series = np.nan_to_num(smae_per_series, nan=0.0, posinf=0.0, neginf=0.0)
+    # Handle inf (may occur if std is zero), but keep NaN for missing data
+    smae_per_series = np.where(np.isinf(smae_per_series), 0.0, smae_per_series)
     
     if per_series:
         return smae_per_series
     else:
-        return float(np.mean(smae_per_series))
+        # Return NaN if all series have missing data, otherwise mean of valid values
+        if np.all(np.isnan(smae_per_series)):
+            return float(np.nan)
+        else:
+            return float(np.nanmean(smae_per_series))
 
 
 def save_experiment_results(

@@ -6,11 +6,11 @@ prediction_length: 1  # Short-term: 1 week ahead. For long-term experiments: ove
 context_length: 96
 patch_len: 16
 stride: 8
-d_model: 256
+d_model: 384  # Increased from 256 for better capacity with 40 variables
 n_heads: 16
-num_layers: 4
+num_layers: 6  # Increased from 4 for better capacity
 dropout: 0.1
 batch_size: 128
-max_epochs: 50
+max_steps: 550  # ~50 epochs with batch_size=128 (~11 batches/epoch)
 learning_rate: 0.001
 validation_split: 0.2
