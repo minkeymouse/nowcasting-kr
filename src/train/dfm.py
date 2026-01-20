@@ -87,24 +87,38 @@ def train_dfm_model(
         logger.warning("No target series found in data. Using all columns as targets.")
         available_targets = None
     
-    # Create scaler for target series (needed for inverse transformation during prediction)
-    # Similar to DDFM, we need to fit scaler on original (unstandardized) data
+    # Target scaler: DO NOT create for DFM.
+    # 
+    # DFM's predict() returns predictions in transformed space (chg/logdiff), NOT standardized space.
+    # Unlike DDFM, DFM doesn't standardize data internally - it uses transformed data as-is.
+    # Therefore, we should NOT use target_scaler.inverse_transform() in DFM's predict().
+    # Instead, predictions are already in transformed space, and we only need to reverse
+    # metadata transformations (chg → level, logdiff → level) in the evaluation code.
+    # 
+    # Setting target_scaler = None ensures DFM.predict() returns predictions in transformed space,
+    # which matches what inverse_transform_predictions() expects.
     target_scaler = None
-    if data_loader is not None:
-        original_data = data_loader.training_data
-        original_targets = original_data[available_targets] if available_targets else original_data
-        original_targets = original_targets.select_dtypes(include=[np.number]).reset_index(drop=True)
-        
-        scaler_type = model_params.get('target_scaler', 'standard')
-        if scaler_type == 'robust':
-            from sklearn.preprocessing import RobustScaler
-            target_scaler = RobustScaler()
-        else:
-            from sklearn.preprocessing import StandardScaler
-            target_scaler = StandardScaler()
-        
-        target_scaler.fit(original_targets.to_numpy(dtype=np.float64))
-        logger.info(f"Fitted target_scaler ({scaler_type}) on {len(available_targets) if available_targets else 'all'} target series")
+    # region agent log
+    try:
+        import json, time
+        with open("/data/nowcasting-kr/.cursor/debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "dfm-train",
+                "hypothesisId": "H1_target_scaler_creation",
+                "location": "src/train/dfm.py:target_scaler_set_to_none",
+                "message": "target_scaler set to None for DFM (predictions in transformed space)",
+                "data": {
+                    "available_targets": available_targets,
+                    "available_targets_count": len(available_targets) if available_targets else 0,
+                },
+                "timestamp": int(time.time() * 1000),
+            }, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    # endregion
+    
+    logger.info("DFM target_scaler set to None - predictions will be in transformed space (chg/logdiff)")
     
     # Configure dfm_python logging first
     try:
@@ -135,6 +149,46 @@ def train_dfm_model(
         X = dataset.get_processed_data()
         missing_pct = data.isnull().sum().sum() / (data.shape[0] * data.shape[1]) * 100
         logger.info(f"Dataset ready: {X.shape}, missing: {missing_pct:.1f}%")
+        
+        # region agent log
+        try:
+            import json, time
+            # Check what space the training data is in
+            if available_targets and len(available_targets) > 0:
+                # Find target index in X (need to match column order)
+                target_col = available_targets[0]
+                if target_col in data.columns:
+                    # Get the column index in the original data
+                    col_idx = list(data.columns).index(target_col)
+                    # X should have same column order as data
+                    if col_idx < X.shape[1]:
+                        target_data = X[:, col_idx]
+                        # Check if data has NaNs
+                        target_data_clean = target_data[~np.isnan(target_data)]
+                        with open("/data/nowcasting-kr/.cursor/debug.log", "a", encoding="utf-8") as f:
+                            f.write(json.dumps({
+                                "sessionId": "debug-session",
+                                "runId": "dfm-train",
+                                "hypothesisId": "H7_training_data_space",
+                                "location": "src/train/dfm.py:training_data_check",
+                                "message": "Checking training data space (X from dataset)",
+                                "data": {
+                                    "X_shape": X.shape,
+                                    "target_col": target_col,
+                                    "target_col_idx": col_idx,
+                                    "target_data_mean": float(np.mean(target_data_clean)) if len(target_data_clean) > 0 else None,
+                                    "target_data_std": float(np.std(target_data_clean)) if len(target_data_clean) > 0 else None,
+                                    "target_data_min": float(np.min(target_data_clean)) if len(target_data_clean) > 0 else None,
+                                    "target_data_max": float(np.max(target_data_clean)) if len(target_data_clean) > 0 else None,
+                                    "target_data_nan_count": int(np.isnan(target_data).sum()),
+                                    "transformed_data_mean": float(data[target_col].mean()) if target_col in data.columns else None,
+                                    "transformed_data_std": float(data[target_col].std()) if target_col in data.columns else None,
+                                },
+                                "timestamp": int(time.time() * 1000),
+                            }, ensure_ascii=False) + "\n")
+        except Exception as e:
+            logger.warning(f"Could not log training data space: {e}")
+        # endregion
     except Exception as e:
         logger.error(f"Failed to create dataset: {e}", exc_info=True)
         raise
@@ -179,6 +233,31 @@ def train_dfm_model(
         model_path = outputs_dir / "model.pkl"
         model.save(model_path)
         logger.info(f"Model saved: {model_path}")
+        
+        # region agent log
+        try:
+            import json, time, joblib
+            # Check if target_scaler was saved in checkpoint
+            checkpoint = joblib.load(model_path)
+            has_target_scaler = 'target_scaler' in checkpoint and checkpoint['target_scaler'] is not None
+            with open("/data/nowcasting-kr/.cursor/debug.log", "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "dfm-train",
+                    "hypothesisId": "H2_target_scaler_saved",
+                    "location": "src/train/dfm.py:model_saved",
+                    "message": "Checking if target_scaler was saved to checkpoint",
+                    "data": {
+                        "has_target_scaler": has_target_scaler,
+                        "target_scaler_in_checkpoint": has_target_scaler,
+                        "model_has_target_scaler": hasattr(model, 'target_scaler') and model.target_scaler is not None,
+                        "result_has_target_scaler": hasattr(model, '_result') and model._result is not None and hasattr(model._result, 'target_scaler') and model._result.target_scaler is not None,
+                    },
+                    "timestamp": int(time.time() * 1000),
+                }, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        # endregion
         
         # Log results
         if hasattr(model, '_training_converged'):

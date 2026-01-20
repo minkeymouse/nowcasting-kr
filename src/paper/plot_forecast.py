@@ -135,11 +135,11 @@ def load_historical_data(data_model: str, target_series: list[str]) -> pd.DataFr
     return historical
 
 
-def load_all_model_forecasts(
+def load_attention_model_forecasts(
     data_model: str,
     experiment_type: str = "short_term"
 ) -> Dict[str, tuple[pd.DataFrame, pd.DataFrame]]:
-    """Load predictions and actuals for all three models.
+    """Load predictions and actuals for attention models.
     
     Parameters
     ----------
@@ -154,6 +154,38 @@ def load_all_model_forecasts(
         Dictionary mapping model_name -> (predictions, actuals)
     """
     models = ['tft', 'patchtst', 'itf']
+    results = {}
+    
+    for model in models:
+        try:
+            preds, acts = load_forecast_data(data_model, model, experiment_type)
+            results[model] = (preds, acts)
+        except FileNotFoundError as e:
+            logger.warning(f"Skipping {model}: {e}")
+            continue
+    
+    return results
+
+
+def load_ssm_model_forecasts(
+    data_model: str,
+    experiment_type: str = "short_term"
+) -> Dict[str, tuple[pd.DataFrame, pd.DataFrame]]:
+    """Load predictions and actuals for SSM models (DFM, DDFM, Mamba).
+    
+    Parameters
+    ----------
+    data_model : str
+        Dataset name: "investment" or "production"
+    experiment_type : str, default "short_term"
+        Experiment type: "short_term" or "long_term"
+    
+    Returns
+    -------
+    dict
+        Dictionary mapping model_name -> (predictions, actuals)
+    """
+    models = ['dfm', 'ddfm', 'mamba']
     results = {}
     
     for model in models:
@@ -212,7 +244,7 @@ def plot_combined_attention_forecasts(
         target_series = get_default_target_series(data_model)
         
         # Load all model forecasts
-        model_data = load_all_model_forecasts(data_model, experiment_type)
+        model_data = load_attention_model_forecasts(data_model, experiment_type)
         if not model_data:
             logger.warning(f"No model forecasts found for {data_model}")
             continue
@@ -291,10 +323,109 @@ def plot_forecasts(
     experiment_type: str = "short_term",
     output_path: Optional[Path] = None
 ) -> None:
-    """Create forecast plots with all three models (legacy function, kept for backward compatibility)."""
+    """Create forecast plots with attention models (legacy function)."""
     # Redirect to combined plot if both datasets are requested
     # For now, keep original behavior but can be deprecated
     plot_combined_attention_forecasts(n_months, experiment_type, output_path)
+
+
+def plot_combined_ssm_forecasts(
+    n_months: int = 20,
+    experiment_type: str = "short_term",
+    output_path: Optional[Path] = None
+) -> None:
+    """Create combined forecast plot with production (left) and investment (right).
+    
+    Shows DFM, DDFM, and Mamba forecasts with actuals.
+    """
+    if output_path:
+        matplotlib.use('Agg')
+    
+    model_styles = {
+        'dfm': {'color': '#06A77D', 'marker': 'o', 'label': 'DFM'},
+        'ddfm': {'color': '#4D908E', 'marker': 's', 'label': 'DDFM'},
+        'mamba': {'color': '#577590', 'marker': 'D', 'label': 'Mamba'}
+    }
+    
+    data_models = ['production', 'investment']
+    
+    fig, axes = plt.subplots(1, 2, figsize=(20, 6))
+    
+    for idx, data_model in enumerate(data_models):
+        ax = axes[idx]
+        target_series = get_default_target_series(data_model)
+        
+        model_data = load_ssm_model_forecasts(data_model, experiment_type)
+        if not model_data:
+            logger.warning(f"No model forecasts found for {data_model}")
+            continue
+        
+        first_model = list(model_data.keys())[0]
+        _, actuals = model_data[first_model]
+        
+        series_name = target_series[0] if target_series and target_series[0] in actuals.columns else None
+        if not series_name:
+            logger.warning(f"Target series not found for {data_model}")
+            continue
+        
+        actual_series = actuals[series_name].dropna()
+        forecast_period = actual_series.tail(n_months) if len(actual_series) > n_months else actual_series
+        
+        ax.plot(
+            forecast_period.index,
+            forecast_period.values,
+            'o-',
+            color='#2E86AB',
+            linewidth=2,
+            markersize=6,
+            label='Actual',
+            alpha=0.9,
+            zorder=10
+        )
+        
+        for model_name, (preds, _) in model_data.items():
+            if series_name in preds.columns:
+                pred_series = preds[series_name].dropna()
+                common_dates = pred_series.index.intersection(forecast_period.index)
+                if len(common_dates) > 0:
+                    pred_aligned = pred_series.loc[common_dates]
+                    if len(pred_aligned) > n_months:
+                        pred_aligned = pred_aligned.tail(n_months)
+                    
+                    style = model_styles.get(model_name, {'color': '#000000', 'marker': 'o', 'label': model_name.upper()})
+                    ax.plot(
+                        pred_aligned.index,
+                        pred_aligned.values,
+                        f'{style["marker"]}--',
+                        color=style['color'],
+                        linewidth=2,
+                        markersize=6,
+                        label=style['label'],
+                        alpha=0.8
+                    )
+        
+        ax.set_title(f'{data_model.title()}: {series_name}', fontsize=13, fontweight='bold', pad=10)
+        ax.set_xlabel('Date', fontsize=11)
+        ax.set_ylabel('Value', fontsize=11)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.legend(fontsize=9, loc='best', ncol=4)
+        
+        n_ticks = min(6, len(forecast_period))
+        interval = max(1, len(forecast_period) // n_ticks) if len(forecast_period) > 0 else 1
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=interval))
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+    
+    plt.tight_layout()
+    
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        logger.info(f"Saved plot to: {output_path}")
+    else:
+        plt.show()
+    
+    plt.close()
 
 
 def main():
@@ -337,6 +468,20 @@ Examples:
         help='Experiment type: short_term or long_term. Default: short_term'
     )
     
+    parser.add_argument(
+        '--model',
+        type=str,
+        default='attention',
+        choices=['attention', 'ssm'],
+        help='Plot group: attention or ssm. Default: attention'
+    )
+    
+    parser.add_argument(
+        '--ssm',
+        action='store_true',
+        help='Deprecated: use --model ssm. Generates combined SSM forecast plot.'
+    )
+    
     args = parser.parse_args()
     
     # Setup logging
@@ -351,12 +496,21 @@ Examples:
     else:
         output_path = get_project_root() / "nowcasting-report" / "images" / "combined_attention_forecast.png"
     
-    # Create combined plot with production (top) and investment (bottom)
-    plot_combined_attention_forecasts(
-        n_months=args.n_months,
-        experiment_type=args.experiment,
-        output_path=output_path
-    )
+    plot_group = 'ssm' if args.ssm else args.model
+    
+    if plot_group == 'ssm':
+        plot_combined_ssm_forecasts(
+            n_months=args.n_months,
+            experiment_type=args.experiment,
+            output_path=output_path
+        )
+    else:
+        # Create combined plot with production (left) and investment (right)
+        plot_combined_attention_forecasts(
+            n_months=args.n_months,
+            experiment_type=args.experiment,
+            output_path=output_path
+        )
 
 
 if __name__ == '__main__':

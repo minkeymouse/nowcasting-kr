@@ -31,32 +31,42 @@ except ImportError:
 class TimeSeriesDataset(Dataset):
     """Dataset for time series forecasting with sliding windows."""
     
-    def __init__(self, data: np.ndarray, context_length: int, prediction_length: int):
+    def __init__(
+        self,
+        x_data: np.ndarray,
+        y_data: np.ndarray,
+        context_length: int,
+        prediction_length: int
+    ):
         """
         Parameters
         ----------
-        data : np.ndarray
-            Time series data of shape (T, D) where T is time steps, D is features
+        x_data : np.ndarray
+            Input time series data of shape (T, Dx)
+        y_data : np.ndarray
+            Target time series data of shape (T, Dy)
         context_length : int
             Input sequence length
         prediction_length : int
             Output sequence length
         """
-        self.data = torch.FloatTensor(data)
+        self.x_data = torch.FloatTensor(x_data)
+        self.y_data = torch.FloatTensor(y_data)
         self.context_length = context_length
         self.prediction_length = prediction_length
         self.total_length = context_length + prediction_length
         
     def __len__(self):
-        return max(0, len(self.data) - self.total_length + 1)
+        return max(0, len(self.x_data) - self.total_length + 1)
     
     def __getitem__(self, idx):
         start_idx = idx
         end_idx = start_idx + self.total_length
         
-        sequence = self.data[start_idx:end_idx]
-        x = sequence[:self.context_length]
-        y = sequence[self.context_length:]
+        x_seq = self.x_data[start_idx:end_idx]
+        y_seq = self.y_data[start_idx:end_idx]
+        x = x_seq[:self.context_length]
+        y = y_seq[self.context_length:]
         return x, y
 
 
@@ -151,25 +161,44 @@ def train_mamba_model(
     data = get_processed_data_from_loader(data, data_loader, "Mamba")
     logger.info(f"Training data shape: {data.shape}")
     
+    use_covariates = True
+    if model_params is not None:
+        use_covariates = model_params.get('use_covariates', True)
     target_data, covariate_data, available_targets, covariate_names = prepare_training_data(
-        data, model_params, data_loader, use_covariates=True
+        data, model_params, data_loader, use_covariates=use_covariates
     )
+    covariates_as_inputs_only = False
+    if model_params is not None:
+        covariates_as_inputs_only = model_params.get('covariates_as_inputs_only', False)
     
-    # Combine target and covariates as multivariate targets (like PatchTST/iTransformer)
-    # Number of series varies by dataset (production: 42, investment: 42, etc.)
+    # Combine target and covariates for inputs; choose outputs by mode
     if len(covariate_names) > 0:
-        all_data = pd.concat([target_data, covariate_data], axis=1)
-        all_targets = available_targets + covariate_names
-        logger.info(f"Using multivariate forecasting: {len(all_targets)} variables ({len(available_targets)} targets + {len(covariate_names)} covariates)")
+        input_data = pd.concat([target_data, covariate_data], axis=1)
+        model_features = available_targets + covariate_names
+        logger.info(
+            f"Input features: {len(model_features)} variables "
+            f"({len(available_targets)} targets + {len(covariate_names)} covariates)"
+        )
+        if covariates_as_inputs_only:
+            output_data = target_data
+            output_targets = available_targets
+            logger.info("Outputs: target-only (covariates used as inputs only)")
+        else:
+            output_data = input_data
+            output_targets = model_features
+            logger.info("Outputs: targets + covariates (multi-output forecasting)")
     else:
-        all_data = target_data
-        all_targets = available_targets
+        input_data = target_data
+        output_data = target_data
+        model_features = available_targets
+        output_targets = available_targets
         logger.info(f"Using {len(available_targets)} target series (no covariates available)")
     
-    data_array = all_data.values.astype(np.float32)
-    n_series = data_array.shape[1]  # Number of series varies by dataset
-    logger.info(f"Total number of series (features): {n_series}")
-    n_features = data_array.shape[1]
+    x_array = input_data.values.astype(np.float32)
+    y_array = output_data.values.astype(np.float32)
+    n_features_in = x_array.shape[1]
+    n_features_out = y_array.shape[1]
+    logger.info(f"Total input features: {n_features_in}, output targets: {n_features_out}")
     d_model = model_params.get('d_model', model_params.get('hidden_size', 128))
     n_layers = model_params.get('n_layers', model_params.get('num_layers', 4))
     context_length = model_params.get('context_length', model_params.get('n_lags', 96))
@@ -188,21 +217,27 @@ def train_mamba_model(
     logger.info(f"Model config: d_model={d_model}, n_layers={n_layers}, "
                 f"context_length={context_length}, prediction_length={prediction_length}")
     
-    if n_features != d_model:
-        input_proj = nn.Linear(n_features, d_model).to(device)
-        output_proj = nn.Linear(d_model, n_features).to(device)
+    if n_features_in != d_model:
+        input_proj = nn.Linear(n_features_in, d_model).to(device)
     else:
         input_proj = None
-        output_proj = None
+    output_proj = nn.Linear(d_model, n_features_out).to(device)
     
-    # Create per-series StandardScaler (Stage 1: Training scale preservation)
+    # Create per-series StandardScaler for inputs and targets
     from sklearn.preprocessing import StandardScaler
-    scaler = StandardScaler()
-    scaler.fit(data_array)  # Fit on entire training data
-    logger.info(f"Fitted per-series StandardScaler: mean={scaler.mean_[:5]}, scale={scaler.scale_[:5]}")
+    input_scaler = StandardScaler()
+    target_scaler = StandardScaler()
+    input_scaler.fit(x_array)
+    target_scaler.fit(y_array)
+    logger.info(
+        f"Fitted input StandardScaler: mean={input_scaler.mean_[:5]}, scale={input_scaler.scale_[:5]}"
+    )
+    logger.info(
+        f"Fitted target StandardScaler: mean={target_scaler.mean_[:5]}, scale={target_scaler.scale_[:5]}"
+    )
     
     # Create dataset
-    dataset = TimeSeriesDataset(data_array, context_length, prediction_length)
+    dataset = TimeSeriesDataset(x_array, y_array, context_length, prediction_length)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
     logger.info(f"Dataset size: {len(dataset)}, Batches per epoch: {len(dataloader)}")
@@ -241,7 +276,7 @@ def train_mamba_model(
             
             # Stage 1: Apply per-series StandardScaler (training scale preservation)
             batch_x_np = batch_x.cpu().numpy()
-            batch_x_scaled = scaler.transform(batch_x_np.reshape(-1, n_features)).reshape(batch_x.shape)
+            batch_x_scaled = input_scaler.transform(batch_x_np.reshape(-1, n_features_in)).reshape(batch_x.shape)
             batch_x_scaled = torch.FloatTensor(batch_x_scaled).to(device)
             
             if input_proj is not None:
@@ -257,9 +292,9 @@ def train_mamba_model(
             
             # Denormalize predictions using scaler (reverse Stage 1)
             # Keep gradient by doing operations in PyTorch
-            scaler_mean = torch.FloatTensor(scaler.mean_).to(device)
-            scaler_scale = torch.FloatTensor(scaler.scale_).to(device)
-            pred_denorm = pred * scaler_scale.unsqueeze(0).unsqueeze(0) + scaler_mean.unsqueeze(0).unsqueeze(0)
+            target_mean = torch.FloatTensor(target_scaler.mean_).to(device)
+            target_scale = torch.FloatTensor(target_scaler.scale_).to(device)
+            pred_denorm = pred * target_scale.unsqueeze(0).unsqueeze(0) + target_mean.unsqueeze(0).unsqueeze(0)
             
             optimizer.zero_grad()
             loss = criterion(pred_denorm, batch_y)
@@ -278,11 +313,13 @@ def train_mamba_model(
     
     if input_proj is not None:
         joblib.dump(input_proj, outputs_dir / "input_proj.pkl")
-        joblib.dump(output_proj, outputs_dir / "output_proj.pkl")
+    joblib.dump(output_proj, outputs_dir / "output_proj.pkl")
     
-    # Save per-series StandardScaler (Stage 1: Training scale preservation)
-    joblib.dump(scaler, outputs_dir / "scaler.pkl")
-    logger.info(f"Saved per-series StandardScaler to {outputs_dir / 'scaler.pkl'}")
+    # Save per-series StandardScalers (Stage 1: Training scale preservation)
+    joblib.dump(input_scaler, outputs_dir / "input_scaler.pkl")
+    joblib.dump(target_scaler, outputs_dir / "target_scaler.pkl")
+    logger.info(f"Saved input StandardScaler to {outputs_dir / 'input_scaler.pkl'}")
+    logger.info(f"Saved target StandardScaler to {outputs_dir / 'target_scaler.pkl'}")
     
     # Save metadata
     metadata = {
@@ -293,11 +330,14 @@ def train_mamba_model(
         'd_state': d_state,
         'd_conv': d_conv,
         'expand': expand,
-        'n_features': n_features,
+        'n_features_in': n_features_in,
+        'n_features_out': n_features_out,
         'has_input_proj': input_proj is not None,
-        'has_output_proj': output_proj is not None,
-        'available_targets': all_targets,  # Include all variables (targets + covariates)
-        'data_shape': data_array.shape,
+        'has_output_proj': True,
+        'model_features': model_features,
+        'available_targets': output_targets,
+        'data_shape': x_array.shape,
+        'covariates_as_inputs_only': covariates_as_inputs_only,
         'use_revin': use_revin
     }
     metadata_path = outputs_dir / "metadata.pkl"

@@ -5,12 +5,14 @@ horizon: 1  # Short-term: 1 week ahead. For long-term experiments, override with
 ar_lag: 4
 ar_order: 4
 threshold: 1.0e-03
-max_iter: 50
+max_iter: 20
 clip_ar_coefficients: true
 ar_clip_min: -0.99
 ar_clip_max: 0.99
 use_regularization: true
 regularization_scale: 5.0e-06
+# Use Cholesky filter for numerical stability (avoids pinv/SVD path)
+use_cholesky_filter: true
 # augment_idio and augment_idio_slow are auto-detected from frequency configuration
 # (removed from config - always set automatically based on mixed-frequency detection)
 idio_rho0: 0.1

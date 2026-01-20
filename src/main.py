@@ -9,12 +9,8 @@ import joblib
 
 from src.preprocess import InvestmentData, ProductionData
 from src.utils import setup_logging, get_project_root
-from src.train.patchtst import train_patchtst_model
-from src.train.tft import train_tft_model
-from src.train.itf import train_itf_model
 from src.train.dfm import train_dfm_model
 from src.train.ddfm import train_ddfm_model
-from src.train.timemixer import train_timemixer_model
 from src.train.mamba import train_mamba_model
 from src.utils import (
     load_test_data,
@@ -40,11 +36,6 @@ from src.forecast.dfm import run_recursive_forecast as run_recursive_forecast_df
 from src.forecast.dfm import run_multi_horizon_forecast as run_multi_horizon_forecast_dfm
 from src.forecast.ddfm import run_recursive_forecast as run_recursive_forecast_ddfm
 from src.forecast.ddfm import run_multi_horizon_forecast as run_multi_horizon_forecast_ddfm
-from src.forecast.neuralforecast import (
-    run_recursive_forecast as run_recursive_forecast_neuralforecast,
-    run_multi_horizon_forecast as run_multi_horizon_forecast_neuralforecast,
-    forecast as forecast_neuralforecast
-)
 from src.forecast.mamba import (
     run_recursive_forecast as run_recursive_forecast_mamba,
     run_multi_horizon_forecast as run_multi_horizon_forecast_mamba,
@@ -53,15 +44,45 @@ from src.forecast.mamba import (
 
 logger = logging.getLogger(__name__)
 
+# Optional NeuralForecast-based models (PatchTST/TFT/iTransformer/TimeMixer)
+# Keep these optional so running DFM/DDFM/Mamba does not require neuralforecast installed.
+def _missing_optional_dependency(model_name: str, dependency: str, err: Exception):
+    raise ImportError(
+        f"Model '{model_name}' requires optional dependency '{dependency}', "
+        f"but it is not available in this environment."
+    ) from err
+
+try:
+    from src.train.patchtst import train_patchtst_model
+    from src.train.tft import train_tft_model
+    from src.train.itf import train_itf_model
+    from src.train.timemixer import train_timemixer_model
+    from src.forecast.neuralforecast import (
+        run_recursive_forecast as run_recursive_forecast_neuralforecast,
+        run_multi_horizon_forecast as run_multi_horizon_forecast_neuralforecast,
+        forecast as forecast_neuralforecast,
+    )
+    _HAS_NEURALFORECAST = True
+except Exception as e:
+    _HAS_NEURALFORECAST = False
+    _NEURALFORECAST_IMPORT_ERROR = e
+    train_patchtst_model = None
+    train_tft_model = None
+    train_itf_model = None
+    train_timemixer_model = None
+    run_recursive_forecast_neuralforecast = None
+    run_multi_horizon_forecast_neuralforecast = None
+    forecast_neuralforecast = None
+
 # Model function mappings for cleaner code
 TRAIN_FUNCTIONS = {
     'dfm': train_dfm_model,
     'ddfm': train_ddfm_model,
-    'timemixer': train_timemixer_model,
-    'patchtst': train_patchtst_model,
-    'tft': train_tft_model,
-    'itf': train_itf_model,
-    'itransformer': train_itf_model,
+    'timemixer': train_timemixer_model if _HAS_NEURALFORECAST else (lambda *a, **k: _missing_optional_dependency("timemixer", "neuralforecast", _NEURALFORECAST_IMPORT_ERROR)),
+    'patchtst': train_patchtst_model if _HAS_NEURALFORECAST else (lambda *a, **k: _missing_optional_dependency("patchtst", "neuralforecast", _NEURALFORECAST_IMPORT_ERROR)),
+    'tft': train_tft_model if _HAS_NEURALFORECAST else (lambda *a, **k: _missing_optional_dependency("tft", "neuralforecast", _NEURALFORECAST_IMPORT_ERROR)),
+    'itf': train_itf_model if _HAS_NEURALFORECAST else (lambda *a, **k: _missing_optional_dependency("itf", "neuralforecast", _NEURALFORECAST_IMPORT_ERROR)),
+    'itransformer': train_itf_model if _HAS_NEURALFORECAST else (lambda *a, **k: _missing_optional_dependency("itransformer", "neuralforecast", _NEURALFORECAST_IMPORT_ERROR)),
     'mamba': train_mamba_model,
 }
 
@@ -72,6 +93,8 @@ def _create_recursive_forecast_wrapper(bound_model_type: str):
         model_type: str, target_series: Optional[List[str]] = None,
         data_loader: Optional[Any] = None, update_params: bool = False
     ):
+        if not _HAS_NEURALFORECAST or run_recursive_forecast_neuralforecast is None:
+            return _missing_optional_dependency(bound_model_type, "neuralforecast", _NEURALFORECAST_IMPORT_ERROR)
         # Use the bound model_type from closure (ignore the parameter)
         return run_recursive_forecast_neuralforecast(
             checkpoint_path, test_data, start_date, end_date, bound_model_type,
@@ -97,6 +120,8 @@ def _create_multi_horizon_forecast_wrapper(bound_model_type: str):
         test_data: Optional[pd.DataFrame] = None, target_series: Optional[List[str]] = None,
         data_loader: Optional[Any] = None, return_weekly_forecasts: bool = False
     ):
+        if not _HAS_NEURALFORECAST or run_multi_horizon_forecast_neuralforecast is None:
+            return _missing_optional_dependency(bound_model_type, "neuralforecast", _NEURALFORECAST_IMPORT_ERROR)
         # Use the bound model_type from closure
         return run_multi_horizon_forecast_neuralforecast(
             checkpoint_path, horizons, start_date, test_data, bound_model_type,
@@ -203,7 +228,7 @@ def main(cfg: DictConfig) -> None:
     training_data = data_loader.training_data
     logger.info(f"Training data shape: {training_data.shape}")
     logger.info(f"Number of series: {len(training_data.columns)}")
-    
+
     outputs_dir = get_project_root() / "checkpoints" / data_model / model_name
     outputs_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Checkpoints will be saved to: {outputs_dir.resolve()}")
@@ -402,8 +427,8 @@ def run_short_term_experiment(
     # - DFM/DDFM are trained on transformed series (per metadata), so their
     #   outputs are typically in the transformed space. Metrics in this project
     #   are computed against raw-level actuals (after monthly aggregation when needed).
-    # - MAMBA is trained on PROCESSED/TRANSFORMED data (via get_processed_data_from_loader),
-    #   so predictions are in processed/transformed space. Actuals must also be in processed space.
+    # - MAMBA is trained on ORIGINAL (raw level) data with internal scaling (StandardScaler + RevIN).
+    #   Forecast outputs are inverse-scaled back to raw levels for evaluation.
     #
     # Therefore, we reverse per-series transformations (chg/logdiff/etc.) for
     # DFM/DDFM predictions before aggregation + metric computation.
@@ -411,21 +436,77 @@ def run_short_term_experiment(
     # ---------------------------------------------------------------------
     if model_name in ['dfm', 'ddfm'] and data_loader is not None:
         try:
-            # IMPORTANT: DDFM.model.predict() already calls target_scaler.inverse_transform() internally,
-            # so predictions are already in TRANSFORMED space (chg/logdiff values), NOT standardized space.
-            # We should NOT apply scaler inverse_transform again here - that would be double-inverse.
+            # IMPORTANT: 
+            # - DDFM.model.predict() calls target_scaler.inverse_transform() internally (if target_scaler exists),
+            #   so predictions are in TRANSFORMED space (chg/logdiff values), NOT standardized space.
+            # - DFM.model.predict() does NOT use target_scaler (target_scaler is None), so predictions
+            #   are directly in TRANSFORMED space (chg/logdiff values) from the state-space model.
             # 
-            # We only need to reverse the metadata-based transformations (chg → level, logdiff → level)
-            # to bring predictions from transformed space to raw level space.
+            # We should NOT apply scaler inverse_transform again here. We only need to reverse the
+            # metadata-based transformations (chg → level, logdiff → level) to bring predictions
+            # from transformed space to raw level space.
             
-            # Skip scaler inverse_transform for DDFM - model.predict() already did it
-            if model_name == 'ddfm':
-                logger.info(f"Skipping scaler inverse_transform for {model_name} (already done by model.predict())")
+            if model_name in ['dfm', 'ddfm']:
+                logger.info(f"{model_name} predictions are in transformed space (chg/logdiff), "
+                           f"will reverse to raw level space")
 
             # Reverse per-series preprocessing transformations (chg/logdiff/etc.) to raw scale.
             if actual_target_series is not None and len(actual_target_series) > 0:
+                # region agent log
+                if model_name == 'dfm':
+                    try:
+                        import json, time
+                        pred_finite = bool(np.isfinite(predictions).all())
+                        actual_finite = bool(np.isfinite(actuals).all()) if actuals is not None else None
+                        payload = {
+                            "sessionId": "debug-session",
+                            "runId": "dfm-eval",
+                            "hypothesisId": "H3_scaling_mismatch",
+                            "location": "src/main.py:run_short_term_experiment:pre_inverse_transform",
+                            "message": "DFM predictions vs actuals before inverse transform",
+                            "data": {
+                                "pred_shape": getattr(predictions, "shape", None),
+                                "pred_finite": pred_finite,
+                                "pred_maxabs": float(np.max(np.abs(predictions))) if pred_finite else None,
+                                "actual_finite": actual_finite,
+                                "actual_maxabs": float(np.max(np.abs(actuals))) if actual_finite else None,
+                                "target_series_count": len(actual_target_series),
+                            },
+                            "timestamp": int(time.time() * 1000),
+                        }
+                        with open("/data/nowcasting-kr/.cursor/debug.log", "a", encoding="utf-8") as f:
+                            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                    except Exception:
+                        pass
+                # endregion
+
                 predictions_inv = np.zeros_like(predictions, dtype=float)
                 for i, d in enumerate(pd.DatetimeIndex(dates)):
+                    # region agent log
+                    try:
+                        import json, time
+                        with open("/data/nowcasting-kr/.cursor/debug.log", "a", encoding="utf-8") as f:
+                            f.write(json.dumps({
+                                "sessionId": "debug-session",
+                                "runId": "dfm-eval",
+                                "hypothesisId": "H5_before_inverse_transform",
+                                "location": "src/main.py:before_inverse_transform_predictions",
+                                "message": "Predictions before inverse_transform_predictions",
+                                "data": {
+                                    "pred_shape": predictions[i].shape if hasattr(predictions[i], 'shape') else None,
+                                    "pred_mean": float(np.mean(predictions[i])) if isinstance(predictions[i], np.ndarray) else None,
+                                    "pred_std": float(np.std(predictions[i])) if isinstance(predictions[i], np.ndarray) else None,
+                                    "pred_min": float(np.min(predictions[i])) if isinstance(predictions[i], np.ndarray) else None,
+                                    "pred_max": float(np.max(predictions[i])) if isinstance(predictions[i], np.ndarray) else None,
+                                    "date": str(d),
+                                    "target_series": actual_target_series,
+                                },
+                                "timestamp": int(time.time() * 1000),
+                            }, ensure_ascii=False) + "\n")
+                    except Exception:
+                        pass
+                    # endregion
+                    
                     inv_pred = inverse_transform_predictions(
                         predictions[i],
                         actual_target_series,
@@ -434,12 +515,64 @@ def run_short_term_experiment(
                         test_data=test_data,     # use raw test data to fetch last known values
                         cutoff_date=pd.Timestamp(d),
                     )
+                    
+                    # region agent log
+                    try:
+                        import json, time
+                        actual_val = actuals[i] if i < len(actuals) else None
+                        with open("/data/nowcasting-kr/.cursor/debug.log", "a", encoding="utf-8") as f:
+                            f.write(json.dumps({
+                                "sessionId": "debug-session",
+                                "runId": "dfm-eval",
+                                "hypothesisId": "H6_after_inverse_transform",
+                                "location": "src/main.py:after_inverse_transform_predictions",
+                                "message": "Predictions after inverse_transform_predictions",
+                                "data": {
+                                    "inv_pred_shape": inv_pred.shape if inv_pred is not None and hasattr(inv_pred, 'shape') else None,
+                                    "inv_pred_mean": float(np.mean(inv_pred)) if inv_pred is not None and isinstance(inv_pred, np.ndarray) else None,
+                                    "inv_pred_std": float(np.std(inv_pred)) if inv_pred is not None and isinstance(inv_pred, np.ndarray) else None,
+                                    "inv_pred_min": float(np.min(inv_pred)) if inv_pred is not None and isinstance(inv_pred, np.ndarray) else None,
+                                    "inv_pred_max": float(np.max(inv_pred)) if inv_pred is not None and isinstance(inv_pred, np.ndarray) else None,
+                                    "actual_mean": float(np.mean(actual_val)) if actual_val is not None and isinstance(actual_val, np.ndarray) else None,
+                                    "actual_std": float(np.std(actual_val)) if actual_val is not None and isinstance(actual_val, np.ndarray) else None,
+                                    "date": str(d),
+                                },
+                                "timestamp": int(time.time() * 1000),
+                            }, ensure_ascii=False) + "\n")
+                    except Exception:
+                        pass
+                    # endregion
+                    
                     if inv_pred is not None:
                         predictions_inv[i] = inv_pred
                     else:
                         predictions_inv[i] = predictions[i]  # Fallback if transformation fails
                 predictions = predictions_inv
                 logger.info(f"Applied inverse scaling + transformations to {model_name} predictions for metric computation.")
+
+                # region agent log
+                if model_name == 'dfm':
+                    try:
+                        import json, time
+                        pred_finite = bool(np.isfinite(predictions).all())
+                        payload = {
+                            "sessionId": "debug-session",
+                            "runId": "dfm-eval",
+                            "hypothesisId": "H3_scaling_mismatch",
+                            "location": "src/main.py:run_short_term_experiment:post_inverse_transform",
+                            "message": "DFM predictions after inverse transform",
+                            "data": {
+                                "pred_shape": getattr(predictions, "shape", None),
+                                "pred_finite": pred_finite,
+                                "pred_maxabs": float(np.max(np.abs(predictions))) if pred_finite else None,
+                            },
+                            "timestamp": int(time.time() * 1000),
+                        }
+                        with open("/data/nowcasting-kr/.cursor/debug.log", "a", encoding="utf-8") as f:
+                            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                    except Exception:
+                        pass
+                # endregion
             else:
                 logger.warning(f"actual_target_series is None or empty for {model_name}, skipping inverse transformations")
         except Exception as e:
@@ -448,10 +581,7 @@ def run_short_term_experiment(
                 f"Proceeding with raw model outputs. Error: {e}"
             )
     elif model_name == 'mamba':
-        # MAMBA is trained on PROCESSED/TRANSFORMED data (via get_processed_data_from_loader).
-        # Predictions are in processed space, so actuals must also be in processed space for evaluation.
-        # No inverse transformation needed - keep both predictions and actuals in processed space.
-        logger.info(f"MAMBA predictions are in processed/transformed space (trained on processed data), keeping actuals in processed space for evaluation.")
+        logger.info("MAMBA predictions are inverse-scaled to raw levels; evaluating against raw actuals.")
 
     # Identify monthly series for aggregation and metric normalization
     monthly_series = get_monthly_series_from_metadata(data_loader)
@@ -689,12 +819,7 @@ def run_long_term_experiment(
     # Load test data
     test_data = load_test_data(data_model)
     
-    # For Mamba: use processed/transformed test_data (same space as training)
-    # This ensures actuals are in the same space as predictions for evaluation
-    if model_name == 'mamba':
-        from src.train._common import get_processed_data_from_loader
-        test_data = get_processed_data_from_loader(test_data, data_loader, "Mamba")
-        logger.info(f"Using processed test_data for Mamba (aligned with training space)")
+    # Mamba uses raw-level data with internal scaling; keep test_data as-is
     
     # Get target series from model config
     target_series = extract_target_series_from_config(cfg)
@@ -728,18 +853,33 @@ def run_long_term_experiment(
     test_data_std = compute_test_data_std(test_data, actual_target_series, monthly_series=monthly_series)
     
     # For monthly series, re-run forecasts with return_weekly_forecasts=True if needed
-    if monthly_series and model_name in ['patchtst', 'tft', 'itransformer', 'itf', 'timemixer']:
-        logger.info(f"Found {len(monthly_series)} monthly series. Re-running forecasts to get weekly values for aggregation.")
-        forecast_func = MULTI_HORIZON_FORECAST_FUNCTIONS[model_name]
-        forecasts_dict, _ = forecast_func(
-            checkpoint_path=checkpoint_path,
-            horizons=horizons,
-            start_date=start_date,
-            test_data=test_data,
-            target_series=target_series,
-            data_loader=data_loader,
-            return_weekly_forecasts=True
+    if monthly_series and model_name in ['patchtst', 'tft', 'itransformer', 'itf', 'timemixer', 'mamba', 'ddfm']:
+        logger.info(
+            f"Found {len(monthly_series)} monthly series. Re-running forecasts to get weekly values for aggregation."
         )
+        forecast_func = MULTI_HORIZON_FORECAST_FUNCTIONS[model_name]
+        if model_name == 'ddfm':
+            forecasts_dict = forecast_func(
+                checkpoint_path=checkpoint_path,
+                dataset_path=dataset_path,
+                horizons=horizons,
+                start_date=start_date,
+                test_data=test_data,
+                model_type=model_name,
+                target_series=target_series,
+                data_loader=data_loader,
+                return_weekly_forecasts=True,
+            )
+        else:
+            forecasts_dict, _ = forecast_func(
+                checkpoint_path=checkpoint_path,
+                horizons=horizons,
+                start_date=start_date,
+                test_data=test_data,
+                target_series=target_series,
+                data_loader=data_loader,
+                return_weekly_forecasts=True
+            )
     
     # Save results for each horizon
     base_output_dir = get_project_root() / "outputs" / "long_term" / data_model / model_name
@@ -765,6 +905,34 @@ def run_long_term_experiment(
                 # Use available_targets for aggregation if available, otherwise use actual_target_series
                 aggregation_targets = forecast_data.get('_available_targets', actual_target_series)
                 primary_target = forecast_data.get('_primary_target', actual_target_series[0] if actual_target_series else None)
+
+                # -----------------------------------------------------------------
+                # IMPORTANT (DFM/DDFM): weekly forecasts are in TRANSFORMED space.
+                # Short-term experiments reverse per-series transformations before
+                # monthly aggregation + metric computation.
+                #
+                # Do the same here: invert transformations at the weekly level
+                # (using raw test_data as anchor), then tent-kernel aggregate.
+                # -----------------------------------------------------------------
+                if model_name in ['dfm', 'ddfm'] and data_loader is not None:
+                    try:
+                        weekly_forecasts_inv = np.zeros_like(weekly_forecasts, dtype=float)
+                        for i, d in enumerate(pd.DatetimeIndex(weekly_dates)):
+                            inv_pred = inverse_transform_predictions(
+                                weekly_forecasts[i],
+                                aggregation_targets,
+                                data_loader,
+                                reverse_transformations=True,
+                                test_data=test_data,
+                                cutoff_date=pd.Timestamp(d),
+                            )
+                            weekly_forecasts_inv[i] = inv_pred if inv_pred is not None else weekly_forecasts[i]
+                        weekly_forecasts = weekly_forecasts_inv
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to inverse-transform weekly forecasts for {model_name} (horizon {horizon}w). "
+                            f"Proceeding with transformed outputs. Error: {e}"
+                        )
                 
                 aggregated_forecasts, aggregated_dates = aggregate_weekly_to_monthly_tent_kernel(
                     weekly_forecasts, weekly_dates, aggregation_targets, 
@@ -789,6 +957,26 @@ def run_long_term_experiment(
         else:
             # Single forecast value (weekly series or no weekly forecasts available)
             forecast_values = forecast_data if isinstance(forecast_data, np.ndarray) else np.array(forecast_data)
+
+            # For DFM/DDFM, reverse per-series transformations to raw level
+            # (consistent with short-term evaluation).
+            if model_name in ['dfm', 'ddfm'] and data_loader is not None and horizon_date is not None:
+                try:
+                    inv_pred = inverse_transform_predictions(
+                        np.asarray(forecast_values),
+                        actual_target_series,
+                        data_loader,
+                        reverse_transformations=True,
+                        test_data=test_data,
+                        cutoff_date=pd.Timestamp(horizon_date),
+                    )
+                    if inv_pred is not None:
+                        forecast_values = inv_pred
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to inverse-transform forecast for {model_name} (horizon {horizon}w). "
+                        f"Proceeding with transformed outputs. Error: {e}"
+                    )
         
         # Compute metrics if actuals available
         metrics = None

@@ -208,8 +208,9 @@ def _run_multi_horizon_forecast(
     start_date: str,
     test_data: Optional[pd.DataFrame],
     target_series: Optional[List[str]],
-    data_loader: Optional[Any]
-) -> Dict[int, np.ndarray]:
+    data_loader: Optional[Any],
+    return_weekly_forecasts: bool = False
+) -> Dict[int, Any]:
     """Run multi-horizon forecasting for DDFM."""
     from dfm_python import DDFM, DDFMDataset
     
@@ -221,12 +222,12 @@ def _run_multi_horizon_forecast(
     start_date_ts = pd.Timestamp(start_date)
     max_horizon = max(horizons) if horizons else 1
     update_data_source = _get_update_data_source(test_data, data_loader, dataset)
+    available_targets = get_target_series_from_dataset(dataset, test_data, target_series)
     
     # Update factors with data up to start_date
     if update_data_source is not None:
         train_data = update_data_source[update_data_source.index < start_date_ts].copy()
         if len(train_data) > 0:
-            available_targets = get_target_series_from_dataset(dataset, test_data, target_series)
             train_cols = list(dataset.data.columns)
             train_data = train_data[[c for c in train_cols if c in train_data.columns]].copy()
             update_dataset = DDFMDataset(
@@ -241,12 +242,52 @@ def _run_multi_horizon_forecast(
     # Predict once with max horizon, then extract time steps
     forecast_result = model.predict(horizon=max_horizon)
     X_forecast = forecast_result[0] if isinstance(forecast_result, tuple) else forecast_result
+
+    # Align forecast columns to available_targets if the forecast is for all series
+    X_forecast = np.asarray(X_forecast)
+    if hasattr(dataset, "data") and hasattr(dataset.data, "columns"):
+        all_cols = list(dataset.data.columns)
+        if X_forecast.ndim == 2 and X_forecast.shape[1] == len(all_cols):
+            idxs = [all_cols.index(t) for t in available_targets if t in all_cols]
+            if idxs:
+                X_forecast = X_forecast[:, idxs]
     
     # Extract forecasts for each horizon
     forecasts = {}
     for horizon in horizons:
         horizon_idx = max(0, horizon - 1)
-        forecasts[horizon] = X_forecast[min(horizon_idx, X_forecast.shape[0] - 1), :]
+        if return_weekly_forecasts:
+            # Return weekly forecasts inside the month containing horizon_date
+            horizon_date = start_date_ts + pd.Timedelta(weeks=horizon)
+            month_start = pd.Timestamp(year=horizon_date.year, month=horizon_date.month, day=1)
+            month_end = month_start + pd.offsets.MonthEnd(0)
+
+            month_weekly_dates: List[pd.Timestamp] = []
+            month_forecast_values: List[np.ndarray] = []
+
+            first_week_in_month = month_start
+            while first_week_in_month < start_date_ts:
+                first_week_in_month += pd.Timedelta(weeks=1)
+
+            current_date = first_week_in_month
+            while current_date <= month_end:
+                weeks_from_start = (current_date - start_date_ts).days // 7
+                if 0 <= weeks_from_start < X_forecast.shape[0]:
+                    month_forecast_values.append(X_forecast[weeks_from_start, :])
+                    month_weekly_dates.append(current_date)
+                current_date += pd.Timedelta(weeks=1)
+
+            if month_forecast_values:
+                forecasts[horizon] = {
+                    "weekly_forecasts": np.array(month_forecast_values),
+                    "dates": pd.DatetimeIndex(month_weekly_dates),
+                    "_available_targets": available_targets,
+                    "_primary_target": available_targets[0] if available_targets else None,
+                }
+            else:
+                forecasts[horizon] = X_forecast[min(horizon_idx, X_forecast.shape[0] - 1), :]
+        else:
+            forecasts[horizon] = X_forecast[min(horizon_idx, X_forecast.shape[0] - 1), :]
     
     return forecasts
 
@@ -277,10 +318,11 @@ def run_multi_horizon_forecast(
     test_data: Optional[pd.DataFrame] = None,
     model_type: str = "ddfm",
     target_series: Optional[List[str]] = None,
-    data_loader: Optional[Any] = None
-) -> Dict[int, np.ndarray]:
+    data_loader: Optional[Any] = None,
+    return_weekly_forecasts: bool = False
+) -> Dict[int, Any]:
     """Run multi-horizon forecasting from fixed start point."""
     return _run_multi_horizon_forecast(
         checkpoint_path, dataset_path, horizons, start_date,
-        test_data, target_series, data_loader
+        test_data, target_series, data_loader, return_weekly_forecasts=return_weekly_forecasts
     )

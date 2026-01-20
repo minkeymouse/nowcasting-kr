@@ -9,7 +9,7 @@ name: dfm
 ar_lag: 4  # Global AR lag order (factor lag 4 for inter-factor lagged correlation, as in documentation)
 ar_order: 4  # Alias for ar_lag
 threshold: 1.0e-05  # EM convergence threshold
-max_iter: 1  # Maximum EM iterations (minimal for testing - override with CLI: model.max_iter=50 for full training)
+max_iter: 20  # Maximum EM iterations (override with CLI if needed)
 
 # Numerical Stability Parameters
 clip_ar_coefficients: true

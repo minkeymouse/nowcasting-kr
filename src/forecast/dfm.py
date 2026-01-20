@@ -92,14 +92,14 @@ def _forecast_dfm(checkpoint_path: Path, dataset_path: Path, horizon: int) -> No
                 logger.info("Dataset attached to model")
         except Exception as e:
             logger.warning(f"Could not load dataset: {e}. Model may have target_series stored internally.")
-    
+
     # Generate forecasts
     logger.info(f"Generating forecasts with horizon={horizon}...")
     
     try:
         # Generate predictions
         predictions = model.predict(horizon=horizon)
-        
+
         # Log and save forecasts
         _log_and_save_forecast(predictions, checkpoint_path)
             
@@ -181,6 +181,37 @@ def _run_recursive_forecast(
     model = DFM.load(checkpoint_path)
     dataset = joblib.load(dataset_path) if dataset_path.exists() else None
     
+    # region agent log
+    try:
+        import json, time
+        # Check if target_scaler was loaded
+        has_target_scaler = False
+        target_scaler_source = None
+        if hasattr(model, '_result') and model._result is not None:
+            has_target_scaler = (model._result.target_scaler is not None)
+            target_scaler_source = "result"
+        elif hasattr(model, 'target_scaler'):
+            has_target_scaler = (model.target_scaler is not None)
+            target_scaler_source = "model"
+        
+        with open("/data/nowcasting-kr/.cursor/debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "dfm-forecast",
+                "hypothesisId": "H3_target_scaler_loaded",
+                "location": "src/forecast/dfm.py:model_loaded",
+                "message": "Checking if target_scaler was loaded from checkpoint",
+                "data": {
+                    "has_target_scaler": has_target_scaler,
+                    "target_scaler_source": target_scaler_source,
+                    "model_has_result": hasattr(model, '_result') and model._result is not None,
+                },
+                "timestamp": int(time.time() * 1000),
+            }, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    # endregion
+    
     # Get target series from config first (this is what the model was trained with)
     config_target_series = None
     if hasattr(model, '_config') and model._config is not None:
@@ -210,7 +241,7 @@ def _run_recursive_forecast(
     # Attach dataset to model if available (needed for predict() to find target_series)
     if dataset is not None and hasattr(model, '_dataset'):
         model._dataset = dataset
-    
+
     # Convert date strings to timestamps
     start_ts = pd.Timestamp(start_date) if start_date else test_data.index.min()
     end_ts = pd.Timestamp(end_date) if end_date else test_data.index.max()
@@ -276,7 +307,7 @@ def _run_recursive_forecast(
             new_data_standardized = preprocess_data_for_model(
                 new_data, data_loader, columns=None, impute_missing=False  # DFM handles NaNs
             )
-            
+
             # Update factors with new observations (Kalman filtering updates factor state)
             # This includes cutoff_date data, synchronized with attention-based models
             model.update(new_data_standardized)
@@ -289,6 +320,47 @@ def _run_recursive_forecast(
         forecast_values = extract_forecast_values(
             forecast_result, len(available_targets), horizon_idx=0
         )
+        
+        # region agent log
+        try:
+            import json, time
+            # Check target_scaler status and get its parameters
+            has_target_scaler = False
+            scaler_mean = None
+            scaler_scale = None
+            if hasattr(model, '_result') and model._result is not None:
+                if model._result.target_scaler is not None:
+                    has_target_scaler = True
+                    scaler_mean = model._result.target_scaler.mean_.tolist() if hasattr(model._result.target_scaler, 'mean_') else None
+                    scaler_scale = model._result.target_scaler.scale_.tolist() if hasattr(model._result.target_scaler, 'scale_') else None
+            elif hasattr(model, 'target_scaler') and model.target_scaler is not None:
+                has_target_scaler = True
+                scaler_mean = model.target_scaler.mean_.tolist() if hasattr(model.target_scaler, 'mean_') else None
+                scaler_scale = model.target_scaler.scale_.tolist() if hasattr(model.target_scaler, 'scale_') else None
+            
+            with open("/data/nowcasting-kr/.cursor/debug.log", "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "dfm-forecast",
+                    "hypothesisId": "H4_predict_uses_scaler",
+                    "location": "src/forecast/dfm.py:after_predict",
+                    "message": "Prediction values after model.predict()",
+                    "data": {
+                        "has_target_scaler": has_target_scaler,
+                        "scaler_mean": scaler_mean,
+                        "scaler_scale": scaler_scale,
+                        "forecast_values_shape": forecast_values.shape if hasattr(forecast_values, 'shape') else None,
+                        "forecast_values_mean": float(np.mean(forecast_values)) if isinstance(forecast_values, np.ndarray) else None,
+                        "forecast_values_std": float(np.std(forecast_values)) if isinstance(forecast_values, np.ndarray) else None,
+                        "forecast_values_min": float(np.min(forecast_values)) if isinstance(forecast_values, np.ndarray) else None,
+                        "forecast_values_max": float(np.max(forecast_values)) if isinstance(forecast_values, np.ndarray) else None,
+                        "week": i+1,
+                    },
+                    "timestamp": int(time.time() * 1000),
+                }, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        # endregion
         
         predictions.append(forecast_values)
         forecast_dates.append(next_date)

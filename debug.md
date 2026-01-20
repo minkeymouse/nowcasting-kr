@@ -34,3 +34,33 @@
   - processed update data source for `update()` (kept)
 - `src/train/ddfm.py`, `dfm-python/src/dfm_python/encoder/simple_autoencoder.py`, `src/main.py`
   - debug instrumentation added during investigation and later removed
+
+## DFM debug investigation summary (2026-01-15)
+
+### Problem
+- DFM metrics were missing in the report; evaluation outputs existed but scales were inconsistent.
+- Training/forecasting is slow; debug runs used 1 iteration and half dataset for feasibility.
+
+### Key findings (runtime evidence)
+- Recursive update inputs contained NaNs (expected for mixed-frequency), but were masked correctly.
+- Predictions after inverse-transform were exploding (up to 1e12), indicating double-scaling.
+- Target series resolution was stable (dataset + config both had 1 target).
+
+### Fixes applied
+- **Scaling fix**: stop fitting a new `target_scaler` in DFM training unless preprocessing actually provides a scaler (`data_loader.scaler` is not None). This avoids double-scaling at predict time.
+- **Long-term consistency**: inverse-transform DFM/DDFM weekly forecasts before monthly aggregation, matching short-term evaluation.
+- **Stability**: ensure `use_cholesky_filter: true` for DFM investment config (Cholesky path avoids SVD/pinv failures).
+
+### Post-fix outcome
+- DFM short-term metrics are now produced and added to the report:
+  - Production: sMSE 1.955, sMAE 1.165
+  - Investment: sMSE 1.657, sMAE 1.006
+- Long-term DFM metrics generated for available horizons and added to appendix.
+
+### Files touched
+- `src/train/dfm.py`
+  - target_scaler creation guard (kept)
+- `src/main.py`
+  - DFM/DDFM long-term inverse-transform before monthly aggregation (kept)
+- `config/model/dfm/investment.yaml`
+  - `use_cholesky_filter: true` (kept)

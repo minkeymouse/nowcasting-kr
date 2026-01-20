@@ -78,13 +78,22 @@ def load_mamba_model(checkpoint_path: Path, device: str = None):
     if (checkpoint_path.parent / "output_proj.pkl").exists():
         output_proj = joblib.load(checkpoint_path.parent / "output_proj.pkl").to(model_device)
     
-    # Load per-series StandardScaler (Stage 1: Training scale preservation)
-    scaler = None
-    if (checkpoint_path.parent / "scaler.pkl").exists():
-        scaler = joblib.load(checkpoint_path.parent / "scaler.pkl")
-        logger.info(f"Loaded per-series StandardScaler from {checkpoint_path.parent / 'scaler.pkl'}")
+    # Load per-series StandardScalers (Stage 1: Training scale preservation)
+    input_scaler = None
+    target_scaler = None
+    if (checkpoint_path.parent / "input_scaler.pkl").exists():
+        input_scaler = joblib.load(checkpoint_path.parent / "input_scaler.pkl")
+        logger.info(f"Loaded input StandardScaler from {checkpoint_path.parent / 'input_scaler.pkl'}")
+    if (checkpoint_path.parent / "target_scaler.pkl").exists():
+        target_scaler = joblib.load(checkpoint_path.parent / "target_scaler.pkl")
+        logger.info(f"Loaded target StandardScaler from {checkpoint_path.parent / 'target_scaler.pkl'}")
+    # Backward compatibility
+    if input_scaler is None and (checkpoint_path.parent / "scaler.pkl").exists():
+        input_scaler = joblib.load(checkpoint_path.parent / "scaler.pkl")
+        target_scaler = input_scaler
+        logger.info(f"Loaded legacy StandardScaler from {checkpoint_path.parent / 'scaler.pkl'}")
     
-    return model, metadata, input_proj, output_proj, scaler
+    return model, metadata, input_proj, output_proj, input_scaler, target_scaler
 
 
 def run_recursive_forecast(
@@ -127,22 +136,28 @@ def run_recursive_forecast(
         raise ImportError("mamba-ssm not available. Please install: pip install mamba-ssm")
     
     # Load model, metadata, and projections
-    model, metadata, input_proj, output_proj, scaler = load_mamba_model(checkpoint_path)
+    model, metadata, input_proj, output_proj, input_scaler, target_scaler = load_mamba_model(checkpoint_path)
     device = model.device
     context_length = metadata['context_length']
     prediction_length = metadata['prediction_length']
-    n_features = metadata.get('n_features', len(target_series) if target_series else None)
-    available_targets = metadata.get('available_targets', target_series or list(test_data.columns))
+    n_features_in = metadata.get('n_features_in', len(target_series) if target_series else None)
+    model_features = metadata.get('model_features', metadata.get('available_targets', list(test_data.columns)))
     
-    # Filter available targets
-    available_targets = [t for t in available_targets if t in test_data.columns]
-    if not available_targets:
-        raise ValueError("No target series found in test_data")
+    # Features used by the model (targets + covariates)
+    model_features = [t for t in model_features if t in test_data.columns]
+    if not model_features:
+        raise ValueError("No model features found in test_data")
+    
+    # Targets to evaluate (use config target_series if provided)
+    eval_targets = target_series if target_series else model_features
+    eval_targets = [t for t in eval_targets if t in model_features]
+    if not eval_targets:
+        raise ValueError("No evaluation target series found in test_data")
     
     test_data_filtered, _, _ = filter_and_prepare_test_data(
-        test_data, start_date, end_date, available_targets
+        test_data, start_date, end_date, model_features
     )
-    test_data_for_context = test_data[available_targets].copy() if available_targets else test_data.copy()
+    test_data_for_context = test_data[model_features].copy() if model_features else test_data.copy()
     
     start_ts = pd.Timestamp(start_date)
     end_ts = pd.Timestamp(end_date)
@@ -182,8 +197,8 @@ def run_recursive_forecast(
         context_data = train_data_up_to_cutoff.iloc[-context_length:].values.astype(np.float32)
         
         # Stage 1: Apply per-series StandardScaler (training scale preservation)
-        if scaler is not None:
-            context_data_scaled = scaler.transform(context_data.reshape(-1, context_data.shape[1])).reshape(context_data.shape)
+        if input_scaler is not None:
+            context_data_scaled = input_scaler.transform(context_data.reshape(-1, context_data.shape[1])).reshape(context_data.shape)
         else:
             context_data_scaled = context_data
         
@@ -201,20 +216,25 @@ def run_recursive_forecast(
         # Keep predictions in processed/transformed space (same as training)
         # Do NOT inverse transform - predictions stay in processed space for evaluation
         pred = pred.cpu().numpy()
+        if target_scaler is not None:
+            pred = pred * target_scaler.scale_ + target_scaler.mean_
         
+        # Keep only evaluation targets
+        eval_indices = [model_features.index(t) for t in eval_targets]
+        pred = pred[eval_indices]
         predictions.append(pred)
         forecast_dates.append(next_date)
         actuals.append(
-            test_data_filtered.loc[next_date, available_targets].values
+            test_data_filtered.loc[next_date, eval_targets].values
             if next_date in test_data_filtered.index
-            else np.full(len(available_targets), np.nan)
+            else np.full(len(eval_targets), np.nan)
         )
     
     predictions = np.array(predictions)
     actuals = np.array(actuals)
     forecast_dates = pd.DatetimeIndex(forecast_dates)
     
-    return predictions, actuals, forecast_dates, available_targets
+    return predictions, actuals, forecast_dates, eval_targets
 
 
 def run_multi_horizon_forecast(
@@ -259,24 +279,29 @@ def run_multi_horizon_forecast(
         raise ImportError("mamba-ssm not available. Please install: pip install mamba-ssm")
     
     # Load model, metadata, and projections
-    model, metadata, input_proj, output_proj, scaler = load_mamba_model(checkpoint_path)
+    model, metadata, input_proj, output_proj, input_scaler, target_scaler = load_mamba_model(checkpoint_path)
     device = model.device
     context_length = metadata['context_length']
     prediction_length = metadata['prediction_length']
-    available_targets = metadata.get('available_targets', target_series or [])
+    model_features = metadata.get('model_features', metadata.get('available_targets', target_series or []))
     
     if test_data is not None:
-        available_targets = [t for t in available_targets if t in test_data.columns]
+        model_features = [t for t in model_features if t in test_data.columns]
     
-    if not available_targets:
-        raise ValueError("No target series available")
+    if not model_features:
+        raise ValueError("No model features available")
+    
+    eval_targets = target_series if target_series else model_features
+    eval_targets = [t for t in eval_targets if t in model_features]
+    if not eval_targets:
+        raise ValueError("No evaluation target series available")
     
     start_date_ts = pd.Timestamp(start_date)
     forecasts = {}
     
     # Get context data up to start_date
     if test_data is not None:
-        train_data = test_data[test_data.index < start_date_ts][available_targets].copy()
+        train_data = test_data[test_data.index < start_date_ts][model_features].copy()
         train_data = interpolate_missing_values(train_data, data_loader)
         
         if len(train_data) < context_length:
@@ -293,8 +318,8 @@ def run_multi_horizon_forecast(
     context_data = train_data.iloc[-context_length:].values.astype(np.float32)
     
     # Stage 1: Apply per-series StandardScaler (training scale preservation)
-    if scaler is not None:
-        context_data_scaled = scaler.transform(context_data.reshape(-1, context_data.shape[1])).reshape(context_data.shape)
+    if input_scaler is not None:
+        context_data_scaled = input_scaler.transform(context_data.reshape(-1, context_data.shape[1])).reshape(context_data.shape)
     else:
         context_data_scaled = context_data
     
@@ -309,16 +334,54 @@ def run_multi_horizon_forecast(
         if output_proj is not None:
             pred_all = output_proj(pred_all)
         
-        # Keep predictions in processed/transformed space (same as training)
-        # Do NOT inverse transform - predictions stay in processed space for evaluation
         pred_all = pred_all.cpu().numpy()
+        if target_scaler is not None:
+            pred_all = pred_all * target_scaler.scale_[None, :] + target_scaler.mean_[None, :]
     
+    eval_indices = [model_features.index(t) for t in eval_targets]
+
     # Extract forecasts for each horizon
     for horizon in horizons:
-        idx = min(horizon - 1, len(pred_all) - 1)
-        forecasts[horizon] = pred_all[idx, :]
+        if return_weekly_forecasts:
+            # Return weekly forecasts inside the month containing horizon_date,
+            # so main.py can tent-kernel aggregate weekly -> monthly consistently.
+            horizon_date = start_date_ts + pd.Timedelta(weeks=horizon)
+            month_start = pd.Timestamp(year=horizon_date.year, month=horizon_date.month, day=1)
+            month_end = month_start + pd.offsets.MonthEnd(0)
+
+            month_weekly_dates: List[pd.Timestamp] = []
+            month_forecast_values: List[np.ndarray] = []
+
+            # Find the first "weekly step" date in the month
+            first_week_in_month = month_start
+            while first_week_in_month < start_date_ts:
+                first_week_in_month += pd.Timedelta(weeks=1)
+
+            current_date = first_week_in_month
+            while current_date <= month_end:
+                weeks_from_start = (current_date - start_date_ts).days // 7
+                if 0 <= weeks_from_start < len(pred_all):
+                    month_forecast_values.append(pred_all[weeks_from_start, :][eval_indices])
+                    month_weekly_dates.append(current_date)
+                current_date += pd.Timedelta(weeks=1)
+
+            if month_forecast_values:
+                forecasts[horizon] = {
+                    "weekly_forecasts": np.array(month_forecast_values),
+                    "dates": pd.DatetimeIndex(month_weekly_dates),
+                    # Keep target mapping explicit for downstream aggregation
+                    "_available_targets": eval_targets,
+                    "_primary_target": eval_targets[0] if eval_targets else None,
+                }
+            else:
+                # Fallback: single forecast at the horizon step
+                idx = min(horizon - 1, len(pred_all) - 1)
+                forecasts[horizon] = pred_all[idx, :][eval_indices]
+        else:
+            idx = min(horizon - 1, len(pred_all) - 1)
+            forecasts[horizon] = pred_all[idx, :][eval_indices]
     
-    return forecasts, available_targets
+    return forecasts, eval_targets
 
 
 def forecast(
@@ -333,15 +396,16 @@ def forecast(
     if test_data is None:
         raise ValueError("test_data is required for forecasting")
     
-    model, metadata, input_proj, output_proj, scaler = load_mamba_model(checkpoint_path)
+    model, metadata, input_proj, output_proj, input_scaler, target_scaler = load_mamba_model(checkpoint_path)
     context_length = metadata['context_length']
-    available_targets = metadata.get('available_targets', list(test_data.columns))
+    model_features = metadata.get('model_features', metadata.get('available_targets', list(test_data.columns)))
+    model_features = [t for t in model_features if t in test_data.columns]
     
-    context_data = test_data[available_targets].iloc[-context_length:].values.astype(np.float32)
+    context_data = test_data[model_features].iloc[-context_length:].values.astype(np.float32)
     
     # Stage 1: Apply per-series StandardScaler (training scale preservation)
-    if scaler is not None:
-        context_data_scaled = scaler.transform(context_data.reshape(-1, context_data.shape[1])).reshape(context_data.shape)
+    if input_scaler is not None:
+        context_data_scaled = input_scaler.transform(context_data.reshape(-1, context_data.shape[1])).reshape(context_data.shape)
     else:
         context_data_scaled = context_data
     
@@ -356,9 +420,9 @@ def forecast(
         if output_proj is not None:
             pred = output_proj(pred.unsqueeze(0))[0]
         
-        # Keep predictions in processed/transformed space (same as training)
-        # Do NOT inverse transform - predictions stay in processed space for evaluation
         pred = pred.cpu().numpy()
+        if target_scaler is not None:
+            pred = pred * target_scaler.scale_ + target_scaler.mean_
     
     output_dir = checkpoint_path.parent / "forecasts"
     output_dir.mkdir(parents=True, exist_ok=True)
