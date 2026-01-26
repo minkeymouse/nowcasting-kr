@@ -458,12 +458,72 @@ class BaseData:
             # Create empty series with weekly index
             expanded = pd.Series(index=data.index, dtype=float)
             
-            # For each transformed period-end value, find closest weekly date <= period-end
-            for period_end, value in transformed.dropna().items():
-                # Find all weekly dates <= period-end, take the last one
-                candidates = expanded.index[expanded.index <= period_end]
-                if len(candidates) > 0:
-                    expanded.loc[candidates[-1]] = value
+            # FIXED: Place monthly values at REGULAR intervals (every ~4.3 weeks)
+            # This ensures consistent gaps that DFM's tent kernel can properly aggregate
+            # Strategy: Find first monthly value, then place subsequent values every 4 weeks
+            transformed_non_na = transformed.dropna()
+            
+            if len(transformed_non_na) > 0:
+                placement_dates = []
+                transformed_list = list(transformed_non_na.items())
+                
+                # Find the first monthly value's position in weekly index
+                first_period_end, first_value = transformed_list[0]
+                # Find closest weekly date <= first period_end (or >= if no <= exists)
+                candidates_before = expanded.index[expanded.index <= first_period_end]
+                if len(candidates_before) > 0:
+                    first_weekly_idx = expanded.index.get_loc(candidates_before[-1])
+                else:
+                    # If no date <= period_end, use first date >= period_end
+                    candidates_after = expanded.index[expanded.index >= first_period_end]
+                    if len(candidates_after) > 0:
+                        first_weekly_idx = expanded.index.get_loc(candidates_after[0])
+                    else:
+                        first_weekly_idx = 0
+                
+                # Place first value
+                if first_weekly_idx < len(expanded.index):
+                    expanded.iloc[first_weekly_idx] = first_value
+                    placement_dates.append(expanded.index[first_weekly_idx])
+                
+                # Place subsequent values at regular 4-week intervals
+                # Monthly data should appear every ~4.3 weeks, use 4 weeks for regularity
+                weeks_per_period = 4  # Regular interval for monthly data
+                
+                for i in range(1, len(transformed_list)):
+                    period_end, value = transformed_list[i]
+                    # Calculate target index: first_idx + (i * weeks_per_period)
+                    target_idx = first_weekly_idx + (i * weeks_per_period)
+                    
+                    if target_idx < len(expanded.index):
+                        expanded.iloc[target_idx] = value
+                        placement_dates.append(expanded.index[target_idx])
+                    else:
+                        # If we've run out of index, place at last available position
+                        # This handles cases where we have fewer weeks than expected
+                        break
+                
+                # Log placement pattern for verification
+                if len(placement_dates) > 1:
+                    gaps = [(placement_dates[i+1] - placement_dates[i]).days / 7 
+                           for i in range(len(placement_dates)-1)]
+                    mean_gap = np.mean(gaps)
+                    std_gap = np.std(gaps)
+                    
+                    # Check if gaps are now regular (std should be small for regular intervals)
+                    if col_name == 'KOEQUIPTE' or std_gap > 1.0:
+                        if std_gap > 1.0:
+                            logger.warning(
+                                f"{col_name} re-expansion: {len(placement_dates)} values placed with "
+                                f"mean gap={mean_gap:.1f} weeks, std={std_gap:.1f} weeks. "
+                                f"Still irregular (expected std < 0.5 for regular intervals)."
+                            )
+                        else:
+                            logger.info(
+                                f"{col_name} re-expansion: {len(placement_dates)} values placed with "
+                                f"mean gap={mean_gap:.1f} weeks, std={std_gap:.1f} weeks (regular)."
+                            )
+            
             # Remaining weeks remain NaN (preserves sparsity)
             
             result[col_name] = expanded

@@ -1,0 +1,9 @@
+# Short-term experiment configuration (4-week test)
+# Testing recursive forecasting for short horizon (4 weeks)
+# This tests the hypothesis that recursive updates work fine for short horizons
+
+start_date: "2024-01-01"
+end_date: "2024-01-29"
+update_frequency: "weekly"  # Update model every week with new data
+horizon: 1  # Forecast 1 week ahead
+update_params: false

@@ -17,7 +17,7 @@ seed: null
 use_idiosyncratic: true
 min_obs_idio: 5
 lags_input: 0
-target_scaler: standard
+scaler: standard
 interpolation_method: linear
 interpolation_limit: 10
 interpolation_limit_direction: both

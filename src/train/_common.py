@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 import pandas as pd
+import numpy as np
 import joblib
 import pickle
 
@@ -248,15 +249,19 @@ def get_processed_data_from_loader(
         data_cols = [col for col in original_data.columns if col not in date_cols]
         original_data = original_data[data_cols].copy()
         
+        # Ensure only numeric columns
+        original_data = original_data.select_dtypes(include=[np.number])
+        
         # Ensure same columns as input data (in case of filtering)
         if hasattr(data, 'columns'):
-            common_cols = [col for col in data_cols if col in data.columns]
+            common_cols = [col for col in original_data.columns if col in data.columns]
             if common_cols:
                 original_data = original_data[common_cols]
         
         logger.info(f"Using ORIGINAL (raw levels, NO transformations) data for {model_name}. Shape: {original_data.shape}")
-        logger.info(f"Data stats - Mean range: [{original_data.mean().min():.2f}, {original_data.mean().max():.2f}], "
-                   f"Std range: [{original_data.std().min():.2f}, {original_data.std().max():.2f}]")
+        if len(original_data.columns) > 0:
+            logger.info(f"Data stats - Mean range: [{original_data.mean().min():.2f}, {original_data.mean().max():.2f}], "
+                       f"Std range: [{original_data.std().min():.2f}, {original_data.std().max():.2f}]")
         logger.info(f"  → No differencing or transformations applied. Model handles normalization internally.")
         return original_data
     else:

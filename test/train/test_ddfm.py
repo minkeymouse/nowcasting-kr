@@ -50,7 +50,7 @@ def mock_data_loader():
 def test_train_ddfm_interface(sample_data, mock_data_loader):
     """Test DDFM training function interface."""
     model_params = {
-        'target_series': ['KOEQUIPTE'],
+        'covariates': ['KOWRCCNSE', 'A001'],  # Use covariates (new approach)
         'num_factors': 1,
         'encoder_layers': [32, 16, 1],
         'max_epoch': 3,

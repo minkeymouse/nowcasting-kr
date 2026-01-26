@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Union
 import pandas as pd
 import numpy as np
-import joblib
 
 from src.utils import get_project_root
 
@@ -80,45 +79,28 @@ def train_dfm_model(
     # Create config
     config = DFMConfig.from_dict(model_params)
     
-    # Get target series
-    target_series = model_params.get('target_series')
-    available_targets = [t for t in target_series if t in data.columns] if target_series else None
-    if target_series and not available_targets:
-        logger.warning("No target series found in data. Using all columns as targets.")
-        available_targets = None
+    # Get covariates from config
+    covariates = model_params.get('covariates')
     
-    # Target scaler: DO NOT create for DFM.
+    # Filter covariates to only those available in data
+    available_covariates = None
+    if covariates:
+        available_covariates = [c for c in covariates if c in data.columns]
+        if len(available_covariates) < len(covariates):
+            missing = [c for c in covariates if c not in data.columns]
+            logger.warning(f"Some covariates not found in data: {missing}")
+    
+    # Scaler: DO NOT create for DFM (model will create internally).
     # 
     # DFM's predict() returns predictions in transformed space (chg/logdiff), NOT standardized space.
-    # Unlike DDFM, DFM doesn't standardize data internally - it uses transformed data as-is.
-    # Therefore, we should NOT use target_scaler.inverse_transform() in DFM's predict().
-    # Instead, predictions are already in transformed space, and we only need to reverse
-    # metadata transformations (chg → level, logdiff → level) in the evaluation code.
+    # DFM standardizes data internally during training (creates scaler if not provided).
+    # Predictions are unstandardized using the scaler, then returned in transformed space.
+    # We only need to reverse metadata transformations (chg → level, logdiff → level) in evaluation.
     # 
-    # Setting target_scaler = None ensures DFM.predict() returns predictions in transformed space,
-    # which matches what inverse_transform_predictions() expects.
-    target_scaler = None
-    # region agent log
-    try:
-        import json, time
-        with open("/data/nowcasting-kr/.cursor/debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "sessionId": "debug-session",
-                "runId": "dfm-train",
-                "hypothesisId": "H1_target_scaler_creation",
-                "location": "src/train/dfm.py:target_scaler_set_to_none",
-                "message": "target_scaler set to None for DFM (predictions in transformed space)",
-                "data": {
-                    "available_targets": available_targets,
-                    "available_targets_count": len(available_targets) if available_targets else 0,
-                },
-                "timestamp": int(time.time() * 1000),
-            }, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-    # endregion
-    
-    logger.info("DFM target_scaler set to None - predictions will be in transformed space (chg/logdiff)")
+    # Setting scaler = None ensures DFM creates its own scaler internally during fit(),
+    # which will be used for standardization and inverse transformation.
+    scaler = None
+    logger.info("DFM scaler set to None - model will create scaler internally during training")
     
     # Configure dfm_python logging first
     try:
@@ -140,55 +122,17 @@ def train_dfm_model(
     
     # Create dataset
     try:
-        dataset = DFMDataset(config=config, data=data, target_series=available_targets)
-        # Set target_scaler as attribute (DFMDataset.get_initialization_params() will pick it up)
-        if target_scaler is not None:
-            dataset.target_scaler = target_scaler
-            logger.info("Set target_scaler on DFMDataset for inverse transformation during prediction")
+        # Pass covariates to dataset
+        if available_covariates is not None:
+            dataset = DFMDataset(config=config, data=data, covariates=available_covariates)
+        else:
+            # No covariates: all series are targets (default)
+            dataset = DFMDataset(config=config, data=data)
+        # Note: scaler is always None for DFM (model creates internally)
         
         X = dataset.get_processed_data()
         missing_pct = data.isnull().sum().sum() / (data.shape[0] * data.shape[1]) * 100
         logger.info(f"Dataset ready: {X.shape}, missing: {missing_pct:.1f}%")
-        
-        # region agent log
-        try:
-            import json, time
-            # Check what space the training data is in
-            if available_targets and len(available_targets) > 0:
-                # Find target index in X (need to match column order)
-                target_col = available_targets[0]
-                if target_col in data.columns:
-                    # Get the column index in the original data
-                    col_idx = list(data.columns).index(target_col)
-                    # X should have same column order as data
-                    if col_idx < X.shape[1]:
-                        target_data = X[:, col_idx]
-                        # Check if data has NaNs
-                        target_data_clean = target_data[~np.isnan(target_data)]
-                        with open("/data/nowcasting-kr/.cursor/debug.log", "a", encoding="utf-8") as f:
-                            f.write(json.dumps({
-                                "sessionId": "debug-session",
-                                "runId": "dfm-train",
-                                "hypothesisId": "H7_training_data_space",
-                                "location": "src/train/dfm.py:training_data_check",
-                                "message": "Checking training data space (X from dataset)",
-                                "data": {
-                                    "X_shape": X.shape,
-                                    "target_col": target_col,
-                                    "target_col_idx": col_idx,
-                                    "target_data_mean": float(np.mean(target_data_clean)) if len(target_data_clean) > 0 else None,
-                                    "target_data_std": float(np.std(target_data_clean)) if len(target_data_clean) > 0 else None,
-                                    "target_data_min": float(np.min(target_data_clean)) if len(target_data_clean) > 0 else None,
-                                    "target_data_max": float(np.max(target_data_clean)) if len(target_data_clean) > 0 else None,
-                                    "target_data_nan_count": int(np.isnan(target_data).sum()),
-                                    "transformed_data_mean": float(data[target_col].mean()) if target_col in data.columns else None,
-                                    "transformed_data_std": float(data[target_col].std()) if target_col in data.columns else None,
-                                },
-                                "timestamp": int(time.time() * 1000),
-                            }, ensure_ascii=False) + "\n")
-        except Exception as e:
-            logger.warning(f"Could not log training data space: {e}")
-        # endregion
     except Exception as e:
         logger.error(f"Failed to create dataset: {e}", exc_info=True)
         raise
@@ -232,32 +176,8 @@ def train_dfm_model(
         # Save model after training (checkpoint callback only saves every 5 iterations)
         model_path = outputs_dir / "model.pkl"
         model.save(model_path)
-        logger.info(f"Model saved: {model_path}")
         
-        # region agent log
-        try:
-            import json, time, joblib
-            # Check if target_scaler was saved in checkpoint
-            checkpoint = joblib.load(model_path)
-            has_target_scaler = 'target_scaler' in checkpoint and checkpoint['target_scaler'] is not None
-            with open("/data/nowcasting-kr/.cursor/debug.log", "a", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "dfm-train",
-                    "hypothesisId": "H2_target_scaler_saved",
-                    "location": "src/train/dfm.py:model_saved",
-                    "message": "Checking if target_scaler was saved to checkpoint",
-                    "data": {
-                        "has_target_scaler": has_target_scaler,
-                        "target_scaler_in_checkpoint": has_target_scaler,
-                        "model_has_target_scaler": hasattr(model, 'target_scaler') and model.target_scaler is not None,
-                        "result_has_target_scaler": hasattr(model, '_result') and model._result is not None and hasattr(model._result, 'target_scaler') and model._result.target_scaler is not None,
-                    },
-                    "timestamp": int(time.time() * 1000),
-                }, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
-        # endregion
+        logger.info(f"Model saved: {model_path}")
         
         # Log results
         if hasattr(model, '_training_converged'):
@@ -272,12 +192,12 @@ def train_dfm_model(
             logger.warning("Training completed but no result available")
     except Exception as e:
         logger.error(f"Training failed: {e}", exc_info=True)
+        # Check if checkpoint exists despite error (partial save)
+        checkpoint_path = outputs_dir / "model.pkl"
+        if checkpoint_path.exists():
+            logger.warning(f"Checkpoint exists despite training error: {checkpoint_path}. "
+                         f"This may be from a previous run or partial save.")
         raise
     
-    # Save dataset
-    dataset_path = outputs_dir / "dataset.pkl"
-    try:
-        joblib.dump(dataset, dataset_path)
-        logger.info(f"Dataset saved: {dataset_path}")
-    except Exception as e:
-        logger.warning(f"Failed to save dataset: {e}")
+    # Dataset metadata is now saved in model.pkl, so we don't need to save dataset.pkl separately
+    # This reduces file size and eliminates redundancy

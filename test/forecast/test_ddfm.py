@@ -52,18 +52,15 @@ def test_run_recursive_forecast_ddfm_interface(sample_data):
     # Create a dummy checkpoint path (won't actually work without trained model)
     with tempfile.TemporaryDirectory() as tmpdir:
         checkpoint_path = Path(tmpdir) / "model.pkl"
-        dataset_path = Path(tmpdir) / "dataset.pkl"
         
         # Test that function signature is correct
         try:
             run_recursive_forecast(
                 checkpoint_path=checkpoint_path,
-                dataset_path=dataset_path,
                 test_data=sample_data.iloc[150:160],
-                horizon=1,
                 start_date='2020-01-01',
                 end_date='2020-01-10',
-                target_series=['KOEQUIPTE'],
+                covariates=['KOWRCCNSE', 'A001'],  # Exclude these, so KOEQUIPTE is target
                 data_loader=None
             )
         except (FileNotFoundError, ValueError):
@@ -76,18 +73,16 @@ def test_run_multi_horizon_forecast_ddfm_interface(sample_data):
     """Test DDFM multi-horizon forecast function interface."""
     with tempfile.TemporaryDirectory() as tmpdir:
         checkpoint_path = Path(tmpdir) / "model.pkl"
-        dataset_path = Path(tmpdir) / "dataset.pkl"
         horizons = [4, 8, 12]
         
         # Test that function signature is correct
         try:
             run_multi_horizon_forecast(
                 checkpoint_path=checkpoint_path,
-                dataset_path=dataset_path,
                 horizons=horizons,
                 start_date='2020-01-01',
                 test_data=sample_data,
-                target_series=['KOEQUIPTE'],
+                covariates=['KOWRCCNSE', 'A001'],  # Exclude these, so KOEQUIPTE is target
                 data_loader=None
             )
         except (FileNotFoundError, ValueError):

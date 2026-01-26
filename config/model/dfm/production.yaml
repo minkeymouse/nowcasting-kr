@@ -5,7 +5,7 @@ horizon: 1  # Short-term: 1 week ahead. For long-term experiments, override with
 ar_lag: 4
 ar_order: 4
 threshold: 1.0e-05
-max_iter: 20
+max_iter: 3
 clip_ar_coefficients: true
 ar_clip_min: -0.99
 ar_clip_max: 0.99
@@ -13,7 +13,6 @@ use_regularization: true
 regularization_scale: 2.0e-05
 # augment_idio and augment_idio_slow are auto-detected from frequency configuration
 # (removed from config - always set automatically based on mixed-frequency detection)
-use_cholesky_filter: true
 idio_rho0: 0.1
 idio_min_var: 1.0e-06
 clock: w
@@ -22,7 +21,7 @@ scaler: standard
 # Tent weights for mixed-frequency aggregation
 # 3-period tent kernel for monthly->weekly aggregation
 tent_weights:
-  m:w: [1, 2, 1]  # Production dataset uses 3-period tent kernel
+  m:w: [1, 2, 3, 2, 1]  # Production dataset uses 3-period tent kernel
 blocks:
   Block_Global:
     num_factors: 7

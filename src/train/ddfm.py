@@ -79,12 +79,25 @@ def train_ddfm_model(
     # Create config
     config = DDFMConfig.from_dict(model_params)
     
-    # Get target series
-    target_series = model_params.get('target_series')
-    available_targets = [t for t in target_series if t in data.columns] if target_series else None
-    if target_series and not available_targets:
-        logger.warning("No target series found in data. Using all columns as targets.")
-        available_targets = None
+    # Get covariates from config
+    covariates = model_params.get('covariates')
+    all_series = list(data.columns)
+    
+    # Filter covariates to only those available in data
+    available_covariates = None
+    if covariates:
+        available_covariates = [c for c in covariates if c in data.columns]
+        if len(available_covariates) < len(covariates):
+            missing = [c for c in covariates if c not in data.columns]
+            logger.warning(f"Some covariates not found in data: {missing}")
+    
+    # Compute available_targets for scaler fitting (needed for DDFM)
+    # If covariates provided, targets = all_series - covariates
+    # Otherwise, all series are targets
+    if available_covariates:
+        available_targets = [s for s in all_series if s not in available_covariates]
+    else:
+        available_targets = None  # All series are targets
     
     # Configure dfm_python logging first
     try:
@@ -105,31 +118,42 @@ def train_ddfm_model(
         logger.warning(f"Could not configure dfm_python logging: {e}")
     
     # Create scaler for inverse transformation during prediction
-    target_scaler = None
+    scaler = None
     if data_loader is not None:
         original_data = data_loader.training_data
         original_targets = original_data[available_targets] if available_targets else original_data
         original_targets = original_targets.select_dtypes(include=[np.number]).reset_index(drop=True)
         
-        scaler_type = model_params.get('target_scaler', 'standard')
+        # Get scaler type from config
+        scaler_type = model_params.get('scaler', 'standard')
         if scaler_type == 'robust':
             from sklearn.preprocessing import RobustScaler
-            target_scaler = RobustScaler()
+            scaler = RobustScaler()
         else:
             from sklearn.preprocessing import StandardScaler
-            target_scaler = StandardScaler()
+            scaler = StandardScaler()
         from sklearn.preprocessing import StandardScaler as FeatureScaler
         feature_scaler = FeatureScaler()
         
-        target_scaler.fit(original_targets.to_numpy(dtype=np.float64))
+        scaler.fit(original_targets.to_numpy(dtype=np.float64))
     
-    dataset = DDFMDataset(
-        data=data,
-        time_idx='index',
-        target_series=available_targets,
-        target_scaler=target_scaler,
-        feature_scaler=feature_scaler
-    )
+    # Create dataset with covariates
+    if available_covariates is not None:
+        dataset = DDFMDataset(
+            data=data,
+            time_idx='index',
+            covariates=available_covariates,
+            scaler=scaler,
+            feature_scaler=feature_scaler
+        )
+    else:
+        # No covariates: all series are targets (default)
+        dataset = DDFMDataset(
+            data=data,
+            time_idx='index',
+            scaler=scaler,
+            feature_scaler=feature_scaler
+        )
     
     # Create DDFM model
     encoder_layers = model_params.get('encoder_layers', [64, 32])
@@ -165,9 +189,5 @@ def train_ddfm_model(
         joblib.dump(model, model_path)
         logger.info(f"Model saved: {model_path}")
     
-    # Save dataset
-    dataset_path = outputs_dir / "dataset.pkl"
-    try:
-        joblib.dump(dataset, dataset_path)
-    except Exception as e:
-        logger.warning(f"Failed to save dataset: {e}")
+    # Dataset metadata is now saved in model.pkl, so we don't need to save dataset.pkl separately
+    # This reduces file size and eliminates redundancy

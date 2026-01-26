@@ -19,6 +19,8 @@ from src.preprocess import load_data
 # Import tent weights helper from metric module (for aggregate_weekly_to_monthly_tent_kernel)
 from src.metric import _get_tent_weights
 
+logger = logging.getLogger(__name__)
+
 # Model type constants
 # All deep learning models now use NeuralForecast
 NEURALFORECAST_MODELS = {'itransformer', 'itf', 'patchtst', 'tft', 'timemixer'}
@@ -133,7 +135,9 @@ def _get_last_original_values(
             prev_month_end = (cutoff_date.replace(day=1) - pd.Timedelta(days=1))
             effective_cutoff = prev_month_end
         
-        # Try test_data first (more recent)
+        # Try test_data first (more recent, has correct accumulated values up to cutoff)
+        # For accumulation, we need the last value in levels space before the cutoff
+        # test_data is in levels and is more recent than training data
         if test_data is not None and series_name in test_data.columns:
             series_data = test_data[series_name]
             if effective_cutoff is not None and isinstance(test_data.index, pd.DatetimeIndex):
@@ -148,8 +152,9 @@ def _get_last_original_values(
             if len(series_non_null) > 0:
                 val = series_non_null.iloc[-1]
         
-        # Fallback to training data
+        # Fallback to training data (data_loader.original) if test_data not available
         if val == 0.0 and hasattr(data_loader, 'original') and series_name in data_loader.original.columns:
+            logger.info(f"_get_last_original_values: Falling back to training data for {series_name} (test_data had no values before {effective_cutoff.date()})")
             series_data = data_loader.original[series_name]
             if effective_cutoff is not None and isinstance(data_loader.original.index, pd.DatetimeIndex):
                 if is_monthly:
@@ -162,6 +167,63 @@ def _get_last_original_values(
             series_non_null = series_data.dropna()
             if len(series_non_null) > 0:
                 val = series_non_null.iloc[-1]
+                logger.info(f"_get_last_original_values: Found value {val:.2f} from training data for {series_name} (cutoff={effective_cutoff.date()})")
+                # #region agent log
+                if series_name in ['KOEQUIPTE', 'KOIPALL.G']:
+                    try:
+                        with open("/data/nowcasting-kr/.cursor/debug.log", "a") as f:
+                            entry = {
+                                "id": f"log_{int(pd.Timestamp.now().timestamp() * 1000)}",
+                                "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
+                                "location": "utils.py:169-found-value-from-training",
+                                "message": f"Found value from training data for {series_name}",
+                                "data": {
+                                    "series_name": series_name,
+                                    "val": float(val),
+                                    "effective_cutoff": str(effective_cutoff) if effective_cutoff is not None else None,
+                                    "cutoff_date": str(cutoff_date) if cutoff_date is not None else None,
+                                    "last_available_date": str(series_non_null.index[-1]) if len(series_non_null) > 0 else None,
+                                    "num_values_before_cutoff": len(series_non_null)
+                                },
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "H1,H2"
+                            }
+                            f.write(json.dumps(entry) + "\n")
+                    except:
+                        pass
+                # #endregion
+        
+        
+        if val == 0.0:
+            logger.warning(f"_get_last_original_values: WARNING - Initial level is 0.0 for {series_name} (cutoff={effective_cutoff}). This may cause accumulation errors!")
+        
+        # #region agent log
+        if series_name in ['KOEQUIPTE', 'KOIPALL.G']:
+            try:
+                with open("/data/nowcasting-kr/.cursor/debug.log", "a") as f:
+                    entry = {
+                        "id": f"log_{int(pd.Timestamp.now().timestamp() * 1000)}",
+                        "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
+                        "location": "utils.py:176-get-last-original-value",
+                        "message": f"Retrieved last original value for {series_name}",
+                        "data": {
+                            "series_name": series_name,
+                            "val": float(val),
+                            "cutoff_date": str(cutoff_date) if cutoff_date is not None else None,
+                            "effective_cutoff": str(effective_cutoff) if effective_cutoff is not None else None,
+                            "is_monthly": is_monthly,
+                            "has_test_data": test_data is not None and series_name in test_data.columns if test_data is not None else False,
+                            "has_training_data": hasattr(data_loader, 'original') and series_name in data_loader.original.columns if data_loader is not None else False
+                        },
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "H1,H4"
+                    }
+                    f.write(json.dumps(entry) + "\n")
+            except:
+                pass
+        # #endregion
         
         last_values.append(val)
     
@@ -189,7 +251,18 @@ def _reverse_transformation(
     
     predicted_processed = np.asarray(predicted_processed)
     original_shape = predicted_processed.shape
-    predicted_processed = predicted_processed.reshape(-1, len(series_names)) if predicted_processed.ndim == 1 else predicted_processed
+    
+    # Handle shape mismatch: predictions might have more series than target_series
+    # Truncate predictions to match series_names length
+    if predicted_processed.ndim == 1:
+        if len(predicted_processed) != len(series_names):
+            predicted_processed = predicted_processed[:len(series_names)]
+        predicted_processed = predicted_processed.reshape(-1, len(series_names))
+    else:
+        # 2D case: (n_samples, n_series)
+        if predicted_processed.shape[1] != len(series_names):
+            predicted_processed = predicted_processed[:, :len(series_names)]
+    
     result = np.zeros_like(predicted_processed)
     
     if series_names is None or len(series_names) == 0:
@@ -216,7 +289,80 @@ def _reverse_transformation(
             result[:, i] = np.exp(pred_vals)
         elif trans in ['chg', 'ch1']:
             # Differencing: x_t = d_t + x_{t-1}
-            result[:, i] = pred_vals + last_original_values[i] if has_last_val else pred_vals
+            # CRITICAL: pred_vals are in transformed space (chg values), last_original_values are in levels
+            # CRITICAL: For chg, we MUST have last_original_values - if missing, this is an error
+            if has_last_val:
+                result_val = pred_vals + last_original_values[i]
+                # Log first accumulation to debug
+                if i == 0 and len(pred_vals) > 0:
+                    logger.info(f"_reverse_transformation: chg accumulation for {series_name}: {pred_vals[0]:.4f} (chg) + {last_original_values[i]:.2f} (last_level) = {result_val[0]:.2f}")
+                
+                # #region agent log
+                if series_name in ['KOEQUIPTE', 'KOIPALL.G']:
+                    try:
+                        with open("/data/nowcasting-kr/.cursor/debug.log", "a") as f:
+                            entry = {
+                                "id": f"log_{int(pd.Timestamp.now().timestamp() * 1000)}",
+                                "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
+                                "location": "utils.py:265-chg-accumulation",
+                                "message": "chg accumulation - pred_vals",
+                                "data": {
+                                    "series_name": series_name,
+                                    "pred_vals": pred_vals.flatten().tolist()[:3] if hasattr(pred_vals, 'flatten') else [float(pred_vals[0])] if len(pred_vals) > 0 else [],
+                                    "pred_vals_mean": float(np.mean(pred_vals)) if hasattr(pred_vals, '__len__') and len(pred_vals) > 0 else float(pred_vals) if not hasattr(pred_vals, '__len__') else 0.0,
+                                    "last_original_value": float(last_original_values[i]) if hasattr(last_original_values, '__getitem__') else 0.0,
+                                    "result_val": result_val.flatten().tolist()[:3] if hasattr(result_val, 'flatten') else [float(result_val[0])] if len(result_val) > 0 else []
+                                },
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "H1,H4"
+                            }
+                            f.write(json.dumps(entry) + "\n")
+                    except:
+                        pass
+                # #endregion
+                
+                result[:, i] = result_val
+            else:
+                # CRITICAL BUG FIX: If last_original_values is missing or 0.0, we cannot accumulate chg predictions
+                # This means predictions will be in wrong scale. Raise error instead of silently failing.
+                error_msg = (
+                    f"_reverse_transformation: CRITICAL ERROR - chg transformation for {series_name} "
+                    f"requires last_original_values but got: "
+                    f"last_original_values={last_original_values[i] if i < len(last_original_values) else 'missing'} "
+                    f"(cutoff_date={cutoff_date}). "
+                    f"Cannot accumulate chg predictions without initial level. "
+                    f"This will cause wrong predictions in levels space."
+                )
+                logger.error(error_msg)
+                # #region agent log
+                if series_name in ['KOEQUIPTE', 'KOIPALL.G']:
+                    try:
+                        with open("/data/nowcasting-kr/.cursor/debug.log", "a") as f:
+                            entry = {
+                                "id": f"log_{int(pd.Timestamp.now().timestamp() * 1000)}",
+                                "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
+                                "location": "utils.py:275-chg-missing-last-value",
+                                "message": "ERROR: chg transformation missing last_original_values",
+                                "data": {
+                                    "series_name": series_name,
+                                    "i": i,
+                                    "last_original_values_len": len(last_original_values) if last_original_values is not None else None,
+                                    "last_original_values_i": float(last_original_values[i]) if last_original_values is not None and i < len(last_original_values) else None,
+                                    "cutoff_date": str(cutoff_date) if cutoff_date is not None else None,
+                                    "pred_vals_sample": pred_vals.flatten().tolist()[:3] if hasattr(pred_vals, 'flatten') else [float(pred_vals[0])] if len(pred_vals) > 0 else []
+                                },
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "H1,H4"
+                            }
+                            f.write(json.dumps(entry) + "\n")
+                    except:
+                        pass
+                # #endregion
+                # Use pred_vals as-is (wrong, but better than crashing) - this will cause wrong metrics
+                result[:, i] = pred_vals
+                logger.warning(f"_reverse_transformation: Using pred_vals as-is for {series_name} (no accumulation) - PREDICTIONS WILL BE WRONG!")
         elif trans in ['pch', 'pc1']:
             # Percent change: x_t = x_{t-1} * (1 + p_t/100)
             result[:, i] = last_original_values[i] * (1 + pred_vals / 100.0) if has_last_val else pred_vals
@@ -229,13 +375,243 @@ def _reverse_transformation(
     return result.reshape(original_shape)
 
 
+def _check_needs_accumulation(
+    target_series: List[str],
+    data_loader: Any
+) -> bool:
+    """Check if any series uses chg/logdiff transformation requiring accumulation."""
+    if data_loader is None or not hasattr(data_loader, 'metadata') or data_loader.metadata is None:
+        return False
+    
+    metadata = data_loader.metadata
+    series_col = 'Series_ID' if 'Series_ID' in metadata.columns else 'SeriesID'
+    
+    for series_name in target_series:
+        if not series_name:
+            continue
+        meta_row = metadata[metadata[series_col] == series_name]
+        if len(meta_row) > 0:
+            trans = str(meta_row.iloc[0].get('Transformation', 'lin')).lower()
+            if trans in ['chg', 'ch1', 'logchg', 'logdiff']:
+                return True
+    return False
+
+
+def apply_inverse_transformations_with_accumulation(
+    predictions: np.ndarray,
+    dates: pd.DatetimeIndex,
+    target_series: List[str],
+    data_loader: Any,
+    test_data: Optional[pd.DataFrame] = None,
+    experiment_start_date: Optional[pd.Timestamp] = None
+) -> np.ndarray:
+    """Apply inverse transformations with sequential accumulation for chg/logdiff.
+    
+    This is a consolidated function that handles the common pattern of:
+    1. Checking if accumulation is needed
+    2. Applying inverse transformations sequentially
+    3. Tracking accumulated levels for chg/logdiff
+    
+    Parameters
+    ----------
+    predictions : np.ndarray
+        Predictions in transformed space, shape (n_samples, n_series)
+    dates : pd.DatetimeIndex
+        Dates corresponding to predictions
+    target_series : List[str]
+        Target series names
+    data_loader : Any
+        Data loader with metadata
+    test_data : pd.DataFrame, optional
+        Test data for getting last values
+        
+    Returns
+    -------
+    np.ndarray
+        Predictions in raw level space, same shape as input
+    """
+    if data_loader is None or not target_series:
+        return predictions
+    
+    needs_accumulation = _check_needs_accumulation(target_series, data_loader)
+    predictions_inv = np.zeros_like(predictions, dtype=float)
+    accumulated_levels = None
+    
+    # #region agent log
+    if 'KOEQUIPTE' in target_series or 'KOIPALL.G' in target_series:
+        try:
+            koequipte_idx = target_series.index('KOEQUIPTE') if 'KOEQUIPTE' in target_series else None
+            koipall_idx = target_series.index('KOIPALL.G') if 'KOIPALL.G' in target_series else None
+            with open("/data/nowcasting-kr/.cursor/debug.log", "a") as f:
+                entry = {
+                    "id": f"log_{int(pd.Timestamp.now().timestamp() * 1000)}",
+                    "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
+                    "location": "utils.py:321",
+                    "message": "apply_inverse_transformations entry - predictions",
+                    "data": {
+                        "target_series": target_series[:5],
+                        "koequipte_idx": koequipte_idx,
+                        "koipall_idx": koipall_idx,
+                        "predictions_shape": list(predictions.shape) if hasattr(predictions, 'shape') else None,
+                        "predictions_first3_mean": [float(np.mean(predictions[:3, i])) for i in [koequipte_idx, koipall_idx] if i is not None] if koequipte_idx is not None or koipall_idx is not None else None,
+                        "predictions_first3_std": [float(np.std(predictions[:3, i])) for i in [koequipte_idx, koipall_idx] if i is not None] if koequipte_idx is not None or koipall_idx is not None else None,
+                        "needs_accumulation": needs_accumulation
+                    },
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "H4"
+                }
+                f.write(json.dumps(entry) + "\n")
+        except:
+            pass
+    # #endregion
+    
+    for i, d in enumerate(dates):
+        last_original_values = accumulated_levels if (needs_accumulation and accumulated_levels is not None) else None
+        
+        # For first prediction in accumulation, get initial level from the date BEFORE the first forecast
+        # CRITICAL: We need the value BEFORE the first forecast date, not before experiment_start_date
+        # For weekly data, this is typically 1 week before the first forecast date
+        if needs_accumulation and last_original_values is None:
+            # First prediction: get initial level from the date BEFORE the first forecast date
+            # Use the date one week before the first forecast (or use experiment_start_date as fallback)
+            if i == 0:
+                # For the very first prediction, use the date before the first forecast date
+                # Try to get 1 week before first forecast date
+                first_forecast_date = pd.Timestamp(dates[0])
+                cutoff_for_initial = first_forecast_date - pd.Timedelta(weeks=1)
+                
+                # If experiment_start_date is provided and is more recent than cutoff, use it instead
+                # (This handles cases where experiment_start_date is closer to the forecast date)
+                if experiment_start_date is not None:
+                    exp_start = pd.Timestamp(experiment_start_date)
+                    # Use the later of: (first_forecast - 1 week) or experiment_start_date
+                    # This ensures we get the most recent available value
+                    if exp_start > cutoff_for_initial:
+                        cutoff_for_initial = exp_start
+                
+                logger.info(f"First prediction in accumulation: using cutoff={cutoff_for_initial.date()} (1 week before first forecast {first_forecast_date.date()}) for initial level lookup")
+            else:
+                # Should not happen - accumulated_levels should be set after first prediction
+                cutoff_for_initial = pd.Timestamp(d)
+                logger.warning(f"Unexpected: needs_accumulation=True but last_original_values=None for prediction {i} (not first). Using forecast date {d.date()}.")
+        else:
+            # Subsequent predictions: use forecast date (or accumulated_levels if available)
+            cutoff_for_initial = pd.Timestamp(d)
+        
+        # #region agent log
+        if 'KOEQUIPTE' in target_series or 'KOIPALL.G' in target_series:
+            try:
+                koequipte_idx = target_series.index('KOEQUIPTE') if 'KOEQUIPTE' in target_series else None
+                koipall_idx = target_series.index('KOIPALL.G') if 'KOIPALL.G' in target_series else None
+                with open("/data/nowcasting-kr/.cursor/debug.log", "a") as f:
+                    entry = {
+                        "id": f"log_{int(pd.Timestamp.now().timestamp() * 1000)}",
+                        "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
+                        "location": "utils.py:393-before-inverse-transform",
+                        "message": f"Before inverse_transform_predictions for date {d}",
+                        "data": {
+                            "date": str(d),
+                            "i": i,
+                            "needs_accumulation": needs_accumulation,
+                            "last_original_values": last_original_values.tolist() if last_original_values is not None else None,
+                            "predictions_i": predictions[i, koequipte_idx].tolist() if koequipte_idx is not None and predictions.shape[1] > koequipte_idx else None,
+                            "predictions_i_koipall": predictions[i, koipall_idx].tolist() if koipall_idx is not None and predictions.shape[1] > koipall_idx else None,
+                            "cutoff_for_initial": str(cutoff_for_initial)
+                        },
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "H1,H4"
+                    }
+                    f.write(json.dumps(entry) + "\n")
+            except:
+                pass
+        # #endregion
+        
+        inv_pred = inverse_transform_predictions(
+            predictions[i],
+            target_series,
+            data_loader,
+            reverse_transformations=True,
+            test_data=test_data,
+            cutoff_date=cutoff_for_initial,
+            last_original_values=last_original_values,
+        )
+        
+        # #region agent log
+        if 'KOEQUIPTE' in target_series or 'KOIPALL.G' in target_series:
+            try:
+                koequipte_idx = target_series.index('KOEQUIPTE') if 'KOEQUIPTE' in target_series else None
+                koipall_idx = target_series.index('KOIPALL.G') if 'KOIPALL.G' in target_series else None
+                with open("/data/nowcasting-kr/.cursor/debug.log", "a") as f:
+                    entry = {
+                        "id": f"log_{int(pd.Timestamp.now().timestamp() * 1000)}",
+                        "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
+                        "location": "utils.py:420-after-inverse-transform",
+                        "message": f"After inverse_transform_predictions for date {d}",
+                        "data": {
+                            "date": str(d),
+                            "i": i,
+                            "inv_pred": inv_pred.tolist() if inv_pred is not None else None,
+                            "inv_pred_koequipte": float(inv_pred[koequipte_idx]) if inv_pred is not None and koequipte_idx is not None and len(inv_pred) > koequipte_idx else None,
+                            "inv_pred_koipall": float(inv_pred[koipall_idx]) if inv_pred is not None and koipall_idx is not None and len(inv_pred) > koipall_idx else None,
+                            "predictions_inv_i": predictions_inv[i, koequipte_idx].tolist() if koequipte_idx is not None and predictions_inv.shape[1] > koequipte_idx else None
+                        },
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "H1,H4"
+                    }
+                    f.write(json.dumps(entry) + "\n")
+            except:
+                pass
+        # #endregion
+        
+        if inv_pred is not None:
+            predictions_inv[i] = inv_pred
+            if needs_accumulation:
+                accumulated_levels = inv_pred.copy()
+                # #region agent log
+                if 'KOEQUIPTE' in target_series or 'KOIPALL.G' in target_series:
+                    try:
+                        koequipte_idx = target_series.index('KOEQUIPTE') if 'KOEQUIPTE' in target_series else None
+                        koipall_idx = target_series.index('KOIPALL.G') if 'KOIPALL.G' in target_series else None
+                        with open("/data/nowcasting-kr/.cursor/debug.log", "a") as f:
+                            entry = {
+                                "id": f"log_{int(pd.Timestamp.now().timestamp() * 1000)}",
+                                "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
+                                "location": "utils.py:428-accumulated-levels-updated",
+                                "message": f"Updated accumulated_levels after date {d}",
+                                "data": {
+                                    "date": str(d),
+                                    "i": i,
+                                    "accumulated_levels": accumulated_levels.tolist() if accumulated_levels is not None else None,
+                                    "accumulated_koequipte": float(accumulated_levels[koequipte_idx]) if accumulated_levels is not None and koequipte_idx is not None and len(accumulated_levels) > koequipte_idx else None,
+                                    "accumulated_koipall": float(accumulated_levels[koipall_idx]) if accumulated_levels is not None and koipall_idx is not None and len(accumulated_levels) > koipall_idx else None
+                                },
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "H1,H4"
+                            }
+                            f.write(json.dumps(entry) + "\n")
+                    except:
+                        pass
+                # #endregion
+        else:
+            predictions_inv[i] = predictions[i]
+            if needs_accumulation:
+                accumulated_levels = predictions[i].copy()
+    
+    return predictions_inv
+
+
 def inverse_transform_predictions(
     predictions: np.ndarray,
     available_targets: List[str],
     data_loader: Any,
     reverse_transformations: bool = True,
     test_data: Optional[pd.DataFrame] = None,
-    cutoff_date: Optional[pd.Timestamp] = None
+    cutoff_date: Optional[pd.Timestamp] = None,
+    last_original_values: Optional[np.ndarray] = None
 ) -> np.ndarray:
     """Inverse transform predictions to original scale.
     
@@ -281,7 +657,7 @@ def inverse_transform_predictions(
     # (models handle scaling internally). We only need to reverse transformations.
     if reverse_transformations:
         predictions_original = _reverse_transformation(
-            predictions, available_targets, data_loader, test_data=test_data, cutoff_date=cutoff_date
+            predictions, available_targets, data_loader, test_data=test_data, cutoff_date=cutoff_date, last_original_values=last_original_values
         )
         return predictions_original
     
@@ -356,11 +732,19 @@ def extract_neuralforecast_forecasts(
         return np.full(len(target_series), np.nan)
     
     # Extract forecast column name with horizon (e.g., 'iTransformer_1', 'iTransformer_2')
-    horizon_cols = [c for c in forecast_df.columns if c.startswith(forecast_col.split('_')[0])]
+    # Sort horizon columns to ensure correct order (e.g., 'PatchTST_1', 'PatchTST_2', ..., 'PatchTST_40')
+    horizon_cols = sorted([c for c in forecast_df.columns if c.startswith(forecast_col.split('_')[0])], 
+                          key=lambda x: int(x.split('_')[-1]) if x.split('_')[-1].isdigit() else 0)
     if horizon_idx < len(horizon_cols):
         forecast_col = horizon_cols[horizon_idx]
     elif horizon_cols:
-        forecast_col = horizon_cols[-1]  # Use last available horizon
+        # If horizon_idx is out of bounds, use the last available horizon (closest approximation)
+        # This handles cases where model was trained with prediction_length < requested horizon
+        logger.warning(
+            f"Horizon index {horizon_idx} is out of bounds (model has {len(horizon_cols)} horizons). "
+            f"Using last available horizon ({horizon_cols[-1]}) as approximation."
+        )
+        forecast_col = horizon_cols[-1]
     
     forecast_values = []
     for series_id in target_series:
@@ -805,6 +1189,17 @@ def aggregate_weekly_to_monthly_tent_kernel(
     
     if target_series is None or len(target_series) == 0:
         raise ValueError("target_series cannot be None or empty for aggregation")
+    
+    # Ensure target_series matches predictions shape
+    n_pred_series = predictions.shape[1] if predictions.ndim > 1 else 1
+    if len(target_series) != n_pred_series:
+        logger.warning(f"target_series length ({len(target_series)}) doesn't match predictions shape ({n_pred_series}). Truncating/padding.")
+        if len(target_series) > n_pred_series:
+            target_series = target_series[:n_pred_series]
+        else:
+            # Pad with generic names (won't be used for monthly_mask but needed for shape)
+            target_series = target_series + [f"_series_{i}" for i in range(len(target_series), n_pred_series)]
+    
     monthly_mask = np.ones(len(target_series), dtype=bool) if monthly_series is None else np.array([s in monthly_series for s in target_series])
     
     # Group dates by year-month
@@ -839,6 +1234,22 @@ def aggregate_weekly_to_monthly_tent_kernel(
         monthly_dates_list.append(month_end_date)
     
     return np.vstack(monthly_predictions_list), pd.DatetimeIndex(monthly_dates_list)
+
+
+def _extract_last_value_in_month(
+    month_data: pd.DataFrame,
+    target_series: List[str]
+) -> np.ndarray:
+    """Extract last non-NaN value per series in a month."""
+    actuals_values = []
+    for series_name in target_series:
+        series_values = month_data[series_name].dropna()
+        if len(series_values) > 0:
+            series_values_sorted = series_values.sort_index()
+            actuals_values.append(series_values_sorted.iloc[-1])
+        else:
+            actuals_values.append(np.nan)
+    return np.array(actuals_values)
 
 
 def extract_monthly_actuals(
@@ -877,7 +1288,6 @@ def extract_monthly_actuals(
     valid_dates = []
     
     for month_date in monthly_dates:
-        # Get all data points in this month
         month_mask = (test_data.index.year == month_date.year) & \
                      (test_data.index.month == month_date.month)
         month_data = test_data.loc[month_mask, target_series]
@@ -885,22 +1295,8 @@ def extract_monthly_actuals(
         if len(month_data) == 0:
             continue
         
-        # Extract actuals: last non-NaN value per series in the month
-        actuals_for_month = np.zeros(len(target_series))
-        has_data = False
-        
-        for series_idx, series_name in enumerate(target_series):
-            series_values = month_data[series_name].dropna()
-            if len(series_values) > 0:
-                # Sort by index to ensure we get the chronologically last value
-                # When there are duplicate dates, this ensures we get the last occurrence
-                series_values_sorted = series_values.sort_index()
-                actuals_for_month[series_idx] = series_values_sorted.iloc[-1]  # Last value in month
-                has_data = True
-            else:
-                actuals_for_month[series_idx] = np.nan
-        
-        if has_data:
+        actuals_for_month = _extract_last_value_in_month(month_data, target_series)
+        if not np.isnan(actuals_for_month).all():
             monthly_actuals.append(actuals_for_month)
             valid_dates.append(month_date)
     
@@ -1055,6 +1451,34 @@ def extract_forecast_values(
     
     # Ensure correct length
     forecast_values = np.asarray(forecast_values)
+    
+    # #region agent log
+    if forecast_values.size > 0 and forecast_values.size <= 50:  # Only log for reasonable sizes
+        try:
+            with open("/data/nowcasting-kr/.cursor/debug.log", "a") as f:
+                import json
+                from datetime import datetime
+                entry = {
+                    "id": f"log_{int(datetime.now().timestamp() * 1000)}",
+                    "timestamp": int(datetime.now().timestamp() * 1000),
+                    "location": "utils.py:1198",
+                    "message": "extract_forecast_values result",
+                    "data": {
+                        "forecast_values_shape": list(forecast_values.shape) if hasattr(forecast_values, 'shape') else None,
+                        "forecast_values_first10": forecast_values.flatten()[:10].tolist() if forecast_values.size > 0 else [],
+                        "n_series_requested": n_series,
+                        "forecast_values_mean": float(np.mean(forecast_values)) if forecast_values.size > 0 else None,
+                        "forecast_values_std": float(np.std(forecast_values)) if forecast_values.size > 0 else None
+                    },
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "H5"
+                }
+                f.write(json.dumps(entry) + "\n")
+        except:
+            pass
+    # #endregion
+    
     if len(forecast_values) >= n_series:
         forecast_values = forecast_values[:n_series]
     else:
@@ -1111,6 +1535,8 @@ def get_target_series_from_dataset(dataset: Any, test_data: pd.DataFrame, defaul
     """Extract target series from dataset or use defaults.
     
     Helper function to extract target series from various dataset types.
+    If dataset has covariates, targets are computed as all_series - covariates.
+    If target_series is None or empty, all series are used as targets (default behavior).
     
     Parameters
     ----------
@@ -1119,7 +1545,7 @@ def get_target_series_from_dataset(dataset: Any, test_data: pd.DataFrame, defaul
     test_data : pd.DataFrame
         Test data to fallback to column names
     default : list, optional
-        Default target series list
+        Default target series list (deprecated, use covariates instead)
     
     Returns
     -------
@@ -1134,12 +1560,22 @@ def get_target_series_from_dataset(dataset: Any, test_data: pd.DataFrame, defaul
     # Try to extract from dataset object
     target_series = _extract_target_series_from_object(dataset)
     
-    # Use default if provided
-    if target_series is None:
+    # If dataset has covariates, compute targets from covariates
+    if dataset is not None and hasattr(dataset, 'covariates') and dataset.covariates:
+        all_series = list(test_data.columns)
+        date_cols = {'date', 'date_w', 'Date', 'Date_w'}
+        all_series = [s for s in all_series if s not in date_cols]
+        available_covariates = [c for c in dataset.covariates if c in test_data.columns]
+        target_series = [s for s in all_series if s not in available_covariates]
+        if target_series:
+            return target_series
+    
+    # Use default if provided (backward compatibility)
+    if target_series is None or len(target_series) == 0:
         target_series = default
     
-    # Fallback to all test_data columns
-    if target_series is None:
+    # Fallback to all test_data columns (default: all series are targets)
+    if target_series is None or len(target_series) == 0:
         target_series = list(test_data.columns)
     
     # Filter to series that exist in test_data (exclude date columns)

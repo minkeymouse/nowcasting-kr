@@ -14,6 +14,7 @@ from src.utils import (
     convert_to_neuralforecast_format,
     extract_neuralforecast_forecasts,
 )
+from src.train._common import get_processed_data_from_loader
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ def _resolve_forecast_targets(
     Keeps consistent logic across recursive and multi-horizon forecasting.
     """
     if is_multivariate:
-        date_cols = {'date', 'date_w', 'Date', 'Date_w'}
+        date_cols = {'date', 'date_w', 'date_m', 'Date', 'Date_w', 'Date_m', 'year', 'month', 'day'}
         all_variables = [col for col in test_data.columns if col not in date_cols]
         # Prefer the model's target ordering if available (ensures training/eval alignment)
         if model_targets:
@@ -315,24 +316,110 @@ def run_recursive_forecast_neuralforecast(
     start_ts = pd.Timestamp(start_date) if start_date else test_data.index.min()
     end_ts = pd.Timestamp(end_date) if end_date else test_data.index.max()
     
-    # Filter test data to experiment date range
+    # Prepare data for model updates - include training data for sufficient context
+    # Combine training data with test_data to provide historical context for first predictions
+    if data_loader is not None and hasattr(data_loader, 'training_data') and data_loader.training_data is not None:
+        # Get training data in original scale (same as what model was trained on)
+        training_data_original = get_processed_data_from_loader(
+            data_loader.training_data, data_loader, model_type.upper()
+        )
+        # CRITICAL: Filter available_targets to only include columns present in both training and test data
+        # This must be done BEFORE using available_targets, to ensure we have exactly n_series columns
+        model = nf_model.models[0]
+        n_series = getattr(model, 'n_series', len(available_targets))
+        
+        # Get ALL common columns (exist in both datasets) - this is the source of truth
+        date_cols = {'date', 'date_w', 'date_m', 'Date', 'Date_w', 'Date_m', 'year', 'month', 'day'}
+        all_test_cols = [col for col in test_data.columns if col not in date_cols]
+        all_train_cols = [col for col in training_data_original.columns if col not in date_cols]
+        all_common_cols = [col for col in all_test_cols if col in all_train_cols]
+        
+        # Use common columns, ensuring we have exactly n_series
+        if len(all_common_cols) >= n_series:
+            # Prefer model_targets order if available, otherwise use common columns in their order
+            if model_targets and len(model_targets) > 0:
+                # Filter model_targets to only those in common_cols, preserving order
+                model_targets_filtered = [col for col in model_targets if col in all_common_cols]
+                if len(model_targets_filtered) >= n_series:
+                    available_targets = model_targets_filtered[:n_series]
+                    logger.info(f"Using {len(available_targets)} columns from model_targets (exact training order)")
+                else:
+                    available_targets = all_common_cols[:n_series]
+                    logger.info(f"Using {len(available_targets)} common columns (model_targets had {len(model_targets_filtered)})")
+            else:
+                available_targets = all_common_cols[:n_series]
+                logger.info(f"Using {len(available_targets)} common columns (no model_targets available)")
+        else:
+            available_targets = all_common_cols
+            logger.warning(f"Not enough common columns ({len(all_common_cols)}) for model's n_series ({n_series}). Model may fail.")
+        
+        # Final validation
+        if len(available_targets) != n_series:
+            logger.error(f"Column count mismatch: available_targets has {len(available_targets)} columns but model expects {n_series}")
+        missing = [col for col in available_targets if col not in training_data_original.columns or col not in test_data.columns]
+        if missing:
+            logger.error(f"Some available_targets missing from datasets: {missing}")
+    
+    # Filter test data to experiment date range (after available_targets is finalized)
     test_data_for_forecasts, _, _ = filter_and_prepare_test_data(
         test_data, start_date, end_date, available_targets
     )
     
-    # Prepare data for model updates
-    if is_multivariate:
-        # Multivariate: use all variables
-        full_data_for_updates = test_data[available_targets].copy()
-    else:
-        # TFT: use primary target + covariates
-        if hist_exog_list:
-            # Include covariates
-            all_cols = available_targets + [col for col in hist_exog_list if col in test_data.columns]
-            full_data_for_updates = test_data[all_cols].copy()
+    # Continue with data preparation
+    if data_loader is not None and hasattr(data_loader, 'training_data') and data_loader.training_data is not None:
+        # Get training data in original scale (same as what model was trained on)
+        training_data_original = get_processed_data_from_loader(
+            data_loader.training_data, data_loader, model_type.upper()
+        )
+        
+        # Combine training + test data
+        if is_multivariate:
+            full_data_for_updates = pd.concat([
+                training_data_original[available_targets],
+                test_data[available_targets]
+            ]).sort_index()
         else:
-            # Only primary target
+            if hist_exog_list:
+                all_cols = available_targets + [col for col in hist_exog_list if col in test_data.columns]
+                training_cols = [col for col in all_cols if col in training_data_original.columns and col in test_data.columns]
+                test_cols = [col for col in all_cols if col in test_data.columns]
+                full_data_for_updates = pd.concat([
+                    training_data_original[training_cols],
+                    test_data[test_cols]
+                ]).sort_index()
+            else:
+                full_data_for_updates = pd.concat([
+                    training_data_original[available_targets],
+                    test_data[available_targets]
+                ]).sort_index()
+        
+        # CRITICAL: Update full_data_for_updates with observed values from test_data
+        # This ensures we use actual observed values instead of NaNs where available
+        for date_idx in full_data_for_updates.index:
+            if date_idx in test_data.index:
+                for col_name in available_targets:
+                    if col_name in test_data.columns:
+                        observed_val = test_data.loc[date_idx, col_name]
+                        if not pd.isna(observed_val):
+                            full_data_for_updates.loc[date_idx, col_name] = observed_val
+        
+        logger.info(f"Combined training data ({len(training_data_original)}) with test data ({len(test_data)}) for forecasting context")
+        logger.info(f"Updated full_data_for_updates with observed values from test_data")
+    else:
+        # Fallback: use only test_data if training data not available
+        if is_multivariate:
+            # Multivariate: use all variables
             full_data_for_updates = test_data[available_targets].copy()
+        else:
+            # TFT: use primary target + covariates
+            if hist_exog_list:
+                # Include covariates
+                all_cols = available_targets + [col for col in hist_exog_list if col in test_data.columns]
+                full_data_for_updates = test_data[all_cols].copy()
+            else:
+                # Only primary target
+                full_data_for_updates = test_data[available_targets].copy()
+        logger.warning("Training data not available - using only test_data (may cause poor first predictions)")
     
     # Use actual weekly dates from filtered test data
     weekly_dates = test_data_for_forecasts.index[(test_data_for_forecasts.index >= start_ts) & 
@@ -353,7 +440,9 @@ def run_recursive_forecast_neuralforecast(
         cutoff_date = weekly_dates[i]
         next_date = weekly_dates[i + 1]
         
-        # Get data up to cutoff from FULL test_data
+        # Get data up to cutoff from FULL combined data (training + test)
+        # Note: full_data_for_updates already has observed values from test_data (updated above)
+        # Use data up to cutoff_date (not including next_date, as we're predicting it)
         train_data_up_to_cutoff = full_data_for_updates[full_data_for_updates.index <= cutoff_date].copy()
         
         # Impute missing values
@@ -401,6 +490,16 @@ def run_recursive_forecast_neuralforecast(
         if next_date in test_data_for_forecasts.index and primary_target:
             actual_values = test_data_for_forecasts.loc[next_date, [primary_target]].values
             actuals.append(actual_values)
+            
+            # Update full_data_for_updates with observed values for next iteration
+            # This ensures subsequent predictions use the most recent observed data
+            if next_date in full_data_for_updates.index:
+                for col_idx, col_name in enumerate(available_targets):
+                    if col_name in test_data_for_forecasts.columns:
+                        observed_val = test_data_for_forecasts.loc[next_date, col_name]
+                        if not pd.isna(observed_val):
+                            full_data_for_updates.loc[next_date, col_name] = observed_val
+                            logger.debug(f"Updated {col_name} at {next_date.date()} with observed value {observed_val:.2f}")
         else:
             logger.warning(f"No actual data for {next_date.date()}")
             actuals.append(np.full(1, np.nan))
@@ -445,6 +544,159 @@ def _forecast_neuralforecast_models(checkpoint_path: Path, horizon: int, model_t
     logger.info(f"Forecast status saved to: {output_dir}")
 
 
+def _run_multi_horizon_forecast_recursive(
+    checkpoint_path: Path,
+    horizons: List[int],
+    start_date: str,
+    test_data: Optional[pd.DataFrame] = None,
+    model_type: str = "patchtst",
+    target_series: Optional[List[str]] = None,
+    data_loader: Optional[Any] = None,
+    return_weekly_forecasts: bool = False
+) -> Tuple[Dict[int, Any], List[str]]:
+    """Run multi-horizon forecasting using recursive approach for models with h=1.
+    
+    For models trained with prediction_length=1, we recursively predict step-by-step
+    to reach longer horizons.
+    """
+    from src.utils import (
+        get_target_series_from_model,
+        load_model_checkpoint,
+        interpolate_missing_values,
+        convert_to_neuralforecast_format,
+        extract_neuralforecast_forecasts,
+    )
+    from src.train._common import get_processed_data_from_loader
+    
+    # Load model
+    logger.info(f"Loading {model_type.upper()} model for recursive multi-horizon forecasting from {start_date}")
+    model = load_model_checkpoint(checkpoint_path)
+    
+    # Extract model information
+    model_targets, hist_exog_list, is_multivariate = _extract_model_info(model)
+    
+    start_date_ts = pd.Timestamp(start_date)
+    forecasts = {}
+    
+    # Get actual target series
+    if test_data is not None:
+        available_targets, primary_target = _resolve_forecast_targets(
+            model, test_data, target_series, hist_exog_list, is_multivariate, model_targets
+        )
+    else:
+        available_targets = None
+        primary_target = None
+    
+    if test_data is None or not available_targets:
+        logger.warning("No test_data or available_targets for recursive multi-horizon forecasting")
+        return {}, []
+    
+    # Prepare initial data: combine training + test data up to start_date
+    if data_loader is not None:
+        # Get training data in original scale
+        training_data_original = get_processed_data_from_loader(
+            test_data, data_loader, model_type.upper()
+        )
+        # Combine training + test data
+        full_data = pd.concat([training_data_original, test_data]).sort_index()
+        full_data = full_data[~full_data.index.duplicated(keep='last')].sort_index()
+    else:
+        full_data = test_data
+    
+    # For each horizon, recursively predict step-by-step
+    for horizon in horizons:
+        # Get data up to start_date
+        data_up_to_start = full_data[full_data.index < start_date_ts][available_targets].copy()
+        data_up_to_start = interpolate_missing_values(data_up_to_start, data_loader)
+        
+        # Convert to NeuralForecast format
+        if is_multivariate:
+            nf_df = convert_to_neuralforecast_format(data_up_to_start, available_targets)
+        else:
+            if hist_exog_list and len(hist_exog_list) > 0:
+                all_cols = available_targets + [col for col in hist_exog_list if col in full_data.columns]
+                train_data_full = full_data[full_data.index < start_date_ts][all_cols].copy()
+                train_data_full = interpolate_missing_values(train_data_full, data_loader)
+                target_data = train_data_full[available_targets].copy()
+                covariate_cols = [col for col in hist_exog_list if col in train_data_full.columns]
+                covariate_data = train_data_full[covariate_cols].copy() if covariate_cols else None
+                nf_df = convert_to_neuralforecast_format(
+                    target_data, available_targets,
+                    covariate_data=covariate_data,
+                    covariate_names=covariate_cols
+                )
+            else:
+                nf_df = convert_to_neuralforecast_format(data_up_to_start, available_targets)
+        
+        # Build up predictions recursively
+        current_data = nf_df.copy()
+        weekly_predictions = []
+        weekly_dates = []
+        
+        for step in range(horizon):
+            # Predict 1 step ahead
+            forecast_df = model.predict(df=current_data)
+            
+            # Extract the 1-step forecast (horizon_idx=0)
+            step_forecast = extract_neuralforecast_forecasts(forecast_df, available_targets, horizon_idx=0)
+            step_date = start_date_ts + pd.Timedelta(weeks=step + 1)
+            
+            weekly_predictions.append(step_forecast)
+            weekly_dates.append(step_date)
+            
+            # Update current_data with the prediction for next step (recursive)
+            # Append the forecast to the data for next prediction
+            if len(step_forecast) > 0:
+                new_row = {
+                    'unique_id': current_data['unique_id'].iloc[0],
+                    'ds': step_date,
+                    'y': step_forecast[0] if len(step_forecast) > 0 else np.nan
+                }
+                # Add covariates if present (use last known values)
+                if hist_exog_list and len(hist_exog_list) > 0:
+                    for col in hist_exog_list:
+                        if col in current_data.columns and len(current_data) > 0:
+                            new_row[col] = current_data[col].iloc[-1]
+                
+                current_data = pd.concat([current_data, pd.DataFrame([new_row])], ignore_index=True)
+        
+        if return_weekly_forecasts:
+            # For monthly aggregation, get all weeks in the target month
+            horizon_date = start_date_ts + pd.Timedelta(weeks=horizon)
+            month_start = pd.Timestamp(year=horizon_date.year, month=horizon_date.month, day=1)
+            month_end = month_start + pd.offsets.MonthEnd(0)
+            
+            month_weekly_dates = []
+            month_forecast_values = []
+            
+            for pred_date, pred_val in zip(weekly_dates, weekly_predictions):
+                if month_start <= pred_date <= month_end:
+                    month_weekly_dates.append(pred_date)
+                    month_forecast_values.append(pred_val)
+            
+            if month_forecast_values:
+                forecasts[horizon] = {
+                    'weekly_forecasts': np.array(month_forecast_values),
+                    'dates': pd.DatetimeIndex(month_weekly_dates),
+                    '_available_targets': available_targets,
+                    '_primary_target': primary_target
+                }
+            else:
+                # Fallback: use the horizon step prediction
+                forecasts[horizon] = weekly_predictions[-1] if weekly_predictions else np.full(len(available_targets), np.nan)
+        else:
+            # Return the prediction at the horizon step
+            forecasts[horizon] = weekly_predictions[-1] if weekly_predictions else np.full(len(available_targets), np.nan)
+    
+    # Return series list for evaluation
+    if is_multivariate and primary_target:
+        series_for_outputs = [primary_target]
+    else:
+        series_for_outputs = [available_targets[0]] if available_targets else []
+    
+    return forecasts, series_for_outputs
+
+
 def _run_multi_horizon_forecast_neuralforecast(
     checkpoint_path: Path,
     horizons: List[int],
@@ -470,6 +722,19 @@ def _run_multi_horizon_forecast_neuralforecast(
     
     # Extract model information
     model_targets, hist_exog_list, is_multivariate = _extract_model_info(model)
+    
+    # Check if model supports multi-horizon (has h > 1) or needs recursive forecasting
+    if hasattr(model, 'models') and len(model.models) > 0:
+        nf_model = model.models[0]
+        model_h = getattr(nf_model, 'h', 1)
+        if model_h == 1:
+            # Model only supports 1-step ahead - use recursive forecasting for long-term
+            logger.info(f"Model has h=1, using recursive forecasting for long-term horizons")
+            return _run_multi_horizon_forecast_recursive(
+                checkpoint_path, horizons, start_date, test_data,
+                model_type=model_type, target_series=target_series,
+                data_loader=data_loader, return_weekly_forecasts=return_weekly_forecasts
+            )
     
     start_date_ts = pd.Timestamp(start_date)
     forecasts = {}

@@ -154,10 +154,45 @@ def run_recursive_forecast(
     if not eval_targets:
         raise ValueError("No evaluation target series found in test_data")
     
+    # Mamba uses ORIGINAL (raw levels) data like attention-based models
+    # CRITICAL: Concatenate training data with test data to provide sufficient historical context
+    # This ensures the model has enough context for the first predictions (similar to NeuralForecast models)
+    from src.train._common import get_processed_data_from_loader
+    if data_loader is not None:
+        # Get training data (original levels)
+        training_data_original = get_processed_data_from_loader(
+            test_data, data_loader, "Mamba"
+        )
+        # Ensure only numeric columns are used
+        training_numeric = training_data_original.select_dtypes(include=[np.number])
+        test_numeric = test_data.select_dtypes(include=[np.number])
+        
+        # Combine training + test data for full historical context
+        # Ensure both have the same columns
+        common_cols = [col for col in training_numeric.columns if col in test_numeric.columns]
+        if model_features:
+            common_cols = [col for col in common_cols if col in model_features]
+        
+        if common_cols:
+            training_subset = training_numeric[common_cols].copy()
+            test_subset = test_numeric[common_cols].copy()
+            full_data_for_updates = pd.concat([training_subset, test_subset]).sort_index()
+            # Remove duplicates (keep test_data values where they overlap)
+            full_data_for_updates = full_data_for_updates[~full_data_for_updates.index.duplicated(keep='last')].sort_index()
+            
+            test_data_for_context = full_data_for_updates.copy()
+            logger.info(f"Using combined training+test data for Mamba context. Features: {len(common_cols)}")
+        else:
+            # Fallback: use test_data only
+            test_data_for_context = test_data[model_features].copy() if model_features else test_data.copy()
+            logger.warning("No common columns found, using test_data only")
+    else:
+        # Fallback: use test_data only
+        test_data_for_context = test_data[model_features].copy() if model_features else test_data.copy()
+    
     test_data_filtered, _, _ = filter_and_prepare_test_data(
         test_data, start_date, end_date, model_features
     )
-    test_data_for_context = test_data[model_features].copy() if model_features else test_data.copy()
     
     start_ts = pd.Timestamp(start_date)
     end_ts = pd.Timestamp(end_date)
@@ -184,8 +219,8 @@ def run_recursive_forecast(
         
         if len(train_data_up_to_cutoff) < context_length:
             if len(train_data_up_to_cutoff) == 0:
-                predictions.append(np.full(len(available_targets), np.nan))
-                actuals.append(np.full(len(available_targets), np.nan))
+                predictions.append(np.full(len(eval_targets), np.nan))
+                actuals.append(np.full(len(eval_targets), np.nan))
                 forecast_dates.append(next_date)
                 continue
             padding_needed = context_length - len(train_data_up_to_cutoff)
@@ -224,6 +259,7 @@ def run_recursive_forecast(
         pred = pred[eval_indices]
         predictions.append(pred)
         forecast_dates.append(next_date)
+        # Get actuals from test_data (both are in original levels now)
         actuals.append(
             test_data_filtered.loc[next_date, eval_targets].values
             if next_date in test_data_filtered.index

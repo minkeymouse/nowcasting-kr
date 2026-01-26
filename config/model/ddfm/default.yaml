@@ -36,7 +36,7 @@ lags_input: 0  # Number of lags of inputs on encoder (default 0)
 # Data Handling
 # DDFM is a deep learning autoencoder - no frequency specification needed
 # All series are used for reconstruction in the autoencoder
-target_scaler: standard  # Standard scaler for target series
+scaler: standard  # Standard scaler for target series
 
 # Interpolation Parameters (for handling missing values)
 interpolation_method: linear  # Interpolation method: 'linear', 'spline', 'cubic', etc. (default: 'linear' for stability)

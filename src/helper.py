@@ -40,7 +40,15 @@ def find_checkpoint_path(outputs_dir: Path, error_msg: Optional[str] = None) -> 
         checkpoint_path = outputs_dir / "model.zip"
     
     if not checkpoint_path.exists():
-        default_msg = f"Model checkpoint not found at {outputs_dir}. Train the model first with train=true."
+        # Check if directory exists but is empty (training may have failed)
+        if outputs_dir.exists() and len(list(outputs_dir.iterdir())) == 0:
+            default_msg = (
+                f"Model checkpoint not found at {outputs_dir}. "
+                f"Training may have failed - check training logs for errors. "
+                f"Train the model first with train=true."
+            )
+        else:
+            default_msg = f"Model checkpoint not found at {outputs_dir}. Train the model first with train=true."
         raise FileNotFoundError(error_msg or default_msg)
     
     return checkpoint_path
@@ -230,6 +238,9 @@ def infer_frequency(data_or_model: Any, default: str = 'W') -> str:
 def extract_target_series_from_config(cfg: Any) -> Optional[list]:
     """Extract target series from model config.
     
+    Checks for covariates first (new approach), then falls back to target_series (backward compatibility).
+    If covariates is found, returns None (targets will be computed as all_series - covariates).
+    
     Parameters
     ----------
     cfg : Any
@@ -238,18 +249,30 @@ def extract_target_series_from_config(cfg: Any) -> Optional[list]:
     Returns
     -------
     list or None
-        List of target series names, or None if not found
+        List of target series names (from target_series), or None if covariates found or not found
     """
     # Extract model config from nested structure
     model_cfg = cfg.get('model', cfg) if hasattr(cfg, 'get') else cfg
     
-    # Check for target_series attribute (DictConfig or object)
+    # Check for covariates first (new approach)
+    if hasattr(model_cfg, 'covariates'):
+        covariates = model_cfg.covariates
+        if covariates is not None:
+            # If covariates found, return None (targets will be computed as all_series - covariates)
+            return None
+    
+    if isinstance(model_cfg, dict) and 'covariates' in model_cfg:
+        covariates = model_cfg['covariates']
+        if covariates is not None:
+            # If covariates found, return None (targets will be computed as all_series - covariates)
+            return None
+    
+    # Fallback to target_series (backward compatibility)
     if hasattr(model_cfg, 'target_series'):
         target_series = model_cfg.target_series
         if target_series is not None:
             return list(target_series) if not isinstance(target_series, list) else target_series
     
-    # Check for target_series key (dict)
     if isinstance(model_cfg, dict) and 'target_series' in model_cfg:
         target_series = model_cfg['target_series']
         if target_series is not None:

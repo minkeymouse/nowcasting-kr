@@ -158,6 +158,8 @@ def train_mamba_model(
     
     logger.info(f"Training Mamba model...")
     
+    # Mamba uses ORIGINAL (raw levels) data like attention-based models
+    # NOT processed data (with transformations) like DFM/DDFM
     data = get_processed_data_from_loader(data, data_loader, "Mamba")
     logger.info(f"Training data shape: {data.shape}")
     
