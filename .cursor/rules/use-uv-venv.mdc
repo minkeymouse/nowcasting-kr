@@ -1,0 +1,120 @@
+---
+description: Always use uv and virtual environment for Python testing and execution
+alwaysApply: true
+---
+
+# Use UV and Virtual Environment
+
+## Core Requirement
+
+**Always use `uv` package manager and a virtual environment** for all Python operations, testing, and dependency management.
+
+## Setup Pattern
+
+### 1. Create Virtual Environment with UV
+
+```bash
+# Create venv using uv
+uv venv
+
+# Activate venv
+source .venv/bin/activate  # Linux/Mac
+# or
+.venv\Scripts\activate  # Windows
+```
+
+### 2. Install Dependencies with UV
+
+```bash
+# Install from requirements or pyproject.toml
+uv pip install -r requirements.txt
+# or
+uv pip install -e .
+
+# Install specific package
+uv pip install pykalman
+```
+
+### 3. Run Tests with UV
+
+```bash
+# Run pytest through uv
+uv run pytest
+
+# Run specific test file
+uv run pytest test/test_dfm.py
+
+# Run Python script
+uv run python tutorial/tutorial_finance_dfm.py
+```
+
+## Commands to Use
+
+### ❌ BAD: Direct system Python
+```bash
+python3 tutorial/tutorial_finance_dfm.py
+pip install pykalman
+pytest test/
+```
+
+### ✅ GOOD: UV with venv
+```bash
+uv run python tutorial/tutorial_finance_dfm.py
+uv pip install pykalman
+uv run pytest test/
+```
+
+## When Running Code
+
+- **Always activate venv first** or use `uv run`
+- **Never use system `pip`** - use `uv pip` instead
+- **Never use system `python`** directly - use `uv run python`
+- **Check for `.venv` directory** before running commands
+
+## Virtual Environment Location
+
+- Default: `.venv/` in project root
+- If missing, create it: `uv venv`
+- Always activate before operations or use `uv run`
+
+## Examples
+
+### Running Tutorials
+```bash
+# ✅ GOOD
+cd dfm-python
+source .venv/bin/activate
+uv run python tutorial/tutorial_finance_dfm.py
+
+# ❌ BAD
+cd dfm-python
+python3 tutorial/tutorial_finance_dfm.py
+```
+
+### Installing Dependencies
+```bash
+# ✅ GOOD
+uv pip install pykalman pytest
+
+# ❌ BAD
+pip install pykalman pytest
+```
+
+### Running Tests
+```bash
+# ✅ GOOD
+uv run pytest src/test/
+
+# ❌ BAD
+pytest src/test/
+```
+
+## Checklist
+
+Before running any Python code:
+- [ ] Virtual environment exists (`.venv/`)
+- [ ] Venv is activated OR using `uv run`
+- [ ] Using `uv pip` for installs
+- [ ] Using `uv run` for execution
+
+**Never bypass the virtual environment or use system Python directly.**

@@ -1,0 +1,96 @@
+---
+description: Prevent timeouts by avoiding excessive thinking and tool calls
+alwaysApply: true
+---
+
+# Avoid Timeouts - Be Direct and Efficient
+
+## Core Principle
+
+**Think efficiently (10-20 seconds max), then act.** Moderate reasoning is acceptable, but excessive internal processing causes timeouts. Balance understanding with action.
+
+## Guidelines
+
+### 1. Reasonable Thinking Time
+
+- **10-20 seconds of thinking is acceptable** for complex tasks
+- **Don't exceed 20 seconds** of internal reasoning
+- **Skip verbose explanations** of what you're about to do
+- **Execute after brief analysis** when the task is clear
+- Keep thinking focused and goal-oriented
+
+### 2. Batch Tool Calls Efficiently
+
+- **Group related operations** in parallel when possible
+- **Read multiple files** in a single batch if needed
+- **Avoid sequential tool calls** that could be parallel
+- Don't call tools just to "check" - call them to act
+
+### 3. Direct Action Pattern
+
+```python
+# ❌ BAD: Excessive thinking before action
+# "Let me first understand the codebase structure, then check imports, 
+#  then verify dependencies, then read the file, then analyze..."
+# [5 tool calls, 30 seconds of thinking]
+
+# ✅ GOOD: Direct action
+# Read file → Fix issue → Verify
+# [2-3 tool calls, minimal thinking]
+```
+
+### 4. When to Think vs Act
+
+- **Think briefly (5-10 seconds)** when:
+  - Task is straightforward (read file, fix syntax, update config)
+  - Pattern is clear from context
+  - User explicitly asked for action
+
+- **Think moderately (10-20 seconds)** when:
+  - Need to understand complex logic
+  - Multiple approaches possible
+  - Risk of breaking something
+  - Need to analyze codebase structure
+
+- **Never exceed 20 seconds** - if still unsure after 20 seconds, act and iterate
+
+### 5. Tool Call Strategy
+
+- **Read files in parallel** when exploring
+- **Batch edits** when making related changes
+- **Skip verification steps** unless explicitly requested
+- **Don't read files** you don't need to modify
+
+### 6. Response Style
+
+- **Be concise** in explanations
+- **Show progress** through actions, not words
+- **Report results** briefly after completion
+- Avoid "I'm going to..." - just do it
+
+## Examples
+
+### Good: Direct Fix
+```
+User: "Fix the import error in utils.py"
+Assistant: [Reads file, fixes import, verifies] "Fixed: removed non-existent import."
+```
+
+### Bad: Overthinking
+```
+User: "Fix the import error in utils.py"
+Assistant: "Let me first understand the codebase structure. I'll check what imports are available, 
+then verify the error, then analyze the dependency graph, then fix it..." [timeout]
+```
+
+## Red Flags
+
+Stop and act if you notice:
+- Thinking for more than 20 seconds
+- Circular reasoning or over-analyzing the same point
+- Planning excessive verification steps
+- Explaining what you're about to do at length
+- Making tool calls just to "check" without clear purpose
+- Reading files you won't modify
+
+**Remember: 10-20 seconds of thinking is fine. Beyond 20 seconds, act and iterate.**
