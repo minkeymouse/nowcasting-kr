@@ -46,3 +46,5 @@ log/
 clone/
 checkpoints/
 *.log
+
+export_kdi/

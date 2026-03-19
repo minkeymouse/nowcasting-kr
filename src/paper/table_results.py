@@ -147,7 +147,11 @@ def aggregate_all_results(
                     'smse': metrics['smse'],
                     'smae': metrics['smae']
                 })
-                logger.debug(f"Loaded short_term/{data_model}/{model}: sMSE={metrics['smse']:.4f}, sMAE={metrics['smae']:.4f}")
+                smse = metrics.get("smse")
+                smae = metrics.get("smae")
+                smse_str = f"{smse:.4f}" if isinstance(smse, (int, float)) and smse is not None else str(smse)
+                smae_str = f"{smae:.4f}" if isinstance(smae, (int, float)) and smae is not None else str(smae)
+                logger.debug(f"Loaded short_term/{data_model}/{model}: sMSE={smse_str}, sMAE={smae_str}")
     
     # Process long-term experiments
     logger.info("Processing long-term experiments...")
@@ -174,7 +178,11 @@ def aggregate_all_results(
                                 'smse': metrics['smse'],
                                 'smae': metrics['smae']
                             })
-                            logger.debug(f"Loaded long_term/{data_model}/{model}/{horizon}: sMSE={metrics['smse']:.4f}, sMAE={metrics['smae']:.4f}")
+                            smse = metrics.get("smse")
+                            smae = metrics.get("smae")
+                            smse_str = f"{smse:.4f}" if isinstance(smse, (int, float)) and smse is not None else str(smse)
+                            smae_str = f"{smae:.4f}" if isinstance(smae, (int, float)) and smae is not None else str(smae)
+                            logger.debug(f"Loaded long_term/{data_model}/{model}/{horizon}: sMSE={smse_str}, sMAE={smae_str}")
     
     if not results:
         logger.warning("No results found!")
